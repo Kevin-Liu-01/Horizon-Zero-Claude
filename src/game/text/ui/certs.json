@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "about": "The certifications' words (BIBLE 15, 18): the three disciplines, each rank's perk as its card prints it, and the act counted. The card is `CERT RANK · PERK` with the act on the line under it; the screen's head is CERTIFICATIONS. Plain data.",
+  "head": "CERTIFICATIONS",
+  "ranks": ["I", "II", "III", "IV"],
+  "certs": {
+    "transect": { "name": "TRANSECT", "perks": ["QUIET LINE", "SECOND WIND", "LANE WALKER", "UNDERCUT THE LARGE"] },
+    "bearing": { "name": "BEARING", "perks": ["LONG BREATH", "BACK BEARING", "FAST NOCK", "TRUE READING"] },
+    "ballast": { "name": "BALLAST", "perks": ["+15 HEALTH", "THIRD GOURD", "DEEP SATCHEL", "+15 HEALTH"] }
+  },
+  "acts": {
+    "benchmark": "BENCHMARK RE-SURVEYED",
+    "pried": "TOOL PRIED",
+    "made": "POT OR NET MADE",
+    "triangle": "TRIANGLE SIGHTED",
+    "resection": "THREE BEARINGS CLOSED",
+    "dark": "LAMP DARKENED",
+    "vial": "VIAL CRACKED AT 30 m",
+    "unseen": "TRANSECT CROSSED UNSEEN",
+    "undercut": "UNDERCUT",
+    "reed": "METRES HIDDEN IN REED"
+  },
+  "count": "{n} OF {of} COUNTED"
+}

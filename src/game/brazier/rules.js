@@ -18,11 +18,20 @@ export const KINDLE_HOLD = 2.0;
 /** The four hours a rest can choose (decimal hours; golden is the title's 18:40, dusk the bible's 19:45). */
 export const REST_HOURS = Object.freeze({ dawn: 7.0, golden: 18.67, dusk: 19.75, night: 23.0 });
 export const REST_ORDER = Object.freeze(['dawn', 'golden', 'dusk', 'night']);
+/**
+ * Milestone 2 (HR5; bible 11.2 0:50): ONE rest in the game offers noon, pre-selected: the first at the Ninewalls cistern,
+ * while "True Ground" waits on it ('rest-noon'). The row is written apart from the bible's six (systems.json
+ * `brazier.noon`), first in the list so the dialog's selection line stands on it; every other rest shows the four.
+ */
+export const NOON = 'noon';
+export const NOON_HOUR = 12.0;
 
 /** The Braziers of the slice. `home` is Brea's cistern (a New Game counts as a rest there; BIBLE 17). */
 export const BRAZIERS = Object.freeze([
   Object.freeze({ id: 'cistern', home: true, litAtStart: true, locked: false }),
   Object.freeze({ id: 't1', home: false, litAtStart: false, locked: true }),
+  // Milestone 2: the Ninewalls cistern's (settlements' PLACES.brazier); unlocked when "True Ground" reaches 'rest-noon'
+  Object.freeze({ id: 'ninewalls', home: false, litAtStart: false, locked: true }),
 ]);
 
 /** Is any Instrument within REFUSE_RADIUS of (x, z) wary or hostile? machines: [{ x, z, lamp }] */
@@ -65,11 +74,10 @@ export function dialogFor(T, brazier, state) {
   }
   const by = refusedBy(state.x, state.z, state.machines);
   if (by) return { mode: 'refused', prompt: T.brazier.promptLit, line: six.refused, rows: [], by };
-  return {
-    mode: 'rest',
-    prompt: T.brazier.promptLit,
-    rows: REST_ORDER.map((k) => ({ id: k, label: six[k], hour: REST_HOURS[k], forecast: forecastLine(T, REST_HOURS[k], state.weather) })),
-  };
+  const rows = REST_ORDER.map((k) => ({ id: k, label: six[k], hour: REST_HOURS[k], forecast: forecastLine(T, REST_HOURS[k], state.weather) }));
+  // the one rest that offers noon (state.noon: the runtime asks the quest), pre-selected: first, so it is the selection
+  if (state.noon && T.brazier.noon) rows.unshift({ id: NOON, label: T.brazier.noon, hour: NOON_HOUR, forecast: forecastLine(T, NOON_HOUR, state.weather), preselected: true });
+  return { mode: 'rest', prompt: T.brazier.promptLit, rows, ...(state.noon ? { preselect: NOON } : {}) };
 }
 
 /** Every UI string a Brazier can print, for the "exactly the bible's six" row. */

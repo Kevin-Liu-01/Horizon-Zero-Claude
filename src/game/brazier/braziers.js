@@ -1,8 +1,9 @@
 import { buildBrazier, makeFireLight } from '../../world/settlements/brazier.js';
-import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS } from './rules.js';
+import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS, NOON, NOON_HOUR } from './rules.js';
 import { REST } from '../../world/island/sites.js';
 import { HOME_BRAZIER, BRAZIER_YAW, T1_SPOTS, clearOfFrames } from '../../world/settlements/brazier-spots.js';
 import { lampStateFor } from '../../instruments/lamps.js';
+import { PLACES as NW_PLACES } from '../../world/settlements/ninewalls-layout.js';
 
 /**
  * THE BRAZIERS of the slice, live (BUILD M1.6c). Brea's cistern (home: a New Game counts as a rest here) and the
@@ -44,6 +45,9 @@ export class Braziers {
     // Brea's own: behind-left of where she wakes, out of F20 (src/world/settlements/brazier-spots.js); the flora's
     // keepouts are cut round it there before the meadow is scattered
     if (def.id === 'cistern') return { x: HOME_BRAZIER.x, z: HOME_BRAZIER.z, yaw: HOME_BRAZIER.yaw };
+    // Milestone 2: the Ninewalls cistern's, at settlements' own spot (ninewalls-layout.js PLACES.brazier), its seat on
+    // the street side (yaw from the bearing it stands on)
+    if (def.id === 'ninewalls') return { x: NW_PLACES.brazier.x, z: NW_PLACES.brazier.z, yaw: (NW_PLACES.brazier.b ?? 218) * Math.PI / 180 };
     // at the pillar's foot, 7 m off it on its landward side, on the flattest spot that no accepted frame's lens sees
     // (5baa3e7 took the flattest of four round the pillar: its cistern stood in F05's right foreground beside her)
     let best = null;
@@ -63,7 +67,8 @@ export class Braziers {
     ctx.scene?.add(this.light);
     for (const def of BRAZIERS) {
       const at = this._place(def);
-      const obj = buildBrazier({ terrain: ctx.terrain, x: at.x, z: at.z, yaw: at.yaw, cistern: true, seed: def.id === 'cistern' ? 11 : 23, sharedLight: this.light });
+      // (the Ninewalls Brazier stands beside the village's own cistern: no second cistern ring of its own)
+      const obj = buildBrazier({ terrain: ctx.terrain, x: at.x, z: at.z, yaw: at.yaw, cistern: def.id !== 'ninewalls', seed: def.id === 'cistern' ? 11 : def.id === 'ninewalls' ? 31 : 23, sharedLight: this.light });
       ctx.scene?.add(obj.group);
       const rec = { id: def.id, def, obj, entry: null };
       this.list.push(rec);
@@ -136,7 +141,9 @@ export class Braziers {
     return dialogFor(this.T, b.def, {
       lit: this.lit, unlocked: this.unlocked, x: b.obj.position.x, z: b.obj.position.z,
       machines: this.machinesNear(),
-      weather: { state: env?.weather ?? 'trade', windFrom: toward + 180, speed: w.windMS ?? 5, calimaAt: env?.calimaAt ?? null },
+      weather: { state: env?.weather ?? 'trade', windFrom: toward + 180, speed: w.windMS ?? 5, calimaAt: env?.calimaAt ?? this.calimaAt ?? null },
+      // Milestone 2 (HR5): the one rest that offers noon, pre-selected (the quest answers: src/game/hour.js)
+      noon: !!this.noonFor?.(id),
     });
   }
 
@@ -156,7 +163,7 @@ export class Braziers {
       this.stand();
       return { ok: false, refused: true };
     }
-    const choice = await this.present.brazier({ title: names[id] ?? '', rows: d.rows });
+    const choice = await this.present.brazier({ title: names[id] ?? '', rows: d.rows, preselect: d.preselect ?? null });
     if (!choice) { this.stand(); return { ok: false }; }
     const res = await this.rest(id, choice);
     this.stand();
@@ -212,8 +219,8 @@ export class Braziers {
     const d = this.dialog(id);
     if (!b || !d) return { ok: false };
     if (d.mode === 'refused') { this.stats.refused++; return { ok: false, refused: true }; }
-    if (d.mode !== 'rest' || !(choice in REST_HOURS)) return { ok: false };
-    const toHour = REST_HOURS[choice];
+    if (d.mode !== 'rest' || !(choice in REST_HOURS || choice === NOON) || !d.rows.some((r) => r.id === choice)) return { ok: false };
+    const toHour = choice === NOON ? NOON_HOUR : REST_HOURS[choice];
     const env = this.ctx.environment;
     this.resting = true;
     this.ctx.events?.emit?.('brazier-rest-start', { id, choice, toHour });

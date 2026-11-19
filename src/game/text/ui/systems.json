@@ -21,9 +21,11 @@
       "refused": "THE LAMPS ARE UP. NO REST HERE."
     },
     "promptLit": "REST UNTIL …",
+    "noon": "REST UNTIL NOON",
     "names": {
       "cistern": "BREA'S CISTERN",
-      "t1": "T1 · ORGAN SHELF"
+      "t1": "T1 · ORGAN SHELF",
+      "ninewalls": "NINEWALLS CISTERN"
     }
   },
   "forecast": {

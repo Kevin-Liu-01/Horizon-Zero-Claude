@@ -35,6 +35,10 @@ export const AREA_FIELDS = Object.freeze({
   regions: Object.freeze({ owner: 'systems', file: 'src/game/**' }),
   /** systems: "The Scar" and "True Ground" (src/game/quest/scar-plan.js), the spine's serialize() of each */
   quests: Object.freeze({ owner: 'systems', file: 'src/game/quest/**' }),
+  /** systems (wave 4, HR11): the certifications' counted acts and ranks, src/game/certs/rules.js serialize() */
+  certs: Object.freeze({ owner: 'systems', file: 'src/game/certs/**' }),
+  /** systems (wave 4, HR10): the Ninewalls counter (open, its stock) and the Guild Notices taken, src/game/trade/counter.js */
+  counter: Object.freeze({ owner: 'systems', file: 'src/game/trade/**' }),
 });
 
 const clone = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));

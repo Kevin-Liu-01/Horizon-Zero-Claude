@@ -16,13 +16,16 @@ import sightingW2 from './text/cards/sighting-w2.json';
 import barksHolds from './text/barks/holds.json';
 import booksW2 from './text/books/field-books-w2.json';
 import noticesNinewalls from './text/notices/ninewalls.json';
+// wave 4: the certifications and the Ninewalls counter
+import certs from './text/ui/certs.json';
+import trade from './text/ui/trade.json';
 import { makeStrings, makeQuestStrings } from './strings.js';
 
 export const TEXT = Object.freeze({ index, quest, tutorial, sighting, barks, systems });
 export const STRINGS = makeStrings({ ...TEXT, extraCards: tutorialW2.cards, extraSighting: sightingW2.cards });
 
 /** W2 as plain data, and one strings view per Milestone 2 quest (src/game/quest/scar-plan.js ids). */
-export const TEXT_W2 = Object.freeze({ quests: { 'the-scar': scar, 'true-ground': trueGround }, tutorial: tutorialW2, sighting: sightingW2, barks: barksHolds, books: booksW2, notices: noticesNinewalls });
+export const TEXT_W2 = Object.freeze({ quests: { 'the-scar': scar, 'true-ground': trueGround }, tutorial: tutorialW2, sighting: sightingW2, barks: barksHolds, books: booksW2, notices: noticesNinewalls, certs, trade });
 export const QUEST_STRINGS = Object.freeze({
   'the-scar': makeQuestStrings(TEXT, scar, TEXT_W2),
   'true-ground': makeQuestStrings(TEXT, trueGround, TEXT_W2),

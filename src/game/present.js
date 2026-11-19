@@ -8,6 +8,8 @@
  *   p.subtitle(lines, speaker)                                 one field turn, queued, 2.6 s + 1.1 s a line
  *   p.clearSubtitles()                                         drop the queue and take the turn showing down (the title)
  *   p.brazier({ title, rows, line }) -> Promise<row id | null> the rest dialog (rows: [{ id, label, forecast }])
+ *   p.farCard({ line, read } | null)                            Milestone 2: the Sighting card of a far form (the Transit), in
+ *                                                              the Sighting card's glass, right of the hairs; null hides it
  *   p.busy                                                     a scene or the Brazier dialog is open
  *   p.card / p.sub                                             the card up now { who, text, cast } / Brea's turn { name, text }
  *                                                              (people's faces read them: src/world/npc/people/faces.js, M1.5f)
@@ -41,6 +43,10 @@ const CSS = `
 #cal-sys .sys-row small { display: block; font: 400 12px/1.4 'IBM Plex Mono', monospace; letter-spacing: 0; opacity: 0.7; }
 #cal-sys .sys-row:hover, #cal-sys .sys-row.sel { box-shadow: inset 0 -1px 0 #D8CCE4; }
 #cal-sys .sys-refuse { font: 600 14px/1.3 'Chakra Petch', sans-serif; letter-spacing: 0.06em; }
+#cal-sys .sys-far { position: absolute; right: 6vw; top: 38%; min-width: 320px; background: rgba(30, 26, 40, 0.70); padding: 12px 16px; display: none; }
+#cal-sys .sys-far.on { display: block; }
+#cal-sys .sys-far b { display: block; font: 600 14px/1.2 'Chakra Petch', sans-serif; letter-spacing: 0.1em; }
+#cal-sys .sys-far small { display: block; margin-top: 8px; font: 400 12px/1.45 'IBM Plex Mono', monospace; opacity: 0.75; max-width: 34ch; }
 `;
 
 const el = (tag, cls, parent, text) => {
@@ -73,6 +79,10 @@ export class Presenter {
     this.subt = el('div', 'sys-subt', this.root);
     this.bz = el('div', 'sys-bz', this.root);
     for (const t of ['t1', 't2', 't3', 't4']) el('i', `sys-tick ${t}`, this.bz);
+    this.far = el('div', 'sys-far', this.root);
+    for (const t of ['t1', 't2', 't3', 't4']) el('i', `sys-tick ${t}`, this.far);
+    this.farLine = el('b', null, this.far);
+    this.farRead = el('small', null, this.far);
     this._onKey = (e) => this._key(e);
     window.addEventListener('keydown', this._onKey, true);
     this.lt.addEventListener('click', () => this._advance?.());
@@ -84,7 +94,7 @@ export class Presenter {
     // stopImmediatePropagation: the menus listen on the same window (capture) and, once this closes and the state is
     // 'playing' again, would read the same Escape as "open the hub" (slice-hour run at 4945148)
     const eat = () => { e.stopImmediatePropagation(); e.preventDefault(); };
-    if (this._pick && /^Digit[1-4]$/.test(c)) { eat(); this._pick(Number(c.slice(5)) - 1); return; }
+    if (this._pick && /^Digit[1-5]$/.test(c)) { eat(); this._pick(Number(c.slice(5)) - 1); return; }
     if (this._advance && (c === 'KeyE' || c === 'Space' || c === 'Enter')) { eat(); this._advance(); return; }
     if (this._escape && c === 'Escape') { eat(); this._escape(); }
   }
@@ -214,6 +224,15 @@ export class Presenter {
       this._advance = () => done(rows[0]?.id ?? null);
       this._escape = () => done(null);
     });
+  }
+
+  /** The far form's Sighting card (the Transit): its header line exactly as written, and its one plain sentence. */
+  farCard(card) {
+    this.farShown = card ? card.line : null;
+    if (this.headless) return;
+    if (!card) { this.far.classList.remove('on'); return; }
+    if (this.farLine.textContent !== card.line) { this.farLine.textContent = card.line; this.farRead.textContent = card.read || ''; }
+    this.far.classList.add('on');
   }
 
   dispose() {

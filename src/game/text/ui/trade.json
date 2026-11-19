@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "about": "The Ninewalls tube-mouth counter (BIBLE 16, 18 'Trade counter': TRADE · GIVE · TAKE; prices in salt; the three trade grades as a 3 px rule, never coloured tiles). The verb is TRADE, never buy, sell or purchase. GIVE is her satchel's goods the counter takes for salt; TAKE is the counter's stock for salt. The names are the writing's, not the item catalogue's. Untimed: nothing here runs on a clock.",
+  "words": { "head": "TRADE", "give": "GIVE", "take": "TAKE", "price": "SALT ×{n}", "have": "×{n}", "salt": "SALT ×{n}" },
+  "grades": { "common": "common", "guild": "guild", "old-work": "old-work" },
+  "stock": [
+    { "id": "ridge-wood", "name": "Cane", "price": 4, "qty": 12, "grade": "common" },
+    { "id": "feather", "name": "Gull feather", "price": 3, "qty": 10, "grade": "common" },
+    { "id": "obsidian", "name": "Obsidian flake", "price": 6, "qty": 8, "grade": "common" },
+    { "id": "wire", "name": "Cord", "price": 8, "qty": 6, "grade": "guild" },
+    { "id": "blaze", "name": "Vent resin", "price": 12, "qty": 4, "grade": "guild" },
+    { "id": "chillwater", "name": "Brine", "price": 10, "qty": 4, "grade": "guild" },
+    { "id": "sparker", "name": "Pumice", "price": 10, "qty": 3, "grade": "old-work" }
+  ],
+  "takes": [
+    { "id": "luminous-braiding", "name": "Bronze pins", "price": 3, "grade": "common" },
+    { "id": "crystal-braiding", "name": "Ceramic", "price": 4, "grade": "common" },
+    { "id": "metal-vessel", "name": "Seed glass", "price": 10, "grade": "guild" },
+    { "id": "machine-heart", "name": "Lampglass", "price": 12, "grade": "guild" },
+    { "id": "machine-core", "name": "Plumb bob", "price": 25, "grade": "old-work" },
+    { "id": "echo-shell", "name": "Escapement", "price": 40, "grade": "old-work" }
+  ]
+}

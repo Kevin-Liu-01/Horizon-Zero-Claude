@@ -13,6 +13,10 @@ import { BENCHMARKS, site as layoutSite } from '../world/sites/layout.js';
 import { PLUMB_TERRACE, HERD_SLOPE } from '../world/holds/blockout.js';
 import * as NW from '../world/settlements/ninewalls-layout.js';
 import { vec3 } from '../world/settlements/brazier.js';
+import { buildTransitStandIn } from './quest/transit-far.js';
+import { TRANSIT_CARD } from './quest/scar-plan.js';
+import { Certifications } from './certs/live.js';
+import { Counter } from './trade/counter.js';
 
 /**
  * THE REST OF THE FIRST HOUR, LIVE (Milestone 2 area E, wave 3): "The Scar" and "True Ground" as two more QuestSpines
@@ -45,6 +49,24 @@ const LEE_HOLD_S = 0.5;
 const HERD_N = 5;
 const LOOKER_STATIONS = Object.freeze([{ b: 110, r: 27 }, { b: 180, r: 27 }, { b: 250, r: 27 }]);
 const D2R = Math.PI / 180;
+/**
+ * WAVE 4, the last of "True Ground" (bible 11.2 0:50-0:55; HR5, HR6):
+ *   rest-noon     the Ninewalls Brazier is unlocked when the stage begins; its dialog offers REST UNTIL NOON, pre-selected,
+ *                 for this one rest (braziers.noonFor); the rest writes the named save; 'brazier-rest' -> 'rested'
+ *   calima-cross  calima is ASKED FOR (environment.setWeather) the first frame the hour stands inside CALIMA_WINDOW while
+ *                 the stage runs (the rest put it at 12:00); the Malpais edge is the nearest Malpais cell of the regions
+ *                 map to the village, and the anchor 22 m inside it ('region-enter' fires 10 m in)
+ *   read-transit  Sighting held on the far form's head (within TRANSIT_TOL_DEG, TRANSIT_HOLD_S) inside the window shows
+ *                 its card exactly and sends 'sighted' {card}; outside the window there is no card and no far form drawn
+ */
+const CALIMA_WINDOW = Object.freeze([11.5, 12.5]);
+const CALIMA_FADE_S = 6;
+const CALIMA_END_H = 13.5;
+const EDGE_IN_M = 22;
+const TRANSIT_OUT_M = 115;
+const TRANSIT_TOL_DEG = 3.0;
+const TRANSIT_HOLD_S = 0.6;
+const TRANSIT_RANGE_M = 600;
 
 export class FirstHour {
   constructor(sys) {
@@ -73,6 +95,11 @@ export class FirstHour {
     this._listen();
     this._travel();
     this.resurvey = null;
+    // wave 4: the one noon rest (HR5); the certifications (HR11); the Ninewalls counter (HR10)
+    if (sys.braziers) sys.braziers.noonFor = (id) => id === 'ninewalls' && this.tg.current()?.id === 'rest-noon';
+    this.certs = new Certifications(ctx, { text: TEXT_W2.certs });
+    this.counter = new Counter(ctx, { present: sys.present, text: TEXT_W2.trade, notices: TEXT_W2.notices });
+    this._transitT = 0;
   }
 
   /* ----------------------------------------------------------- places */
@@ -144,6 +171,10 @@ export class FirstHour {
     }
     // Oro's kit is hers once he has handed it over
     if (this.scar.st.oro?.state === 'done') this._grantKit(true);
+    // (wave 4) a record with no certifications counts them from its quests (a slice save carried forward, Q5)
+    this.certs?.afterRestore(rm, this.tg);
+    // the counter opened on "The Scar"'s reward: a record from before wave 4 carries no counter field
+    if (this.scar.done && this.scar.rewarded) this.counter?.open();
     this._track();
   }
 
@@ -155,6 +186,9 @@ export class FirstHour {
     this.trueGround.restore(null);
     this._kitGiven = false; this._cutSent = false; this._fadeAt = null;
     this.resurvey?.dispose(); this.resurvey = null;
+    this._calimaAsked = null; this._calimaLet = false; this._sighted = null;
+    this.certs?.newGame();
+    this.counter?.newGame();
   }
 
   /** "Raker's Morning" is rewarded: "The Scar" starts (and on Continue from a slice save, quietly). */
@@ -251,6 +285,10 @@ export class FirstHour {
     on('flagged', () => { this.flagged = true; all('flagged', {}); });
     on('flag-ended', () => { this.flagged = false; });
     on('plumb-chime', () => all('plumb-chime', {}));
+    // wave 4: a rest at a Brazier is the scar-plan's 'rested' {brazier, hour}; the weather's change its 'weather' {state}
+    on('brazier-rest', (e) => all('rested', { brazier: e.id, hour: e.hour, choice: e.choice }));
+    on('weather-changed', (e) => { all('weather', { state: e.weather }); ev.emit?.('weather', { state: e.weather, by: 'sky-look' }); });
+    on('counter-opened', (e) => { if (e.id === 'ninewalls-counter') this.counter.open(); });
     // the third wall cut (whoever cut it: the Screed's rules write it through the walls seam)
     this._unwall = NW.onWallChange?.((id) => this._wallChanged(id));
   }
@@ -379,6 +417,8 @@ export class FirstHour {
     if (this.oroEntry) this.oroEntry.disabled = cur !== 'oro';
     if (cur === 'herd') this._lee(dt);
     this._resurveyStep(dt);
+    this._noonStep(dt);
+    this.certs?.update(this.sys.spine);
     if (this._fadeAt != null && this.tg.t >= this._fadeAt) {
       this._fadeAt = null;
       ctx.events?.emit?.('line-faded', { walls: (NW.WALLS || []).filter((w) => NW.wallState(w.id)?.painted).length, by: 'systems' });
@@ -468,6 +508,97 @@ export class FirstHour {
       if (!this.trueGround.isCorrecting(m.kind) || !this.trueGround.trueAt(m.position.x, m.position.z)) continue;
       try { m.forceState?.('return'); } catch { /* its own state machine */ }
     }
+    // (wave 4) the Instruments that came to look have seen the mark taken: they go back to their stations, calm (at
+    // aba90a3 the three Pegs followed her off the pad, 72 -> 43 hp through 'fade', and stood wary within the Brazier's 60 m)
+    for (const m of this._live(this.spawned.lookers)) {
+      try { if (m.sc) m.sc.suspicion = 0; else m.suspicion = 0; m.setState?.('return'); } catch { /* its own state machine */ }
+    }
+  }
+
+  /* ------------------------------------------------------------ noon, calima, the Transit (wave 4) */
+
+  /** The Malpais edge nearest the village (regions map), and the point EDGE_IN_M inside it on the same bearing. */
+  _malpaisEdge() {
+    if (this._edge !== undefined) return this._edge;
+    const map = this.ctx.regions?.map;
+    if (!map?.regionAt) return null;
+    const C = NW.CENTRE;
+    let best = null;
+    for (let i = 0; i < 120; i++) {
+      const a = (i / 120) * Math.PI * 2, ux = Math.sin(a), uz = Math.cos(a);
+      for (let d = 60; d <= 420; d += 4) {
+        const x = C.x + ux * d, z = C.z + uz * d;
+        if (map.regionAt(x, z) === 'malpais') { if (!best || d < best.d) best = { x, z, d, ux, uz }; break; }
+      }
+    }
+    if (!best) { this._edge = null; return null; }
+    const H = (x, z) => this.ctx.terrain?.getHeight?.(x, z) ?? 0;
+    const inX = best.x + best.ux * EDGE_IN_M, inZ = best.z + best.uz * EDGE_IN_M;
+    const tx = best.x + best.ux * TRANSIT_OUT_M, tz = best.z + best.uz * TRANSIT_OUT_M;
+    this._edge = { edge: { x: +best.x.toFixed(1), z: +best.z.toFixed(1) }, at: { x: +inX.toFixed(1), z: +inZ.toFixed(1) }, transit: { x: +tx.toFixed(1), z: +tz.toFixed(1), y: H(tx, tz) }, fromNinewalls: best.d };
+    this.sys.A['malpais-edge'] = this._edge.at;
+    return this._edge;
+  }
+
+  /** The far form the read is taken on: one published by its owners, else this lane's stand-in. */
+  _transitFar() {
+    const ctx = this.ctx;
+    if (ctx.transitFar?.head) return ctx.transitFar;
+    const m = this._live(ctx.machines?.list).find((q) => q.kind === 'transit');
+    if (m) { const h = m.position.clone(); h.y += (m.height ?? 15) * 0.9; return { head: h, machine: m, show() {} }; }
+    if (!this._standIn) {
+      const E = this._malpaisEdge();
+      if (!E) return null;
+      const C = NW.CENTRE;
+      this._standIn = buildTransitStandIn({ x: E.transit.x, z: E.transit.z, ground: (x, z) => ctx.terrain?.getHeight?.(x, z) ?? 0, facing: Math.atan2(C.x - E.transit.x, C.z - E.transit.z) });
+      ctx.scene?.add(this._standIn.group);
+    }
+    return this._standIn;
+  }
+
+  _noonStep(dt) {
+    const ctx = this.ctx, cur = this.tg.current()?.id, env = ctx.environment, B = this.sys.braziers;
+    const late = cur === 'rest-noon' || cur === 'calima-cross' || cur === 'read-transit';
+    if (late && B && !B.unlocked.has('ninewalls')) B.unlock('ninewalls');
+    // the forecast row names the calima the hour is waiting on ("CALIMA BY NOON", the bible's own example)
+    if (B) B.calimaAt = (cur === 'rest-noon') ? 12 : null;
+    const hour = env?.time ?? 0;
+    const inWindow = hour >= CALIMA_WINDOW[0] && hour <= CALIMA_WINDOW[1];
+    if ((cur === 'calima-cross' || cur === 'read-transit') && inWindow && !this._calimaAsked && env?.setWeather) {
+      this._calimaAsked = { hour: +hour.toFixed(3), t: +this.tg.t.toFixed(2), was: env.weather };
+      if (env.weather !== 'calima') env.setWeather('calima', CALIMA_FADE_S);
+      this._malpaisEdge();
+    }
+    if (this._calimaAsked && !this._calimaLet && env && (hour >= CALIMA_END_H || hour < 6) && env.weather === 'calima') {
+      this._calimaLet = true;
+      env.setWeather('trade', 30);
+    }
+    // the far form: drawn only while the beat can be read (EN4), read through the Alidade (HR6)
+    const want = (cur === 'calima-cross' || cur === 'read-transit') && inWindow;
+    const far = want || this._standIn ? this._transitFar() : null;
+    if (far?.show) far.show(want);
+    if (cur !== 'read-transit' || !want || !far) { this._transitT = 0; if (this.sys.present.farShown) this.sys.present.farCard(null); return; }
+    const on = this._onFar(far);
+    this._transitT = on ? this._transitT + dt : 0;
+    const card = TEXT_W2.sighting?.cards?.find?.((c) => c.id === 'transit');
+    if (on && this._transitT >= TRANSIT_HOLD_S && card) {
+      this.sys.present.farCard({ line: card.line, read: card.read });
+      if (!this._sighted && card.line === TRANSIT_CARD) {
+        this._sighted = { hour: +hour.toFixed(3), standIn: !!far.standIn };
+        ctx.events?.emit?.('sighted', { card: card.line, kind: 'transit', hour, standIn: !!far.standIn });
+      }
+    } else if (!on && this.sys.present.farShown) this.sys.present.farCard(null);
+  }
+
+  /** Is the Alidade up and its line within TRANSIT_TOL_DEG of the far form's head? */
+  _onFar(far) {
+    const ctx = this.ctx, cam = ctx.camera;
+    if (!ctx.sighting?.on || !cam?.getWorldDirection) return false;
+    const p = cam.getWorldPosition(vec3()), d = cam.getWorldDirection(vec3());
+    const h = far.head, tx = h.x - p.x, ty = h.y - p.y, tz = h.z - p.z, L = Math.hypot(tx, ty, tz) || 1;
+    if (L > TRANSIT_RANGE_M) return false;
+    const c = Math.max(-1, Math.min(1, (d.x * tx + d.y * ty + d.z * tz) / L));
+    return Math.acos(c) / D2R <= TRANSIT_TOL_DEG;
   }
 
   /**
@@ -559,10 +690,15 @@ export class FirstHour {
       resurvey: this.resurvey?.report?.() ?? null, lee: this.lastLee ?? null,
       spawned: Object.fromEntries(Object.entries(this.spawned).map(([k, v]) => [k, this._live(v).length])),
       oro: !!this.people.oro, kit: !!this._kitGiven, flagged: this.flagged,
+      calima: this._calimaAsked ?? null, edge: this._edge ?? null, sighted: this._sighted ?? null, transitStandIn: !!this._standIn,
+      certs: this.certs?.report?.() ?? null, counter: this.counter?.report?.() ?? null,
     };
   }
 
   dispose() {
+    this._standIn?.dispose();
+    this.counter?.dispose();
+    this.certs?.dispose();
     this._unwall?.();
     if (this.oroEntry) this.ctx.interactables?.unregister?.(this.oroEntry);
     this.resurvey?.dispose();
