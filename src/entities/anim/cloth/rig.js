@@ -911,6 +911,26 @@ export class BreaCloth {
   }
 
 
+  /** (M2 wave 0, cost) The drawing pass's rewrite: only the places of P's bones (the particle plus its drawing offset),
+   *  their turns as _writeBones left them this frame (they read the particles, which the drawing pass never moves). The
+   *  same arithmetic as _writeBones's translation column, so the same bits. */
+  _placeBones(P) {
+    const x = P.x, ro = P.ro, C = P.C, R = P.R;
+    const Ap = P.boneParent ? _m3.copy(P.boneParent.matrixWorld).invert().elements : _m2.copy(this.armRoot.matrixWorld).invert().elements;
+    for (let i = 0, n = C * R; i < n; i++) {
+      const bi = P.boneOf[i];
+      if (bi < 0) continue;
+      const px = x[i * 3] + ro[i * 3], py = x[i * 3 + 1] + ro[i * 3 + 1], pz = x[i * 3 + 2] + ro[i * 3 + 2];
+      const bone = P.bones[bi], W = bone.matrixWorld.elements, L = bone.matrix.elements;
+      W[12] = px; W[13] = py; W[14] = pz;
+      const w0 = px, w1 = py, w2 = pz, w3 = W[15];
+      L[12] = Ap[0] * w0 + Ap[4] * w1 + Ap[8] * w2 + Ap[12] * w3;
+      L[13] = Ap[1] * w0 + Ap[5] * w1 + Ap[9] * w2 + Ap[13] * w3;
+      L[14] = Ap[2] * w0 + Ap[6] * w1 + Ap[10] * w2 + Ap[14] * w3;
+      L[15] = Ap[3] * w0 + Ap[7] * w1 + Ap[11] * w2 + Ap[15] * w3;
+    }
+  }
+
   /* ------------------------------------------------------------------ the rendered sheet (round 5) */
   /** Per piece, the vertices the sweep's grader reads (weighted >= 0.5 to the piece's cl_ bones, on the outfit or the
    *  wrap; the caster is the same skin) with their four influences: the bone, its weight, the vertex in that bone's bind
@@ -950,6 +970,10 @@ export class BreaCloth {
       }
       const n = rec.length, V = { n, bone: new Array(n * 4).fill(null), w: new Float64Array(n * 4), u: new Float64Array(n * 12), part: new Int32Array(n * 4).fill(-1) };
       rec.forEach((inf, j) => inf.forEach(([b, w, ux, uy, uz, pi], k) => { V.bone[j * 4 + k] = b; V.w[j * 4 + k] = w; V.u[j * 12 + k * 3] = ux; V.u[j * 12 + k * 3 + 1] = uy; V.u[j * 12 + k * 3 + 2] = uz; V.part[j * 4 + k] = pi; }));
+      // (M2 wave 0, cost: each vertex's corners as a set of particle bits, two words: N <= 64)
+      V.cLo = new Int32Array(n); V.cHi = new Int32Array(n);
+      for (let j = 0; j < n; j++) for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi < 0) continue; if (pi < 32) V.cLo[j] |= 1 << pi; else V.cHi[j] |= 1 << (pi - 32); }
+      if (P.n > 64) throw new Error(`cloth: ${P.name} has ${P.n} particles; the drawing pass's corner sets hold 64`);
       P.vp = V;
     }
   }
@@ -973,36 +997,72 @@ export class BreaCloth {
       //  has one is not skinned. At a sprint the fronts ride the thighs every frame: 190 us a frame without it)
       const dm = P.vdm || (P.vdm = new Int32Array(N)), act = P.vact || (P.vact = new Int32Array(V.n));
       const ro = P.ro; ro.fill(0);
-      // (each round from scratch: a push out of one surface can put a corner into another, a thigh's into her belly)
-      const scan = () => {
-        let anyD = false;
+      // (M2 wave 0, cost: the same answer for less. A round re-tests only what the last round moved: a vertex is skinned
+      //  from its corners' bones, whose turn reads the particles (which this pass never moves) and whose place reads the
+      //  particle plus its drawing offset, so a vertex none of whose corners moved stands where it stood and pushes as it
+      //  did, i.e. not at all. `chg` marks the particles whose offset moved in the last round (all of them before the
+      //  first); the colliders are culled to the scanned particles' bounding sphere first (the axis's box half-diagonal,
+      //  the larger inner radius and the reach: never one that could hold a particle). Node: the bench's rows and the
+      //  sweep's clip counts unchanged, the digests bit-identical)
+      const chg = P.vchg || (P.vchg = new Uint8Array(N)), el = P.vel || (P.vel = new Int32Array(C.length));
+      chg.fill(1);
+      const scan = (first) => {
+        let bx0 = 9e9, bx1 = -9e9, by0 = 9e9, by1 = -9e9, bz0 = 9e9, bz1 = -9e9, ns = 0;
         for (let i = 0; i < N; i++) {
+          if (!chg[i]) continue;
           dm[i] = 0;
           if (w[i] === 0) continue;
+          const px = x[i * 3] + ro[i * 3], py = x[i * 3 + 1] + ro[i * 3 + 1], pz = x[i * 3 + 2] + ro[i * 3 + 2];
+          if (px < bx0) bx0 = px; if (px > bx1) bx1 = px; if (py < by0) by0 = py; if (py > by1) by1 = py; if (pz < bz0) bz0 = pz; if (pz > bz1) bz1 = pz;
+          ns++;
+        }
+        if (ns) {
+          const pcx = (bx0 + bx1) / 2, pcy = (by0 + by1) / 2, pcz = (bz0 + bz1) / 2, pr = Math.sqrt((bx1 - bx0) ** 2 + (by1 - by0) ** 2 + (bz1 - bz0) ** 2) / 2;
+          let ne = 0;
           for (let c = 0; c < C.length; c++) {
             const K = C[c];
             if (!K.on || !(K.ri0 > 0) || !(P.vpMask & K.bit)) continue;
-            const ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az;
-            const px = x[i * 3] + ro[i * 3] - ax, py = x[i * 3 + 1] + ro[i * 3 + 1] - ay, pz = x[i * 3 + 2] + ro[i * 3 + 2] - az, l2 = dx * dx + dy * dy + dz * dz;
-            let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
-            t = t < 0 ? 0 : t > 1 ? 1 : t;
-            const ex = px - dx * t, ey = py - dy * t, ez = pz - dz * t, rr = K.ri0 + (K.ri1 - K.ri0) * t + (K.kitIdx ? slack + VPASS.quiver : P.vpReach > 0 ? P.vpReach + VPASS.margin : slack);
-            if (ex * ex + ey * ey + ez * ez < rr * rr) { dm[i] |= 1 << (c & 31); anyD = true; }
+            const extra = K.kitIdx ? slack + VPASS.quiver : P.vpReach > 0 ? P.vpReach + VPASS.margin : slack;
+            const reach = pr + (K.cr - (K.r0 > K.r1 ? K.r0 : K.r1)) + (K.ri0 > K.ri1 ? K.ri0 : K.ri1) + extra + 1e-6;
+            const ex = K.cx - pcx, ey = K.cy - pcy, ez = K.cz - pcz;
+            if (ex * ex + ey * ey + ez * ez > reach * reach) continue;
+            el[ne++] = c;
+          }
+          for (let e = 0; e < ne; e++) {
+            const c = el[e], K = C[c], bit = 1 << (c & 31);
+            const ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az, l2 = dx * dx + dy * dy + dz * dz;
+            const extra = K.kitIdx ? slack + VPASS.quiver : P.vpReach > 0 ? P.vpReach + VPASS.margin : slack;
+            for (let i = 0; i < N; i++) {
+              if (!chg[i] || w[i] === 0) continue;
+              const px = x[i * 3] + ro[i * 3] - ax, py = x[i * 3 + 1] + ro[i * 3 + 1] - ay, pz = x[i * 3 + 2] + ro[i * 3 + 2] - az;
+              let t = l2 > 1e-12 ? (px * dx + py * dy + pz * dz) / l2 : 0;
+              t = t < 0 ? 0 : t > 1 ? 1 : t;
+              const ex = px - dx * t, ey = py - dy * t, ez = pz - dz * t, rr = K.ri0 + (K.ri1 - K.ri0) * t + extra;
+              if (ex * ex + ey * ey + ez * ez < rr * rr) dm[i] |= bit;
+            }
           }
         }
+        // (the vertices: by each one's corners as a 64-bit set (two words), against the particles with a collider near
+        //  and the particles moved, before any corner is read)
+        let dLo = 0, dHi = 0, cLo = 0, cHi = 0;
+        for (let i = 0; i < N; i++) { if (dm[i]) { if (i < 32) dLo |= 1 << i; else dHi |= 1 << (i - 32); } if (chg[i]) { if (i < 32) cLo |= 1 << i; else cHi |= 1 << (i - 32); } }
+        if (!(dLo | dHi)) return 0;
+        if (first) { cLo = -1; cHi = -1; }
+        const VL = V.cLo, VH = V.cHi;
         let n = 0;
-        if (anyD) for (let j = 0; j < V.n; j++) {
-          let m = 0;
-          for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi >= 0) m |= dm[pi]; }
-          if (m) act[n++] = j;
+        for (let j = 0; j < V.n; j++) {
+          const lo = VL[j], hi = VH[j];
+          if (((lo & dLo) | (hi & dHi)) && ((lo & cLo) | (hi & cHi))) act[n++] = j;
         }
         return n;
       };
-      let na = scan();
+      let na = scan(true);
       if (!na) continue;
       let woke = false;
+      const nchg = P.vnchg || (P.vnchg = new Uint8Array(N));
       for (let it = 0; it < VPASS.iters && na > 0; it++) {
         let nn = 0, movedAny = false;
+        nchg.fill(0);
         for (let q = 0; q < na; q++) {
           const j = act[q];
           let m = 0;
@@ -1019,8 +1079,8 @@ export class BreaCloth {
           for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi < 0 || w[pi] === 0) continue; if (V.w[j * 4 + k] > sw) { sw = V.w[j * 4 + k]; sp = pi; } }
           if (sp < 0) continue;
           let pushed = false;
-          for (let c = 0; c < C.length && m; c++) {
-            if (!(m & (1 << (c & 31)))) continue;
+          // (the set bits of m, lowest first: the colliders in their order; past 32 a bit names c, c + 32, ... as before)
+          for (let mm = m; mm; mm &= mm - 1) for (let c = 31 - Math.clz32(mm & -mm); c < C.length; c += 32) {
             const K = C[c];
             if (!K.on || !(K.ri0 > 0)) continue;
             const ax = K.a[0], ay = K.a[1], az = K.a[2], dx = K.b[0] - ax, dy = K.b[1] - ay, dz = K.b[2] - az;
@@ -1053,6 +1113,7 @@ export class BreaCloth {
               let f = e * V.w[j * 4 + k] / s2;
               if (f > VPASS.maxStep) f = VPASS.maxStep;
               ro[pi * 3] += nx * f; ro[pi * 3 + 1] += ny * f; ro[pi * 3 + 2] += nz * f;
+              nchg[pi] = 1;
             }
             vx += nx * e; vy += ny * e; vz += nz * e;
             pushed = true;
@@ -1062,8 +1123,9 @@ export class BreaCloth {
         this.vpMoved = nn;
         if (!movedAny) break;
         woke = true;
-        this._writeBones(P);
-        na = scan();
+        this._placeBones(P);
+        chg.set(nchg);
+        na = scan(false);
       }
       // (a sleeping piece the body has come into: awake, or the ride puts it back next frame)
       if (woke && P.asleep) S._wake(P);
