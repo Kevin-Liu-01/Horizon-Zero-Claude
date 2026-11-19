@@ -57,6 +57,10 @@ export const STAGINGS = Object.freeze({});
 /**
  * The frames the Holds' places can appear in (M2 briefs §2 rule 3, HG8). The region and headrooms are
  * tools/world/skyline-masks.mjs MASK_REGION; the masks are built from each frame's own filmed lens.
+ * F14, F15, F16, F18 and F19 joined after the blockout (the orchestrator's ruling 8, M2 wave 1): Ninewalls stands on the
+ * hillside above their salt cell, so those five are re-anchored once with the Holds in them; Brea's figure, cloth and
+ * pose are still judged against their anchors (a mask covers only the Holds' ground and what may stand on it).
  * @type {ReadonlyArray<MaskTarget>}
  */
-export const MASKS = Object.freeze(['F02', 'F05', 'F17', 'F24', 'F25', 'F32', 'F33-trig'].map((id) => Object.freeze({ id, headroom: 12 })));
+export const MASKS = Object.freeze(['F02', 'F05', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19', 'F24', 'F25', 'F32', 'F33-trig']
+  .map((id) => Object.freeze({ id, headroom: 12 })));
