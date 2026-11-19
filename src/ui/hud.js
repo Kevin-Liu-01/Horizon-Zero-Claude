@@ -2229,6 +2229,12 @@ export class HUD {
       const cell = this._qsCells.find((x) => x.dataset.slot === '3');
       if (cell) { cell.classList.remove('empty'); cell.innerHTML = '<b>3</b><span>GAFF</span>'; }
     }
+    // (M2 area D) slot 4 names the pots once they are hers
+    if (c?.pots?.owned && !this._qsPots) {
+      this._qsPots = true;
+      const cell = this._qsCells.find((x) => x.dataset.slot === '4');
+      if (cell) { cell.classList.remove('empty'); cell.innerHTML = '<b>4</b><span>POTS</span>'; }
+    }
     if (slot === 2) { this._updateLanceTag(c); return; }
     if (slot === 3) { this._updateGaffTag(); return; }
     if (this._wpnEl.classList.contains('melee')) { this._wpnEl.classList.remove('melee'); this._lastW = undefined; }

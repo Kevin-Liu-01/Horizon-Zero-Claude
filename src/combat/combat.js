@@ -20,6 +20,7 @@ const NO_TRAPS = Object.freeze({
 });
 import { CombatFeedback } from './feedback.js';
 import { HitFeel } from './hitfeel.js';
+import { KitVerbs } from './kitverbs.js';
 
 /**
  * Weapon system v2 (spec "Weapons contract"): 4-weapon roster with distinct
@@ -484,6 +485,7 @@ export class Combat {
     this.traps = NO_TRAPS;
     this.feedback = new CombatFeedback(ctx);    // combat-hit-feedback-faint
     this.hitFeel = new HitFeel(ctx, this);      // M1.3e: capped freeze, kick, FOV punch, flash, impact light
+    this.kitVerbs = new KitVerbs(ctx, this);    // M2 area D: Oro's kit in play (the gaff, the Windwall, the pots)
     this._fovPunchOn = 0; this._fovWritten = -1;
 
     // --- craft hold (combat-wheel-canon-gaps / onboarding crafting-feedback)
@@ -510,7 +512,7 @@ export class Combat {
     const inPlay = () => ctx.state === 'playing' || ctx.params.has('shot');
     // number keys belong to the quick slots (src/ui/quickslots.js): 1 = bow, 2 = lance
     ctx.input.onDown('KeyZ', () => { if (!wheelOpen() && inPlay()) this.cycleAmmo(-1); });
-    ctx.input.onDown('KeyX', () => { if (!wheelOpen() && inPlay()) this.cycleAmmo(1); });
+    ctx.input.onDown('KeyX', () => { if (!wheelOpen() && inPlay() && !this.kitVerbs?.ownsX?.()) this.cycleAmmo(1); });
     /**
      * `stealth-lure-missing`. G is the whistle: Brea makes a noise where she
      * stands and machines come to look at THAT, which is the other half of the
@@ -655,6 +657,12 @@ export class Combat {
     this.feedback?.toast(`+${added} ${def.name.toUpperCase()}`, ammoId);
     return true;
   }
+
+  /** (M2 area D) RMB is the Windwall's guard while the gaff is out: player.js reads this before it sets `aiming`. */
+  get rmbGuard() { return !!this.kitVerbs?.rmbGuard; }
+
+  /** (M2 area D) a hit coming at her, through the Windwall's guard: what gets through (player.takeDamage). */
+  guardFilter(amount, from) { return this.kitVerbs ? this.kitVerbs.guardFilter(amount, from) : amount; }
 
   /**
    * Why a craft is not available right now — the wheel and the craft radial
@@ -944,8 +952,9 @@ export class Combat {
     this._lmbPrev = lmb;
     if (player) player.drawStrength = this.drawStrength; // animator contract
 
-    // --- the lance owns LMB whenever she is NOT aiming
+    // --- the lance owns LMB whenever she is NOT aiming (and the gaff is not out: M2 area D)
     this.melee.update(realDt, playing);
+    this.kitVerbs?.update(realDt, playing);
     // --- hold-R crafting with a radial fill
     this._updateCraft(realDt, playing, wheelOpen);
 
@@ -1076,7 +1085,8 @@ export class Combat {
   _updateCraft(realDt, playing, wheelOpen) {
     const c = this.craft;
     const ctx = this.ctx;
-    const down = playing && ctx.input.isDown('KeyR');
+    // (M2 area D: R is the hook-rip while the gaff is out)
+    const down = playing && ctx.input.isDown('KeyR') && !this.kitVerbs?.gaffOut;
     const id = (wheelOpen ? ctx.wheel?.hoverAmmoId : this.activeWeapon?.activeAmmo) ?? null;
     if (!down || !id) {
       if (c.progress > 0) c.progress = Math.max(0, c.progress - realDt * 3.5);

@@ -1625,7 +1625,9 @@ export class Melee {
     const p = ctx.player;
     const aiming = !!p?.aiming;
     const wheelOpen = !!ctx.wheel?.open;
-    const canSwing = playing && !aiming && !wheelOpen && (p?.health ?? 1) > 0;
+    // (M2 area D, the smallest change: LMB is the gaff's while it is out)
+    const gaffOut = !!(this.combat?.gaff?.owned && (this.combat.gaff.want || this.combat.gaff.inHand));
+    const canSwing = playing && !aiming && !wheelOpen && !gaffOut && (p?.health ?? 1) > 0;
 
     // --- charge / release
     /* R63 (a) — the bow's LMB is not a lance press (hero-body targeted fix round 2; the one edit R63

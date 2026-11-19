@@ -23,6 +23,8 @@
  * six are combat's, BIBLE §16). A hit before then cancels it: nothing is spent and nothing is made,
  * and the key must be pressed again. The HUD draws the hold on the kit tag's MAKE line.
  */
+import { KitRack } from './kitrack.js';
+
 export const QUICK_SLOTS = Object.freeze([
   Object.freeze({ key: 'Digit1', slot: 1, kind: 'bow' }),
   Object.freeze({ key: 'Digit2', slot: 2, kind: 'lance' }),
@@ -97,6 +99,9 @@ export class QuickSlots {
     ctx.events?.on?.('player-damage', () => {
       if (this.make.hit()) ctx.events?.emit?.('quick-make-interrupted', { slot: this.make.slot });
     });
+    // (M2 area D) the Kit Rack half-ring over the slots (Tab, once Oro's kit is hers)
+    this.rack = new KitRack(ctx, this);
+    this._potSlot = false;
   }
 
   /** What holding slot `n` makes: the bow's loaded arrow for slot 1; nothing for the lance or an empty slot. */
@@ -117,8 +122,9 @@ export class QuickSlots {
    * key, so the lance's own timed stow and an aim that puts it away both show truthfully.
    */
   get activeSlot() {
-    // (M2 area D) the gaff in her right hand, or on its way there
+    // (M2 area D) slot 4 (the pots) while it was the last one taken and nothing is in her right hand
     const g = this.ctx.combat?.gaff;
+    if (this._potSlot && this.ctx.combat?.pots?.owned && !(g?.owned && (g.want || g.inHand))) return 4;
     if (g?.owned && (g.want || g.inHand)) return 3;
     const m = this.ctx.combat?.melee;
     if (m && (m.lanceInHand || LANCE_STANCES.has(m.stance))) return 2;
@@ -133,6 +139,16 @@ export class QuickSlots {
     if (!combat) { if (!q.kind) this.ctx.events?.emit?.('quick-slot-empty', { slot: n, earns: q.earns }); return null; }
     // (M2 area D) slot 3 is the gaff once it is earned; 1 and 2 put it back on its hanger first
     const gaff = combat.gaff ?? null;
+    this._potSlot = false;
+    // (M2 area D) slot 4 is the pots once they are hers: a press takes the next type she carries (F casts it)
+    if (q.earns === 'pots' && combat.pots?.owned) {
+      const K = combat.pots;
+      if (this.last === 'pots') K.belt.cycle(1);
+      this._potSlot = true;
+      this.last = 'pots';
+      this.ctx.events?.emit?.('quick-slot', { slot: n, kind: 'pots', pot: K.belt.selected });
+      return 'pots';
+    }
     if (q.earns === 'gaff' && gaff?.owned) {
       gaff.draw();
       this.last = 'gaff';
@@ -165,6 +181,7 @@ export class QuickSlots {
   /** Simulation step: runs the hold on the world's clock (the world keeps its pace; nothing pauses). */
   update(dt) {
     const ctx = this.ctx;
+    this.rack?.update(dt);
     const m = this.make;
     if (m.state === 'idle') return;
     const q = QUICK_SLOTS.find((x) => x.slot === m.slot);

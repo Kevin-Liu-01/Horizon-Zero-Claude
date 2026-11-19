@@ -1546,6 +1546,8 @@ void main() {
       this.ctx.events.emit('player-evaded', { amount, from });
       return;
     }
+    // (M2 area D, the smallest change: the Windwall's guard filters a hit coming at her, src/combat/kitverbs.js)
+    if (this.ctx.combat?.guardFilter) { amount = this.ctx.combat.guardFilter(amount, from); if (!(amount > 0)) return; }
     this.health = Math.max(0, this.health - amount);
     this.addShake(Math.min(1, 0.45 + amount * 0.004));
     this.ctx.events.emit('player-hurt', { health: this.health, max: this.maxHealth });
@@ -1995,7 +1997,8 @@ void main() {
       this._finishFrame(dt, t, realDt);
       return;
     }
-    this.aiming = input.mouseDown(2) && !this.dodging && !this.mantling;
+    // (M2 area D, the smallest change: RMB is the Windwall's guard while the gaff is out, src/combat/kitverbs.js)
+    this.aiming = input.mouseDown(2) && !this.dodging && !this.mantling && !this.ctx.combat?.rmbGuard;
     this.crouchAim = this.crouching && this.aiming;
 
     /* --------------------------- locomotion ----------------------------- */
