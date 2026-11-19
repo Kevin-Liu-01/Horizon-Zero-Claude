@@ -55,6 +55,19 @@ export class ExpansionMachine extends Machine {
   }
 
   /**
+   * A machine taken out of the world WITHOUT `ai/sites.js` dispose (a filmed actor: tools/frames/page.mjs splices it
+   * from the list and cuts its root; a gate's stand-in) lets its lamp go here. Before this its lamp record stayed in
+   * `machines.lamps` (the anchor still had a parent, so the lamps' self-prune never fired) and the iris kept drawing
+   * at its last world matrix: the M2 wave 1 line-up's "floating" Sickle lamp, 1.95 m over the crust, was the Tiller's
+   * from the frame before at the same mark, and the Screed's second lamp disc on its hull front the same lamp again.
+   * `ai/sites.js` dispose still releases everything through `_releaseOnDispose`; this is only the lamp.
+   */
+  dispose() {
+    this.manager?.lamps?.detach(this);
+    this.lamp = null;
+  }
+
+  /**
    * Re-snap after `installDoctrine` has added its components — keyed on the
    * part COUNT, so a component authored later than the first call is snapped
    * too.

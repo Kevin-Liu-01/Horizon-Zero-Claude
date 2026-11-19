@@ -9,6 +9,8 @@ import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.j
 import { prepareEntry, installHull } from '../lib/hull.js';
 import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup } from '../lib/kindkit.js';
 import { installHerdRipple, fileStep, fileHold, rippleTick } from './tiller-herd.js';
+import { hullShapes, hullShapesInto } from '../lib/blockout.js';
+import { setOccluder, clearOccluders } from '../lib/sight.js';
 
 /**
  * TILLER — bible §7.4 #3 (medium; the herd, role `herd`). A glazed boat-hull on
@@ -36,16 +38,27 @@ import { installHerdRipple, fileStep, fileHold, rippleTick } from './tiller-herd
  *     first, and the herd closes file and keeps coring on its bearing. It never
  *     flees (M2 wave 1, IN1; `./tiller-herd.js`, A-herd-ripple).
  *
- * THE LAMP (bible §7.2 / §7.4 "Weak point: drum lamp"): the face just in front
- * of the glass dome, radius 0.20 m (glass 0.26 m across: >= 0.25 m, >= 5 px at
- * 40 m); a precise hit darkens it for 6 s (`machine.lampDarkT`).
+ * M2 WAVE 2, THE CORRECTED FORM (owner question Q1's default; the wave 1 ruling 7: "the Tiller that plays becomes
+ * the corrected form in wave 2, so the herd gives cover"). The M1 body (three turned segments on a 1.30 m keel, its
+ * drum on a neck) is replaced by the skirted six-stilt hull of `tools/build/instruments/gen-tiller.mjs`, 2.7 m,
+ * about 4.5 x 1.8 m, in the Instruments' shared language (white enamel plates, brass, gunmetal, a lamp drum in a
+ * yoke at the bow, a level vial, antennae and a banner). The bone set and order are the M1 Tiller's, so the gait,
+ * the herd and the staged rows read the same skeleton. Its hull and skirt are SIGHT OCCLUDERS while it lives
+ * (src/instruments/lib/sight.js, blockout.js form `built`): behaviour (moving cover, IN3) reads them in wave 3.
+ *
+ * THE LAMP (bible §7.2 / §7.4 "Weak point: drum lamp"): the kit lamp drum's face at the bow (r5Sockets.lens), lens
+ * radius 0.171 m (a weak point of 0.22 m: >= 0.25 m across, >= 5 px at 40 m); a precise hit darkens it for 6 s
+ * (`machine.lampDarkT`). The drum turns in its yoke (the `head` bone) within LOOK_YAW of the hull's heading.
  */
 
 const URL = '/models/instruments/tiller.glb';
-const LAMP_AT = [0, 2.28, 2.085];
-const LAMP_R = 0.20;
-/** The generator's design height (`asset.extras.r5Size[1]`): scale 1, body space == generator space. */
-const HEIGHT = 2.6755;
+/** The generator's design height (`asset.extras.r5Size[1]`, the antenna's spike): scale 1, body space == generator space. */
+const HEIGHT = 2.7;
+/** How far the drum turns in its yoke toward what it looks at (rad): the yoke's cheeks clear the bow to here. */
+const LOOK_YAW = 0.5;
+/** The sight occluders' form (src/instruments/lib/blockout.js): the built hull and its skirt. */
+const OCC_FORM = 'built';
+let _occSerial = 0;
 
 const HEX_WALK = { stride: 0.95, duty: 0.6, lift: 0.15,
   offsets: { LF: 0, RM: 0, LH: 0, RF: 0.5, LM: 0.5, RH: 0.5 } };       // alternating tripod
@@ -76,8 +89,11 @@ export class Tiller extends ExpansionMachine {
     const auger = detachTool(this, 'tiller-auger');
 
     // the drum lamp: iris + beam drawn by `machines.lamps` (one instanced draw each)
-    this.addLamp(LAMP_AT, { radius: LAMP_R });
-    this.addWeakPoint('lamp', this.body, S.lens[0], S.lens[1], S.lens[2], 0.26, 2.2);
+    this.addLamp(S.lens, { radius: S.lensR ?? 0.171 });
+    this.addWeakPoint('lamp', this.body, S.lens[0], S.lens[1], S.lens[2], Math.max(0.22, (S.lensR ?? 0.171) * 1.3), 2.2);
+    this._occSlot = `tiller:${++_occSerial}:`;
+    this._occAt = null;
+    this._occShapes = null;
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 8, max: 14 }, { id: 'wire', min: 1, max: 2 }]);
 
     attachRigRuntime(this, { quantise: false });   // keep the generated palette
@@ -93,7 +109,7 @@ export class Tiller extends ExpansionMachine {
     this.gait = new GaitController(this, this.rig, {
       walk: HEX_WALK, run: HEX_RUN, runRef: 6.0,
       rollAmp: 0.018, impactAmp: 0.025, breatheRate: 0.8, stepDustSpeed: 4.0,
-      turnRadius: 1.4, lookClampYaw: 1.2, stanceFlex: 0.08,
+      turnRadius: 1.4, lookClampYaw: LOOK_YAW, stanceFlex: 0.08,
       fidgets: [
         { name: 'survey-sweep', head: 0.18, dur: 2.4 },
         { name: 'probe', head: -0.3, spine: 0.06, tail: 0.25, dur: 2.0 },
@@ -105,7 +121,7 @@ export class Tiller extends ExpansionMachine {
     installHull(this);
     // the striking ends' glints (I-05): auger tip, drum lamp, hopper lantern
     this._gAuger = glintAnchor(this, 'tail2', S.auger);
-    this._gDrum = glintAnchor(this, 'head', LAMP_AT);
+    this._gDrum = glintAnchor(this, 'head', S.lens);
     this._gHopper = glintAnchor(this, 'pelvis', S.lantern);
     this._deathRoll = 0.3;
     this._deathSink = 0.03;
@@ -122,8 +138,43 @@ export class Tiller extends ExpansionMachine {
     const h = this.herd, f = h ? h.file : null;
     if (f !== null && f !== undefined && f.leader === this && this.alive) f.record(this.position.x, this.position.z);
     if (this._rippleAt >= 0) rippleTick(this);
+    this._publishOccluders();
     return r;
   }
+
+  /**
+   * The hull and skirt as sight occluders while it lives. The shapes are made once and moved in place
+   * (`hullShapesInto`: no allocation on a frame it walks); a dead or disposed Tiller takes them out.
+   */
+  _publishOccluders() {
+    if (!this.alive || this.state === 'dead') { this._dropOccluders(); return; }
+    const p = this.position, h = this.heading;
+    if (this._occShapes === null) {
+      this._occShapes = hullShapes('tiller', p.x, p.z, h, OCC_FORM, p.y);
+      for (let i = 0; i < this._occShapes.length; i++) setOccluder(this._occSlot + i, this._occShapes[i]);
+      this._occAt = [p.x, p.z, h, p.y];
+      return;
+    }
+    const o = this._occAt;
+    if (Math.abs(o[0] - p.x) < 0.05 && Math.abs(o[1] - p.z) < 0.05 && Math.abs(o[2] - h) < 0.01 && Math.abs(o[3] - p.y) < 0.05) return;
+    hullShapesInto('tiller', p.x, p.z, h, OCC_FORM, p.y, this._occShapes);
+    o[0] = p.x; o[1] = p.z; o[2] = h; o[3] = p.y;
+  }
+
+  _dropOccluders() {
+    if (this._occShapes === null) return;
+    clearOccluders(this._occSlot);
+    this._occShapes = null;
+  }
+
+  /** `ai/sites.js` dispose ends here (it never calls `dispose`): the occluders go with the wreck. */
+  disposeFx(keepBeacon = false) {
+    if (this._disposed) this._dropOccluders();
+    return super.disposeFx(keepBeacon);
+  }
+
+  /** A staged Tiller (tools/frames/page.mjs) is undone through `dispose`. */
+  dispose() { this._dropOccluders(); super.dispose(); }
 
   /** Calm: a follower walks the leader's path FILE.gap x its rank behind (bible: "on one bearing", in file). */
   _statePatrol(dt) {

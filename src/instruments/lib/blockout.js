@@ -53,6 +53,20 @@ const TILLER_FORMS = {
     box('skirtBow', 'chest', [0, 1.075, 1.78], [1.4, 0.35, 0.05], { occludes: true }),
     box('skirtStern', 'pelvis', [0, 1.075, -1.78], [1.4, 0.35, 0.05], { occludes: true }),
   ] },
+  /**
+   * `built`: the Tiller that plays (M2 wave 2, tools/build/instruments/gen-tiller.mjs), in its BODY space (the GLB is
+   * recentred: body z = design z + 0.175). The crowned hull as a box to the 2.2 m shoulder and a crown box to 2.4 m;
+   * the dust skirt's flank plates (x +-0.665, 0.5 m amidships, the hem rising to 0.66 m at the ends: one box from 0.5 m)
+   * and the bow and stern plates to 0.9 m. Its sight occluders follow the hull (kinds/tiller.js).
+   */
+  built: { L: 4.49, W: 1.36, parts: [
+    box('hull', 'pelvis', [0, 1.725, 0.145], [1.34, 0.95, 3.26], { occludes: true }),
+    box('dome', 'pelvis', [0, 2.30, 0.175], [0.9, 0.2, 2.4], { occludes: true }),
+    box('skirtL', 'pelvis', [-0.665, 0.96, 0.155], [0.03, 0.92, 3.28], { occludes: true }),
+    box('skirtR', 'pelvis', [0.665, 0.96, 0.155], [0.03, 0.92, 3.28], { occludes: true }),
+    box('skirtBow', 'chest', [0, 1.16, 1.795], [1.18, 0.52, 0.03], { occludes: true }),
+    box('skirtStern', 'pelvis', [0, 1.16, -1.485], [1.18, 0.52, 0.03], { occludes: true }),
+  ] },
   deep: { L: 3.6, W: 1.5, parts: [
     box('hull', 'pelvis', [0, 1.425, 0], [1.5, 1.45, 3.6], { occludes: true }),
     box('dome', 'pelvis', [0, 2.30, -0.2], [1.1, 0.30, 2.2], { occludes: true }),
@@ -157,6 +171,24 @@ export function hullShapes(kind, x, z, yaw, formId, y0 = 0) {
     // body (x right, z forward) -> world: forward (sin yaw, cos yaw), right (cos yaw, -sin yaw)
     const wx = x + p.c[0] * c + p.c[2] * s, wz = z - p.c[0] * s + p.c[2] * c;
     out.push({ type: 'box', cx: wx, cy: y0 + p.c[1], cz: wz, hx: p.s[0] / 2, hy: p.s[1] / 2, hz: p.s[2] / 2, yaw });
+  }
+  return out;
+}
+
+/**
+ * The same shapes as `hullShapes`, written IN PLACE into `out` (an array `hullShapes` returned for this kind and form):
+ * allocation-free, for a hull that moves every frame (kinds/tiller.js). Returns `out`.
+ */
+export function hullShapesInto(kind, x, z, yaw, formId, y0, out) {
+  const s = Math.sin(yaw), c = Math.cos(yaw);
+  const parts = partsOf(kind, formId);
+  let k = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (!p.occludes || p.type !== 'box') continue;
+    const o = out[k++];
+    if (!o) break;
+    o.cx = x + p.c[0] * c + p.c[2] * s; o.cz = z - p.c[0] * s + p.c[2] * c; o.cy = y0 + p.c[1]; o.yaw = yaw;
   }
   return out;
 }

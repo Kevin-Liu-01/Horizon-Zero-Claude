@@ -57,7 +57,7 @@ export function blockoutKind({ id, kind, formId = null, url, sizeClass, plannedR
     _stateSuspicious() {}
     _stateAlert() {}
     _stateSearch() {}
-    dispose() { clearOccluders(this._occSlot); return super.dispose?.(); }
+    dispose() { clearOccluders(this._occSlot); return super.dispose(); }
     onDeathPose() {}
     animate() {}
   }
