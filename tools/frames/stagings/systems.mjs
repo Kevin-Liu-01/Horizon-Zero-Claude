@@ -36,8 +36,7 @@ export const stagings = {
   F44: {
     async world(f, api) {
       const C = api.C;
-      const fadeAt = (w) => { const p = C.player; return `${w}: fade ${p?.fade}, solidCut ${p?.solidCut?.toFixed?.(2)}, solidReach ${p?.solidReach?.toFixed?.(2)}, lensGap ${p?.lensGap?.toFixed?.(2)}, camYaw ${p?.camYaw?.toFixed?.(2)}, camPitch ${p?.camPitch?.toFixed?.(2)}, sighting ${!!C.sighting?.on}`; };
-      api.standIn(fadeAt('at the hook'));
+
       // the Alidade raised (V): the animator's alidade layer follows Sighting's `on` (playerAnimator.js)
       if (C.sighting?.toggle) {
         C.sighting.toggle(true);
@@ -59,9 +58,8 @@ export const stagings = {
             if (H.unstageResurvey) H.unstageResurvey(); else H.resurvey?.arm(false);
             for (const m of (H.spawned?.lookers || [])) { try { C.machines?.sites?.dispose?.(m) ?? m.dispose?.(); } catch { /* */ } }
           });
-          api.standIn(fadeAt('after the staging'));
-          await api.sleep(300);
-          api.standIn(fadeAt('0.3 s on'));
+          // no wait here: 0.3 s after the Alidade goes up her own boom (0.9 m, Sighting's) meets the pillar's drum beside
+          // B1 and dissolves her to 0.06 (60ec569); the frame's lens is page.mjs's, 4.2 m off
           if (!rep.lookers.length) api.standIn('no Peg came to look (none could be stood up)');
           else api.standIn(`staged at 10 s: arc ${rep.arc} s, ${rep.taken} of 3 bearings, lookers ${JSON.stringify(rep.placed)}; her fade ${C.player?.fade ?? '?'}`);
         } catch (e) { api.standIn(`the re-survey staging threw: ${e?.message || e}`); }
