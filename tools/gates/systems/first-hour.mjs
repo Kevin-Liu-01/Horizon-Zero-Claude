@@ -708,6 +708,8 @@ async function runLeg(leg, startRec = null) {
     const tPlay = Date.now();
     const T = () => +((Date.now() - tPlay) / 1000).toFixed(1);
     // the crossings the regions seam fires from here on
+    // what hurt her, and when (each 'player-damage' with its source's kind): a beat's numbers carry its share
+    await page.evaluate(() => { const C = window.__CTX__; window.__dmg = []; C.events.on('player-damage', (e) => window.__dmg.push({ t: +(performance.now() / 1000).toFixed(1), kind: e?.from?.kind ?? e?.source ?? e?.type ?? '?', n: Math.round(e?.amount ?? 0) })); });
     await page.evaluate(() => { window.__regionEv = []; const C = window.__CTX__; for (const k of ['enter', 'leave', 'approach', 'depart']) C.events.on(`region-${k}`, (e) => window.__regionEv.push({ k, region: e.region, t: +(performance.now() / 1000).toFixed(2), depth: e.depth })); window.__t0 = performance.now() / 1000; });
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), fixtureAt: rec.position, shot: await shot(page, `l${leg}-00-continued`) };
     L.rows.continued = { pass: Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z) < 0.5 && Math.abs(L.start.hour - rec.hour) < 0.05,
@@ -761,6 +763,7 @@ async function runLeg(leg, startRec = null) {
           try { const W = await import('/src/world/settlements/ninewalls-layout.js'); window.__wallsPainted = (W.WALLS || []).filter((w) => W.wallState?.(w.id)?.painted).length; } catch { window.__wallsPainted = null; }
         });
       }
+      played.hurt = await page.evaluate(() => { const D = window.__dmg.splice(0); const by = {}; for (const d of D) by[d.kind] = (by[d.kind] || 0) + d.n; return { by, n: D.length, last: D.slice(-4) }; });
       const pr = await page.evaluate(beatProbe, st.id, qid, PLACES, TRANSIT_CARD);
       const b = { leg, beat: st.id, ok: pr.ok, why: pr.why, hp: pr.hp, t: T(), seconds: +(T() - bt0).toFixed(1), hour: pr.hour, at: pr.at, region: pr.region, numbers: { ...pr.numbers, ...played } };
       b.shot = await shot(page, `l${leg}-${String(++k).padStart(2, '0')}-${st.id}`);
