@@ -19,7 +19,11 @@
 export const lane = 'engine';
 
 const EDGE = { en: [133.2, -83.2] };
-const LENS = { mode: 'chase', pitch: 16, fov: 55 };   // up the slope to the rim's skyline, 40 m over her
+/* M2 fix wave (F45 "lensed so the rim and the Yards read"): the chase lens looks UP the slope (camPitch < 0 looks up). At
+ * pitch 16 it looked down on her from behind (fa45e47): the slope filled the frame, the rim ran along its top edge and
+ * the Yards' towers were cut by it. At -8 the rim crosses the upper middle (22 deg up at 93 m on the bearing) and the
+ * Yards (17-30 deg up at 103 m, bearing 57) stand whole on the sky over it, with the Transit's mark (bearing 36) left */
+const LENS = { mode: 'chase', pitch: -8, fov: 55 };
 const STATE = { pose: 'idle', hud: false, actors: [{ type: 'instrument', kind: 'plumb', dist: 30, side: 180, face: 'brea' }] };
 
 /** @type {object[]} frameset.json-shaped frame definitions, `in: 'M2'` */

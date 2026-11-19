@@ -2549,14 +2549,20 @@ export class Environment {
       },
       vertexShader: /* glsl */ `
         varying vec3 vDir;
+        varying vec3 vView;
         void main() {
           vDir = normalize(position);
+          // M2 fix wave (EN3): the ray from the camera itself. The dome stands on the player's (x, 0, z), so from a lens
+          // 109 m up (F45, the Malpais edge) a dome direction sits 2.2 deg under the true one at 49 deg: the calima disc
+          // was drawn there and the probe, turned onto the true sun, read a ring at 2 deg and no disc
+          vView = (modelMatrix * vec4(position, 1.0)).xyz - cameraPosition;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           gl_Position.z = gl_Position.w;   // the far plane: drawn last, behind everything
         }
       `,
       fragmentShader: /* glsl */ `
         varying vec3 vDir;
+        varying vec3 vView;
         uniform vec3 uSunDir, uMoonDir, uSunCol, uHorizon, uMid, uZenith, uGround;
         uniform float uNight, uStorm, uTime, uFogDens, uIbl;
         uniform vec4 uCloud;   // coverage, underside darkness, desat, flash
@@ -2622,7 +2628,10 @@ export class Environment {
             // M1.1i: the coral aureole hugs the disc (pow 3000: half at 1.2 deg, nothing by 4 deg); it was pow 10 (a tenth
             // of the disc's colour still 45 % up at 20 deg: a glow over a third of the sky). At cc64d0d pow 2000 x 0.22
             // took the 18:30 disc's half-maximum out to 1.5 deg (a 3.0 deg disc)
-            cg += uDisc * 0.12 * pow(sunD, 3000.0) * uCalima.y;
+            // M2 fix wave: on the camera's own ray (vView), as the disc below, so the aureole stays round the disc; the
+            // IBL capture keeps the dome's ray. Calima only: no accepted frame is in calima
+            float sunDC = uIbl > 0.5 ? sunD : max(dot(normalize(vView), sd), 0.0);
+            cg += uDisc * 0.12 * pow(sunDC, 3000.0) * uCalima.y;
             col = mix(col, cg, cal);
           }
 
@@ -2760,7 +2769,9 @@ export class Environment {
             col += uSunCol * pow(sunD, 12.0) * 0.05 * clamp(uFogDens, 0.5, 4.0) * occl * horizonDim * day * (1.0 - cal);
             // calima: a soft coral disc that SHOWS as #F2A27E (solved on the CPU)
             if (cal > 0.001) {
-              float cr = ang / 0.0175;               // 1.0° radius, soft edge
+              // M2 fix wave (EN3): the disc on the camera's own ray, not the dome's (vView above): it now stands where the
+              // sun is, which is where the light comes from
+              float cr = acos(clamp(dot(normalize(vView), sd), -1.0, 1.0)) / 0.0175;   // 1.0° radius, soft edge
               float cm = 1.0 - smoothstep(0.80, 1.15, cr);
               // M1.1i: never dimmer than the dust round it (at 3058d33 the noon disc, solved to show #F2A27E, sat under the
               // dust's own brightness and did not show at all): at least x1.45 the dust it sits in, warmed

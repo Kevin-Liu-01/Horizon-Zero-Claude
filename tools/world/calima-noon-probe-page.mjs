@@ -80,11 +80,76 @@ export async function probe(frame) {
         if (d > mx) mx = d;
         if (d > 2) lit++;
       }
+      out.hg5.unlit = { pixels: n, groundPixelsOverFloor: lit, maxOver: mx, method: 'lights, sky light and air off, only the ground drawn, against the same draw with the ground hidden (> 2/255)' };
+      /* M2 fix wave (HG5's lights-off pixels FOUND): where they are (a 16 x 9 grid of the frame, top row first, and their
+       * box), whose they are (each of the ground's meshes hidden in turn: the lit pixels that fall to the floor are that
+       * mesh's), and what makes them (the same draw with the far-form air off: island/aerial.js AERIAL, the sister isles'
+       * own air, terrain.js uIsleVis; what is left is light the ground's surface itself makes) */
+      try {
+        const litMask = new Uint8Array(n);
+        const grid = new Array(16 * 9).fill(0); let x0 = bw, y0 = bh, x1 = -1, y1 = -1;
+        for (let i = 0, k = 0; i < A.length; i += 4, k++) {
+          const d = Math.max(A[i] - B[i], A[i + 1] - B[i + 1], A[i + 2] - B[i + 2]);
+          if (d <= 2) continue;
+          litMask[k] = 1;
+          const x = k % bw, yb = (k / bw) | 0, y = bh - 1 - yb;   // readPixels rows run bottom-up
+          grid[Math.min(8, (y * 9 / bh) | 0) * 16 + Math.min(15, (x * 16 / bw) | 0)]++;
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        out.hg5.where = { grid16x9: grid, box: x1 >= 0 ? [x0, y0, x1, y1] : null, buffer: [bw, bh] };
+        const Cc = new Uint8Array(bw * bh * 4);
+        const countLit = () => { let c = 0, m = 0; for (let i = 0, k = 0; i < Cc.length; i += 4, k++) { const d = Math.max(Cc[i] - B[i], Cc[i + 1] - B[i + 1], Cc[i + 2] - B[i + 2]); if (d > 2) { c++; if (d > m) m = d; } } return { lit: c, maxOver: m }; };
+        const meshes = []; C.terrain.group.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+        const byMesh = [];
+        for (const m of meshes) {
+          m.visible = false; freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc); m.visible = true;
+          let gone = 0; for (let i = 0, k = 0; i < Cc.length; i += 4, k++) { if (!litMask[k]) continue; const d = Math.max(Cc[i] - B[i], Cc[i + 1] - B[i + 1], Cc[i + 2] - B[i + 2]); if (d <= 2) gone++; }
+          if (gone) byMesh.push({ mesh: m.name || m.type, gone, renderOrder: m.renderOrder, material: m.material?.name || m.material?.type || null, cacheKey: m.material?.customProgramCacheKey?.() ?? null });
+        }
+        byMesh.sort((a, b) => b.gone - a.gone);
+        out.hg5.byMesh = byMesh.slice(0, 12);
+        const Aer = await import('/src/world/island/aerial.js');
+        const a0 = Aer.AERIAL.value.clone(), iv = C.terrain._isleVis, iv0 = iv?.value;
+        Aer.AERIAL.value.x = 0; if (iv) iv.value = 1;
+        freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc);
+        out.hg5.airOff = { ...countLit(), what: 'AERIAL.x 0 (the far-form air) and uIsleVis 1 (the sister isles take no air)' };
+        Aer.AERIAL.value.copy(a0); if (iv) iv.value = iv0;
+      } catch (e) { out.hg5.findError = String(e?.message || e).slice(0, 300); }
       while (undo.length) undo.pop()();
       env._lightDirty = true; env._applyTime?.(0, true);
       E.render(0);
-      out.hg5.unlit = { pixels: n, groundPixelsOverFloor: lit, maxOver: mx, method: 'lights, sky light and air off, only the ground drawn, against the same draw with the ground hidden (> 2/255)' };
     } catch (e) { out.hg5 = { ...(out.hg5 || {}), error: String(e?.message || e).slice(0, 300) }; }
+  }
+
+  /* ---- M2 fix wave (HG6, the Yards' far form "fogged and lit like the rest"): its pixels in the frame (the frame drawn
+   * with and without it), their mean display colour against what they hide, the same with the air off (its own lit
+   * colour) and with the sun off (its sky fill alone), and the ground just under the rim beside it for comparison ---- */
+  if (frame?.id === 'F45' || frame?.id === 'F45-trade') {
+    try {
+      const ky = C.terrain?.kilnYards?.group;
+      if (!ky) throw new Error('no Kiln Yards far form');
+      const gl = R.getContext();
+      const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+      const A = new Uint8Array(bw * bh * 4), B = new Uint8Array(bw * bh * 4), Cc = new Uint8Array(bw * bh * 4);
+      const draw = (buf) => { E.render(0); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf); };
+      draw(A); ky.visible = false; draw(B); ky.visible = true;
+      const mask = new Uint8Array(bw * bh); let n = 0;
+      for (let i = 0, k = 0; i < A.length; i += 4, k++) if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 6) { mask[k] = 1; n++; }
+      const mean = (buf) => { const s = [0, 0, 0]; for (let i = 0, k = 0; i < buf.length; i += 4, k++) if (mask[k]) { s[0] += buf[i]; s[1] += buf[i + 1]; s[2] += buf[i + 2]; } return n ? s.map((v) => Math.round(v / n)) : null; };
+      const Y = (c) => (c ? Math.round(0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) : null);
+      const U = env.u, fa = U.calFogA.value.clone();
+      U.calFogA.value.x = 1e-9; draw(Cc); const airOff = mean(Cc); U.calFogA.value.copy(fa);
+      const lights = []; C.scene.traverse((o) => { if (o.isDirectionalLight) { lights.push([o, o.intensity]); o.intensity = 0; } });
+      for (const l of (E.csm?.lights || [])) { if (!lights.find((q) => q[0] === l)) { lights.push([l, l.intensity]); l.intensity = 0; } }
+      draw(Cc); const sunOff = mean(Cc);
+      for (const [l, v] of lights) l.intensity = v;
+      E.render(0);
+      const site = C.terrain.kilnYards ? { x: Math.round(ky.children[0]?.geometry?.boundingSphere?.center?.x ?? 0), z: Math.round(ky.children[0]?.geometry?.boundingSphere?.center?.z ?? 0) } : null;
+      const dist = site ? Math.round(Math.hypot(site.x - cam.position.x, site.z - cam.position.z)) : null;
+      const mats = ky.children.map((m) => ({ name: m.material?.name, fog: m.material?.fog, registered: !!env._matSeen?.has?.(m.material), color: m.material?.color?.getHexString?.(), emissive: m.material?.emissive?.getHexString?.(), envMap: !!m.material?.envMap }));
+      out.kilnYards = { pixels: n, asDrawn: mean(A), behind: mean(B), yDrawn: Y(mean(A)), yBehind: Y(mean(B)), airOff, yAirOff: Y(airOff), sunOff, ySunOff: Y(sunOff), distM: dist, materials: mats,
+        note: 'display sRGB means over the far form\'s own pixels; behind = the same pixels with the form hidden (the dust or sky it stands in)' };
+    } catch (e) { out.kilnYards = { error: String(e?.message || e).slice(0, 300) }; }
   }
 
   if (frame?.id === 'F45-trade') {

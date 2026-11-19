@@ -12,8 +12,13 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
  * The ruin is one merged mesh with vertex colours (weathered tile on the towers, rust brick on the stacks, grey steel on
  * the racks); the only light is the wellheads' caps, bone-gold (#F2EAD3), never a lava's orange: zero emissive ground.
  */
-const TILE = new THREE.Color(0x8d918a), TILE_DARK = new THREE.Color(0x5e625d), BRICK = new THREE.Color(0x5a3a2c),
-  BRICK_SOOT = new THREE.Color(0x2b2522), STEEL = new THREE.Color(0x4d4f50), HEAD = new THREE.Color(0x3a3734);
+/* M2 fix wave (HG6: "lit like the rest"): the ruin's albedo in the island's own range. At fa45e47 its tile was linear 0.26
+ * (0x8d918a) under the exposure the black lapilli are lit for (linear 0.02-0.07): in trade at noon the towers drew 208/255
+ * against the lit lapilli's 97, flat white with no lit or shaded side, and in calima the 12 % of them the dust lets
+ * through still stood paler than the dust (exit run F45, F45-trade). Weathered tile now linear 0.09 to 0.04, brick and
+ * steel under it, the wellheads' bodies darkest: the same family as the Holds' basalt (0.022-0.068) and their lime */
+const TILE = new THREE.Color(0x55574f), TILE_DARK = new THREE.Color(0x3a3b37), BRICK = new THREE.Color(0x4a3026),
+  BRICK_SOOT = new THREE.Color(0x221d1b), STEEL = new THREE.Color(0x3d3f40), HEAD = new THREE.Color(0x2f2c2a);
 const GLOW = 0xf2ead3;
 
 /** Two tower stubs, four stacks, three racks, three wellheads: offsets (m) from the Yards' centre, engine x/z. */

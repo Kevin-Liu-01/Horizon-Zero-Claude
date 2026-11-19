@@ -11,7 +11,8 @@
  *               from Ninewalls, T2's deck, the Kiln Yards). Band 120-180 m. The valley mist is left out (it pools within
  *               a few metres of the Pans' floor; the rendered frame's cards include it).
  *   EN4-sun     the sun's altitude through the read-transit beat's window (11.5-12.5) from Environment.direction. The
- *               brief's bar is "over 60 deg"; the built sky's noon is its daily maximum, SUN_MAX_ELEV.
+ *               brief's bar was "over 60 deg"; by the orchestrator's ruling it is the built sky's own noon peak, >= 45 deg
+ *               in the window (the sky is not raised: it would move every accepted frame).
  *   EN5-cover   the cloud shadows' mean cover and fully-shadowed share per weather, the M1 term (two octaves of sin-hash
  *               value noise) against the coverage texture through CLOUD_MAP_A/B. Bar: mean within 0.02.
  *   EN1-cross   the regions seam along the hour's walks (src/core/regions.js RegionTracker, every 0.5 m): Saltrow to
@@ -81,8 +82,10 @@ const row = (id, pass, numbers, note = '') => { rows.push({ id, pass, numbers, n
     alt[h] = r1(a);
     if (h <= 12.5) { min = Math.min(min, a); max = Math.max(max, a); }
   }
-  row('EN4-sun', min > 60, { altitudeDeg: alt, windowMin: r1(min), windowMax: r1(max), dailyMax: alt[12.875] },
-    'the brief asks over 60 deg; the built sky peaks at 50 deg at 12:52 (SUN_MAX_ELEV), so the bar cannot pass without a sky change that moves every accepted frame lit by the island\'s sun: a ruling');
+  // the orchestrator's ruling (M2 fix wave): the bar is the built sky's own noon peak, >= 45 deg through the window (the
+  // far form is drawn only with the sun at least 45 deg up); the sky is not raised (it would move every accepted frame)
+  row('EN4-sun', min >= 45, { altitudeDeg: alt, windowMin: r1(min), windowMax: r1(max), dailyMax: alt[12.875], bar: '>= 45 deg in 11:30-12:30' },
+    'restated by ruling from the brief\'s "over 60 deg": the built sky peaks at 50 deg at 12:52 (SUN_MAX_ELEV) and is not raised');
 }
 
 /* -------------------------------------------------------------- EN5-cover */
@@ -205,4 +208,4 @@ if (json) {
   if (path.resolve(json).startsWith(REPO)) throw new Error('--json must be outside the repo');
   writeFileSync(json, JSON.stringify({ rows, pass }, null, 2));
 }
-process.exitCode = rows.filter((r) => r.id !== 'EN4-sun').every((r) => r.pass) ? 0 : 1;
+process.exitCode = rows.every((r) => r.pass) ? 0 : 1;
