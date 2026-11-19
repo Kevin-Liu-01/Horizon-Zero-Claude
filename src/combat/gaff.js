@@ -114,3 +114,96 @@ export function ensureGaff(ctx) {
   if (!host.gaff) host.gaff = new GaffWeapon(ctx);
   return host.gaff;
 }
+
+/* =====================================================================================================================
+ * THE GAFF'S VERBS (Milestone 2 area D, wave 3; bible §8.1 "fast combo; hook-rip pulls a component off small and medium
+ * Instruments", §12 "strike LMB · hook-rip R", §13 rule 5 "melee is performed by the body. Hips first"; KT1, KT3, KT7).
+ *
+ * Three lights chain on LMB (each press inside the last one's combo window takes the next), and the hook-rip on R. Each
+ * verb's phases, sim seconds:
+ *   W  wind-up    the hip turns away first, the fist comes back beside her hip (never above her shoulder)
+ *   S  strike     the hip leads, the shoulders follow (KT7: >= 40 ms behind), the fist and the hook pass in front of her
+ *   R  recover    back toward the ready; a press here (until `comboS` in) takes the next light
+ * The hook-rip: W reach (the hook out in front at the part), H hook (contact: the part is caught), P pull (her pelvis
+ * drops back 0.10-0.25 m as the part comes free, the lead foot steps back), R recover.
+ * Rules only: the animator's gaffLayer.js runs the arm and the body from `gaff.verb` (read each step), and combat
+ * resolves the contact on the step `gaff.contact` names.
+ * ===================================================================================================================== */
+
+export const GAFF_LIGHTS = Object.freeze([
+  // 1: a forehand cut, high right to low left in front of her, the hook leading
+  Object.freeze({ id: 'light1', W: 0.10, S: 0.10, R: 0.24, comboS: 0.20, impact: 16, tear: 8, reach: 1.45, arcDeg: 110 }),
+  // 2: the backhand return, low left to right at her belt
+  Object.freeze({ id: 'light2', W: 0.08, S: 0.10, R: 0.24, comboS: 0.20, impact: 16, tear: 8, reach: 1.45, arcDeg: 110 }),
+  // 3: the hook's pull-cut: the beak driven forward at her chest and dragged back to her hip (the heaviest of the three)
+  Object.freeze({ id: 'light3', W: 0.12, S: 0.12, R: 0.32, comboS: 0.0, impact: 24, tear: 14, reach: 1.55, arcDeg: 70 }),
+]);
+export const HOOK_RIP = Object.freeze({ id: 'hookRip', W: 0.18, H: 0.08, P: 0.28, R: 0.22, reach: 1.7, impact: 6, pelvisBack: 0.17, stepBack: 0.22 });
+
+/** A verb's phase table: [['W', s], ['S', s], ['R', s]] (or the hook-rip's W H P R). */
+export function verbPhases(v) {
+  return v.id === 'hookRip' ? [['W', v.W], ['H', v.H], ['P', v.P], ['R', v.R]] : [['W', v.W], ['S', v.S], ['R', v.R]];
+}
+export const verbTotal = (v) => verbPhases(v).reduce((a, p) => a + p[1], 0);
+/** The time of the contact (the end of S, or the end of H). */
+export const verbContactAt = (v) => (v.id === 'hookRip' ? v.W + v.H : v.W + v.S);
+
+/** The verb the gaff is playing now, and its clock (sim seconds). One at a time; a press buffers the next light. */
+export class GaffVerbs {
+  constructor() {
+    this.verb = null;      // a GAFF_LIGHTS entry or HOOK_RIP
+    this.i = -1;           // which light (0..2), -1 for the hook-rip
+    this.t = 0;
+    this.phase = '';
+    this.k = 0;
+    this.queued = false;
+    this.contact = false;  // true on the one step the contact happens
+    this.count = 0;
+  }
+
+  get busy() { return !!this.verb; }
+
+  /** LMB: start light 1, or buffer the next while the current one can still chain. */
+  strike() {
+    if (!this.verb) { this._start(GAFF_LIGHTS[0], 0); return true; }
+    if (this.i >= 0 && this.i < GAFF_LIGHTS.length - 1) { this.queued = true; return true; }
+    return false;
+  }
+
+  /** R: the hook-rip (not mid-verb). */
+  hookRip() {
+    if (this.verb) return false;
+    this._start(HOOK_RIP, -1);
+    return true;
+  }
+
+  cancel() { this.verb = null; this.i = -1; this.t = 0; this.phase = ''; this.queued = false; this.contact = false; }
+
+  _start(v, i) { this.verb = v; this.i = i; this.t = 0; this.queued = false; this.contact = false; this.count++; this._phase(); }
+
+  _phase() {
+    const P = verbPhases(this.verb);
+    let a = 0;
+    for (const [n, d] of P) { if (this.t < a + d) { this.phase = n; this.k = d > 0 ? (this.t - a) / d : 1; return; } a += d; }
+    this.phase = P[P.length - 1][0]; this.k = 1;
+  }
+
+  /** Sim time. Returns 'contact' on the contact step, 'next' when a buffered light starts, 'end', or null. */
+  step(dt) {
+    this.contact = false;
+    const v = this.verb;
+    if (!v) return null;
+    const c0 = verbContactAt(v), t0 = this.t;
+    this.t += dt;
+    let ev = null;
+    if (t0 < c0 && this.t >= c0) { this.contact = true; ev = 'contact'; }
+    // a buffered press takes the next light once this one's strike is done, inside its combo window
+    if (this.queued && v.id !== 'hookRip' && this.t >= v.W + v.S && this.t <= v.W + v.S + v.comboS + 1e-9) {
+      this._start(GAFF_LIGHTS[this.i + 1], this.i + 1);
+      return ev ?? 'next';
+    }
+    if (this.t >= verbTotal(v)) { this.cancel(); return ev ?? 'end'; }
+    this._phase();
+    return ev;
+  }
+}
