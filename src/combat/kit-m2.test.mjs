@@ -179,3 +179,26 @@ test('the seam with a kind that answers its own parts: Brine seizes the seals th
   book.apply(m2, ST.lock, { parts: [] });
   assert.deepEqual(calls, [['seal', 'brine']], 'no names reached: its own nearest seal');
 });
+
+test('KT9 (the Windwall\'s worth, a scripted thrust source): damage through three Spindle-class thrusts is >= 30 % less than with bow and lance only', () => {
+  // the thrust: a 0.6 s wind-up she can read, then the hit from 2.5 m in front of her, 30 damage; three, 2.2 s apart.
+  // KT0 (bow and lance only): nothing covers her; she takes all three. With the Windwall: she raises the guard 0.25 s
+  // into each wind-up (a reaction), so the fan locks open 0.117 s before the hit: inside the parry window on the first
+  // reading, and she lets it down 0.3 s after each hit. Sim time, 60 Hz.
+  const D = 30, me = { x: 0, z: 0, heading: 0 }, from = { x: 0, z: 2.5 };
+  const KT0 = 3 * D;
+  const ww = new WindwallState(); ww.owned = true;
+  let taken = 0, parries = 0, blocks = 0;
+  const hits = [0.6, 2.8, 5.0];
+  for (let i = 0, t = 0; i < 6.5 * 60; i++, t = i / 60) {
+    const want = hits.some((h) => t >= h - 0.35 && t < h + 0.3);
+    ww.guard(want);
+    ww.step(1 / 60, { ...me, y: 0 });
+    for (const h of hits) if (Math.abs(t - h) < 0.5 / 60) {
+      const r = ww.block(from, me);
+      if (r === 'parry') parries++; else if (r === 'block') { blocks++; taken += D * WINDWALL.blockK; } else taken += D;
+    }
+  }
+  const less = 1 - taken / KT0;
+  assert.ok(less >= 0.30, `damage through ${taken.toFixed(1)} of ${KT0} (KT0): ${(less * 100).toFixed(0)} % less (parries ${parries}, blocks ${blocks})`);
+});
