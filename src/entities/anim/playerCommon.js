@@ -119,14 +119,6 @@ export const _spAcc = new THREE.Quaternion();
 export const _cp0 = new THREE.Vector3();
 /** `_segDistN`'s result: a number `_springs` reads without a boxed return. */
 export const _spNum = new Float64Array(1);
-/** M1.2e fix 1: the sash panels' sheet test (`_sheetPush`): the sheet's normal and lateral axis, the cross-section
- *  sample and the link's world rotation. */
-export const _shN = new THREE.Vector3();
-export const _shL = new THREE.Vector3();
-export const _shP = new THREE.Vector3();
-export const _shX = new THREE.Vector3();
-export const _shQ = new THREE.Quaternion();
-export const _shQ2 = new THREE.Quaternion();
 /** `_springParentQ`'s rotation matrix. */
 export const _spMq = new THREE.Matrix4();
 export const _cp1 = new THREE.Vector3();
@@ -432,131 +424,16 @@ export const SWING_TOE_PITCH = 0.43, SWING_TOE_CLR = 0.015;
 export const SWING_YAW_BAND = 0.14;
 /** R5 fix round 5: the climb's catch — both SOLVED palms this close to the edge re-solve the arms at full weight that frame and latch them there (m). */
 export const CLIMB_CATCH = 0.08;
-/*
- * R5 fix round 4 — THE WRAP TAIL IS CLOTH IN THE WIND, NOT A PENNANT (judge r1:
- * fix round 3's `restKick` turned its rest out ~50 deg in CHARACTER space every
- * frame: a rigid violet plank that stood further out standing still than
- * running, and turned with her). Two physical terms replace it:
- *
- *  1. AIR (`wind`, 1/s): every particle of a class with `wind` > 0 is dragged
- *     toward the AIR's velocity — the world wind (`animator.wind`, default the
- *     bible's NE trade wind from bearing 045, §2.2: "flags stream SW") with
- *     slow gusts and a per-chain flutter across it — horizontally, by
- *     `wind * depth` (depth 0 at the root, 1 at the tip):
- *         a += wind * depth * (U_air - v_particle)          (x, z)
- *     So at rest in the trade wind the tail streams SW, whatever her facing,
- *     and flutters; running she meets her own speed of air and it TRAILS — more
- *     at a sprint than at a jog, more at a jog than standing in still air: the
- *     right way round. Vertical velocity is not dragged (the knot tail's bounce,
- *     A33, is a vertical oscillation).
- *  2. A WRAPPED ROOT (`rootK`): the per-particle stiffness rises toward the
- *     knot, k_j = stiff * (1 + rootK * (1 - j/N)^2), so the wrapped section
- *     leaves the knot on its authored line and the free end hangs and moves.
- *
- * `wrap` is reachable only through a rig profile's `chainClasses` (no Round-4
- * regex names it). Brea: `{ wrap: '^dyn_wrapSash' }`.
- */
-/* fix round 5 (judge r2, V-brea-one-glance cue 2): the strip couples to the
- * air harder (`wind` 2.3 -> 3.0 1/s: at the trade wind's 5.5 m/s the tail
- * stands 62-71 deg off the vertical, where a cloth tail in a moderate breeze
- * flies — it hung at 41-62 and lay along the stowed bow's limb in the 64 px
- * black fill; 4.5 laid it flat and edge-on to the front lens, and 3.5 let a
- * lull bring it back to 3 px of reach in the back view, probe `tailproto` /
- * run f5lane1), and the wrapped root is stiffer (`rootK` 5 -> 8) so the
- * knotted section holds the recipe's new left-rear line (brea.mjs
- * CHAINS.wrapSash) while the free end moves. */
-/* W0b targeted fix (A-tail-legible graded at EVERY gust moment, not only the
- * sheet's — the draft bar restored): with the bend limit at 0.62 rad per link
- * and the air coupling at 3.0 1/s the free strip could not swing far enough
- * off its hanging rest to follow the air, and at some gust phases it folded
- * down along the stowed bow's limb (the side lenses 0-3 px clear, reach 1-3:
- * 6-10 of 60 trade-wind moments under the bar, probes t2-t7 under taskpolicy -b;
- * re-measured under nice, probe w5/p1: 3 of 24 and w5/p2: 2 of 24; scratchpad
- * r5/hero-body/bin/probe-tail.mjs). A cloth strip has next to no bending
- * stiffness and a light strip's drag dwarfs its weight in a 5.5 m/s wind:
- * `maxAng` 0.62 -> 1.3 rad (the wrapped root still holds its line through
- * `rootK`), the air coupling `wind` 3.0 -> 5.0 1/s, the fall `grav` 0.42 ->
- * 0.30, and `airY`: the air now resists the strip's VERTICAL flap as well (the
- * Round-4 classes drag only horizontally, for the knot tail's bounce, A33; the
- * downward flutter phase, unresisted, is what folded the strip onto the bow).
- * Trade-wind moments under the bar (probes t8-t11, run under taskpolicy -b,
- * superseded by the re-measure below): 3.6 /s 7 of 60, 4.5 /s 10
- * of 120, 5.0 /s 1 of 240, 5.0 /s + airY 0 of 120 (every view >= 6 px clear,
- * reach >= 4). Softer strips (stiff 6-20 with the root stiffness confined to
- * the knot) flapped and folded down more, not less (probe t4).
- * Re-measured under `nice -n 10` (targeted fix round 1, Oct 30): 1 of 680
- * trade-wind moments under the bar (front reach 3, run w5/c1). That
- * coupling held the strip taut at a sprint (V23: one flat strip in all three
- * frames, tip 0.058 m per 80 ms), so `runFl` 1.5 scales the flutter with her
- * speed (see `_springs`): 0.08-0.095 m per 80 ms at a sprint, idle unchanged. */
-/* (M1a regressions, ruling 5: in still air the stiffness held the tail on its authored rest, streaming level behind
- *  her head as if in a wind (F13, F09 at 4f03003, the studio's air held still). `stillGrav` 14: in a dead calm its fall
- *  grows to x15 (secondaryMotion `_springs`; nothing at 2 m/s and over). Bench, heading 0: the tail's chord 49 deg off
- *  the plumb in still air before, 25 after; 25-27 in the trade wind, unchanged) */
+/* (M2 wave 0, cloth: the `wrap` and `panel` classes' tunings and the panels' mode tables (`moving`, `swing`, `backRun`)
+ *  are gone with the old cloth path: Brea's wrap tail and sash panels are cloth on the grid solver (cloth/rig.js), which
+ *  owns their `dyn_` chains (`clothOwned`; the chain loop skips them), so no chain was simulated with those rows since the
+ *  flag went on (4d11034). The two classes stay as NAMES, reachable only through a rig profile's `chainClasses` (Brea:
+ *  `{ wrap: '^dyn_wrapSash', panel: '^dyn_panel' }`), because readers find those chains by class: the carry's tail
+ *  clearance (src/hero/carry.js, chainOf('wrap')) and the probes of the 'cloth' class (A19's chainLink('cloth', 2)),
+ *  which a wrap tail or panel chain classed 'cloth' by the regexes would change. Their numbers are the old rows' and act
+ *  only if the grid cloth fails to build.) */
 DYN_CLASSES.push({ name: 'wrap', re: /(?!)/, stiff: 42, drag: 4.2, grav: 0.30, maxAng: 1.3, strike: 0.7, base: 0.30, collide: 2, wind: 5.0, rootK: 8, airY: true, runFl: 1.5, stillGrav: 14 });
-/*
- * M1.2e — THE SASH PANELS (brea.mjs CHAINS.panelL / panelR / panelB; outfit-pan-1 skins the three long hip panels to
- * them): heavy embroidered cloth hanging from the belt. Heavier and slower than the wrap tail (`grav` 0.75, `stiff`
- * 26 about the hanging rest, `drag` 4.5), coupled to the air less (`wind` 1.6 1/s: the trade wind streams them SW, by
- * about a third of the tail's angle), bend limit 0.7 rad per link. `collide: 3`: the torso keeps the rest rule (a
- * strand never pushed further out than the artist hung it), the thighs and the shins push at FULL radius, because a
- * panel's rest rides the pelvis and the legs move under it (the rest rule would let a striding thigh through it).
- */
-/* (M1.2e round 2: `wind` 0.45 -> 1.2 1/s: at 0.45 the left panel's tip moved 0.009-0.06 m in the trade wind and read
- * as a board; at 1.2 it streams 0.11-0.18 m SW standing where F02 and F15 stand, bench) */
-/* (M1a debt, M1.2e "stream SW in the trade wind" in the page: `flut` 3.5, the panels' own gain on the wind's flutter
- *  (secondaryMotion.js flA; the tail keeps 1). At 1 the wind pressed the left panel to her leg and it swayed LESS than
- *  in still air (page F02: 0.0456 against 0.0463 m; bench at F02's heading 0.0259 against 0.0332): no visible wind.
- *  Bench at 3.5, F02 / F15 headings: left panel 0.064 / 0.067 m in the wind against 0.051 / 0.041 still, every tip
- *  within 45 deg of SW; 0 clipping frames in every sweep clip) */
-/* (M1a debt fix round 1, M1.2e at F02: `wind` 1.2 -> 2.4 1/s. F02's trade wind is 3.65 m/s in the page (F15 5.58), and
- *  at 1.2 the left panel's tip moved 0.029 m there (page, 88b1605; bar 0.05). Bench at the page's speeds and headings:
- *  F02 left panel 0.049 -> 0.137 m (bearing 232), F15 0.188 -> 0.275 m (258); 1.8 and 2.0 left F02's left panel at
- *  0.078 / 0.088 m but bearing 186 / 191, at the edge of SW's 45 deg; 0 clipping frames in every sweep clip) */
-/* (M1a regressions, M1.2e: at 2.4 1/s with `flut` 3.5 and the push linear in depth a gust swung each panel up as one
- *  straight board: the front panel streamed forward as a stiff pennant in F09 and the back panel stood out level behind
- *  her in F15. `hang` 2: the air's push on a particle falls with cos^2 of the lift of the segment above it (secondaryMotion
- *  `_springs`), so a lifted panel takes less of it; `rootK` 3: the top links keep nearer the belt's hang than the lower
- *  ones (the wrap tail's stiffness profile), so the panel bends along its chain; `flut` 3.5 -> 2.5. Bench (standing,
- *  3 s at 1/60 s): at a 9 m/s gust on F09's heading the left panel's chord lifts p95 39 deg, max 41 (45 / 58 before),
- *  its top segment 20 deg and its lowest 46 (a bend, not a board); at F02 (3.65 m/s) the left panel's tip moves
- *  0.114 m SW (bar 0.05) and sways 0.072 m against 0.044 in still air. The studio frames have no wind at all (ruling 5:
- *  tools/frames/page.mjs holds environment.windAt at still air under the studio light)) */
-/* (...and `wind` 2.4 -> 3.2, `flut` 2.5 -> 2.0: with `hang` and `rootK` the push left the left panel's mean move at F02 small
- *  beside the idle's weight shift (page, c49cb19 / cad69ac: bearing 226, 188, 178 against the bar's 180-270). Bench at
- *  3.2: F02's heading 219 deg, 0.13 m (232, 0.14 at 2.4), every heading within 15 deg of SW; a 9 m/s gust on F09's
- *  heading lifts the left panel's chord p95 38 deg, max 41) */
-/* (M1a regfix 2, F15 / F19: `moving`, the standing tuning above eases, as her hips travel (0.5-1.5 m/s of the panel
- *  root's own speed, secondaryMotion `_springs`), to the air the panels ran on when F15 and F19 were accepted (fb6d5f0:
- *  `wind` 1.2, `flut` 1, no `hang`, no `rootK`) with `airSelf` 0.4. The page probe (tools/gates/hero-sweep/sash-probe.mjs,
- *  F15 and F19 staged by the Frame Set's own page.mjs, two each; angle of the panel's chord below horizontal): in the
- *  lunge's contact frame the front left panel read 29 / 8 deg on this tree as it stood, 16 / 8 at the anchor (24 in a
- *  third), 37 / 39 with this (it curls down, never level: 0 of its swing steps under 20 deg); in the run the back panel's
- *  median 54 / 52 deg (anchor 44 / 40, as it stood 42 / 47). With `airSelf` 1 in motion (the anchor's own) the front
- *  panel still shot out level in one lunge of two (-7 deg)) */
-DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 3, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3, airSelf: 0.4,
-  /* (M1a regfix 4, F15: in motion the drag against her own travel is the anchor's again (`airSelf` 0.4 -> 1) and the
-   *  panels fall a little harder (`grav` 0.8 -> 1.2). The run's front panel is a chaotic system: the thigh kicks it
-   *  through each stride and the frozen frame catches wherever the kick left it. At 4175212 the sim-time F15 caught it
-   *  thrown out level at hip height. Bisected on the page's own sim-time staging (sash-probe, head's page.mjs, clean
-   *  worktrees): fb6d5f0 front panel 35.7 deg below horizontal, 26ec7f8 35.4 (its back panel's hem flicked up),
-   *  7e3e3df 15.9 with the hem turned up 46 deg (the level strip: the wind coupling 1.2 -> 2.4 1/s). The moving tuning
-   *  took wind and flutter back to the anchor's but kept `airSelf` 0.4 (de57067). Dressed bench, F15's run (sprint to
-   *  the first step at gait phase 0), 90 starts over idle length, wind 5.5-6.5 m/s and three run-up ramps: front panel
-   *  under 25 deg 5 of 90 at 4175212's tuning, 1 with the anchor's air, 0 with this (median 44 deg, the anchor's air
-   *  39; min 36); the back panel above 35 deg below horizontal 1 of 90 (10 at 4175212). In a lance swing `swing`
-   *  keeps the 0.4 and its own fall, so F19 is staged as at 4175212) */
-  moving: { v0: 0.5, v1: 1.5, wind: 1.2, flut: 1, hang: 0, rootK: 0, airSelf: 1, grav: 1.2 },
-  /* (M1a regfix 3, F19: in a lance swing the panels fall a little harder and bend less off their rest, so the front
-   *  panel goes forward and down ahead of her front knee in the heavy's lunge, as in the anchor re-filmed at fb6d5f0
-   *  (chord 15-17 deg below horizontal, the hem 25-30), and is never thrown out level. Without it the lunge's panel
-   *  was chaotic: dressed bench, F19's staging, 4-31 deg over ten starts; in the page at d3dd253 17.6 then -2.7 on two
-   *  stagings and a level strip in the film. With 1.0 / 0.35 rad: bench 18-39 deg over 14 starts (median 34); in the
-   *  page 1.0 / 0.38 and 1.1 / 0.35 read 31 deg on every staging. At 1.4 / 0.25 (c0dab09) it hung steeper than the
-   *  anchor, 45 deg past the knee to the ground) */
-  swing: { grav: 1.0, maxAng: 0.35, up: 12, airSelf: 0.4 },
-  /* (M1b, the F15 debt: the back panel's fall at a run, eased in over 3-5 m/s; secondaryMotion.js `backRun`) */
-  backRun: { grav: 2.0, v0: 3, v1: 5 } });
+DYN_CLASSES.push({ name: 'panel', re: /(?!)/, stiff: 30, drag: 5.0, grav: 0.8, maxAng: 0.45, strike: 0.45, base: 0.42, collide: 2, wind: 3.2, airY: true, flut: 2.0, hang: 2, rootK: 3, airSelf: 0.4 });
 /** Air coupling per Round-4 class (1/s; 0 = none). Hair a little, cloth some, gear none. */
 export const DYN_WIND = { hair: 0.22, necklace: 0, dangle: 0.15, cloth: 0.55, gear: 0, shirt: 0 };
 /** The default world wind (bible §2.2: the NE trade wind from bearing 045; north = -Z, east = +X). */

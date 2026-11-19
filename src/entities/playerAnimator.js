@@ -1629,7 +1629,6 @@ export class PlayerAnimator {
      * no world (the Node benches) they keep the default NE trade wind set at construction. */
     const env = this.ctx.environment;
     if (env?.windAt && p) env.windAt(p.position.x, p.position.z, this.wind);
-    this._panelFollow();
     this._springs(dt, t, ph, speed, moveW, runW);
     if (this._ali) this._alidadePlace();
 
