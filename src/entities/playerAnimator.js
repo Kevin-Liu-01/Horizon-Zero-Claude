@@ -16,6 +16,7 @@ import { AimRig } from './anim/aimRig.js';
 import { CarryStow } from './anim/carryStow.js';
 import { GaffLayer } from './anim/gaffLayer.js';
 import { WindwallLayer } from './anim/windwallLayer.js';
+import { PotLayer } from './anim/potLayer.js';
 import { MeleeDriver } from './anim/meleeDriver.js';
 import { SecondaryMotion } from './anim/secondaryMotion.js';
 import { ConstraintAim } from './anim/constraintAim.js';
@@ -1509,6 +1510,8 @@ export class PlayerAnimator {
     /* ============ OVERLAY 4e: the Pine Windwall — guard, bash, plant (M2) ============ */
     // (windwallLayer.js: nothing runs until the hand-over; then it owns the left arm while the fan is up)
     if (this.ctx.combat?.windwall?.owned && !dead) { this._wwLayer(dt); pdy += this._wwS?.pdy || 0; pdz += this._wwS?.pdz || 0; }
+    /* ============ OVERLAY 4f: the pot cast — a pendulum, the left hand (M2) ============ */
+    if (this.ctx.combat?.pots?.owned && !dead) this._potLayer(dt);
 
     /* ================ OVERLAY 5: hit react / death / weary ================ */
     pdy += this._reactLayer(dt, p, dodgeW, aimW, carryW);
@@ -1684,4 +1687,4 @@ export class PlayerAnimator {
 }
 
 /* M1.3a: the members moved into the modules above, back on the prototype (a name defined twice throws). */
-installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose, SliceVerbs, GaffLayer, WindwallLayer);
+installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose, SliceVerbs, GaffLayer, WindwallLayer, PotLayer);

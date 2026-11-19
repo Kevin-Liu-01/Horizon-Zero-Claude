@@ -168,3 +168,248 @@ export class PotField {
     return y >= this.y - 1 && y <= this.y + top;
   }
 }
+
+/* =====================================================================================================================
+ * THE LIVE KIT (the game's half; Node never builds it). `ctx.combat.pots` (ensurePots):
+ *   pots.grant({ brine, cinder, dust })   the hand-over (bible 0:35: two Brine, one Cinder)
+ *   pots.cast(aim)                        F: start the cast at the aimed ground point (world); false when none or busy
+ *   pots.release(handWorld)               the animator's potLayer at the release step (the hand's world point)
+ *   pots.step(dt)                         sim time: the cast's clock, the pots in flight, the fields and what they do
+ *   pots.casting                          { t, id, released, aim } while a cast runs (the layer reads it)
+ * The pots and fields are drawn by `PotView` (lazy; one shared clay material, the fields' own translucent ones).
+ * ===================================================================================================================== */
+import * as THREE from 'three';
+import { StatusBook, ELEMENT_STATUS } from './status.js';
+
+const CLAY = 0xB07A52;
+/** The pot's lathe (m): base, belly, shoulder, neck, lip; 0.12 m tall. */
+const POT_PROFILE = [[0.0, 0.0], [0.030, 0.004], [0.046, 0.030], [0.048, 0.055], [0.040, 0.080], [0.020, 0.096], [0.017, 0.106], [0.022, 0.114], [0.0, 0.118]];
+
+/** One pot's geometry with its band (the element's colour) as vertex colours. */
+function potGeometry(id) {
+  const pts = POT_PROFILE.map(([r, y]) => new THREE.Vector2(r, y));
+  const g = new THREE.LatheGeometry(pts, 10);
+  const col = new THREE.Color(CLAY), band = new THREE.Color(POTS[id].colour), c = new Float32Array(g.attributes.position.count * 3);
+  const py = g.attributes.position;
+  for (let i = 0; i < py.count; i++) {
+    const y = py.getY(i);
+    const k = y > 0.074 && y < 0.098 ? band : col;   // the shoulder band, painted in the element's colour
+    c[i * 3] = k.r; c[i * 3 + 1] = k.g; c[i * 3 + 2] = k.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  g.translate(0, -0.055, 0);   // its origin at the belly's centre (the hand's grip)
+  return g;
+}
+
+export class PotView {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
+    this.geo = { brine: potGeometry('brine'), cinder: potGeometry('cinder'), dust: potGeometry('dust') };
+    /** the pot in her hand and the one in flight (one at a time) */
+    this.held = new THREE.Mesh(this.geo.brine, this.mat); this.held.name = 'held-pot'; this.held.visible = false; this.held.castShadow = true;
+    this.fly = new THREE.Mesh(this.geo.brine, this.mat); this.fly.name = 'flying-pot'; this.fly.visible = false; this.fly.castShadow = true;
+    ctx.scene?.add(this.fly);
+    this.fieldMeshes = [];
+  }
+
+  setHeld(id, hand) {
+    const m = this.held;
+    if (!id || !hand) { m.visible = false; return; }
+    if (m.geometry !== this.geo[id]) m.geometry = this.geo[id];
+    if (m.parent !== hand) hand.add(m);
+    hand.updateWorldMatrix(true, false);
+    const s = new THREE.Vector3().setFromMatrixScale(hand.matrixWorld).x || 1;
+    m.scale.setScalar(1 / s);
+    // in the palm: a little out from the palm toward the fingers (the hand's +Y) and in front of it
+    m.position.set(0, 0.075 / s, 0.03 / s);
+    m.visible = true;
+  }
+
+  field(f) {
+    const P = f.def;
+    let mesh;
+    if (P.field === 'pool') {
+      mesh = new THREE.Mesh(new THREE.CircleGeometry(f.r, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: P.colour, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+      mesh.position.set(f.x, f.y + 0.04, f.z);
+    } else {
+      mesh = new THREE.Mesh(new THREE.SphereGeometry(f.r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: P.colour, transparent: true, opacity: P.field === 'cloud' ? 0.42 : 0.30, depthWrite: false }));
+      mesh.position.set(f.x, f.y - 0.1, f.z);
+      mesh.scale.set(1, P.field === 'cloud' ? 0.8 : 0.55, 1);
+    }
+    mesh.name = `pot-field-${f.id}`;
+    mesh.renderOrder = 2;
+    this.ctx.scene?.add(mesh);
+    f.mesh = mesh;
+    f.op0 = mesh.material.opacity;
+  }
+
+  stepField(f) {
+    const m = f.mesh;
+    if (!m) return;
+    // in over 0.25 s, out over the last 1 s; the pool flickers
+    const k = Math.min(1, f.age / 0.25) * Math.min(1, f.left / 1.0);
+    m.material.opacity = f.op0 * k * (f.def.field === 'pool' ? 0.85 + 0.15 * Math.sin(f.age * 23) : 1);
+    if (f.def.field !== 'pool') { const g = 1 + 0.12 * Math.min(1, f.age / 1.5); m.scale.x = m.scale.z = g; }
+  }
+
+  dropField(f) {
+    if (!f.mesh) return;
+    f.mesh.removeFromParent(); f.mesh.geometry.dispose(); f.mesh.material.dispose(); f.mesh = null;
+  }
+
+  dispose() {
+    this.held.removeFromParent(); this.fly.removeFromParent();
+    for (const g of Object.values(this.geo)) g.dispose();
+    this.mat.dispose();
+  }
+}
+
+const _hp = new THREE.Vector3(), _pp = new THREE.Vector3();
+
+export class PotKit {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.belt = new PotBelt();
+    this.casting = null;
+    this.flying = null;
+    this.fields = [];
+    this.status = null;     // the combat's StatusBook (shared)
+    this.view = null;
+    this.casts = 0; this.landed = [];
+    this.onLand = null;
+  }
+
+  get owned() { return this.belt.owned; }
+
+  grant({ brine = 2, cinder = 1, dust = 0 } = {}) {
+    this.belt.add('brine', brine); this.belt.add('cinder', cinder); this.belt.add('dust', dust);
+    this.belt.owned = true;
+    return this;
+  }
+
+  /** The cast's phase now ('T' | 'B' | 'F' | 'R' | 'O' | ''), and its share. */
+  phase(out = ['', 0]) { if (!this.casting) { out[0] = ''; out[1] = 0; return out; } return castPhase(this.casting.t, out); }
+
+  /** F: start a cast at the aimed point (world {x, y, z}); the pot is spent at the release. */
+  cast(aim) {
+    if (this.casting || this.flying || !(this.belt.total > 0)) return false;
+    const id = this.belt.count[this.belt.selected] > 0 ? this.belt.selected : POT_ORDER.find((k) => this.belt.count[k] > 0);
+    if (!id) return false;
+    this.casting = { t: 0, id, released: false, aim: { x: aim.x, y: aim.y, z: aim.z } };
+    this.casts++;
+    return true;
+  }
+
+  cancel() { this.casting = null; this.view?.setHeld(null); }
+
+  /** The animator's release: the pot leaves the hand at `hand` (world) for the aimed point. */
+  release(hand) {
+    const c = this.casting;
+    if (!c || c.released) return false;
+    const id = this.belt.take();
+    c.released = true;
+    if (!id) return false;
+    const v = castVelocity(hand, c.aim);
+    if (!v) return false;
+    this.flying = { id, x: hand.x, y: hand.y, z: hand.z, vx: v.x, vy: v.y, vz: v.z, t: 0, aim: { ...c.aim }, from: { x: hand.x, y: hand.y, z: hand.z } };
+    this.view?.setHeld(null);
+    return true;
+  }
+
+  /** Sim time. */
+  step(dt) {
+    if (!(dt > 0)) return;
+    const ctx = this.ctx;
+    if (!this.view && ctx.scene) this.view = new PotView(ctx);
+    const c = this.casting;
+    if (c) {
+      c.t += dt;
+      // (no animator released it: the pot leaves from in front of her chest, so a cast is never lost)
+      if (!c.released && c.t >= POT_CAST.releaseAt + 2 / 60) {
+        const p = ctx.player?.position;
+        if (p) { _hp.set(p.x + Math.sin(ctx.player.heading || 0) * 0.35, p.y + 1.1, p.z + Math.cos(ctx.player.heading || 0) * 0.35); this.release(_hp); }
+        else c.released = true;
+      }
+      if (c.t >= POT_CAST.total) this.casting = null;
+    }
+    const f = this.flying;
+    if (f) {
+      const terr = ctx.terrain;
+      const gy = (x, z) => terr?.getHeight?.(x, z) ?? 0;
+      const nx = f.x + f.vx * dt, nz = f.z + f.vz * dt, ny = f.y + f.vy * dt - 0.5 * G * dt * dt;
+      f.vy -= G * dt; f.t += dt;
+      const g = gy(nx, nz);
+      if (ny <= g || f.t > 4) {
+        this.flying = null;
+        if (this.view) this.view.fly.visible = false;
+        this._land(f.id, { x: nx, y: g, z: nz }, f);
+      } else {
+        f.x = nx; f.y = ny; f.z = nz;
+        const m = this.view?.fly;
+        if (m) { if (m.geometry !== this.view.geo[f.id]) m.geometry = this.view.geo[f.id]; m.position.set(f.x, f.y, f.z); m.rotation.x += dt * 9; m.visible = true; }
+      }
+    }
+    for (let i = this.fields.length - 1; i >= 0; i--) {
+      const F = this.fields[i];
+      F.step(dt);
+      this.view?.stepField(F);
+      this._affect(F);
+      if (!F.alive) { this.view?.dropField(F); this.fields.splice(i, 1); }
+    }
+  }
+
+  _land(id, at, f) {
+    const F = new PotField(id, at);
+    F.hits = new Set();
+    this.fields.push(F);
+    this.view?.field(F);
+    const miss = Math.hypot(at.x - f.aim.x, at.z - f.aim.z);
+    const rec = { id, at: { x: +at.x.toFixed(2), y: +at.y.toFixed(2), z: +at.z.toFixed(2) }, aim: f.aim, missM: +miss.toFixed(3), range: +Math.hypot(at.x - f.from.x, at.z - f.from.z).toFixed(2), flightS: +f.t.toFixed(3) };
+    this.landed.push(rec); if (this.landed.length > 16) this.landed.shift();
+    // Dust: the sightline through the cloud is broken (the perception's own Dust clouds, src/entities/machines/ai)
+    if (id === 'dust') { try { this.ctx.machines?.perception?.addDustCloud?.({ x: at.x, y: at.y + 1.2, z: at.z, r: F.r, seconds: F.left }); } catch { /* none */ } }
+    try { this.onLand?.(rec, F); } catch { /* none */ }
+    this.ctx.events?.emit?.('pot-landed', rec);
+  }
+
+  /** What a field does to the machines in it (each machine once per field; Brine seizes the parts inside it). */
+  _affect(F) {
+    const list = this.ctx.machines?.list;
+    if (!list || !this.status) return;
+    const id = ELEMENT_STATUS[F.def.element];
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m || m.alive === false || m._disposed || F.hits.has(m)) continue;
+      const pos = m.position;
+      const pad = Math.max(0.5, (m.bodyRadius ?? 1) * 0.8);
+      if (!F.contains(pos.x, pos.y + 0.5, pos.z, pad)) continue;
+      F.hits.add(m);
+      let parts = null;
+      if (id === ELEMENT_STATUS.brine && Array.isArray(m.parts)) {
+        parts = [];
+        for (const p of m.parts) {
+          if (!p || p.attached === false) continue;
+          if (p.mesh?.getWorldPosition) { p.mesh.getWorldPosition(_pp); if (!F.contains(_pp.x, _pp.y, _pp.z, 0.6)) continue; }
+          parts.push(p);
+        }
+      }
+      this.status.apply(m, id, { parts: parts ?? undefined, at: { x: F.x, y: F.y, z: F.z } });
+      this.ctx.events?.emit?.('pot-status', { kind: m.kind, pot: F.id, parts: parts ? parts.map((p) => p.name) : null });
+    }
+  }
+
+  dispose() {
+    for (const F of this.fields) this.view?.dropField(F);
+    this.fields.length = 0;
+    this.view?.dispose(); this.view = null;
+  }
+}
+
+/** The one pot kit of this game, as ctx.combat.pots; the statuses' book as ctx.combat.status. */
+export function ensurePots(ctx) {
+  const host = ctx.combat || ctx;
+  if (!host.status) host.status = new StatusBook();
+  if (!host.pots) { host.pots = new PotKit(ctx); host.pots.status = host.status; }
+  return host.pots;
+}

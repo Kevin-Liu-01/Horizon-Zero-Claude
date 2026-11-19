@@ -91,7 +91,10 @@ export class HeroRig {
     if (!this.oro) return null;
     const { ensureGaff } = await import('../combat/gaff.js');
     const { ensureWindwall } = await import('../combat/windwall.js');
+    const { ensurePots } = await import('../combat/pots.js');
     const gaff = ensureGaff(this.ctx), ww = ensureWindwall(this.ctx);
+    // the pots: two Brine and one Cinder at the hand-over (bible 0:35), or what `own.pots` counts (Brine first)
+    if ((own.pots | 0) > 0) { const n = own.pots | 0; ensurePots(this.ctx).grant({ brine: Math.min(2, n), cinder: Math.max(0, Math.min(1, n - 2)), dust: 0 }); }
     await Promise.all([this.oro.grant(own), own.gaff ? gaff.grant() : null, own.windwall ? ww.grant(this.ctx) : null]);
     return this.oro;
   }
