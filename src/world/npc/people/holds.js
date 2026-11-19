@@ -489,6 +489,12 @@ export class HoldsPeople {
 
   update(dt) {
     if (!this.live()) return;
+    // the walk grid (about 35 ms to build, once) is built while the title stands, never in play: built on the first route,
+    // it fell in the middle of the walk in (first-hour leg 2 at d3edb33: one frame of 67 ms on the way to Ninewalls)
+    if (!this._gridBuilt && this.ctx.state !== 'playing') {
+      const G = this.routines.grid();
+      if (G) { if (G.dirty) G.build(); this._gridBuilt = true; this.stats.gridMs = G.stats.buildMs; }
+    }
     const pl = this.ctx.player?.position;
     if (pl) {
       const d = Math.hypot(pl.x - CENTRE.x, pl.z - CENTRE.z);
