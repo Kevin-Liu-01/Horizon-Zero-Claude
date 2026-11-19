@@ -149,7 +149,8 @@ export class HeroRig {
         this._bowHidden = null;
       }
     }
-    const bits = (this._lanceOut ? PIECE.lance : 0) | (this._bowOut ? PIECE.bow : 0);
+    // (M2 area D: the closed Windwall takes the left bracer's socket once it is owned, bible §3.1)
+    const bits = (this._lanceOut ? PIECE.lance : 0) | (this._bowOut ? PIECE.bow : 0) | (this.oro?.attached && this.oro.owned.windwall ? PIECE.bracer : 0);
     if (bits !== this.kit.hidden) this.kit.setHidden(bits);
     this.loadout?.update(dt, this._lanceOut, this._bowOut);
     // the stowed lance rides the trunk in the R10 band (carry.js)

@@ -160,3 +160,110 @@ export const WINDWALL = {
 };
 /** The open fan's angle (rad) for a slat index (fractional for the lacing). */
 export const slatAngle = (s, open = 1) => (s / (WINDWALL.slats - 1)) * WINDWALL.spread * Math.PI / 180 * open;
+
+/** A slat's half-width at `r` from the rivet (m): narrow round the rivet, flaring to the tip, the tip rounded off. */
+const slatHW = (r) => {
+  const W = WINDWALL, L = W.len;
+  const t = Math.max(0, Math.min(1, r / (L - 0.03)));
+  let hw = 0.5 * (W.wPivot + (W.wTip - W.wPivot) * Math.pow(t, 0.85));
+  if (r > L - 0.03) hw *= Math.sqrt(Math.max(0, 1 - ((r - (L - 0.03)) / 0.03) ** 2)) * 0.6 + 0.4 * (1 - (r - (L - 0.03)) / 0.03);
+  return Math.max(0.0015, hw);
+};
+/** The slat's layer in the stack (z, m): slat 0 next to her forearm, slat 8 outermost. */
+export const slatZ = (s) => (s - (WINDWALL.slats - 1) / 2) * (WINDWALL.thick + 0.0004);
+
+/**
+ * The Pine Windwall, authored CLOSED: the rivet at the origin, the nine slats along +Y in a stack on Z (the face's
+ * normal), the forearm under slat 0 (on -Z) in two leather cuffs. Every vertex carries `bw = [slat, 0]` (the slat index;
+ * fractional on the woven palm leaf between two slats and on the lacing, so the vertex program fans the whole shield
+ * open by one uniform: slat index s turns about +Z by `slatAngle(s, open)`). `lod` 1: the stowed copy (closed for good:
+ * no leaf, one lacing). Returns { g, sockets }.
+ */
+export function windwallGeo(cell, { lod = 0 } = {}) {
+  const W = WINDWALL, L = W.len, N = W.slats;
+  const g = G();
+  const tagS = (q, s) => { q.bw = []; for (let i = 0; i < q.pos.length; i += 3) q.bw.push(s, 0); return q; };
+  const pine = cell('pine'), palm = cell('palm');
+  const rows = lod ? [0.0, 0.10, 0.26, 0.40, L - 0.03, L - 0.012, L] : [0.0, 0.05, 0.12, 0.20, 0.28, 0.36, 0.42, L - 0.03, L - 0.018, L - 0.007, L];
+  // the slats: a tapered board each, faces and edges, pine along its length
+  for (let s = 0; s < N; s++) {
+    const q = G(), z0 = slatZ(s), th = W.thick / 2;
+    // four strips round the board: top (+z), bottom (-z), the two edges
+    const strip = (fa, fb, nrm, v0, v1) => {
+      const o = q.pos.length / 3;
+      for (const r of rows) {
+        const a = fa(r), b = fb(r);
+        q.pos.push(...a, ...b); q.nrm.push(...nrm(r), ...nrm(r));
+        const u = r / L;
+        q.uv.push(pine[0] + u * pine[2], pine[1] + v0 * pine[3], pine[0] + u * pine[2], pine[1] + v1 * pine[3]);
+      }
+      for (let i = 0; i < rows.length - 1; i++) { const a = o + i * 2, b = a + 1, c = a + 2, d = a + 3; q.idx.push(a, c, b, b, c, d); }
+    };
+    // (winding: +z face counter-clockwise seen from +z)
+    strip((r) => [slatHW(r), r, z0 + th], (r) => [-slatHW(r), r, z0 + th], () => [0, 0, 1], 0.1, 0.9);
+    strip((r) => [-slatHW(r), r, z0 - th], (r) => [slatHW(r), r, z0 - th], () => [0, 0, -1], 0.1, 0.9);
+    strip((r) => [slatHW(r), r, z0 - th], (r) => [slatHW(r), r, z0 + th], () => [1, 0, 0], 0.0, 0.1);
+    strip((r) => [-slatHW(r), r, z0 + th], (r) => [-slatHW(r), r, z0 - th], () => [-1, 0, 0], 0.9, 1.0);
+    // the rivet end, a cap
+    { const o = q.pos.length / 3, hw = slatHW(0);
+      q.pos.push(hw, 0, z0 + th, -hw, 0, z0 + th, -hw, 0, z0 - th, hw, 0, z0 - th); for (let k = 0; k < 4; k++) q.nrm.push(0, -1, 0);
+      for (let k = 0; k < 4; k++) q.uv.push(pine[0], pine[1] + 0.5 * pine[3]);
+      q.idx.push(o, o + 2, o + 1, o, o + 3, o + 2); }
+    merge(g, tagS(q, s));
+  }
+  // the rivet: a cast brass boss through the stack, domed both sides (slat 0's: it does not turn)
+  {
+    const zr = slatZ(N - 1) + W.thick / 2 + 0.002, rv = lathe([[0.0005, -zr - 0.004], [0.008, -zr - 0.0028], [0.0118, -zr], [0.0118, zr], [0.008, zr + 0.0028], [0.0005, zr + 0.004]], { sides: lod ? 8 : 12, rect: cell('brass'), uAlong: true });
+    merge(g, tagS(place(rv, [1, 0, 0], [0, 0, 1], [0, -1, 0]), 0));
+  }
+  // the woven palm leaf between neighbouring slats (fractional indices: it opens with them), both faces
+  if (!lod) {
+    const r0 = 0.10, r1 = L - 0.05, cols = 4, rws = [r0, (r0 + r1) / 2, r1];
+    for (let s = 0; s < N - 1; s++) for (const side of [1, -1]) {
+      const q = G(); q.bw = [];
+      for (let c = 0; c <= cols; c++) {
+        const f = s + c / cols, z = slatZ(s) + (slatZ(s + 1) - slatZ(s)) * (c / cols) + side * 0.0006;
+        for (const r of rws) { q.pos.push(0, r, z); q.nrm.push(0, 0, side); q.uv.push(palm[0] + (c / cols) * palm[2], palm[1] + (r / L) * palm[3]); q.bw.push(f, 0); }
+      }
+      const R = rws.length;
+      for (let c = 0; c < cols; c++) for (let i = 0; i < R - 1; i++) {
+        const a = c * R + i, b = a + 1, cc = a + R, d = cc + 1;
+        if (side > 0) q.idx.push(a, cc, b, b, cc, d); else q.idx.push(a, b, cc, b, d, cc);
+      }
+      merge(g, q);
+    }
+  }
+  // the lacing: cord through every slat at two radii (one stowed), a fractional index per ring
+  for (const rr of lod ? [0.40] : [0.24, 0.40]) {
+    const P = [], side = [], fs = [];
+    const steps = lod ? 4 : 16;
+    for (let i = 0; i <= steps; i++) { const f = (N - 1) * (i / steps); fs.push(f); const s0 = Math.floor(Math.min(f, N - 1.0001)), k = f - s0; P.push([0, rr, slatZ(s0) + (slatZ(s0 + 1) - slatZ(s0)) * k]); side.push([1, 0, 0]); }
+    // (the cord runs along z through the closed stack; open, each ring turns with its index onto the arc)
+    const q = G();
+    const ring = 4, rc = 0.0022, cr = cell('cord');
+    for (let i = 0; i < P.length; i++) for (let k = 0; k <= ring; k++) {
+      const th = (k / ring) * Math.PI * 2, c = Math.cos(th), sn = Math.sin(th);
+      q.pos.push(P[i][0] + rc * c, P[i][1] + rc * sn, P[i][2]); q.nrm.push(c, sn, 0);
+      q.uv.push(cr[0] + (i / (P.length - 1)) * cr[2], cr[1] + (k / ring) * cr[3]);
+    }
+    for (let i = 0; i < P.length - 1; i++) for (let k = 0; k < ring; k++) { const a = i * (ring + 1) + k, b = a + 1, c = a + ring + 1, d = c + 1; q.idx.push(a, c, b, b, c, d); }
+    q.bw = []; for (let i = 0; i < P.length; i++) for (let k = 0; k <= ring; k++) q.bw.push(fs[i], 0);
+    merge(g, q);
+    void side;
+  }
+  // the two forearm cuffs under slat 0 (leather bands round the forearm's line, which runs along +Y on -Z)
+  const armZ = slatZ(0) - W.thick / 2 - 0.046;
+  for (const yc of [0.06, 0.19]) {
+    const band = lathe([[0.0445, -0.016], [0.0478, -0.0135], [0.0478, 0.0135], [0.0445, 0.016]], { sides: lod ? 10 : 16, rect: cell('leatherDark'), uAlong: true });
+    for (let i = 1; i < band.pos.length; i += 3) band.pos[i] += yc;
+    for (let i = 2; i < band.pos.length; i += 3) band.pos[i] += armZ;
+    merge(g, tagS(band, 0));
+  }
+  const sockets = {
+    pivot: [0, 0, 0],
+    // the forearm's line under the cuffs: the wrist end and the elbow end (the runtime lays her forearm on it)
+    cuffWrist: [0, 0.0, armZ], cuffElbow: [0, 0.24, armZ],
+    tip: [0, L, slatZ(0)],
+  };
+  return { g, sockets };
+}

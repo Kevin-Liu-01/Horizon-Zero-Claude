@@ -12,16 +12,19 @@
  *     end down behind her right thigh, the hook turned out, away from her legs. KT0 moved it there along the belt from the
  *     bible's left rear hip: at the left rear hip no mount lets either hand reach the grip without the gaff standing in the
  *     bow's or the lance's left-hand take (the brief's rule: the mount moves along the belt, the bars do not)
+ *   2 the Pine Windwall, closed, on `lowerarm_l` in the left bracer's place (the bracer's piece folds while it is owned:
+ *     src/hero/index.js): the rivet over the back of the wrist, the slats along the back of the forearm toward and past
+ *     the elbow, its two cuffs round the forearm
  * The authored points are the bind space of the UBC source (as kit-v0.mjs authors in); `MOUNT` was found by KT0
  * (tools/gates/hero-sweep/kt0-gaff-mount.mjs: among the mounts whose grip the right hand reaches from her idle, the one
  * with the most clearance from the hands' takes, her arms, her legs, her hips and the stowed lance) and carried into
  * bind space through the fitted bind-to-idle map of the pelvis (KT0 `--built` then grades the built mesh).
  */
 import path from 'node:path';
-import { ROOT, srcRoot, UBC_DIR, readGltf, cleanDoc, nodeByName, jointIndex, writeSkinned } from '../lib/human/face.mjs';
+import { ROOT, srcRoot, UBC_DIR, readGltf, cleanDoc, nodeByName, jointIndex, jointPos, writeSkinned } from '../lib/human/face.mjs';
 import { weaponTrim } from '../armor/lib/weaponatlas.mjs';
 import { G, merge, place, lathe } from '../armor/lib/weapongeo.mjs';
-import { GAFF, gaffGeo } from './lib/orokit-geo.mjs';
+import { GAFF, gaffGeo, windwallGeo } from './lib/orokit-geo.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/kit-oro.glb'];
@@ -100,6 +103,21 @@ export async function build({ out = ROOT, compress = true } = {}) {
     for (let i = 0; i < g.pos.length; i++) g.pos[i] /= RAW_TO_GAME;
     pieces.push({ g: place(g, X, Y, Z, M.butt), joint: GAFF_SOCKET, bit: ORO_PIECE.gaff });
     stow.gaff = { butt: M.butt, tip: M.tip, hook: Z, joint: GAFF_SOCKET, parent: 'pelvis', frog: fy, lengthK: +k.toFixed(4) };
+  }
+  // ---- the Windwall, closed: the forearm in bind (the T-pose: the arm out along +x, the back of the forearm up, +y)
+  {
+    const el = jointPos(doc, 'lowerarm_l'), wr = jointPos(doc, 'hand_l');
+    const ax = nrmz(sub(el, wr));                                     // wrist -> elbow: the slats' +Y
+    const up0 = [0, 1, 0], d0 = up0[0] * ax[0] + up0[1] * ax[1] + up0[2] * ax[2];
+    const dorsal = nrmz([up0[0] - ax[0] * d0, up0[1] - ax[1] * d0, up0[2] - ax[2] * d0]);   // the face's +Z
+    const X = cross(ax, dorsal);
+    const { g, sockets } = windwallGeo(cell, { lod: 1 });
+    for (let i = 0; i < g.pos.length; i++) g.pos[i] /= RAW_TO_GAME;
+    // the forearm's line (the cuffs' axis, local (0, y, armZ)) on the bone line, the cuffs from 0.025 m short of the wrist
+    const armZ = sockets.cuffWrist[2] / RAW_TO_GAME;
+    const at = [wr[0] + ax[0] * 0.025 - dorsal[0] * armZ, wr[1] + ax[1] * 0.025 - dorsal[1] * armZ, wr[2] + ax[2] * 0.025 - dorsal[2] * armZ];
+    pieces.push({ g: place(g, X, ax, dorsal, at), joint: 'lowerarm_l', bit: ORO_PIECE.windwall });
+    stow.windwall = { pivot: at, along: ax, face: dorsal, joint: 'lowerarm_l', closed: true };
   }
   const all = G();
   const jnt = [], wgt = [], pid = [];
