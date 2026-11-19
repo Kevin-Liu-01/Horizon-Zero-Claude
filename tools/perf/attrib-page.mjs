@@ -368,7 +368,7 @@ async function infoFrames(E, k = 2) {
 }
 
 /** A paired toggle, ABBA: the median of ((on1 + on2) - (off1 + off2)) / 2 over `pairs`. */
-export async function pairedToggle(E, down, up, { n = 20, pairs = 4 } = {}) {
+export async function pairedToggle(E, down, up, { n = 16, pairs = 3 } = {}) {
   const d = [], on = [];
   try {
     for (let i = 0; i < pairs; i++) {
@@ -434,7 +434,7 @@ export async function census(E, scene) {
 }
 
 /** GPU ms of the costliest `top` scene children one at a time, and of the rest together (visible = false). */
-export async function owners(E, scene, cen, { top = 8, n = 20, pairs = 4 } = {}) {
+export async function owners(E, scene, cen, { top = 6, n = 16, pairs = 3 } = {}) {
   const picked = cen.children.slice(0, top);
   const rows = [];
   const hide = (objs) => () => objs.forEach((o) => { o.visible = false; });
@@ -456,7 +456,7 @@ export async function owners(E, scene, cen, { top = 8, n = 20, pairs = 4 } = {})
 }
 
 /** GPU ms of the shadow maps: all, then each cascade alone off. */
-export async function cascades(E, { n = 20, pairs = 4 } = {}) {
+export async function cascades(E, { n = 16, pairs = 3 } = {}) {
   const sm = E.renderer.shadowMap, lights = E.csm?.lights || [];
   const smr = sm.render;
   let deny = null;
@@ -473,14 +473,14 @@ export async function cascades(E, { n = 20, pairs = 4 } = {}) {
 }
 
 /** GPU ms of GTAO, bloom and SMAA together. */
-export async function postToggle(E, { n = 20, pairs = 4 } = {}) {
+export async function postToggle(E, { n = 16, pairs = 3 } = {}) {
   const keep = { gtao: E.gtao.enabled, bloom: E.bloom.enabled, smaa: E.smaa.enabled };
   return pairedToggle(E, () => { E.gtao.enabled = false; E.bloom.enabled = false; E.smaa.enabled = false; },
     () => { E.gtao.enabled = keep.gtao; E.bloom.enabled = keep.bloom; E.smaa.enabled = keep.smaa; }, { n, pairs });
 }
 
 /** The frame at 1/8 resolution per axis, with and without shadow maps and with the main view empty (3 interleaved rounds). */
-export async function tiny(E, { n = 30, rounds = 3, scale = 0.125 } = {}) {
+export async function tiny(E, { n = 20, rounds = 3, scale = 0.125 } = {}) {
   const sm = E.renderer.shadowMap, cam = E.camera, smr = sm.render;
   const keepScale = E.renderScale, keepMask = cam.layers.mask;
   let noShadow = false;
@@ -565,7 +565,7 @@ export async function cpuD1(E, ctx, { liveFrames = 180 } = {}) {
  * the cascades, casting and receiving, on the ground under it (terrain.getHeight). Returns the counts as drawn and
  * the GPU ms of each class and of the whole set, at full and at half triangles.
  */
-export async function standIns(E, scene, ctx, spec = {}, { n = 20, pairs = 4 } = {}) {
+export async function standIns(E, scene, ctx, spec = {}, { n = 16, pairs = 3 } = {}) {
   const S = {
     large: { n: 1, tris: 80000, draws: 12, size: 8, dist: 22, spread: 0 },
     medium: { n: 3, tris: 50000, draws: 10, size: 4.5, dist: 16, spread: 9 },
@@ -652,7 +652,7 @@ export async function attributeD1(E, scene, ctx, { standIn = false, spec = {} } 
   step('census');
   const cen = await census(E, scene);
   step('owners');
-  const own = await owners(E, scene, cen, { top: 8 });
+  const own = await owners(E, scene, cen);
   step('cascades');
   const cas = await cascades(E);
   step('post');

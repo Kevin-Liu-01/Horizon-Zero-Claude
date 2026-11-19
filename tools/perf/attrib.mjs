@@ -101,8 +101,11 @@ async function boot() {
   await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
   await sleep(6000);
-  run.launches.push({ at: new Date().toISOString(), bootS: Math.round((Date.now() - t0) / 1000), memory: machineMemory() });
+  run.launches.push({ at: new Date().toISOString(), bootS: Math.round((Date.now() - t0) / 1000), memory: machineMemory(), swapFreeMB: swapFreeMB() });
 }
+/** Swap free (MB): the mem-guard also kills gate Chromes on a near-full swap (free < 500 MB with pressure 2 or free < 45 %). */
+const swapFreeMB = () => { try { const m = /free = ([\d.]+)M/.exec(execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' })); return m ? Math.round(Number(m[1])) : null; } catch { return null; } };
+const calm = () => machineMemory().ok && (swapFreeMB() ?? 1e9) >= 800;
 const alive = () => !!(browser && browser.connected !== false && page && !page.isClosed());
 try {
   const set = loadFrameSet();
@@ -114,15 +117,19 @@ try {
     const f = set.frames.find((x) => x.id === id);
     if (!f) { run.frames.push({ id, error: 'no such frame' }); queue.shift(); continue; }
     if (!alive()) {
+      if (!browser && !died && !run.launches.length) for (let w = 0; w < 120 && !calm(); w++) { if (w % 6 === 0) console.log(`[attrib] waiting for calm: ${JSON.stringify(machineMemory())}, swap free ${swapFreeMB()} MB`); await sleep(5000); }
       if (browser || died) {
         died = false;
         await closeBrowser();
         if (relaunches++ >= RELAUNCH) { for (const q of queue) run.frames.push({ id: q, error: 'not measured: Chrome died and the relaunches were spent' }); break; }
-        for (let w = 0; w < 120 && !machineMemory().ok; w++) await sleep(5000);
+        for (let w = 0; w < 120 && !calm(); w++) await sleep(5000);
         console.log(`[attrib] relaunching Chrome (${relaunches}/${RELAUNCH}), memory ${JSON.stringify(machineMemory())}`);
       }
       current = 'boot';
-      await boot();
+      try { await boot(); } catch (e) {
+        console.log(`[attrib] boot FAILED: ${String(e?.message || e).slice(0, 160)}; memory ${JSON.stringify(machineMemory())}, swap free ${swapFreeMB()} MB`);
+        died = true; await closeBrowser(); continue;
+      }
     }
     current = id;
     const t0 = Date.now();
