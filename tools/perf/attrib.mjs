@@ -15,6 +15,7 @@
  * runs; 8 on a quiet box for a number to write a budget from), and --toggles names the world's runtime switches
  * (terrain.perfSwitches, vegetation.perfSwitches) to pair on every frame (attrib-page switchToggles: on - off).
  * --probe toggles runs only that: the back-to-back frame, the switches paired, the frame again (about a minute a frame).
+ * A toggle 'hide:<scene child>' (e.g. hide:holds-flora) hides that top-level child in its off half.
  *
  * The tool takes the machine guard and Chrome slot 1 itself (tools/chrome-slot.mjs; CALIMA_SLOT_HELD=1 if the caller
  * holds it). With --serve it runs its own Vite dev server on --port (127.0.0.1, nice -n 10) and stops it at the end;

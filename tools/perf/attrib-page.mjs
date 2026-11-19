@@ -646,9 +646,14 @@ export async function standIns(E, scene, ctx, spec = {}, { n = 16, pairs = 3 } =
  */
 export async function switchToggles(E, ctx, ids, { n = 16, pairs = 3 } = {}) {
   const all = [...(ctx.terrain?.perfSwitches?.() || []), ...(ctx.vegetation?.perfSwitches?.() || [])];
+  // 'hide:<name>': the top-level scene children of that name hidden (off) and shown (on), from the view and the maps
+  const hide = (id) => {
+    const name = id.slice(5), objs = ctx.scene.children.filter((c) => c.name === name && c.visible);
+    return objs.length ? { id, off: () => objs.forEach((o) => { o.visible = false; }), on: () => objs.forEach((o) => { o.visible = true; }) } : null;
+  };
   const rows = [];
   for (const id of ids) {
-    const sw = all.find((x) => x.id === id);
+    const sw = id.startsWith('hide:') ? hide(id) : all.find((x) => x.id === id);
     if (!sw) { rows.push({ id, error: 'no such switch' }); continue; }
     try {
       sw.off(); E.render(0); E.render(0); await wait(2); sw.on(); E.render(0); E.render(0); await wait(2);
