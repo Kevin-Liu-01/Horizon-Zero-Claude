@@ -520,6 +520,9 @@ export class HoldsPeople {
       p.setPosition(at.x, at.z);
       if (face) { const y = Math.atan2(face.x - at.x, face.z - at.z); p.yaw = y; p.group.rotation.y = y; }
       p.stopWalk();
+      // the people system's idle beats stay off (spawn() starts one, and after 6 s it played the archetype's idle over the
+      // work clip: the films at c5e75eb and d3edb33 showed the two nearest upright)
+      p._beatT = 0; p._beatEnd = Infinity;
       p.play(w.clip, { fade: 0, offset: w.offset ?? 0.35 });
       p.showProps(this.sys._propsFor(p, w.clip));
       p._frame = true;
