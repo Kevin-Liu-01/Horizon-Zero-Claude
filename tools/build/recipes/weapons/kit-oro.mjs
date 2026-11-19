@@ -24,7 +24,7 @@ import path from 'node:path';
 import { ROOT, srcRoot, UBC_DIR, readGltf, cleanDoc, nodeByName, jointIndex, jointPos, writeSkinned } from '../lib/human/face.mjs';
 import { weaponTrim } from '../armor/lib/weaponatlas.mjs';
 import { G, merge, place, lathe } from '../armor/lib/weapongeo.mjs';
-import { GAFF, gaffGeo, windwallGeo } from './lib/orokit-geo.mjs';
+import { GAFF, gaffGeo, windwallGeo, CLOSED_OPEN } from './lib/orokit-geo.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/armory/kit-oro.glb'];
@@ -111,7 +111,7 @@ export async function build({ out = ROOT, compress = true } = {}) {
     const up0 = [0, 1, 0], d0 = up0[0] * ax[0] + up0[1] * ax[1] + up0[2] * ax[2];
     const dorsal = nrmz([up0[0] - ax[0] * d0, up0[1] - ax[1] * d0, up0[2] - ax[2] * d0]);   // the face's +Z
     const X = cross(ax, dorsal);
-    const { g, sockets } = windwallGeo(cell, { lod: 1 });
+    const { g, sockets } = windwallGeo(cell, { lod: 1, fan: CLOSED_OPEN });
     for (let i = 0; i < g.pos.length; i++) g.pos[i] /= RAW_TO_GAME;
     // the forearm's line (the cuffs' axis, local (0, y, armZ)) on the bone line, the cuffs from 0.025 m short of the wrist
     const armZ = sockets.cuffWrist[2] / RAW_TO_GAME;

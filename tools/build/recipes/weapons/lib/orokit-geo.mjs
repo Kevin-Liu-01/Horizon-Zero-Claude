@@ -158,6 +158,8 @@ export const WINDWALL = {
   spread: 150,           // degrees from the base slat to the ninth, open
   wPivot: 0.026, wTip: 0.105, thick: 0.0042,
 };
+/** How far a CLOSED Windwall's slats stay fanned (a share of the spread): a closed fan shows its slats' edges. */
+export const CLOSED_OPEN = 0.07;
 /** The open fan's angle (rad) for a slat index (fractional for the lacing). */
 export const slatAngle = (s, open = 1) => (s / (WINDWALL.slats - 1)) * WINDWALL.spread * Math.PI / 180 * open;
 
@@ -179,7 +181,7 @@ export const slatZ = (s) => (s - (WINDWALL.slats - 1) / 2) * (WINDWALL.thick + 0
  * open by one uniform: slat index s turns about +Z by `slatAngle(s, open)`). `lod` 1: the stowed copy (closed for good:
  * no leaf, one lacing). Returns { g, sockets }.
  */
-export function windwallGeo(cell, { lod = 0 } = {}) {
+export function windwallGeo(cell, { lod = 0, fan = 0 } = {}) {
   const W = WINDWALL, L = W.len, N = W.slats;
   const g = G();
   const tagS = (q, s) => { q.bw = []; for (let i = 0; i < q.pos.length; i += 3) q.bw.push(s, 0); return q; };
@@ -258,6 +260,12 @@ export function windwallGeo(cell, { lod = 0 } = {}) {
     for (let i = 1; i < band.pos.length; i += 3) band.pos[i] += yc;
     for (let i = 2; i < band.pos.length; i += 3) band.pos[i] += armZ;
     merge(g, tagS(band, 0));
+  }
+  // (`fan`: the share of the spread baked into the positions, for the stowed copy, which has no vertex program)
+  if (fan > 0) for (let i = 0, v = 0; i < g.pos.length; i += 3, v++) {
+    const a = slatAngle(g.bw[v * 2], fan), c = Math.cos(a), s = Math.sin(a);
+    const x = g.pos[i], y = g.pos[i + 1], nx = g.nrm[i], ny = g.nrm[i + 1];
+    g.pos[i] = c * x - s * y; g.pos[i + 1] = s * x + c * y; g.nrm[i] = c * nx - s * ny; g.nrm[i + 1] = s * nx + c * ny;
   }
   const sockets = {
     pivot: [0, 0, 0],

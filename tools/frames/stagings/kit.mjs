@@ -79,16 +79,17 @@ export const stagings = {
       const T = mod.WINDWALL_FAN, mid = (T.spreadDeg / 2) * Math.PI / 180;
       // char space: the middle slat up (the fan's local +Y turned by `mid` about +Z lies at 90 + mid deg), its face
       // toward the lens at her front-left, standing 0.55 m to her left and 0.85 m in front; then her heading
-      const h = p.heading ?? p.model?.rotation?.y ?? 0;
-      const g = ww.group;
+      // (a child of her model, in her own frame: the studio stage shows her hierarchy alone)
+      const g = ww.group, m = p.model;
+      m.updateMatrixWorld(true);
+      const sc = m.scale?.x || 1;
       g.rotation.set(0, 0, 0);
-      g.rotateY(h + Math.PI / 4);
+      g.rotateY(Math.PI / 4);
       g.rotateZ(-mid);
-      const cx = 0.55, cz = 0.85, x = p.position.x + Math.cos(h) * cx + Math.sin(h) * cz, z = p.position.z - Math.sin(h) * cx + Math.cos(h) * cz;
-      const y = C.terrain?.getHeight ? C.terrain.getHeight(x, z) : p.position.y;
-      g.position.set(x, y + 0.04, z);
+      g.position.set(0.55 / sc, 0.04 / sc, 0.85 / sc);
+      g.scale.setScalar(1 / sc);
       g.visible = true;
-      (C.scene || C.engine.scene).add(g);
+      m.add(g);
       api.undo(() => { ww.dispose(); });
       await api.sleep(300);
     },

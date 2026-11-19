@@ -5,7 +5,8 @@
  *
  *   const ww = new HeldWindwall(ctx)     loads public/models/armory/windwall-pine.glb (no textures: the weapon atlas)
  *   await ww.ready
- *   ww.setOpen(k)                        0 closed (the stack along her forearm) .. 1 open (the crescent fan)
+ *   ww.setOpen(k)                        0.07 closed (the stack along her forearm, its slats' edges showing, as the
+ *                                        stowed copy in kit-oro.glb) .. 1 open (the crescent fan)
  *   ww.group                             the rivet at its origin, the closed slats along +Y, the face's normal +Z
  *
  * The fan is one uniform in the vertex program: each vertex carries its slat index (`_slat`, fractional on the woven
@@ -17,7 +18,7 @@ import { adoptWeaponAtlas } from '../hero/weaponAtlas.js';
 
 export const HELD_WINDWALL_URL = '/models/armory/windwall-pine.glb';
 /** The recipe's fan (tools/build/recipes/weapons/lib/orokit-geo.mjs WINDWALL): nine slats over 150 degrees. */
-export const WINDWALL_FAN = Object.freeze({ slats: 9, spreadDeg: 150 });
+export const WINDWALL_FAN = Object.freeze({ slats: 9, spreadDeg: 150, closed: 0.07 });
 
 /** Install the fan on a material (once): returns its `uOpen` uniform. */
 export function installFan(material) {
@@ -46,7 +47,7 @@ export class HeldWindwall {
     this.group = new THREE.Group();
     this.group.name = 'held-windwall';
     this.group.visible = false;
-    this.open = 0;
+    this.open = WINDWALL_FAN.closed;
     this.u = null;
     this.sockets = null;
     this.ready = this._load(url);

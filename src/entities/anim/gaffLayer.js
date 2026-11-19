@@ -35,10 +35,10 @@ const _sw = { butt: new THREE.Vector3(), tip: new THREE.Vector3(), grip: new THR
 /** The ready: the right fist beside and in front of her right hip, the haft up and forward, the hook forward. */
 const READY = {
   /** the wrist off her right shoulder (char), so a crouch carries it down with her */
-  fromShoulder: new THREE.Vector3(-0.08, -0.375, 0.18),
-  axis: new THREE.Vector3(-0.05, 0.36, 0.93).normalize(),     // butt -> beak, char: ~21 deg up (the straight wrist raises it), the beak under her shoulders
+  fromShoulder: new THREE.Vector3(-0.115, -0.375, 0.17),
+  axis: new THREE.Vector3(-0.28, 0.38, 0.88).normalize(),     // butt -> beak, char: up and forward and a little out (the straight wrist turns it in toward her midline), the beak under her shoulders
   hook: new THREE.Vector3(0.0, -0.35, 1.0).normalize(),       // the hook's side (squared to the axis at use)
-  pole: new THREE.Vector3(-0.55, -0.75, -0.35).normalize(),   // the elbow down, out and a little back
+  pole: new THREE.Vector3(-0.70, -0.65, -0.30).normalize(),   // the elbow down, out and a little back
 };
 /** The reach bows out this far to her right (char -x) between where the hand starts and the take: the wrist goes round
  *  her hip, not through it (midway, so it follows her down into a crouch). */
