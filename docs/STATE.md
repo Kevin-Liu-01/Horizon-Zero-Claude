@@ -1692,3 +1692,122 @@ the repeats 0.7.
 ---
 
 **Ruling (the orchestrator):** A45c-foot-continuity divides one simulation step's slip by the wall-clock frame, so a short frame reads fast (0.0489 m in a 13.8 ms frame = 3.5 m/s, the same step that read 2.6 m/s in a 16.6 ms frame); it is restated to grade the slip per simulation step (<= 0.05 m) beside its per-frame 0.12 m bar. With that, the check is clean and main is fast-forwarded.
+
+## Milestone 2 wave 1: the blockout (Nov 19 2026)
+
+Wave 1 had four lanes in one tree on `r5/int`. No commit was pushed.
+
+- **Seams first.** Each owner committed its seam empty but typed before any lane built against it:
+  - `src/core/regions.js`, `src/game/save/fields.js` and `src/game/quest/scar-plan.js` (engine, systems);
+  - `src/instruments/lib/sight.js` (instruments);
+  - `src/world/settlements/ninewalls-layout.js` (settlements);
+  - `tools/frames/stagings/<lane>.mjs`, merged by `tools/frames/stagings/index.mjs`.
+- **Area A (world).**
+  - The Holds at blockout: `src/world/holds/blockout.js` holds the Screed Scar, Benchmark 1 on the Scar's line at the bible's (12, -282), the Plumb's bench above Ninewalls, the herd's slope and the barranco.
+  - Tools: HG0 and HG1 in `tools/world/holds-rows.mjs`, and the skyline masks in `tools/world/skyline-masks.mjs`.
+  - Lenses: F33, F33-scar and F33-trig.
+- **Area B (settlements).**
+  - Ninewalls' nine walls exist as data (`ninewalls-layout.js`) and as grey boxes (`src/world/settlements/ninewalls.js`, 2 draws), with 16 sunk dwellings, the tree, the tube mouth, the counter and the cistern.
+  - NW0 and NW3's data half are in `tools/build/settlements/ninewalls-rows.mjs`. Frames F34-F37.
+- **Area C (instruments).**
+  - The Tiller herd never flees, with a new follower law. IN0 is in `tools/instruments/in0-geometry.mjs`.
+  - The Screed's and the Sickle's rules are in Node (`screed-rules.js`, `sickle-rules.js`).
+  - The Screed, the Sickle and the Tiller's skirted default form exist as grey kinds with no role claimed. The Tiller that plays keeps its M1 body.
+  - A45c and A76 were restated (`docs/GATES.md` §3 D). Frames F23-tiller, F23-sickle, F23-screed.
+- **Areas E and F (engine, systems).**
+  - Region loading (`engine.attachRegions`, ticked with Brea's position).
+  - HR0 in `tools/gates/systems/hr0-geometry.mjs`.
+  - The first-hour runner as a skeleton (`tools/gates/systems/first-hour.mjs`, three legs, fixtures in `first-hour-fixtures.mjs`).
+  - F44 at blockout.
+
+Then the review lane measured `r5/int` at **f6d3567** from one clean detached worktree (0 tracked files changed) on
+port 5270, one Chrome at a time. It changed no repo file.
+
+**Verdict: NOT CLEAN, on five accepted frames changed outside any skyline mask.** F14, F15, F16, F18 and F19 now show
+Ninewalls' grey walls and dwellings on their skyline. None of the five is in the mask list (F02, F05, F17, F24, F25, F32
+and the T1 beat's lens). Everything else holds:
+- every kept row passes;
+- no other accepted frame is further;
+- the slice played 14/14;
+- the first-hour skeleton fails its 14 new beats by name.
+
+**Tier 0 at f6d3567: PASS, 10 of 10.**
+- `vite build` OK (4.01 MB of code). It is also green at all 31 wave 1 commits (fd4c7a8..f6d3567).
+- Name lint 0 hits in 828 files.
+- Licences: 234 files against 32 rows. Asset budgets: 45 GLBs, 0 over a cap. Import graph 211 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 53.29 MB (`public/` 49.28 MB + code 4.01 MB; cap 110 MB).
+- 204 Node tests pass in 40 files. Boot 3.8 s, 0 errors. Rendered-page name lint 0.
+
+**Kept-stack rows at f6d3567** (two sessions, every row reached, then A9 alone): 80 rows. **72 action rows pass**, the
+**8 visual rows** show the same poses as at 72296aa, **0 fail** and **0 pending**.
+- **A76-footfalls passes for the first time.** It reads three weight classes: the Screed routes to the heavy set, the Sickle and the blockout Tiller to the medium set.
+- A45c-foot-continuity (restated): worst planted slip 0.0267 m per simulation step (bar 0.05), 1.6 m/s reported, not graded.
+- A9-perf-budget was PENDING in session (1-minute load 3.21). Alone on a quiet box (load 2.37) it passed: 59.9 fps median, 130 draw calls, scene GPU 21.27 ms.
+- A65 passed on the runner's retry (a screenshot timeout).
+- A90b: heap +7.4 %, 0 offenders.
+- A3 6.75 m/s. A17 hand to quiver 0.046 m, loose 0.088 m behind.
+- V49: in all 12 tiles both elbows stay under the top of her head and no forearm crosses behind it. V1 and V3 now show Ninewalls on the skyline.
+- The runner still reports three gate files that do not load in a detached worktree (`gates.r5.brand`, `gates.r5.gates-perf`, `gates.r5.shell-ui`). None of the kept rows comes from them.
+
+**The slice at f6d3567** (first-hour leg 1, `slice-hour.mjs --run-only`): **14 of 14**, stopped at the reward.
+
+| | run |
+|---|---|
+| Peg cross | 47.1 s, hp 100 -> 95 |
+| ditch | hidden 63 % of 4495 frames |
+| topple | 47 s, 3 vial arrows |
+| lowest hp | 45 (at the return); two drinks |
+| reward | the Scout with Shrug |
+| save rows, site clock | PASS |
+| frames over 33 / 50 ms in play | 0 / 0 in 120 s and 14,205 frames (worst 33.4 ms) |
+
+**The first-hour skeleton at f6d3567** (`first-hour.mjs --legs 1,2,3`): **14 of 28 beats.**
+- Leg 1: 14/14. Leg 2: 0/8. Leg 3: 0/6. Every new beat fails by name: its quest is not wired yet, then the first missing piece.
+- Leg 2, from its fixture save: the regions seam fired approach Holds at 15.2 s, then leave Pans and enter Holds at 31.7 s, once each. 0 frames over 33 ms in 5590. The walk to Ninewalls timed out 62 m short at 48.8 s.
+- Leg 3: walked to Benchmark 1 and raised the Alidade.
+
+**Frames at f6d3567** (the Frame Set and the 11 lane frames, `--lanes --repeat 2`, 90 of 90 filmed, 0 console errors):
+- **F14, F15, F16, F18, F19 changed on the skyline.** The hillside above the salt cell now carries Ninewalls' walls and dwellings. The sim-time stagings froze at their usual frame counts (91, 194, 217, 314, 187); 0.8-2.9 % of pixels differ from the 72296aa film.
+- Inside her figure only the cloth and the carried lance differ, most in F18. That is the allowed class, but no cloth or hero source changed and her state digests moved.
+- Every other accepted frame matches its anchor and the 72296aa film within the cloth, the wind, the grass and the clouds. That is F02, F03, F05, F08, F09, F10, F11, F13, F20, F23 (Plumb) and F24.
+- Repeat 2 is not usable as a noise floor in this session: the orbit frames' lens stood 0.75 m off, and the title menu stayed up into F26's and F03's second shots.
+- The blockout frames are on the owner's page (not accepted, grey): F33, F33-scar, F33-trig, F34, F35, F36, F32, F23-tiller, F23-sickle, F23-screed and F44, plus a regions map.
+- F37 has no Oro yet, and F36 has no people.
+
+**The Node rows at f6d3567:**
+- HG1 passes in the recipe and the bake: 25 m wide within 0.55 m at 10 stations; centreline within 0.18 m of a straight line; berms 0.7-1.2 m; B1 0.49 m off the line.
+- HR0 now passes, because Benchmark 1 is at the bible's point. The tops of T1, T2, the Sounding Ring and the Roque plug all clear from B1's eye; T2 by only 0.5 m.
+- NW0 passes on level ground and fails on the island's ground.
+- HG0 and IN0 are recorded. Their open questions are the rulings below.
+
+**Rulings the blockout asks for (row 0, before any art):**
+1. T1 stands 35.8 m east-south-east of the bible's point (the bible gives T1 the Organ Shelf's own point).
+2. The Scar crosses the slope at up to 46° of cross-fall. A level floor would cut or fill up to 13 m, so the blockout planes it with the cross-fall.
+3. The Jameo stands inside the Scar's berm band (15.3 m off its centreline).
+4. Ninewalls sits on a hillside: under the village the slope is median 27.7°, max 46°.
+   - The nine walls need terraces (each crescent a riser) or a re-graded pad.
+   - NW0 (a): the Screed's run fits between the outer walls (clear gaps 6.6 and 6.8 m), but only across 22° of side slope.
+5. 52.6 % of the Holds' land is inside the bible's 20-90 m (p95 117 m).
+6. The herd file's gap band: centre spacing or clear space. It is built as clear space: 5.0 m open, 4.0 m closed.
+7. The Tiller that plays is the M1 body, and its 1.30 m belly is no cover. The skirted default exists only as a grey kind.
+
+**Chrome used:** about 41 minutes over 6 launches:
+- Tier 0's boot 0.2 min.
+- The frames 8.9.
+- Kept session 1 9.4, kept session 2 15.2.
+- The first hour 6.9.
+- A9 alone 0.2.
+
+---
+
+**Rulings after the blockout (the orchestrator; the owner can override any):**
+1. T1 stays where the game builds it (-187, -357), 35.8 m from the bible's point: the slice and its frames are built and accepted there. The bible's point is updated to the built one.
+2. The Scar is planed, not levelled: its floor keeps the side slope's tilt where the cross-fall is 29-46 deg.
+3. The Jameo keeps its height; the Scar's berm and apron are moved or broken so the Jameo's skylight pit clears them by at least 3 m.
+4. Ninewalls stands on terraces, each crescent wall a riser; NW0's pad clause is restated to the terraces.
+5. The Holds' height band follows the built terrain (p95 117 m); the bible's 20-90 m is restated.
+6. The herd file's gap is clear space, stern to bow (as built in IN1).
+7. The Tiller that plays becomes the corrected form in wave 2 (art), so the herd gives cover.
+8. Ninewalls on the skyline of F14, F15, F16, F18 and F19 is the blockout by design: those five join the skyline masks and are re-anchored once (the town ruling's pattern); Brea's figure, cloth and pose are still judged against the anchors.
+With these, main is fast-forwarded.
+

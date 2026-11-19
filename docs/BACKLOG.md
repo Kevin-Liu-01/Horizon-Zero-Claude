@@ -437,3 +437,19 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
   pass, but nearer its bar after wave 0 (not traced to a commit).
 - **note** A3 and A65 pass only on the runner's retry.
 - **note** The opening shot at New Game: a townsperson stands in the camera (since before wave 5).
+
+## M2 wave 1 additions (Nov 19 2026)
+
+- **Skyline masks miss five accepted frames.** F14, F15, F16, F18 and F19 see Ninewalls' walls on the hillside above the salt cell. The mask list holds only F02, F05, F17, F24, F25, F32 and F33-trig. Add them and re-anchor once, by ruling. (world, engine)
+- **Sim-time digests moved with no cloth or hero change.** Between 72296aa and f6d3567, the F14-F19 state digests changed (bone sums +0.01 to +63; F18's sash panels and lance carry differ visibly), though no hero, cloth or stagings source changed. Suspects: the 524 Ninewalls colliders registered at boot, or the seeded random's order. (engine, cloth)
+- **`film.mjs --repeat 2` artifacts.** Repeat 2 of the orbit frames (F14, F15) stands the lens 0.75 m off repeat 1. F01's title menu stays up into the next frame's second shot (F26-r2), and the title card appears in F03-r2. (engine)
+- **F23-sickle: the lamp floats** about a metre above the body with no mount drawn. (instruments)
+- **F23-screed: two lamp discs** (hull front and mast top) against the one-lamp rule. (instruments)
+- **F23-tiller: Brea is drawn with a screen-door dither** in both repeats. She is not dithered beside the Peg, the Sickle or the Screed. (instruments, engine)
+- **F37's Oro staging throws a JSON parse error** ("Unexpected token '<'": an HTML page where JSON was asked for) instead of naming a stand-in. (settlements, people)
+- **The first-hour leg 2 walk to Ninewalls times out 62 m short** at 48.8 s (5 m/s jog; 304.7 m on the nav grid). Give the leg the time or fix the route. (systems)
+- **`ninewalls-rows.mjs` reports a stale Benchmark 1** (19, 243) as "layout.js as it stands". bm-01 is at (12, 282). (settlements)
+- **The herd's slope ends on the Pans/Holds border** (0.7 m inside the Holds), and the barranco's lower 10 m is in the Pans. The region crossing fires inside the herd beat. (engine, world)
+- **The dwellings read as a closed ring around the tree** from above (F32). This is a plan question for the owner's page. (settlements)
+- **The dev-server boot loads 517 requests and 84.22 MB**, against 495 and 83.49 MB at 72296aa. Confirm none is a Holds file (EN2). (engine)
+- **A90b heap growth +7.4 %** (it was -1.1 % at 72296aa). It passes. Watch it. (engine)
