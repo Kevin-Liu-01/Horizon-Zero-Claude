@@ -320,3 +320,333 @@ export async function attributeFrame(E, scene, { n = 40 } = {}) {
   return { info, whole, finish, split: sp, paired, overdraw: { alphaTested: odAlpha, opaqueAll: odOpaque }, unlit: un, halfRes: hr, cpu: c,
     seconds: Math.round((performance.now() - t0) / 1000) };
 }
+
+
+/* =====================================================================================================================
+ * M2 WAVE 0, D1: THE REST OF THE FRAME, AND WHAT THE HOLDS MAY SPEND.
+ *
+ * M0.8 resolved only the opaque row and the floor; about 10 ms of each frame was "not attributed" and pointed at
+ * geometry and vertex work. `attributeD1` splits the same back-to-back readback frame (finishFrame) along the axes that
+ * M0.8 left open, each by a paired toggle (ABBA: on, off, off, on; the median of the pairs' differences):
+ *
+ *   census     per top-level scene child: objects, and the draws and triangles it adds to the frame (renderer.info with
+ *              it hidden, main view and shadow maps together, and with only its casting off: the shadow share). Exact
+ *              counts, no timing. The cascades' own draws and triangles the same way.
+ *   owners     GPU ms of the costliest scene children (by draws and triangles), one at a time, and of everything else
+ *              together; hidden from the view AND the shadow maps (visible = false), as the Holds would add to both.
+ *   cascades   GPU ms of the shadow maps, all together and one cascade at a time (cascade 0 every frame, the far two on
+ *              alternate frames: the tier's csmFarCadence 2).
+ *   post       GTAO, bloom and SMAA together.
+ *   tiny       the frame at 1/8 of the resolution per axis (1/64 of the pixels), with and without the shadow maps and
+ *              with the main view empty: per-pixel work = full - tiny; main-view geometry (vertex + per-draw) = tiny
+ *              without shadows - tiny with nothing in the view; the floor = the last (clears, the post chain's fixed
+ *              cost, the present, the CPU's own submit).
+ *   cpu        the main thread, frozen and live (perfSnapshot), Brea's cloth (its solver ring, reset at the window's
+ *              start) and the people (their strand rings and how many are near), live for `liveFrames` frames.
+ *   standIns   (optional) the Holds' fight load as stand-in geometry in front of the lens: one large hull, medium hulls,
+ *              dwellings and walls at given triangle and draw counts (MeshStandardMaterial through the cascades, casting
+ *              and receiving), each class toggled, and the whole set at full and at half triangles for the slope.
+ *
+ * Every timing is finishFrame's (render + 1-pixel readback, back to back: submit + GPU, never vsync-paced).
+ * ===================================================================================================================== */
+
+const topOf = (o, scene) => { let t = o; while (t.parent && t.parent !== scene) t = t.parent; return t; };
+
+/** Draws and triangles of k consecutive frames, averaged (the far cascades alternate frame to frame). */
+function infoFrames(E, k = 2) {
+  let c = 0, t = 0;
+  for (let i = 0; i < k; i++) { E.render(0); const r = E.renderer.info.render; c += r.calls; t += r.triangles; }
+  return { draws: c / k, tris: t / k };
+}
+
+/** A paired toggle, ABBA: the median of ((on1 + on2) - (off1 + off2)) / 2 over `pairs`. */
+export async function pairedToggle(E, down, up, { n = 20, pairs = 4 } = {}) {
+  const d = [], on = [];
+  try {
+    for (let i = 0; i < pairs; i++) {
+      await wait(2); const a1 = (await timeFrame(E, n)).medianMs;
+      down(); await wait(2);
+      const b1 = (await timeFrame(E, n)).medianMs; const b2 = (await timeFrame(E, n)).medianMs;
+      up(); await wait(2);
+      const a2 = (await timeFrame(E, n)).medianMs;
+      if ([a1, a2, b1, b2].every(Number.isFinite)) { d.push((a1 + a2 - b1 - b2) / 2); on.push(a1, a2); }
+    }
+  } finally { up(); }
+  const s = d.slice().sort((a, b) => a - b);
+  return { ms: r3(median(d)), iqr: [r3(s[Math.floor(s.length * 0.25)]), r3(s[Math.floor(s.length * 0.75)])], pairs: d.length, onMs: r3(median(on)) };
+}
+
+/** Per top-level child: objects, draws and triangles in the frame (view + shadow maps), and the shadow share. */
+export function census(E, scene) {
+  const kids = scene.children.filter((c) => c.visible && !c.isLight && !c.isCamera && c.name !== 'CAL.attribSentinel');
+  const all = infoFrames(E, 2);
+  // children that share a name are one row (hidden together)
+  const byName = new Map();
+  for (const c of kids) { const k = c.name || `(unnamed ${c.type})`; if (!byName.has(k)) byName.set(k, []); byName.get(k).push(c); }
+  const rows = [];
+  for (const [name, cs] of byName) {
+    let objects = 0, meshTris = 0;
+    const casters = [];
+    for (const c of cs) c.traverseVisible((o) => {
+      if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+      objects++;
+      if (o.castShadow) casters.push(o);
+      const g = o.geometry; if (!g || !o.isMesh) return;
+      let n = g.index ? g.index.count : (g.attributes?.position?.count || 0);
+      if (g.drawRange && Number.isFinite(g.drawRange.count)) n = Math.min(n, g.drawRange.count);
+      meshTris += (n / 3) * (o.isInstancedMesh ? o.count : (g.isInstancedBufferGeometry ? (g.instanceCount ?? 1) : 1));
+    });
+    if (!objects) continue;
+    cs.forEach((c) => { c.visible = false; });
+    const hid = infoFrames(E, 2);
+    cs.forEach((c) => { c.visible = true; });
+    casters.forEach((o) => { o.castShadow = false; });
+    const noCast = infoFrames(E, 2);
+    casters.forEach((o) => { o.castShadow = true; });
+    rows.push({ name, children: cs.length, objects, casters: casters.length, meshTris: Math.round(meshTris),
+      draws: r3(all.draws - hid.draws), tris: Math.round(all.tris - hid.tris),
+      shadowDraws: r3(all.draws - noCast.draws), shadowTris: Math.round(all.tris - noCast.tris) });
+  }
+  rows.sort((a, b) => (b.draws * 20000 + b.tris) - (a.draws * 20000 + a.tris));
+  // the cascades: each alone (the others' maps not re-rendered)
+  const sm = E.renderer.shadowMap, lights = E.csm?.lights || [];
+  const smr = sm.render;
+  const cascades = [];
+  let allow = null;
+  sm.render = function (ls, s, cm) { return smr.call(this, allow ? ls.filter(allow) : ls, s, cm); };
+  try {
+    allow = () => false; const none = infoFrames(E, 2);
+    lights.forEach((l, i) => { allow = (x) => x === l; const one = infoFrames(E, 2); cascades.push({ cascade: i, mapSize: l.shadow.mapSize.x, draws: r3(one.draws - none.draws), tris: Math.round(one.tris - none.tris) }); });
+    allow = null;
+    const sumKids = rows.reduce((a, r) => ({ draws: a.draws + r.draws, tris: a.tris + r.tris }), { draws: 0, tris: 0 });
+    return { frame: { draws: r3(all.draws), tris: Math.round(all.tris) }, noShadowMaps: { draws: r3(none.draws), tris: Math.round(none.tris) },
+      children: rows, cascades, sumChildren: { draws: r3(sumKids.draws), tris: Math.round(sumKids.tris) },
+      note: 'draws and triangles per frame (view + shadow maps + post), averaged over 2 frames (the far cascades alternate)' };
+  } finally { sm.render = smr; }
+}
+
+/** GPU ms of the costliest `top` scene children one at a time, and of the rest together (visible = false). */
+export async function owners(E, scene, cen, { top = 8, n = 20, pairs = 4 } = {}) {
+  const picked = cen.children.slice(0, top);
+  const rows = [];
+  const hide = (objs) => () => objs.forEach((o) => { o.visible = false; });
+  const show = (objs) => () => objs.forEach((o) => { o.visible = true; });
+  const pickedObjs = [];
+  for (const r of picked) {
+    const objs = scene.children.filter((c) => (c.name || `(unnamed ${c.type})`) === r.name && c.visible && !c.isLight);
+    if (!objs.length) continue;
+    pickedObjs.push(...objs);
+    const t = await pairedToggle(E, hide(objs), show(objs), { n, pairs });
+    rows.push({ name: r.name, draws: r.draws, tris: r.tris, shadowDraws: r.shadowDraws, shadowTris: r.shadowTris, ...t });
+  }
+  const rest = scene.children.filter((c) => c.visible && !c.isLight && !c.isCamera && !pickedObjs.includes(c) && c.name !== 'CAL.attribSentinel');
+  const restCen = cen.children.filter((r) => !picked.includes(r));
+  const t = await pairedToggle(E, hide(rest), show(rest), { n, pairs });
+  rows.push({ name: '(all other children)', children: rest.length, draws: r3(restCen.reduce((a, r) => a + r.draws, 0)), tris: restCen.reduce((a, r) => a + r.tris, 0), ...t });
+  const tAll = await pairedToggle(E, hide([...pickedObjs, ...rest]), show([...pickedObjs, ...rest]), { n, pairs });
+  return { rows, everything: tAll, sumRowsMs: r3(rows.reduce((a, r) => a + (r.ms || 0), 0)) };
+}
+
+/** GPU ms of the shadow maps: all, then each cascade alone off. */
+export async function cascades(E, { n = 20, pairs = 4 } = {}) {
+  const sm = E.renderer.shadowMap, lights = E.csm?.lights || [];
+  const smr = sm.render;
+  let deny = null;
+  sm.render = function (ls, s, cm) { return smr.call(this, deny ? ls.filter((l) => !deny(l)) : ls, s, cm); };
+  try {
+    const out = { all: await pairedToggle(E, () => { deny = () => true; }, () => { deny = null; }, { n, pairs }), each: [] };
+    for (let i = 0; i < lights.length; i++) {
+      const l = lights[i];
+      out.each.push({ cascade: i, mapSize: l.shadow.mapSize.x, ...(await pairedToggle(E, () => { deny = (x) => x === l; }, () => { deny = null; }, { n, pairs })) });
+    }
+    out.cadence = E.tier?.csmFarCadence ?? null;
+    return out;
+  } finally { sm.render = smr; }
+}
+
+/** GPU ms of GTAO, bloom and SMAA together. */
+export async function postToggle(E, { n = 20, pairs = 4 } = {}) {
+  const keep = { gtao: E.gtao.enabled, bloom: E.bloom.enabled, smaa: E.smaa.enabled };
+  return pairedToggle(E, () => { E.gtao.enabled = false; E.bloom.enabled = false; E.smaa.enabled = false; },
+    () => { E.gtao.enabled = keep.gtao; E.bloom.enabled = keep.bloom; E.smaa.enabled = keep.smaa; }, { n, pairs });
+}
+
+/** The frame at 1/8 resolution per axis, with and without shadow maps and with the main view empty (3 interleaved rounds). */
+export async function tiny(E, { n = 30, rounds = 3, scale = 0.125 } = {}) {
+  const sm = E.renderer.shadowMap, cam = E.camera, smr = sm.render;
+  const keepScale = E.renderScale, keepMask = cam.layers.mask;
+  let noShadow = false;
+  sm.render = function (ls, s, cm) { return smr.call(this, noShadow ? [] : ls, s, cm); };
+  // the shadow pass still sees every caster when the view is emptied (three tests casters against the view's layers)
+  const smr2 = sm.render;
+  sm.render = function (ls, s, cm) { const k = cm.layers.mask; cm.layers.mask = keepMask; try { return smr2.call(this, ls, s, cm); } finally { cm.layers.mask = k; } };
+  const S = { full: [], tiny: [], tinyNoShadow: [], tinyEmpty: [], tinyEmptyNoShadow: [] };
+  const sub = { full: [], tiny: [], tinyNoShadow: [], tinyEmpty: [], tinyEmptyNoShadow: [] };
+  let buf = null;
+  try {
+    for (let r = 0; r < rounds; r++) {
+      E.renderScale = keepScale; E.resize(); await wait(6);
+      let f = await timeFrame(E, n); S.full.push(f.medianMs); sub.full.push(f.submitMs);
+      E.renderScale = keepScale * scale; E.resize(); await wait(6);
+      buf = E.renderer.getDrawingBufferSize(new T.Vector2()).toArray();
+      f = await timeFrame(E, n); S.tiny.push(f.medianMs); sub.tiny.push(f.submitMs);
+      noShadow = true; await wait(2);
+      f = await timeFrame(E, n); S.tinyNoShadow.push(f.medianMs); sub.tinyNoShadow.push(f.submitMs);
+      cam.layers.mask = 1 << EMPTY; await wait(2);
+      f = await timeFrame(E, n); S.tinyEmptyNoShadow.push(f.medianMs); sub.tinyEmptyNoShadow.push(f.submitMs);
+      noShadow = false; await wait(2);
+      f = await timeFrame(E, n); S.tinyEmpty.push(f.medianMs); sub.tinyEmpty.push(f.submitMs);
+      cam.layers.mask = keepMask;
+    }
+  } finally {
+    sm.render = smr; cam.layers.mask = keepMask; noShadow = false;
+    E.renderScale = keepScale; E.resize(); await wait(10);
+  }
+  const m = Object.fromEntries(Object.entries(S).map(([k, v]) => [k, r3(median(v))]));
+  const ms = Object.fromEntries(Object.entries(sub).map(([k, v]) => [k, r3(median(v))]));
+  return { scale, tinyBuffer: buf, medianMs: m, submitMs: ms,
+    derived: {
+      perPixelMs: r3(m.full - m.tiny),
+      shadowMapsMs: r3(m.tiny - m.tinyNoShadow),
+      shadowMapsEmptyViewMs: r3(m.tinyEmpty - m.tinyEmptyNoShadow),
+      mainViewGeometryMs: r3(m.tinyNoShadow - m.tinyEmptyNoShadow),
+      floorMs: m.tinyEmptyNoShadow,
+      floorSubmitMs: ms.tinyEmptyNoShadow,
+    },
+    note: 'medians of interleaved rounds; at 1/64 of the pixels the fragment work is gone, so what is left is vertex, per-draw and fixed cost' };
+}
+
+/** The main thread frozen and live, Brea's cloth and the people (their solver rings reset at the live window's start). */
+export async function cpuD1(E, ctx, { liveFrames = 180 } = {}) {
+  const p = ctx.player;
+  let rig = null;
+  try { const M = await import('/src/entities/anim/cloth/rig.js'); rig = M.peekClothRig?.(p?.animator) || null; } catch { /* */ }
+  const people = ctx.people?.list || [];
+  const snap = async (n) => { E.perfReset(); await wait(n + 4); const s = E.perfSnapshot(n);
+    return s && { medianFrameMs: r3(s.medianFrameMs), p95FrameMs: r3(s.p95FrameMs), medianJsMs: r3(s.medianJsMs), p95JsMs: r3(s.p95JsMs),
+      medianSimMs: r3(s.medianSimMs), p95SimMs: r3(s.p95SimMs), medianSubmitMs: r3(s.medianRenderMs), p95SubmitMs: r3(s.p95RenderMs),
+      draws: s.medianDrawCalls, triangles: s.maxTriangles }; };
+  const frozen = await snap(60);
+  if (rig?.sys) { rig.sys.ringN = 0; rig.sys.ringI = 0; }
+  for (const q of people) if (q.chains?.strands?.sys) { q.chains.strands.sys.ringN = 0; q.chains.strands.sys.ringI = 0; }
+  E.requestTimeScale('studio', null);
+  let live, near = [];
+  try {
+    await wait(10);
+    E.perfReset();
+    for (let i = 0; i < liveFrames + 4; i++) { await raf(); if (i % 10 === 0) near.push(people.filter((q) => q.tier === 0).length); }
+    const s = E.perfSnapshot(liveFrames);
+    live = s && { medianFrameMs: r3(s.medianFrameMs), p95FrameMs: r3(s.p95FrameMs), medianJsMs: r3(s.medianJsMs), p95JsMs: r3(s.p95JsMs),
+      medianSimMs: r3(s.medianSimMs), p95SimMs: r3(s.p95SimMs), medianSubmitMs: r3(s.medianRenderMs), p95SubmitMs: r3(s.p95RenderMs),
+      draws: s.medianDrawCalls, triangles: s.maxTriangles };
+  } finally { E.requestTimeScale('studio', 0); await wait(4); }
+  const tm = (t) => t && { n: t.n, mean: r3(t.mean), p50: r3(t.p50), p95: r3(t.p95), max: r3(t.max) };
+  const ppl = people.filter((q) => q.chains?.strands?.sys?.ringN > 0).map((q) => ({ id: q.id, tier: q.tier, d: r3(q.distance), timing: tm(q.chains.strands.sys.timing()) }));
+  return { frozen, live, cloth: { rig: !!rig, timing: tm(rig?.sys?.timing?.()), pieces: rig?.pieces?.length ?? null, asleep: rig?.pieces?.filter((P) => P.asleep).length ?? null },
+    people: { total: people.length, visible: people.filter((q) => q.group?.visible).length, nearMax: near.length ? Math.max(...near) : null,
+      strandsMeanSumMs: r3(ppl.reduce((a, q) => a + (q.timing?.mean || 0), 0)), withStrands: ppl.length, rows: ppl.slice(0, 24) } };
+}
+
+/**
+ * The Holds' fight load as stand-ins in front of the lens. `spec` (defaults: the M2 brief's fight frame):
+ *   large  { n: 1, tris: 80000, draws: 12, size: 8, dist: 22 }
+ *   medium { n: 3, tris: 50000, draws: 10, size: 4.5, dist: 16 }
+ *   dwellings { n: 16, tris: 6000, draws: 4, size: 7, dist: [40, 90] }
+ *   walls  { n: 9, tris: 1600, draws: 1, size: 3, dist: [30, 70] }
+ * Each part is a UV sphere (indexed, its segments chosen for the triangle count), MeshStandardMaterial registered with
+ * the cascades, casting and receiving, on the ground under it (terrain.getHeight). Returns the counts as drawn and
+ * the GPU ms of each class and of the whole set, at full and at half triangles.
+ */
+export async function standIns(E, scene, ctx, spec = {}, { n = 20, pairs = 4 } = {}) {
+  const S = {
+    large: { n: 1, tris: 80000, draws: 12, size: 8, dist: 22, spread: 0 },
+    medium: { n: 3, tris: 50000, draws: 10, size: 4.5, dist: 16, spread: 9 },
+    dwellings: { n: 16, tris: 6000, draws: 4, size: 7, dist: [40, 90], spread: 70 },
+    walls: { n: 9, tris: 1600, draws: 1, size: 3, dist: [30, 70], spread: 60 },
+    ...spec,
+  };
+  const cam = E.camera;
+  const fwd = new T.Vector3(); cam.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
+  const right = new T.Vector3(-fwd.z, 0, fwd.x);
+  const ground = (x, z) => { try { const h = ctx.terrain?.getHeight?.(x, z); if (Number.isFinite(h)) return h; } catch { /* */ } return cam.position.y - 1.7; };
+  const sphere = (tris) => { const s = Math.max(3, Math.round(Math.sqrt(tris / 2))); return new T.SphereGeometry(1, s, s + 1); };
+  const mats = [], geos = [], groups = {};
+  const mk = (color) => { const m = new T.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.25 }); E.csmSetupMaterial?.(m); mats.push(m); return m; };
+  const build = (key, cls, color, half) => {
+    const g = new T.Group(); g.name = `D1-standin-${key}`;
+    const per = Math.round((half ? cls.tris / 2 : cls.tris) / cls.draws);
+    const geo = sphere(per); geos.push(geo);
+    const mat = mk(color);
+    for (let i = 0; i < cls.n; i++) {
+      const d = Array.isArray(cls.dist) ? cls.dist[0] + (cls.dist[1] - cls.dist[0]) * ((i * 0.618) % 1) : cls.dist;
+      const side = cls.n > 1 ? ((i / (cls.n - 1)) - 0.5) * cls.spread : 0;
+      const x = cam.position.x + fwd.x * d + right.x * side, z = cam.position.z + fwd.z * d + right.z * side;
+      const y = ground(x, z);
+      for (let k = 0; k < cls.draws; k++) {
+        const m = new T.Mesh(geo, mat);
+        const a = (k / cls.draws) * Math.PI * 2;
+        const r = cls.draws > 1 ? cls.size * 0.28 : 0;
+        m.scale.set(cls.size * 0.35, cls.size * (key === 'walls' ? 0.5 : 0.3), cls.size * (key === 'walls' ? 1.6 : 0.35));
+        m.position.set(x + Math.cos(a) * r, y + cls.size * 0.45 + (k % 3) * cls.size * 0.12, z + Math.sin(a) * r);
+        m.castShadow = true; m.receiveShadow = true;
+        m.userData.noSizeCull = true;
+        g.add(m);
+      }
+    }
+    return g;
+  };
+  const colors = { large: 0xb8a68a, medium: 0x9a8f7c, dwellings: 0xe8e2d4, walls: 0xcfc6b2 };
+  const add = (half) => { const out = {}; for (const k of Object.keys(colors)) { out[k] = build(k, S[k], colors[k], half); scene.add(out[k]); } return out; };
+  const remove = (gs) => { for (const g of Object.values(gs)) scene.remove(g); };
+  const res = { spec: S, full: {}, half: {} };
+  try {
+    const before = infoFrames(E, 2);
+    Object.assign(groups, add(false));
+    try { E.renderer.compile(scene, cam); } catch { /* compiled on first draw */ }
+    await wait(20);
+    const after = infoFrames(E, 2);
+    res.full.counts = { draws: r3(after.draws - before.draws), tris: Math.round(after.tris - before.tris) };
+    const vis = (gs, v) => () => gs.forEach((g) => { g.visible = v; });
+    for (const k of Object.keys(colors)) {
+      res.full[k] = { ...(await pairedToggle(E, vis([groups[k]], false), vis([groups[k]], true), { n, pairs })) };
+      groups[k].visible = false; const without = infoFrames(E, 2); groups[k].visible = true;
+      res.full[k].draws = r3(after.draws - without.draws); res.full[k].tris = Math.round(after.tris - without.tris);
+    }
+    const allG = Object.values(groups);
+    res.full.all = await pairedToggle(E, vis(allG, false), vis(allG, true), { n, pairs });
+    remove(groups);
+    const halfG = add(true);
+    try { E.renderer.compile(scene, cam); } catch { /* */ }
+    await wait(10);
+    const afterHalf = infoFrames(E, 2);
+    res.half.counts = { draws: r3(afterHalf.draws - before.draws), tris: Math.round(afterHalf.tris - before.tris) };
+    res.half.all = await pairedToggle(E, vis(Object.values(halfG), false), vis(Object.values(halfG), true), { n, pairs });
+    remove(halfG);
+  } finally {
+    for (const c of scene.children.slice()) if (/^D1-standin-/.test(c.name)) scene.remove(c);
+    for (const m of mats) m.dispose();
+    for (const g of geos) g.dispose();
+    await wait(4);
+  }
+  return res;
+}
+
+export async function attributeD1(E, scene, ctx, { standIn = false, spec = {} } = {}) {
+  E.enableGpuTimer(false);
+  E.setDynamicResolution?.(false);
+  await wait(30);
+  const info = { gpu: null, renderScale: E.renderScale, tier: E.tierName ?? E.tier?.name ?? null, csmMapSizes: E.csmMapSizes, cadence: E.tier?.csmFarCadence ?? null };
+  try { const gl = E.renderer.getContext(); const d = gl.getExtension('WEBGL_debug_renderer_info'); info.gpu = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; } catch { /* */ }
+  const t0 = performance.now();
+  const finishA = await finishFrame(E, 60);
+  const cen = census(E, scene);
+  const own = await owners(E, scene, cen, { top: 8 });
+  const cas = await cascades(E);
+  const post = await postToggle(E);
+  const tn = await tiny(E);
+  const finishB = await finishFrame(E, 60);
+  const si = standIn ? await standIns(E, scene, ctx, spec) : null;
+  const c = await cpuD1(E, ctx);
+  return { probe: 'd1', info, finish: finishA, finishEnd: finishB, census: cen, owners: own, cascades: cas, post, tiny: tn, standIns: si, cpu: c,
+    seconds: Math.round((performance.now() - t0) / 1000) };
+}

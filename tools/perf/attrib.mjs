@@ -5,8 +5,16 @@
  * half-resolution probe and the CPU frame. Writes one JSON per run and a screenshot per frame.
  *
  *   node tools/perf/attrib.mjs --port 5270 --out <dir outside the repo> [--frames F02,F23-plumb,F32] [--vsync on]
+ *        [--probe m08|d1] [--standins F25] [--serve] [--slot-wait 1800]
  *
- * The caller holds the Chrome slot and serves the tree on the port (Vite, 127.0.0.1). Timing method: the GPU is timed
+ * --probe d1 (M2 wave 0, D1) runs attrib-page.mjs attributeD1 instead of M0.8's attributeFrame: the census of draws and
+ * triangles per scene child and per cascade, the GPU ms of the costliest children, of each cascade, of the post chain,
+ * the 1/64-pixel frame (vertex, per-draw and fixed cost), the main thread with Brea's cloth and the people live, and on
+ * the --standins frames the Holds' fight load as stand-in geometry. tools/perf/holds-budget.mjs reads its JSON.
+ *
+ * The tool takes the machine guard and Chrome slot 1 itself (tools/chrome-slot.mjs; CALIMA_SLOT_HELD=1 if the caller
+ * holds it). With --serve it runs its own Vite dev server on --port (127.0.0.1, nice -n 10) and stops it at the end;
+ * without, the caller serves the tree on the port. Timing method: the GPU is timed
  * with EXT_disjoint_timer_query_webgl2 around composer.render (engine.enableGpuTimer), which does not include the
  * wait for vsync; Chrome is launched with --disable-gpu-vsync --disable-frame-rate-limit (unless --vsync on) so the
  * GPU runs frame after frame and is not down-clocked by idle gaps. The GPU renderer string and the Chrome version
@@ -16,7 +24,12 @@ import puppeteer from 'puppeteer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../chrome-profile.mjs';
+import { takeMachineSlot, releaseMachineSlot } from '../chrome-slot.mjs';
+import { assertOutsideRepo } from '../frames/paths.mjs';
 import { stageFrame, unstageFrame } from '../frames/page.mjs';
 import { loadFrameSet } from '../frames/frameset.mjs';
 
@@ -27,13 +40,31 @@ const OUT = flag('--out');
 if (!OUT) { console.error('attrib: --out <dir> is required (outside the repo)'); process.exit(2); }
 const FRAMES = (flag('--frames', 'F02,F23-plumb,F32')).split(',').map((s) => s.trim()).filter(Boolean);
 const VSYNC = flag('--vsync', 'off');
+const PROBE = flag('--probe', 'm08');
+const STANDINS = new Set((flag('--standins', '') || '').split(',').map((x) => x.trim()).filter(Boolean));
+const SERVE = args.includes('--serve');
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+assertOutsideRepo(OUT, REPO);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const git = (...a) => { try { return execFileSync('git', a, { encoding: 'utf8' }).trim(); } catch { return null; } };
+const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return null; } };
+const load1 = () => Math.round(os.loadavg()[0] * 100) / 100;
 mkdirSync(OUT, { recursive: true });
 
 const run = { tool: 'tools/perf/attrib.mjs', commit: git('rev-parse', '--short', 'HEAD'), dirty: (git('status', '--porcelain', '--untracked-files=no') || '').split('\n').filter(Boolean),
-  port: PORT, vsync: VSYNC, viewport: { width: 1600, height: 900, dpr: 1.25 }, startedAt: new Date().toISOString(), frames: [], console: [] };
+  tree: REPO, port: PORT, vsync: VSYNC, probe: PROBE, standIns: [...STANDINS], load1: { start: load1() }, viewport: { width: 1600, height: 900, dpr: 1.25 }, startedAt: new Date().toISOString(), frames: [], console: [] };
 installProfileCleanup();
+let server = null;
+const stopServer = () => { if (!server) return; try { process.kill(-server.pid, 'SIGTERM'); } catch { /* */ } server = null; };
+process.on('exit', stopServer);
+if (SERVE) {
+  server = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
+  let up = false;
+  for (let i = 0; i < 240 && !up; i++) { try { up = (await fetch(`http://127.0.0.1:${PORT}/`)).ok; } catch { /* */ } if (!up) await sleep(500); }
+  if (!up) { stopServer(); console.error(`attrib: the dev server did not answer on ${PORT}`); process.exit(3); }
+}
+const slot = await takeMachineSlot({ who: `attrib ${PORT}`, waitS: Number(flag('--slot-wait', 1800)) });
+if (!slot.ok) { stopServer(); console.error(`attrib: no Chrome slot (${slot.why})`); process.exit(4); }
+run.slot = { waitedS: slot.waitedS, held: slot.held };
 const profile = profileDir(PORT);
 const launchArgs = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940'];
 if (VSYNC === 'off') launchArgs.push('--disable-gpu-vsync', '--disable-frame-rate-limit');
@@ -67,6 +98,18 @@ try {
     try {
       const staged = await page.evaluate(stageFrame, f, { settleMs: 2600 });
       await page.screenshot({ path: path.join(OUT, `${id}.png`) });
+      if (PROBE === 'd1') {
+        const l0 = load1();
+        const a = await page.evaluate(async (standIn) => {
+          const M = await import('/tools/perf/attrib-page.mjs');
+          return M.attributeD1(window.__CTX__.engine, window.__CTX__.scene, window.__CTX__, { standIn });
+        }, STANDINS.has(id));
+        await page.evaluate(unstageFrame);
+        run.frames.push({ id, staged: { measured: staged.measured, standIns: staged.standIns, sim: staged.sim ? { frames: staged.sim.frames } : null }, load1: [l0, load1()], ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
+        writeFileSync(path.join(OUT, 'attrib.json'), JSON.stringify(run, null, 1));
+        console.log(`[attrib d1] ${id}: finish ${a.finish.medianMs} ms (submit ${a.finish.submitMs}), end ${a.finishEnd.medianMs}; draws ${a.census.frame.draws}, tris ${a.census.frame.tris}; shadows ${a.cascades.all.ms}, post ${a.post.ms}; tiny ${JSON.stringify(a.tiny.derived)}; owners ${a.owners.rows.map((r) => `${r.name} ${r.ms}`).join(', ')}; ${a.seconds} s`);
+        continue;
+      }
       const a = await page.evaluate(async () => {
         const M = await import('/tools/perf/attrib-page.mjs');
         return M.attributeFrame(window.__CTX__.engine, window.__CTX__.scene);
@@ -83,6 +126,9 @@ try {
 } finally {
   try { await browser.close(); } catch { try { browser.process()?.kill('SIGKILL'); } catch { /* */ } }
   disposeProfile(profile);
+  releaseMachineSlot();
+  stopServer();
+  run.load1.end = load1();
   run.endedAt = new Date().toISOString();
   writeFileSync(path.join(OUT, 'attrib.json'), JSON.stringify(run, null, 1));
   console.log(`[attrib] wrote ${path.join(OUT, 'attrib.json')} (${run.console.length} console errors)`);
