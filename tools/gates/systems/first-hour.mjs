@@ -219,6 +219,26 @@ async function walkPath(page, target, radius, maxS = 150) {
   return { ...r, nav: true, of: pts.length, s: +((Date.now() - t0) / 1000).toFixed(1) };
 }
 
+/** The village's published road when it has one (settlements.ninewalls.road, [x, z, h] points), else walkPath alone. */
+async function walkRoad(page, target, radius, maxS = 150) {
+  const t0 = Date.now();
+  const road = await page.evaluate(() => { const R = window.__CTX__.settlements?.ninewalls?.road; return Array.isArray(R) && R.length > 1 ? R.map((p) => ({ x: p[0], z: p[1] })) : null; });
+  if (!road) return { ...(await walkPath(page, target, radius, maxS)), road: false };
+  const pts = [road[0]];
+  for (const q of road) if (Math.hypot(q.x - pts.at(-1).x, q.z - pts.at(-1).z) >= 6) pts.push(q);
+  pts.push(road.at(-1));
+  const foot = await walkPath(page, pts[0], 3, Math.min(60, maxS));
+  if (!foot.ok) return { ...foot, road: true, leg: 'to the road', s: +((Date.now() - t0) / 1000).toFixed(1) };
+  for (const w of pts.slice(1)) {
+    const left = maxS - (Date.now() - t0) / 1000;
+    if (left <= 0) return { ok: false, why: 'timed out on the road', road: true, s: +((Date.now() - t0) / 1000).toFixed(1) };
+    const r = await walkTo(page, w, 2.2, Math.min(20, left));
+    if (!r.ok) return { ...r, road: true, leg: 'on the road', of: pts.length, s: +((Date.now() - t0) / 1000).toFixed(1) };
+  }
+  const r = await walkPath(page, target, radius, Math.max(5, maxS - (Date.now() - t0) / 1000));
+  return { ...r, road: true, of: pts.length, s: +((Date.now() - t0) / 1000).toFixed(1) };
+}
+
 async function shot(page, name) {
   try {
     await page.evaluate(() => { if (window.__hitch) window.__hitch.pause++; });
@@ -319,7 +339,10 @@ async function runLeg(leg) {
       const played = {};
       if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
-        played.walk = await walkPath(page, PLACES.ninewalls, 30, 150);
+        // (M2 wave 2, area B, the smallest change: the walk in) Ninewalls publishes its road (settlements.ninewalls.road: the
+        // west face's switchback, the bible's graded 256 m). She walks to its foot on the nav grid, up it point by point (about
+        // every 6 m, as a player keeps to a road), then on to the village; with no road, the nav grid all the way as before
+        played.walk = await walkRoad(page, PLACES.ninewalls, 30, 150);
         await page.evaluate(() => window.__hitchMark('walk-end'));
         played.hitch = await page.evaluate(() => { const M = window.__hitch.marks, a = M.at(-2), b = M.at(-1); return { frames: b.n - a.n, over33: b.over33 - a.over33, over50: b.over50 - a.over50, maxMsSoFar: +b.max.toFixed(1) }; });
         played.regionEvents = await page.evaluate(() => window.__regionEv.map((e) => ({ ...e, t: +(e.t - window.__t0).toFixed(1) })));
