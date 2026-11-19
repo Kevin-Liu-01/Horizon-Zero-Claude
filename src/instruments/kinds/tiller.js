@@ -8,7 +8,7 @@ import { ExpansionMachine } from '../../entities/machines/rig/expansion-base.js'
 import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.js';
 import { prepareEntry, installHull } from '../lib/hull.js';
 import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup } from '../lib/kindkit.js';
-import { installHerdRipple, fileStep, rippleTick } from './tiller-herd.js';
+import { installHerdRipple, fileStep, fileHold, rippleTick } from './tiller-herd.js';
 
 /**
  * TILLER — bible §7.4 #3 (medium; the herd, role `herd`). A glazed boat-hull on
@@ -32,8 +32,9 @@ import { installHerdRipple, fileStep, rippleTick } from './tiller-herd.js';
  *     when it works (V27: the working end does the work);
  *   - every attack telegraphs (I-05): steady lamp, pinhole, a warm glint on the
  *     striking end, windups 0.45-0.9 s;
- *   - a Plumb's chime ripples down a herd: the lamps flash in sequence, then the
- *     herd flees IN FILE behind its leader (`./tiller-herd.js`, A-herd-ripple).
+ *   - a Plumb's chime ripples down a herd: the lamps flash in sequence, nearest
+ *     first, and the herd closes file and keeps coring on its bearing. It never
+ *     flees (M2 wave 1, IN1; `./tiller-herd.js`, A-herd-ripple).
  *
  * THE LAMP (bible §7.2 / §7.4 "Weak point: drum lamp"): the face just in front
  * of the glass dome, radius 0.20 m (glass 0.26 m across: >= 0.25 m, >= 5 px at
@@ -127,8 +128,10 @@ export class Tiller extends ExpansionMachine {
   /** Calm: a follower walks the leader's path FILE.gap x its rank behind (bible: "on one bearing", in file). */
   _statePatrol(dt) {
     const h = this.herd, f = h ? h.file : null;
-    if (f !== null && f !== undefined && f.leader !== this && this.sc.suspicion <= this.perceptCfg.susEnter
-      && fileStep(this, f, dt, this.walkSpeed)) return;
+    if (f !== null && f !== undefined && this.sc.suspicion <= this.perceptCfg.susEnter) {
+      if (f.leader !== this) { if (fileStep(this, f, dt, this.walkSpeed)) return; }
+      else if (fileHold(this, f, dt)) return;     // IN1: after a chime the leader halts to core while the file closes
+    }
     super._statePatrol(dt);
   }
 
@@ -204,7 +207,7 @@ export default {
   doctrine: {
     herd: true,
     spawn: [{ n: 3, x: 64, z: -96, route: 22, herd: true, poi: 'tiller-herd' }],
-    /** the herd flees IN FILE (A-herd-ripple), and a Plumb's chime ripples down it (`./tiller-herd.js`) */
+    /** the herd walks IN FILE, a Plumb's chime ripples down it and it closes file; it never flees (IN1, `./tiller-herd.js`) */
     install: (m) => installHerdRipple(m),
   },
 };

@@ -354,45 +354,39 @@ const A_HERD_RIPPLE = `(async () => {
   const flashes = ms.map(() => null);
   const t0 = simNow();
   if (s) s.forceState('alert'); else __CTX__.events.emit('plumb-chime', { machine: null, x: back.x, z: back.z });
-  // lamp flashes (the telegraph record: steady 1.6x, pinhole) and the flight
-  const path = [], fpos = ms.map(() => []);
-  let alarmT = null;
-  const leaderStart = lead ? lead.position.clone() : null;
-  while (simNow() - t0 < 16) {
+  // lamp flashes (the telegraph record: steady 1.6x, pinhole); then IN1 (M2 wave 1): no flight, the file closes at walk
+  const walk = ms.map((m) => m.walkSpeed), bearing0 = ms.map((m) => m.heading);
+  let maxOverWalk = -1e9, maxTurnDeg = 0, gapsAt4 = null, alarmT = null;
+  const ang = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d) * 180 / Math.PI; };
+  const ripples0 = __M._herdRipple ? __M._herdRipple.ripples : 0;
+  while (simNow() - t0 < 12) {
     await new Promise(r => requestAnimationFrame(r)); heal();
     const t = simNow() - t0;
     ms.forEach((m, i) => { const r = m.lamp; if (flashes[i] === null && r && r.teleSince >= t0 - 0.01) flashes[i] = +(r.teleSince - t0).toFixed(3); });
     if (alarmT === null && herd.alarmed) alarmT = +t.toFixed(3);
-    if (lead) path.push([lead.position.x, lead.position.z]);
-    ms.forEach((m, i) => { if (m !== lead && alarmT !== null) fpos[i].push([m.position.x, m.position.z]); });
+    ms.forEach((m, i) => {
+      const v = m.sc ? m.sc._speed : (m._speed ?? 0);
+      if (v - walk[i] > maxOverWalk) maxOverWalk = v - walk[i];
+      const a = ang(m.heading, bearing0[i]); if (a > maxTurnDeg) maxTurnDeg = a;
+    });
+    if (gapsAt4 === null && t >= 4 && f) gapsAt4 = f.order.slice(1).map((m, k) => +Math.hypot(m.position.x - f.order[k].position.x, m.position.z - f.order[k].position.z).toFixed(2));
   }
-  // the leader's first 30 m of flight (from the alarm on), as a polyline including its calm path before it
-  let lenAfter = 0, cut = path.length;
-  const aIdx = Math.max(0, Math.round(path.length * 0));
-  const pre = f ? Array.from({ length: f.count }, (_, k) => { const i = (f.head - (f.count - 1 - k) + f.cx.length) % f.cx.length; return [f.cx[i], f.cz[i]]; }) : [];
-  const poly = pre.slice();
-  let started = false, last = null;
-  for (const q of path) { if (!started) { started = true; } if (last) { lenAfter += Math.hypot(q[0] - last[0], q[1] - last[1]); } last = q; poly.push(q); if (lenAfter >= 30) break; }
-  const segD = (x, z) => { let best = 1e9; for (let k = 1; k < poly.length; k++) { const a = poly[k - 1], b = poly[k]; const ex = b[0] - a[0], ez = b[1] - a[1]; const L2 = ex * ex + ez * ez || 1e-9; let u = ((x - a[0]) * ex + (z - a[1]) * ez) / L2; u = u < 0 ? 0 : u > 1 ? 1 : u; const dx = a[0] + ex * u - x, dz = a[1] + ez * u - z; const d = Math.hypot(dx, dz); if (d < best) best = d; } return best; };
-  const lateral = ms.map((m, i) => {
-    if (m === lead) return null;
-    let worst = 0, n = 0;
-    for (const q of fpos[i]) { const d = segD(q[0], q[1]); n++; if (d > worst) worst = d; }
-    return { worstM: +worst.toFixed(2), samples: n };
-  });
   const order = flashes.map((t, i) => ({ i, t })).filter(x => x.t !== null).sort((a, b) => a.t - b.t);
   const span = order.length ? order[order.length - 1].t - order[0].t : null;
   for (const m of ms) __M.sites.dispose(m);
   if (s) __M.sites.dispose(s);
   const checks = {
-    chimeHeard: alarmT !== null,
+    chimeHeard: (__M._herdRipple ? __M._herdRipple.ripples : 0) > ripples0,
     flashInSequence: order.length === ms.length && span !== null && span <= 1.5 && order.every((x, k) => k === 0 || x.t > order[k - 1].t),
-    fleesInFile: lateral.every(x => x === null || (x.samples > 30 && x.worstM <= 2.0)),
-    leaderRan30m: lenAfter >= 30,
+    neverFlees: alarmT === null && !ms.some((m) => m._fleeing),
+    noSpeedAboveWalk: maxOverWalk <= 0.01,
+    bearingHeld: maxTurnDeg <= 2,
+    fileClosedIn4s: !!gapsAt4 && gapsAt4.length === ms.length - 1 && gapsAt4.every((g) => g >= 3.5 && g <= 4.5),
   };
-  const diag = { rippleHook: !!__M._herdRipple, ripples: __M._herdRipple ? __M._herdRipple.ripples : null, file: !!f, fileOrder: f ? f.order.length : 0, sentryState: s ? s.state : null, herds: __M.squads.herds.length, alarmedAtEnd: herd.alarmed };
-  return { pass: Object.values(checks).every(Boolean), detail: { checks, diag, flashesS: flashes, flashSpanS: span && +span.toFixed(3), alarmS: alarmT, leaderFlightM: +lenAfter.toFixed(1), lateral, sentry: sentryKind,
-    bar: 'a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd then flees in file: every member within 2 m lateral of the leader path for the first 30 m' } };
+  const diag = { rippleHook: !!__M._herdRipple, ripples: __M._herdRipple ? __M._herdRipple.ripples : null, file: !!f, fileOrder: f ? f.order.length : 0, sentryState: s ? s.state : null, herds: __M.squads.herds.length, alarmedAtEnd: herd.alarmed, leader: lead ? ms.indexOf(lead) : null };
+  return { pass: Object.values(checks).every(Boolean), detail: { checks, diag, flashesS: flashes, flashSpanS: span && +span.toFixed(3), alarmS: alarmT,
+    maxSpeedOverWalk: +maxOverWalk.toFixed(3), maxBearingChangeDeg: +maxTurnDeg.toFixed(2), gapsAt4sM: gapsAt4, sentry: sentryKind,
+    bar: 'IN1 (M2 wave 1; was: the herd flees in file): a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd never flees: no alarm, no member above its walk, no member\'s bearing changes by more than 2 deg over 12 s, and every file gap 3.5-4.5 m 4 s after the chime' } };
 })()`;
 
 /* ------------------------------------------------------------------ */
@@ -989,7 +983,7 @@ const GATES = [
   { id: 'A-transect', kind: 'action', lane: LANE, timeout: 150000, settle: 400,
     title: 'A Peg swarm lays a line: pegs are 1 instanced draw; crossing within 20 m of a Plumb raises it to wary <= 1 s; site dispose removes the pegs (geometries baseline)', assert: A_TRANSECT },
   { id: 'A-herd-ripple', kind: 'action', lane: LANE, timeout: 150000, settle: 400,
-    title: 'A Plumb chimes near a herd: lamps flash in sequence down the herd within 1.5 s; the herd flees in file, every member within 2 m lateral of the leader path for the first 30 m', assert: A_HERD_RIPPLE },
+    title: 'A Plumb chimes near a herd: lamps flash in sequence down the herd within 1.5 s; the herd never flees (IN1): no member above its walk, bearing within 2 deg over 12 s, every file gap 3.5-4.5 m at 4 s', assert: A_HERD_RIPPLE },
   { id: 'A-instr-shadow-lod', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
     title: 'I-04 (Tiller): LOD1 <= 40 % of LOD0; the shadow pass draws LOD1 only; shadow-mask IoU LOD0:LOD1 >= 0.90 at 12 m', assert: A_INSTR_SHADOW_LOD },
   { id: 'A-lock-pop', kind: 'action', lane: LANE, timeout: 150000, settle: 400,
