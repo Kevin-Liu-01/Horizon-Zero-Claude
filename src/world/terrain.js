@@ -788,7 +788,7 @@ export class Terrain {
       C.sphere = box.getBoundingSphere(new THREE.Sphere());
       const g0 = this._chunkGeo(C, 0);
       tris += g0.userData.tris;
-      const m = new THREE.Mesh(g0, C.holds ? this.groundHoldsMaterial : mat);
+      const m = new THREE.Mesh(g0, this._nearMaterial(g0));
       m.name = `terrain-chunk-${C.cx}-${C.cz}`;
       m.receiveShadow = true;
       C.mesh = m; C.lod = 0;
@@ -916,6 +916,14 @@ export class Terrain {
     F.walls = { runs: src.count, ms: +(performance.now() - t0).toFixed(1) };
   }
 
+  /** (M2 wave 3) the near material(s) for a chunk geometry: plain, the Holds', or both by group ('ground-holds-gate' off: the Holds' for all). */
+  _nearMaterial(g) {
+    const sp = g.userData.split;
+    if (!this._holdsGate || sp === 'holds') return this.groundHoldsMaterial;
+    if (sp === 'mixed') return this._groundPair || (this._groundPair = [this.groundMaterial, this.groundHoldsMaterial]);
+    return this.groundMaterial;
+  }
+
   /** One chunk's index at stride TSTRIDES[k] over the shared buffer, with its skirts (built once). */
   _chunkGeo(C, k) {
     if (C.geos[k]) return C.geos[k];
@@ -924,7 +932,15 @@ export class Terrain {
     const X = nodesOf(C.x0, C.x1), Z = nodesOf(C.z0, C.z1);
     const nx = X.length - 1, nz = Z.length - 1;
     const keep = new Uint8Array(nx * nz);
-    const idx = [];
+    /* (M2 wave 3, engine: the smallest change) a triangle with a Holds node at any corner is drawn by the Holds' program,
+     * every other one by the plain ground's: two index ranges (geometry groups) in one buffer, so a chunk on the Holds'
+     * edge pays the Holds' program only where its ground is the Holds' (F25's near chunks at 46343d5 carried a sliver of
+     * blended Holds weight and drew whole with it). packGround: the hold's 5 bits over 0 */
+    const gw = this._attr.normal.array;
+    const isH = (n) => gw[n * 4 + 3] >= 1024;
+    const idxP = [], idxH = [];
+    const tri = (p, q, r) => { (isH(p) || isH(q) || isH(r) ? idxH : idxP).push(p, q, r); };
+    let quadTris = 0;
     for (let j = 0; j < nz; j++) {
       const za = Z[j], zb = Z[j + 1];
       for (let i = 0; i < nx; i++) {
@@ -934,12 +950,11 @@ export class Terrain {
         if (hi < TDEEP) continue;
         keep[j * nx + i] = 1;
         const a = za * side + xa, b = zb * side + xa, c = zb * side + xb, d = za * side + xb;
-        idx.push(a, b, d, b, c, d);
+        tri(a, b, d); tri(b, c, d); quadTris += 2;
       }
     }
-    const quadTris = idx.length / 3;
     /* skirts, both windings, under each border edge whose quad is kept */
-    const wall = (p, q) => { const sp = skirtOf[p], sq = skirtOf[q]; idx.push(p, sp, q, q, sp, sq, p, q, sp, q, sq, sp); };
+    const wall = (p, q) => { const sp = skirtOf[p], sq = skirtOf[q]; tri(p, sp, q); tri(q, sp, sq); tri(p, q, sp); tri(q, sq, sp); };
     for (let i = 0; i < nx; i++) {
       if (keep[i]) wall(Z[0] * side + X[i], Z[0] * side + X[i + 1]);
       if (keep[(nz - 1) * nx + i]) wall(Z[nz] * side + X[i], Z[nz] * side + X[i + 1]);
@@ -954,7 +969,11 @@ export class Terrain {
     g.setAttribute('aTint', this._attr.aTint);
     // (M2 wave 2) the same buffer again: its fourth channel is the Holds' ground (holds/ground.js), unpacked per vertex
     g.setAttribute('aGround', this._attr.normal);
-    g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+    const idx = new Uint32Array(idxP.length + idxH.length);
+    idx.set(idxP); idx.set(idxH, idxP.length);
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    if (idxP.length && idxH.length) { g.addGroup(0, idxP.length, 0); g.addGroup(idxP.length, idxH.length, 1); }
+    g.userData.split = idxH.length ? (idxP.length ? 'mixed' : 'holds') : 'plain';
     g.boundingBox = C.box; g.boundingSphere = C.sphere;
     g.userData.tris = quadTris;
     C.geos[k] = g;
@@ -987,7 +1006,7 @@ export class Terrain {
       }
       hist[k]++;
       if (k !== C.lod) { C.mesh.geometry = this._chunkGeo(C, k); C.lod = k; }
-      const m = far ? F.material : (C.holds || !this._holdsGate) ? this.groundHoldsMaterial : this.groundMaterial;
+      const m = far ? F.material : this._nearMaterial(C.mesh.geometry);
       if (C.mesh.material !== m) C.mesh.material = m;
     }
   }

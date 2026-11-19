@@ -658,6 +658,19 @@ export async function switchToggles(E, ctx, ids, { n = 16, pairs = 3 } = {}) {
   return { method: `paired toggle (ABBA) of each switch, ${pairs} pairs of ${n} back-to-back frames: on - off`, rows };
 }
 
+/** M2 wave 3: the back-to-back frame, the named switches paired, the frame again (attrib.mjs --probe toggles). */
+export async function attributeToggles(E, ctx, { pairs = 8, toggles = [] } = {}) {
+  E.enableGpuTimer(false);
+  E.setDynamicResolution?.(false);
+  await wait(30);
+  const t0 = performance.now();
+  const finishA = await finishFrame(E, 60);
+  const census0 = await infoFrames(E, 2);
+  const sw = await switchToggles(E, ctx, toggles, { pairs });
+  const finishB = await finishFrame(E, 60);
+  return { probe: 'toggles', pairs, finish: finishA, finishEnd: finishB, draws: census0.draws, tris: Math.round(census0.tris), toggles: sw, seconds: Math.round((performance.now() - t0) / 1000) };
+}
+
 export async function attributeD1(E, scene, ctx, { standIn = false, spec = {}, pairs = 3, toggles = [] } = {}) {
   E.enableGpuTimer(false);
   E.setDynamicResolution?.(false);

@@ -5,7 +5,7 @@
  * half-resolution probe and the CPU frame. Writes one JSON per run and a screenshot per frame.
  *
  *   node tools/perf/attrib.mjs --port 5270 --out <dir outside the repo> [--frames F02,F23-plumb,F32] [--vsync on]
- *        [--probe m08|d1] [--standins F25] [--pairs 3] [--toggles ground-holds-gate,...] [--serve] [--slot-wait 1800]
+ *        [--probe m08|d1|toggles] [--standins F25] [--pairs 3] [--toggles ground-holds-gate,...] [--serve] [--slot-wait 1800]
  *
  * --probe d1 (M2 wave 0, D1) runs attrib-page.mjs attributeD1 instead of M0.8's attributeFrame: the census of draws and
  * triangles per scene child and per cascade, the GPU ms of the costliest children, of each cascade, of the post chain,
@@ -14,6 +14,7 @@
  * M2 wave 3: --pairs sets every paired toggle's pair count (owners, cascades, post, stand-ins; default 3, the wave 0
  * runs; 8 on a quiet box for a number to write a budget from), and --toggles names the world's runtime switches
  * (terrain.perfSwitches, vegetation.perfSwitches) to pair on every frame (attrib-page switchToggles: on - off).
+ * --probe toggles runs only that: the back-to-back frame, the switches paired, the frame again (about a minute a frame).
  *
  * The tool takes the machine guard and Chrome slot 1 itself (tools/chrome-slot.mjs; CALIMA_SLOT_HELD=1 if the caller
  * holds it). With --serve it runs its own Vite dev server on --port (127.0.0.1, nice -n 10) and stops it at the end;
@@ -145,7 +146,17 @@ try {
     try {
       const staged = await page.evaluate(stageFrame, f, { settleMs: 2600 });
       await page.screenshot({ path: path.join(OUT, `${id}.png`) });
-      if (PROBE === 'd1') {
+      if (PROBE === 'toggles') {
+        const l0 = load1();
+        const a = await page.evaluate(async (pairs, toggles) => {
+          const M = await import('/tools/perf/attrib-page.mjs');
+          return M.attributeToggles(window.__CTX__.engine, window.__CTX__, { pairs, toggles });
+        }, PAIRS, TOGGLES);
+        await page.evaluate(unstageFrame);
+        run.frames.push({ id, load1: [l0, load1()], memory: machineMemory(), ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
+        writeFileSync(path.join(OUT, 'attrib.json'), JSON.stringify(run, null, 1));
+        console.log(`[attrib toggles] ${id}: finish ${a.finish.medianMs} ms, end ${a.finishEnd.medianMs}; draws ${a.draws}; ${a.toggles.rows.map((r) => `${r.id} ${r.ms ?? r.error} (${r.iqr?.join('..')}) on ${r.onMs}`).join(', ')}; ${a.seconds} s`);
+      } else if (PROBE === 'd1') {
         const l0 = load1();
         const a = await page.evaluate(async (standIn, pairs, toggles) => {
           const M = await import('/tools/perf/attrib-page.mjs');

@@ -236,7 +236,8 @@ export async function topDown(E, C, x, z, { span = 40, px = 1024, layer = null, 
   const undo = isolate(C, { keepMeadow: false });
   // the material alone (terrain.js CAL_CAPTURE): no shadow, skyline, sky or sheen in a tiling check
   const capMats = new Set();
-  C.terrain.group.traverse((o) => { if (o.isMesh && o.material && !o.material.defines?.CAL_CAPTURE) capMats.add(o.material); });
+  // (M2 wave 3: a chunk on the Holds' edge draws two materials, one per geometry group)
+  C.terrain.group.traverse((o) => { if (!o.isMesh || !o.material) return; for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && !m.defines?.CAL_CAPTURE) capMats.add(m); });
   // M1a round 2: `layer` (0 sand, 1 salt, 2 basalt, 3 silt, 4 shingle) captures that ground layer alone (CAL_CAPTURE_LAYER)
   // M2 wave 3: `defines` (e.g. { CAL_P_NOHPITS: 1 }) compiles a ground term out for the capture too
   const extra = defines ? Object.keys(defines) : [];
