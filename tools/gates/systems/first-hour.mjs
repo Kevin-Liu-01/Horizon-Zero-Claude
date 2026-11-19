@@ -130,7 +130,9 @@ const beatProbe = (beat, questId, places, card) => {
     }
     case 'stall': case 'seal-1': case 'seal-2': {
       n.screedKind = can('screed'); n.screeds = live('screed').length;
-      if (!n.screedKind) missing.push('no Screed kind registered (area C: the grey hull and its rules in Node, wave 1; live, wave 3)');
+      if (!n.screedKind) missing.push('no Screed kind registered');
+      else if (!n.screeds) missing.push('no Screed stood up on the walls');
+      else missing.push('the Screed fight is not driven by this runner yet (its rules are graded in Node: tools/instruments/screed-fight.test.mjs)');
       break;
     }
     case 'scar': {

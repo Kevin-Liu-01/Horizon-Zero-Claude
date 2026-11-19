@@ -32,10 +32,11 @@ import { vec3 } from '../world/settlements/brazier.js';
  *   'oro'      Tube Smith Oro at the tube mouth (people.spawn('oro')) and his TALK prompt
  *   'screed'   the Screed outside the outer wall, when its kind can be spawned
  *   'lookers'  three Pegs at their stations 27 m round Benchmark 1: the Instruments that come to look
- * WHAT IT READS when the owning area does not send the event itself (each event is the scar-plan's name):
- *   herd-lee        her chest in a Tiller hull's shadow from the Plumb's lamp (sight.js, instruments' one ray test)
- *   wall-cut        the third wall's state 'cut' (ninewalls-layout.js onWallChange)
- *   screed-stalled / seal-off   a live Screed's phase and parts, when it publishes them (brain.phase, brain.parts)
+ * WHAT IT READS besides the owners' events (each event is the scar-plan's name; the Screed sends 'screed-stalled' and
+ * 'seal-off' itself, src/instruments/kinds/screed.js, and the herd its own 'herd-lee', tiller.js):
+ *   herd-lee        her chest in a Tiller hull's shadow from the terrace Plumb's lamp held 0.5 s (sight.js, the one ray
+ *                   test); the stage completes once whichever is heard first
+ *   wall-cut        the third wall's state 'cut', or three walls cut (ninewalls-layout.js onWallChange)
  * The re-survey is this area's own (./resurvey/live.js), and so is what follows it: true ground (the Holds), the line off
  * every wall (setPainted false), 'line-faded', the travel node.
  */
@@ -152,7 +153,7 @@ export class FirstHour {
   newGame() {
     for (const sp of this.spines) sp.reset();
     this.trueGround.restore(null);
-    this._kitGiven = false; this._cutSent = false; this._stallSent = false; this._sealsSent = null; this._fadeAt = null;
+    this._kitGiven = false; this._cutSent = false; this._fadeAt = null;
     this.resurvey?.dispose(); this.resurvey = null;
   }
 
@@ -377,7 +378,6 @@ export class FirstHour {
     // the Oro prompt is live while the hand-over waits; he stays standing after
     if (this.oroEntry) this.oroEntry.disabled = cur !== 'oro';
     if (cur === 'herd') this._lee(dt);
-    if (cur === 'stall' || cur === 'seal-1' || cur === 'seal-2') this._screedPoll();
     this._resurveyStep(dt);
     if (this._fadeAt != null && this.tg.t >= this._fadeAt) {
       this._fadeAt = null;
@@ -412,24 +412,6 @@ export class FirstHour {
     if (this._leeOn >= LEE_HOLD_S) {
       this._leeOn = 0;
       this.ctx.events?.emit?.('herd-lee', { inShadow: true, plumb: P.id ?? null, by: hit, from: 'systems' });
-    }
-  }
-
-  /** A live Screed's own phase and parts, when its kind publishes them (its rules: screed-rules.js ScreedBrain). */
-  _screedPoll() {
-    const s = this._near('screed', NW.CENTRE, 200)[0];
-    if (!s) return;
-    const B = s.brain ?? s.rules ?? s;
-    const phase = B.phase ?? null;
-    if (phase === 'stall' && !this._stallSent) { this._stallSent = true; this.ctx.events?.emit?.('screed-stalled', { wall: B.stallWall ?? null, from: 'systems' }); }
-    const parts = B.parts;
-    if (parts) {
-      const off = ['sealL', 'sealR'].filter((k) => parts[k]?.state === 'off');
-      for (const k of off) {
-        if ((this._sealsSent ||= new Set()).has(k)) continue;
-        this._sealsSent.add(k);
-        this.ctx.events?.emit?.('seal-off', { seal: k, from: 'systems' });
-      }
     }
   }
 
