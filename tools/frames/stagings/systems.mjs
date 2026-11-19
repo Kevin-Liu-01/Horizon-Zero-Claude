@@ -36,6 +36,8 @@ export const stagings = {
   F44: {
     async world(f, api) {
       const C = api.C;
+      const fadeAt = (w) => { const p = C.player; return `${w}: fade ${p?.fade}, solidCut ${p?.solidCut?.toFixed?.(2)}, solidReach ${p?.solidReach?.toFixed?.(2)}, lensGap ${p?.lensGap?.toFixed?.(2)}, camYaw ${p?.camYaw?.toFixed?.(2)}, camPitch ${p?.camPitch?.toFixed?.(2)}, sighting ${!!C.sighting?.on}`; };
+      api.standIn(fadeAt('at the hook'));
       // the Alidade raised (V): the animator's alidade layer follows Sighting's `on` (playerAnimator.js)
       if (C.sighting?.toggle) {
         C.sighting.toggle(true);
@@ -57,8 +59,9 @@ export const stagings = {
             if (H.unstageResurvey) H.unstageResurvey(); else H.resurvey?.arm(false);
             for (const m of (H.spawned?.lookers || [])) { try { C.machines?.sites?.dispose?.(m) ?? m.dispose?.(); } catch { /* */ } }
           });
-          // the lookers hold where 10 s put them (stageResurvey holds them from the step they stand)
+          api.standIn(fadeAt('after the staging'));
           await api.sleep(300);
+          api.standIn(fadeAt('0.3 s on'));
           if (!rep.lookers.length) api.standIn('no Peg came to look (none could be stood up)');
           else api.standIn(`staged at 10 s: arc ${rep.arc} s, ${rep.taken} of 3 bearings, lookers ${JSON.stringify(rep.placed)}; her fade ${C.player?.fade ?? '?'}`);
         } catch (e) { api.standIn(`the re-survey staging threw: ${e?.message || e}`); }
