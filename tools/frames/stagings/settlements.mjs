@@ -15,7 +15,11 @@
  *        across the slope, the cistern (bearing 359 from it), the tree (20) and the tube mouth (45) in frame; written: 5
  *        people at work (none at blockout: wave 3's cast). At 48311d0 a lens up the south-west lane on bearing 60 saw
  *        only the hillside (the ground under the village climbs 26 deg there)
- *   F37  Oro beside Brea at 3 m: the PEOPLE crop; Oro is wave 2 (no person by that id until then)
+ *   F37  Oro beside Brea at 3 m: the PEOPLE crop, staged as F20 stages Ansel (golden 17:30, the orbit lens 4 m in
+ *        front of her, Oro 3 m to her left facing the lens), in the tube mouth's forecourt (bible E 4.04, N -207.53,
+ *        facing 250: the lens looks up the north-east lane, the tube mouth and the terraces behind them). At wave 1 it
+ *        stood in the flat studio light, which hides every mesh but Brea's (page.mjs 3b), so Oro could never be filmed
+ *        there: the staging error the blockout review named
  *
  * The world hooks run in the page (each serialised on its own; `api.C` is the game's ctx). A frame filmed before the
  * village exists says so as a stand-in.
@@ -44,12 +48,11 @@ export const FRAMES = [
   },
   {
     id: 'F37', subject: 'Oro beside Brea at 3 m', in: 'M2', hour: 17.5, weather: 'trade',
-    at: { en: [-23.21, -222.54] }, bearing: 60,
+    at: { en: [4.04, -207.53] }, bearing: 250,
     camera: { mode: 'orbit', yawRel: 0, dist: 4.0, height: 1.7, target: { fwd: 0, side: 1.5, up: 1.05 }, fov: 42 },
-    light: 'studio',
     state: { pose: 'idle', hud: false, actors: [{ type: 'person', id: 'oro', dist: 3, side: 90, face: 'camera' }] },
     ref: { crops: ['people-lineup'] },
-    note: 'Oro is wave 2: until his person exists the filmer names the missing actor as a stand-in.',
+    note: 'Staged as F20 (Ansel beside Brea at 3 m), not in the studio light: the studio hides every mesh but hers.',
   },
 ];
 

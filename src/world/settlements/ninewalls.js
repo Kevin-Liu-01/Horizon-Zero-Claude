@@ -1,92 +1,31 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as L from './ninewalls-layout.js';
+import { wallsGeometry, townGeometry, kitMaterial } from './ninewalls-kit.js';
+import { ninewallsNatural } from './ninewalls-ground.js';
 import { saveFieldsOf } from '../../game/save/fields.js';
 
 /**
- * NINEWALLS AT BLOCKOUT (M2 wave 1, area B; BUILD M2.2). Grey boxes from ./ninewalls-layout.js and nothing else: the
- * nine crescent walls (one merged mesh, the Datum Line as a flat vermilion band in its vertex colour on the painted
- * walls), the sixteen dwellings, the dragon tree, the tube mouth, the counter, the cistern and the third wall's niche
- * (a second merged mesh). No art: the kit and the people are wave 2 and 3.
+ * NINEWALLS (M2 wave 2, area B; BUILD M2.2): the village on its terraces, from the walls' data (./ninewalls-layout.js)
+ * and the kit (./ninewalls-kit.js): the nine drystone crescent walls, each the riser between two terraces, the Datum
+ * Line a band of flat vermilion ink on the painted walls; the sixteen drystone dwellings sunk in the lapilli under
+ * their pumice-and-lime roofs; the dragon tree; the lava-tube mouth with its forge; the counter; the cistern; the
+ * Brazier's plinth; the third wall's niche and its salt cache; the Guild notice board; the walk in's kerb. One
+ * material, two draws (the walls; everything else), both casting.
  *
  *   nw.group                 'ninewalls' in the scene (its own group: the Brazier system hides the host's)
  *   nw.walls                 the layout seam (WALLS, wallState, setWallCut, setPainted, resetWalls, wallsSave, ...)
+ *   nw.road                  the walk in's centreline (L.ROAD: [x, z, h], the Pans' edge to the cistern's lane)
  *   nw.update(dt, t)         colliders and the occluders register once the world can take them
- *   nw.stats                 { tris, draws, colliders, occluders, rebuilds }
+ *   nw.stats                 { tris, draws, colliders, occluders, rebuilds, wallTris, townTris, tips, kerb }
  *   nw.dispose()
  *
- * A wall's state change (cut, or the line painted or cleared) rebuilds the wall mesh and that wall's colliders and
+ * A wall's state change (cut, or the line painted or cleared) rebuilds the walls' mesh and their colliders and
  * occluders on the next update. The walls' state rides the save as the 'walls' field (src/game/save/fields.js).
- * Built at boot for the blockout (about 11 k triangles, 2 draws); it moves behind region-enter('holds') with the kit.
+ * Built at boot; it moves behind region-enter('holds') with the people (wave 3, NW11).
  */
-
-const GREY_WALL = new THREE.Color(0x8f8a82), GREY_TOP = new THREE.Color(0xa29d94), LINE = new THREE.Color(0xc8401e);
-const GREY_HOUSE = new THREE.Color(0xb4afa5), GREY_ROOF = new THREE.Color(0xd2cdc2), GREY_TREE = new THREE.Color(0x6d6a63);
-const GREY_DARK = new THREE.Color(0x26241f), GREY_KERB = new THREE.Color(0x9c978e);
 
 /** She is near the village (m outside its outer wall): the walls join the sight occluders. */
 const NEAR_M = 150;
-
-const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _e = new THREE.Euler();
-
-/** A box geometry at (x, y, z), turned by ry about y, coloured. */
-function box(w, h, d, x, y, z, ry, color) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  g.applyMatrix4(_m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(0, ry, 0)), _s.set(1, 1, 1)));
-  return paint(g, color);
-}
-function cyl(rt, rb, h, x, y, z, color, seg = 10) {
-  const g = new THREE.CylinderGeometry(rt, rb, h, seg, 1);
-  g.translate(x, y, z);
-  return paint(g, color);
-}
-function paint(g, color) {
-  const n = g.attributes.position.count, c = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) { c[i * 3] = color.r; c[i * 3 + 1] = color.g; c[i * 3 + 2] = color.b; }
-  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-  if (g.index) return g.toNonIndexed();
-  return g;
-}
-
-/**
- * One wall as a ribbon along its stations: each face in rows foot | line foot | line top | top on a painted wall (the
- * middle row the vermilion), one row foot | top on an unpainted one; the top, and the two ends. Non-indexed, flat colours per row.
- */
-function wallGeometry(w, ground, state, painted) {
-  const st = L.stations(w, 1.25), top = L.topOf(w, state), pos = [], col = [];
-  const lo = w.lineH - w.lineW / 2, hi = w.lineH + w.lineW / 2;
-  // a painted wall carries the line's two rows; an unpainted one is one row foot to top
-  const rows = (painted ? [[-0.35, lo, GREY_WALL], [lo, hi, LINE], [hi, top, GREY_WALL]] : [[-0.35, top, GREY_WALL]]).filter(([a, b]) => b > a + 1e-3);
-  const pt = (s, side) => { const d = L.dirOf(s.b), o = side * w.t / 2; return { x: s.x + d.x * o, z: s.z + d.z * o }; };
-  const foot = st.map((s) => ground(s.x, s.z));
-  const quad = (a, b, c, d, color) => {
-    for (const v of [a, b, c, a, c, d]) { pos.push(v[0], v[1], v[2]); col.push(color.r, color.g, color.b); }
-  };
-  for (let i = 0; i < st.length - 1; i++) {
-    for (const side of [1, -1]) {
-      const p0 = pt(st[i], side), p1 = pt(st[i + 1], side), g0 = foot[i], g1 = foot[i + 1];
-      for (const [a, b, color] of rows) {
-        const v00 = [p0.x, g0 + a, p0.z], v10 = [p1.x, g1 + a, p1.z], v11 = [p1.x, g1 + b, p1.z], v01 = [p0.x, g0 + b, p0.z];
-        // outward winding: the outer face (side +1, away from the centre) and the inner face (side -1)
-        if (side > 0) quad(v10, v00, v01, v11, color); else quad(v00, v10, v11, v01, color);
-      }
-    }
-    const o0 = pt(st[i], 1), o1 = pt(st[i + 1], 1), i0 = pt(st[i], -1), i1 = pt(st[i + 1], -1);
-    quad([i0.x, foot[i] + top, i0.z], [i1.x, foot[i + 1] + top, i1.z], [o1.x, foot[i + 1] + top, o1.z], [o0.x, foot[i] + top, o0.z], GREY_TOP);
-  }
-  for (const [k, sgn] of [[0, -1], [st.length - 1, 1]]) {
-    const o = pt(st[k], 1), n = pt(st[k], -1), g = foot[k];
-    for (const [a, b, color] of rows) {
-      const q = [[o.x, g + a, o.z], [n.x, g + a, n.z], [n.x, g + b, n.z], [o.x, g + b, o.z]];
-      if (sgn < 0) quad(q[0], q[1], q[2], q[3], color); else quad(q[1], q[0], q[3], q[2], color);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.computeVertexNormals();
-  return g;
-}
 
 export class Ninewalls {
   constructor(ctx, parent) {
@@ -102,9 +41,8 @@ export class Ninewalls {
     this._occluderSlots = [];
     this._sight = null;
     this._dirty = false;
-    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true });
-    this.material.name = 'ninewalls-blockout';
-    ctx.environment?.registerMaterial?.(this.material);
+    this.road = L.ROAD;
+    this.material = kitMaterial(ctx.environment);
     this._buildWalls();
     this._buildTown();
     this._unlisten = L.onWallChange(() => { this._dirty = true; });
@@ -116,10 +54,9 @@ export class Ninewalls {
   }
 
   _buildWalls() {
-    const geos = L.WALLS.map((w) => { const s = L.wallState(w.id); return wallGeometry(w, this._ground, s.state, s.painted); });
-    const geo = mergeGeometries(geos, false);
-    for (const g of geos) g.dispose();
-    geo.computeBoundingSphere();
+    const soup = wallsGeometry(this._ground, (id) => L.wallState(id));
+    const geo = soup.geometry();
+    this.stats.wallTris = soup.tris;
     if (this.wallMesh) { this.wallMesh.geometry.dispose(); this.wallMesh.geometry = geo; }
     else {
       this.wallMesh = new THREE.Mesh(geo, this.material);
@@ -131,49 +68,13 @@ export class Ninewalls {
   }
 
   _buildTown() {
-    const G = this._ground, parts = [];
-    for (const d of L.DWELLINGS) {
-      const p = L.dwellingPlace(d), g = G(p.x, p.z);
-      // its foot at the lowest corner's ground less the sunk floor, its roof at the centre's ground plus h
-      const c = Math.cos(p.ry), s = Math.sin(p.ry);
-      let gmin = g;
-      for (const [lx, lz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-        const x = p.x + c * lx * d.w / 2 + s * lz * d.d / 2, z = p.z - s * lx * d.w / 2 + c * lz * d.d / 2;
-        gmin = Math.min(gmin, G(x, z));
-      }
-      const y0 = gmin - d.sink, y1 = g + d.h - 0.16;
-      parts.push(box(d.w, y1 - y0, d.d, p.x, (y0 + y1) / 2, p.z, p.ry, GREY_HOUSE));
-      parts.push(box(d.w + 0.3, 0.16, d.d + 0.3, p.x, y1 + 0.08, p.z, p.ry, GREY_ROOF));
-      // the door: a dark slot in the front, toward the tree
-      parts.push(box(0.9, 1.5, 0.08, p.x + s * (d.d / 2 + 0.01), g - 0.2 + 0.75, p.z + c * (d.d / 2 + 0.01), p.ry, GREY_DARK));
-    }
-    const T = L.PLACES.tree, gt = G(T.x, T.z);
-    parts.push(cyl(T.trunkR * 0.8, T.trunkR, T.crown, T.x, gt + T.crown / 2, T.z, GREY_TREE, 9));
-    parts.push(cyl(T.canopyR, T.canopyR * 0.75, T.top - T.crown, T.x, gt + (T.crown + T.top) / 2, T.z, GREY_TREE, 12));
-    const M = L.PLACES.tubeMouth, tg = L.tangentOf(M.b), rd = L.dirOf(M.b), gm = G(M.x, M.z), ry = -M.b * Math.PI / 180;
-    for (const sg of [-1, 1]) {
-      const x = M.x + tg.x * sg * (M.w / 2 + 0.4), z = M.z + tg.z * sg * (M.w / 2 + 0.4);
-      parts.push(box(0.8, M.h + 0.6, M.depth, x, G(x, z) + (M.h + 0.6) / 2 - 0.3, z, ry, GREY_KERB));
-    }
-    parts.push(box(M.w + 1.6, 0.7, M.depth, M.x, gm + M.h + 0.35, M.z, ry, GREY_KERB));
-    parts.push(box(M.w, M.h, 0.1, M.x + rd.x * (M.depth / 2 - 0.05), gm + M.h / 2, M.z + rd.z * (M.depth / 2 - 0.05), ry, GREY_DARK));
-    const K = L.PLACES.counter, gk = G(K.x, K.z);
-    parts.push(box(K.w, K.h, K.d, K.x, gk + K.h / 2, K.z, -K.b * Math.PI / 180, GREY_KERB));
-    const C = L.PLACES.cistern, gc = G(C.x, C.z);
-    parts.push(cyl(C.r, C.r, C.h + 0.3, C.x, gc + (C.h - 0.3) / 2, C.z, GREY_KERB, 16));
-    parts.push(cyl(C.r - 0.3, C.r - 0.3, 0.02, C.x, gc + C.h + 0.01, C.z, GREY_DARK, 16));
-    const B = L.PLACES.brazier, gb = G(B.x, B.z);
-    parts.push(box(0.7, 0.8, 0.7, B.x, gb + 0.4, B.z, 0, GREY_KERB));
-    const N = L.PLACES.niche, gn = G(N.x, N.z);
-    parts.push(box(N.w, N.h, 0.06, N.x, gn + N.sill + N.h / 2, N.z, -N.b * Math.PI / 180, GREY_DARK));
-    const geo = mergeGeometries(parts, false);
-    for (const g of parts) g.dispose();
-    geo.computeVertexNormals();
-    geo.computeBoundingSphere();
-    this.townMesh = new THREE.Mesh(geo, this.material);
+    const natural = (x, z) => { const h = ninewallsNatural(x, z); return Number.isFinite(h) && h !== 0 ? h : this._ground(x, z); };
+    const { soup, tips, kerb } = townGeometry(this._ground, natural);
+    this.townMesh = new THREE.Mesh(soup.geometry(), this.material);
     this.townMesh.name = 'ninewalls-town';
     this.townMesh.castShadow = true; this.townMesh.receiveShadow = true;
     this.group.add(this.townMesh);
+    Object.assign(this.stats, { townTris: soup.tris, tips, kerb });
     this._count();
   }
 

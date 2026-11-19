@@ -28,6 +28,7 @@ import { BENCHMARKS } from '../../../src/world/sites/layout.js';
 import { B1 as HOLDS_B1 } from '../../../src/world/holds/blockout.js';
 import { ISLAND_SCALE } from '../../../src/world/island/extent.js';
 import { ninewallsNatural, ninewallsGroundTables, wallFaces, bankOf } from '../../../src/world/settlements/ninewalls-ground.js';
+import { wallsGeometry, townGeometry } from '../../../src/world/settlements/ninewalls-kit.js';
 import { segmentHit } from '../../../src/instruments/lib/sight.js';
 import {
   WALLS, OUTER_R, CENTRE, DWELLINGS, PLACES, SCAR_CLEAR, polar, bearingOf, dirOf, inSpan, stations, wallBoxes,
@@ -367,8 +368,31 @@ const nw3 = WALLS.map((w) => {
   }
   return { id: w.id, colliders: boxes.length, worstColliderGap: r2(worstCol), occluderPieces: pieces.length, worstOccluderGap: r2(worstOcc) };
 });
+// NW3's mesh half (M2 wave 2): the kit's wall mesh, built here on the recipe's ground as the game builds it on the drawn
+// one; each wall's faces and coping (its vertices within t/2 + 0.1 of its arc) centred on its arc within 0.1 m
+const wallSoup = wallsGeometry(ground, (id) => ({ state: 'whole', painted: WALLS.find((w) => w.id === id).painted0 }));
+const town = townGeometry(ground, (x, z) => ninewallsNatural(x, z));
+{
+  const P = wallSoup.p;
+  for (const row of nw3) {
+    const w = WALLS.find((q) => q.id === row.id);
+    let lo = Infinity, hi = -Infinity, n = 0, worstArc = 0;
+    const byB = new Map();
+    for (let i = 0; i < P.length; i += 3) {
+      const rr = Math.hypot(P[i] - CENTRE.x, P[i + 2] - CENTRE.z);
+      if (Math.abs(rr - w.r) > w.t / 2 + 0.1) continue;
+      const b = Math.round(bearingOf(P[i], P[i + 2]));
+      if (!inSpan(w, b, 0.5)) continue;
+      const q = byB.get(b) || { lo: Infinity, hi: -Infinity }; q.lo = Math.min(q.lo, rr); q.hi = Math.max(q.hi, rr); byB.set(b, q); n++;
+    }
+    for (const q of byB.values()) if (q.hi - q.lo > w.t * 0.8) worstArc = Math.max(worstArc, Math.abs((q.lo + q.hi) / 2 - w.r));
+    row.meshVerts = n; row.meshArcGap = r2(worstArc);
+  }
+}
+out.kit = { wallTris: wallSoup.tris, townTris: town.soup.tris, draws: 2, rosettes: town.tips, kerbStones: town.kerb,
+  budget: { tris: 110000, draws: 73, from: 'tools/perf/attrib-page.mjs standIns: 16 dwellings x 6000 tris x 4 draws + 9 walls x 1600 x 1' } };
 out.nw3 = { walls: nw3, occluderWalls: new Set(occ.map((o) => o.id)).size, occluderPieces: occ.length, colliders: cols.length,
-  pass: nw3.every((w) => w.worstColliderGap <= 0.1 && w.worstOccluderGap <= 0.1) && new Set(occ.map((o) => o.id)).size === 9 };
+  pass: nw3.every((w) => w.worstColliderGap <= 0.1 && w.worstOccluderGap <= 0.1 && w.meshArcGap <= 0.1 && w.meshVerts > 0) && new Set(occ.map((o) => o.id)).size === 9 };
 
 out.nw0.pass = out.nw0.a.pass && out.nw0.b.pass && out.nw0.c.pass && out.nw0.d.pass && out.nw0.e.pass && scar.pass && trigRays.every((t) => !t.wallHits) && rise.outside && out.site.b1.agree && out.site.b1.bible;
 
@@ -388,5 +412,6 @@ for (const c of count) console.log(`  ${c.id}: ${c.shown} of ${c.inFrame} statio
 { const e = out.nw0.e; console.log(`NW0 (e) the road: ${e.road.points} points, ${e.road.length} m, grade <= ${e.road.gradeMaxDeg} deg, cross-fall <= ${e.road.crossFallMaxDeg} deg on its legs (${e.road.crossFallHairpinsDeg} deg on a hairpin's inside), off the hillside <= ${e.road.offNaturalMax} m, ends ${e.road.endToCentre} m from the centre; the walk from leg 2's fixture ${e.walk.seconds} s at her sprint (flat ${e.walk.fromFixtureFlat} m ${e.walk.flatS} s, road ${e.walk.roadS} s; the fall line the blockout's run took: ${e.walk.directClimb.m} m in ${e.walk.directClimb.s} s): ${yes(e.pass)}`); }
 console.log(`site: Scar clear >= ${SCAR_CLEAR} m (least ${scar.minWall}): ${yes(scar.pass)}; Rise ${rise.toCentre} m: ${yes(rise.outside)}; trig rays ${trigRays.map((t) => `${t.pair} ${t.wallHits}`).join(', ')}`);
 { const q = out.site.b1; console.log(`site: B1 (sites/layout.js bm-01 at ${q.layout.x}, ${q.layout.z}; the Holds' blockout ${r2(q.holds.x)}, ${r2(q.holds.z)}: ${q.agree ? 'agree' : 'DISAGREE'}, ${q.bible ? 'at' : 'NOT at'} the bible's E 12, N -282) ${q.toCentre} m from the centre, ${q.toNearestWall} m from the nearest wall, ${q.scarDist} m off the Scar's line; Ninewalls' ground moves it ${q.groundMoved} m`); }
-console.log(`NW3 (data): ${out.nw3.colliders} colliders, ${out.nw3.occluderPieces} occluder pieces over ${out.nw3.occluderWalls} walls; worst gaps ${Math.max(...nw3.map((w) => w.worstColliderGap))} / ${Math.max(...nw3.map((w) => w.worstOccluderGap))} m: ${yes(out.nw3.pass)}`);
+console.log(`NW3: ${out.nw3.colliders} colliders, ${out.nw3.occluderPieces} occluder pieces over ${out.nw3.occluderWalls} walls; worst gaps to the arc: colliders ${Math.max(...nw3.map((w) => w.worstColliderGap))} m, occluders ${Math.max(...nw3.map((w) => w.worstOccluderGap))} m, the kit's mesh ${Math.max(...nw3.map((w) => w.meshArcGap))} m: ${yes(out.nw3.pass)}`);
+console.log(`kit: walls ${out.kit.wallTris} tris, the houses, tree and places ${out.kit.townTris} tris, ${out.kit.draws} draws (the stand-in budget ${out.kit.budget.tris} tris, ${out.kit.budget.draws} draws); ${out.kit.rosettes} rosettes on the tree, ${out.kit.kerbStones} kerb stones`);
 console.log(`NW0: ${yes(out.nw0.pass)}`);
