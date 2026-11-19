@@ -20,9 +20,12 @@
  * @typedef {{ get: () => any, set: (state: any) => void }} FieldPair
  */
 
-/** The Milestone 2 fields, their owners and the plain shape each carries (HR7). */
+/**
+ * The Milestone 2 fields and their owners (HR7). The plain shape inside each is its owner's (the pair's get() return);
+ * the notes below are what each is expected to carry, the owner's file is the truth (settlements' wallsSave(), for one).
+ */
 export const AREA_FIELDS = Object.freeze({
-  /** settlements: the nine walls, `{ [wallId]: { state: 'whole' | 'cut', painted: boolean } }` */
+  /** settlements: the nine walls, cut or whole and painted or not (wallsSave(): `{ cut: [id], painted: [id] }`) */
   walls: Object.freeze({ owner: 'settlements', file: 'src/world/settlements/ninewalls-layout.js' }),
   /** world: benchmarks re-surveyed, `{ [benchmarkId]: { surveyed: boolean, hour: number } }` */
   benchmarks: Object.freeze({ owner: 'world', file: 'src/world/sites/layout.js' }),
