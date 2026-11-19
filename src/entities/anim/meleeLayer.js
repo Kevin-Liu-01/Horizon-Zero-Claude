@@ -915,6 +915,8 @@ const PULL_VIA = {
 const PULL_VIA_T = 0.40;
 /** how far the fist bows out to her right between the guard and `PULL_VIA` (m, at the leg's middle) */
 const PULL_BOW = 0.08;
+/** ...and how far it goes round her front between the hand-over and `PULL_VIA` (m forward, at the leg's middle) */
+const PULL_FRONT = 0.10;
 /**
  * M1a weapons step 2 (W11 step 2: "prop cant overshoot 1-4 deg, inside 0.5 deg within 6 steps"): the draw's pull
  * levels the haft 3 deg PAST the guard's line (and the fist 5 % past the guard's place), and the guard settles back
@@ -3211,6 +3213,15 @@ export class MeleeLayer {
     if ((pullLeg && A === PULL_VIA) || (stance === 'holster' && this._held && B === PULL_VIA)) {
       const k = 4 * t * (1 - t) * PULL_BOW;
       _hand.x -= k; _hand.z += 0.5 * k;
+    }
+    /* M2 polish (hero-anim, the lance's pull; W3): between the hand-over in front of her left hip and `PULL_VIA` at her
+     * right front the fist crosses her midline with the butt 0.32 m under it and behind it (the haft leans forward):
+     * on the straight leg the butt came within 0.05 m of her belly's axis, and the haft guard (`_clearDeficit`) shoved
+     * the fist 0.10 m back toward her left, then 0.07 m down and out, the next step: the right wrist jumped 0.28 m in
+     * one step (dressed bench, lanceDraw at aba90a3). The fist goes ROUND her front instead (`PULL_FRONT` at the leg's
+     * middle), so the butt passes in front of her belly */
+    if (pullLeg && B === PULL_VIA) {
+      _hand.z += 4 * t * (1 - t) * PULL_FRONT;
     }
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
