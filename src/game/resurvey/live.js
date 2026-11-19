@@ -18,9 +18,6 @@ import { RESURVEY } from '../quest/scar-plan.js';
  * Input: V raises the Alidade (src/ui/sighting.js); T takes a bearing (Sighting's own T Flags an Instrument in the hairs,
  * this one takes the mark's bearing; both may answer one press). Nothing here moves her, the camera or a hand.
  */
-/** (wave 4) how far short of her the lookers stop: HR3's 'within 20 m by 12 s' with room, out of a Peg's reach */
-const LOOK_STANDOFF_M = 13;
-
 export class ResurveyLive {
   constructor(ctx, { at, marks, hooks = {}, rules = RESURVEY } = {}) {
     this.ctx = ctx;
@@ -116,7 +113,6 @@ export class ResurveyLive {
     this._finished = true;
     this._show(false);
     for (const L of this.lookers) if (L.m?.ai) L.m.ai.lureT = 0;
-    this._unlook();
     this._say('done', this.report());
   }
 
@@ -128,46 +124,13 @@ export class ResurveyLive {
     const list = (only || M?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.position);
     const refuse = (k) => this.hooks.refuses?.(k) ?? false;
     const plain = list.map((m, i) => ({ id: i, kind: m.kind, x: m.position.x, z: m.position.z }));
-    const pick = chooseLookers(plain, this.at, { n: 3, range: 70, standOff: LOOK_STANDOFF_M, refuse });
+    const pick = chooseLookers(plain, this.at, { n: 3, range: 70, standOff: 6, refuse });
     this.lookers = pick.map((p) => {
       const m = list[p.id];
-      return { m, id: m.id ?? p.id, kind: m.kind, from: { x: m.position.x, z: m.position.z }, to: { x: p.x, z: p.z }, d0: p.d, leaveT: -1, arriveT: -1, dMin: p.d, struck: false };
+      return { m, id: m.id ?? p.id, kind: m.kind, from: { x: m.position.x, z: m.position.z }, to: { x: p.x, z: p.z }, d0: p.d, leaveT: -1, arriveT: -1, dMin: p.d };
     });
-    for (const L of this.lookers) this._looking(L);
     if (lure) this._lure();
     this._say('lookers', this.lookers.map((L) => ({ kind: L.kind, d0: L.d0 })));
-  }
-
-  /**
-   * (wave 4) THEY COME TO LOOK, NOT TO FIGHT: while the hold runs, a looker she has not struck stays short of alert (its
-   * suspicion held under the kind's own alertAt, so it stands wary at its point, LOOK_STANDOFF_M from her, its lamp
-   * chartreuse) and it does not attack. Struck, it is an Instrument like any other. At 6 m and unheld, the three Pegs
-   * turned on her and took 45 hp in 13 s of the arc (350540a and 8a0d72d leg 3: 72 -> 0 twice). Undone when the arc
-   * closes or the re-survey is put away (the update and takeDamage it wraps are given back).
-   */
-  _looking(L) {
-    const m = L.m;
-    if (!m || m.__looking || typeof m.update !== 'function') return;
-    const upd = m.update, td = m.takeDamage, self = this;
-    m.__looking = { upd, td };
-    m.update = function (...a) {
-      const sc = m.sc, c = m.perceptCfg;
-      const hold = self.running && !self.R.done && !L.struck && sc && c && Number.isFinite(c.alertAt);
-      if (hold && sc.suspicion >= c.alertAt - 0.05) sc.suspicion = c.alertAt - 0.05;
-      const r = upd.apply(m, a);
-      if (hold && sc.suspicion >= c.alertAt - 0.05) sc.suspicion = c.alertAt - 0.05;
-      return r;
-    };
-    if (typeof td === 'function') m.takeDamage = function (hit) { L.struck = true; return td.call(m, hit); };
-  }
-
-  _unlook() {
-    for (const L of this.lookers || []) {
-      const m = L.m, o = m?.__looking;
-      if (!o) continue;
-      m.update = o.upd; if (o.td) m.takeDamage = o.td;
-      m.__looking = null;
-    }
   }
 
   _lure() {
@@ -268,7 +231,7 @@ export class ResurveyLive {
     }
   }
 
-  dispose() { this._unlook(); this.el?.remove(); }
+  dispose() { this.el?.remove(); }
 }
 
 /** The three marks as upright segments from the live ground: T1, T2 (foot to plate) and the Sounding Ring. */

@@ -377,6 +377,19 @@ async function driveResurvey(page) {
   // at 13.7 s of the arc, run 20261119T175642Z-350540a-systems-w4-leg3c); she drinks again under 40 during it
   const K = SH.keys(page);
   const drinks = [];
+  // the Pegs that come to look close to 0.1-0.7 m and take 56 hp through the hold (beed0f0, run
+  // 20261119T184531Z-beed0f0-systems-w4-legs32, held short of alert or not): she puts their lamps out first, from the pad
+  let lookers = null;
+  const nL = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).length);
+  if (nL) {
+    await page.evaluate(() => { window.__probeQuest = 'true-ground'; });
+    try {
+      const f = await SH.fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 90, all: true, near: pad, nearR: 70 });
+      lookers = { n: nL, ok: f.ok, why: f.why ?? null, fired: f.fired, hp: (await page.evaluate(where)).hp };
+    } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
+    await walkTo(page, pad, 1.0, 20, { sprint: false });
+    await sleep(400);
+  }
   const d0 = await SH.drink(page, K, 98); if (d0) drinks.push(d0);
   const lowDrink = async () => { const h = (await page.evaluate(where)).hp; if (h < 40) { const d = await SH.drink(page, K, 85, 3000); if (d) drinks.push(d); if (!(await page.evaluate(() => !!window.__CTX__.sighting?.on))) { await page.keyboard.press('KeyV'); await sleep(700); } } };
   const on = await page.evaluate(() => !!window.__CTX__.sighting?.on);
@@ -415,7 +428,7 @@ async function driveResurvey(page) {
     await sleep(250);
   }
   const rep = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
-  return { ok: !!rep.done, onPad, wallS: +((Date.now() - t0) / 1000).toFixed(1), log, report: rep, drinks };
+  return { ok: !!rep.done, onPad, wallS: +((Date.now() - t0) / 1000).toFixed(1), log, report: rep, drinks, lookers };
 }
 
 
@@ -431,9 +444,14 @@ async function driveTopple(page, K) {
     // no run-in first (350540a: sprinting at the terrace through the herd she went 100 -> 0 hp in 20 s, gourd unused, run
     // 20261119T180340Z-350540a-systems-w4-leg2b): a full staff, then the slice's own topple, which scans its stands round
     // the Plumb, walks to them, drinks under 55 between shots and backs out when it closes
+    // the herd's Tillers felled her at every stand on their side (beed0f0: 110 hp from Tillers in the topple, run
+    // 20261119T184531Z-beed0f0-systems-w4-legs32): she goes round to the terrace's far side from the herd's slope first
+    // (bearing 75 deg from the Plumb, 26 m), so the stands the topple scans are on that side
+    const far = await page.evaluate(() => { const A = window.__CTX__.systemsGame.A, T = A.terrace, b = 75 * Math.PI / 180; return { x: T.x + Math.sin(b) * 26, z: T.z - Math.cos(b) * 26 }; });
+    const round = await walkPath(page, far, 3, 70);
     const d = await SH.drink(page, K, 98);
     const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 28, maxS: 150, tolDeg: 0.08, reach: 220 });
-    return { drink: d, ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, cause: (await page.evaluate(where)).cause };
+    return { round: { ok: round.ok, why: round.why ?? null }, drink: d, ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, cause: (await page.evaluate(where)).cause };
   } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
 }
 
