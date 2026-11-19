@@ -105,3 +105,18 @@ was re-cut; every other frame is as in v2. A number or film of these three frame
 | F23-peg | `place:openGround`, bearing 180; the Peg actor as staged | bible (E -314.8, N -267.0), bearing 315, the same orbit; the Peg actor carries `calm: true` | the meadow hid the Peg's legs, mallet and racks; on F14's raked salt cell they stand clear. On open crust it saw her through the settle and was filmed hostile (8d18c28), so the filmer calms it before it freezes (`page.mjs`) |
 | F23-gauge | no actor: the static scripted Gauge at Sluice 3 | a `gauge` Instrument actor 6 m from her, facing her | the living Gauge (M1.4e, dd5ecaf) is the frame's subject; the static stand-in is retired when the keeper spawns |
 | F26 | a Plumb 8 m out, standing in for the Gauge | a `gauge` Instrument actor 12 m out, facing her | the alidade reads the living Gauge's card (GAUGE · SLUICE 3 · TIDE 0.4 m), not a Plumb's |
+
+## Milestone 2: the lanes' frames (`stagings/`)
+
+Each Milestone 2 lane adds its frames and their stagings in its own file, `tools/frames/stagings/<lane>.mjs`, never in
+`frameset.json` or `page.mjs`; `stagings/index.mjs` merges them (its header is the contract). A lane file exports
+`frames` (or `FRAMES`: frame definitions in `frameset.json`'s shape, `in: "M2"`, ids from F33 on), optionally `STAGED`
+(`{ id: 'sim' | 'wall' }`) and `stagings` (or `STAGINGS`): per frame id, in-page hooks `world(f, api)` (after
+`stageFrame` has placed Brea, set the hour and weather, hidden what roams and staged the actors; before the lens and
+the settle) and `beforeFreeze(f, api)` (after the pose and the screens), or world.mjs's `{ clock, stage(ctx, frame, api) }`.
+`api` is `{ C, undo(fn), standIn(text), sleep, frames, rec, bearing, sim }`; everything a hook changes is undone through
+`undo`, and a hook that throws becomes a stand-in. `node tools/frames/stagings/index.mjs` lists the lanes and frames and
+fails on a doubled id.
+
+A lane frame is filmed only when `--only` names it, or with `film.mjs --lanes` (every lane frame after the set), so a
+full film of the frozen set is unchanged and `frameset.json`'s sha256 still names that set alone.
