@@ -28,7 +28,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../chrome-profile.mjs';
-import { takeMachineSlot, releaseMachineSlot } from '../chrome-slot.mjs';
+import { takeMachineSlot, releaseMachineSlot, machineMemory } from '../chrome-slot.mjs';
 import { assertOutsideRepo } from '../frames/paths.mjs';
 import { stageFrame, unstageFrame } from '../frames/page.mjs';
 import { loadFrameSet } from '../frames/frameset.mjs';
@@ -65,14 +65,25 @@ if (SERVE) {
 const slot = await takeMachineSlot({ who: `attrib ${PORT}`, waitS: Number(flag('--slot-wait', 1800)) });
 if (!slot.ok) { stopServer(); console.error(`attrib: no Chrome slot (${slot.why})`); process.exit(4); }
 run.slot = { waitedS: slot.waitedS, held: slot.held };
-const profile = profileDir(PORT);
 const launchArgs = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940'];
 if (VSYNC === 'off') launchArgs.push('--disable-gpu-vsync', '--disable-frame-rate-limit');
 run.launchArgs = launchArgs;
-const browser = await puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 600000, args: launchArgs });
-try {
+run.launches = [];
+// A Chrome the machine guard kills (free memory under 30 %: the orchestrator's mem-guard pkills gate Chromes) or that
+// dies is relaunched once memory is calm again (machineMemory: free >= 50 %, level 1), up to --relaunch times; the frame
+// it died on is tried once more. The slot stays held across a relaunch.
+const RELAUNCH = Number(flag('--relaunch', 3));
+let browser = null, page = null, profile = null, current = 'boot';
+async function closeBrowser() {
+  if (browser) { try { await browser.close(); } catch { try { browser.process()?.kill('SIGKILL'); } catch { /* */ } } }
+  if (profile) disposeProfile(profile);
+  browser = null; page = null; profile = null;
+}
+async function boot() {
+  profile = profileDir(PORT);
+  browser = await puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 600000, args: launchArgs });
   run.chrome = await browser.version();
-  const page = await browser.newPage();
+  page = await browser.newPage();
   await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
   // a dead HMR socket: a file saved elsewhere in the shared tree mid-run must not reload the page under the measurement
   await page.evaluateOnNewDocument(() => {
@@ -83,17 +94,36 @@ try {
       if (p === 'vite-hmr' || (typeof url === 'string' && url.includes('vite'))) return Dead(); return new Real(url, protocols); };
     window.WebSocket.prototype = Real.prototype; Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
-  let current = 'boot';
   page.on('console', (m) => { if (m.type() === 'error') run.console.push({ at: current, text: m.text().slice(0, 400) }); else if (m.text().startsWith('[d1]')) console.log(`[attrib ${current}] ${m.text()}`); });
   page.on('error', (e) => console.log(`[attrib] page crashed at ${current}: ${String(e).slice(0, 200)}`));
   page.on('pageerror', (e) => run.console.push({ at: current, text: 'pageerror: ' + String(e).slice(0, 400) }));
+  const t0 = Date.now();
   await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
   await sleep(6000);
+  run.launches.push({ at: new Date().toISOString(), bootS: Math.round((Date.now() - t0) / 1000), memory: machineMemory() });
+}
+const alive = () => !!(browser && browser.connected !== false && page && !page.isClosed());
+try {
   const set = loadFrameSet();
-  for (const id of FRAMES) {
+  const queue = FRAMES.slice();
+  const tries = new Map();
+  let relaunches = 0, died = false;
+  while (queue.length) {
+    const id = queue[0];
     const f = set.frames.find((x) => x.id === id);
-    if (!f) { run.frames.push({ id, error: 'no such frame' }); continue; }
+    if (!f) { run.frames.push({ id, error: 'no such frame' }); queue.shift(); continue; }
+    if (!alive()) {
+      if (browser || died) {
+        died = false;
+        await closeBrowser();
+        if (relaunches++ >= RELAUNCH) { for (const q of queue) run.frames.push({ id: q, error: 'not measured: Chrome died and the relaunches were spent' }); break; }
+        for (let w = 0; w < 120 && !machineMemory().ok; w++) await sleep(5000);
+        console.log(`[attrib] relaunching Chrome (${relaunches}/${RELAUNCH}), memory ${JSON.stringify(machineMemory())}`);
+      }
+      current = 'boot';
+      await boot();
+    }
     current = id;
     const t0 = Date.now();
     try {
@@ -106,27 +136,31 @@ try {
           return M.attributeD1(window.__CTX__.engine, window.__CTX__.scene, window.__CTX__, { standIn });
         }, STANDINS.has(id));
         await page.evaluate(unstageFrame);
-        run.frames.push({ id, staged: { measured: staged.measured, standIns: staged.standIns, sim: staged.sim ? { frames: staged.sim.frames } : null }, load1: [l0, load1()], ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
+        run.frames.push({ id, staged: { measured: staged.measured, standIns: staged.standIns, sim: staged.sim ? { frames: staged.sim.frames } : null }, load1: [l0, load1()], memory: machineMemory(), ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
         writeFileSync(path.join(OUT, 'attrib.json'), JSON.stringify(run, null, 1));
         console.log(`[attrib d1] ${id}: finish ${a.finish.medianMs} ms (submit ${a.finish.submitMs}), end ${a.finishEnd.medianMs}; draws ${a.census.frame.draws}, tris ${a.census.frame.tris}; shadows ${a.cascades.all.ms}, post ${a.post.ms}; tiny ${JSON.stringify(a.tiny.derived)}; owners ${a.owners.rows.map((r) => `${r.name} ${r.ms}`).join(', ')}; ${a.seconds} s`);
-        continue;
+      } else {
+        const a = await page.evaluate(async () => {
+          const M = await import('/tools/perf/attrib-page.mjs');
+          return M.attributeFrame(window.__CTX__.engine, window.__CTX__.scene);
+        });
+        await page.evaluate(unstageFrame);
+        run.frames.push({ id, staged: { measured: staged.measured, standIns: staged.standIns }, ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
+        console.log(`[attrib] ${id}: timer(vsync) ${a.whole.medianMs} ms, finish ${a.finish.medianMs} ms (submit ${a.finish.submitMs}), split ${JSON.stringify(a.split.grouped)}, paired ${JSON.stringify(Object.fromEntries(Object.entries(a.paired.rows).map(([k, v]) => [k, v.ms])))}, alpha layers ${a.overdraw.alphaTested.layersPerCoveredPixel}, half-res ratio ${a.halfRes.ratio}`);
       }
-      const a = await page.evaluate(async () => {
-        const M = await import('/tools/perf/attrib-page.mjs');
-        return M.attributeFrame(window.__CTX__.engine, window.__CTX__.scene);
-      });
-      await page.evaluate(unstageFrame);
-      run.frames.push({ id, staged: { measured: staged.measured, standIns: staged.standIns }, ...a, wallSeconds: Math.round((Date.now() - t0) / 1000) });
-      console.log(`[attrib] ${id}: timer(vsync) ${a.whole.medianMs} ms, finish ${a.finish.medianMs} ms (submit ${a.finish.submitMs}), split ${JSON.stringify(a.split.grouped)}, paired ${JSON.stringify(Object.fromEntries(Object.entries(a.paired.rows).map(([k, v]) => [k, v.ms])))}, alpha layers ${a.overdraw.alphaTested.layersPerCoveredPixel}, half-res ratio ${a.halfRes.ratio}`);
+      queue.shift();
     } catch (e) {
+      const dead = !alive() || /Target closed|detached Frame|Session closed/i.test(String(e?.message || e));
+      console.log(`[attrib] ${id} FAILED${dead ? ' (Chrome died)' : ''}: ${String(e?.message || e).slice(0, 200)}; memory ${JSON.stringify(machineMemory())}`);
+      const n = (tries.get(id) || 0) + 1; tries.set(id, n);
+      if (dead && n < 2) { died = true; await closeBrowser(); continue; }
       run.frames.push({ id, error: String(e?.stack || e).slice(0, 800) });
-      console.log(`[attrib] ${id} FAILED: ${String(e?.message || e).slice(0, 200)}`);
+      queue.shift();
       try { await page.evaluate(unstageFrame); } catch { /* */ }
     }
   }
 } finally {
-  try { await browser.close(); } catch { try { browser.process()?.kill('SIGKILL'); } catch { /* */ } }
-  disposeProfile(profile);
+  await closeBrowser();
   releaseMachineSlot();
   stopServer();
   run.load1.end = load1();
