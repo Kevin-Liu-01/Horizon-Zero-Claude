@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { patchAerial, patchDeck } from './aerial.js';
 
 /**
  * THE KILN YARDS' FAR FORM (M2 wave 4, area A, HG6; bible §3 Malpais: "the Kiln Yards: ruined geothermal plant: two
@@ -117,6 +118,15 @@ export function buildKilnYards({ x, z, ground = () => 0 }) {
   const caps = new THREE.Mesh(glowGeo, glowMat);
   caps.name = 'kiln-yards-wellheads';
   caps.castShadow = false; caps.receiveShadow = false;
+  /* M2 fix wave (HG6, "fogged like the rest"): the air of the island's far forms, as the ground takes it (terrain.js: the
+   * far-form air, island/aerial.js, and the trade deck's optical depth capped by DECK). The Yards stand at 142 m, inside
+   * the deck's slab (105-150 m), and drew the deck uncapped: at 94f7cc8 their pixels read the same with the sun off and
+   * with the albedo a third of what it was (F45-trade Y 209 against the sky's 187, F45 186 against the dust's 165, run
+   * 20261119T213014Z-94f7cc8-world-f45-94f7cc8-partial-x2): cloud-sea colour, not a lit ruin. The probe's kilnYards read */
+  for (const [m, key] of [[ruinMat, 'cal-kiln-yards'], [glowMat, 'cal-kiln-yards-glow']]) {
+    m.onBeforeCompile = (shader) => { patchAerial(shader); patchDeck(shader); };
+    m.customProgramCacheKey = () => key;
+  }
   const group = new THREE.Group();
   group.name = 'kiln-yards';
   group.add(ruin, caps);

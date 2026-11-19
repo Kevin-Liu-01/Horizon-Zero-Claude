@@ -104,16 +104,23 @@ export async function probe(frame) {
         for (const m of meshes) {
           m.visible = false; freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc); m.visible = true;
           let gone = 0; for (let i = 0, k = 0; i < Cc.length; i += 4, k++) { if (!litMask[k]) continue; const d = Math.max(Cc[i] - B[i], Cc[i + 1] - B[i + 1], Cc[i + 2] - B[i + 2]); if (d <= 2) gone++; }
-          if (gone) byMesh.push({ mesh: m.name || m.type, gone, renderOrder: m.renderOrder, material: m.material?.name || m.material?.type || null, cacheKey: m.material?.customProgramCacheKey?.() ?? null });
+          if (gone) byMesh.push({ mesh: m.name || m.type, gone, renderOrder: m.renderOrder, material: Array.isArray(m.material) ? m.material.map((x) => x?.name || x?.type) : (m.material?.name || m.material?.type || null), cacheKey: Array.isArray(m.material) ? m.material.map((x) => x?.customProgramCacheKey?.() ?? null) : (m.material?.customProgramCacheKey?.() ?? null), at: m.geometry?.boundingSphere ? [Math.round(m.geometry.boundingSphere.center.x + m.position.x), Math.round(m.geometry.boundingSphere.center.z + m.position.z)] : null });
         }
         byMesh.sort((a, b) => b.gone - a.gone);
         out.hg5.byMesh = byMesh.slice(0, 12);
+        /* the sky's colours as the shaders read them from uniforms, not from a light: the fog's horizon, zenith and sun
+         * in-scatter (calFog*: the far-form air, the ground's wet-film sky reflection, terrain.js gSky), the cloud sea's and
+         * the dome's horizon band (aerial.js AERIAL_DOME). With them black, a ground pixel still over the floor is light the
+         * ground's surface makes itself */
         const Aer = await import('/src/world/island/aerial.js');
-        const a0 = Aer.AERIAL.value.clone(), iv = C.terrain._isleVis, iv0 = iv?.value;
-        Aer.AERIAL.value.x = 0; if (iv) iv.value = 1;
+        const keepC = ['calFogHorizon', 'calFogZenith', 'calFogSun', 'calCloudSeaCol'].filter((k) => U[k]?.value?.isColor).map((k) => [k, U[k].value.clone()]);
+        const dome0 = Aer.AERIAL_DOME.value.clone();
+        for (const [k] of keepC) U[k].value.setRGB(0, 0, 0);
+        Aer.AERIAL_DOME.value.setRGB(0, 0, 0);
         freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc);
-        out.hg5.airOff = { ...countLit(), what: 'AERIAL.x 0 (the far-form air) and uIsleVis 1 (the sister isles take no air)' };
-        Aer.AERIAL.value.copy(a0); if (iv) iv.value = iv0;
+        out.hg5.skyColoursOff = { ...countLit(), what: 'calFogHorizon, calFogZenith, calFogSun, calCloudSeaCol and AERIAL_DOME black: the sky colours the shaders read from uniforms' };
+        for (const [k, v] of keepC) U[k].value.copy(v);
+        Aer.AERIAL_DOME.value.copy(dome0);
       } catch (e) { out.hg5.findError = String(e?.message || e).slice(0, 300); }
       while (undo.length) undo.pop()();
       env._lightDirty = true; env._applyTime?.(0, true);
