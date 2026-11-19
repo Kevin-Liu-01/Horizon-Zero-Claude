@@ -212,7 +212,9 @@ const HOLDS_TERM = /* glsl */ `
         ln = mix(ln, mix(n2, vec4(0.5, 0.5, 0.631, 0.905), farN), k2);
       }
     }
-    vec3 hc = pow(la.rgb, vec3(2.2)) * vec3(2.05, 1.93, 1.8);
+    vec3 hc = pow(la.rgb, vec3(2.2));
+    // black: the shingle's pale and rusty stones pulled down toward the cinder (a 1 + 6 L compression), a little warm
+    hc *= vec3(1.22, 1.13, 1.04) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
     // broad fields: some cinder oxidised red-brown, some ashen
     vec4 nF = gNoiseT(xz * 0.0047 + 0.83);
     float ox = smoothstep(0.58, 0.8, nF.r * 0.7 + nMac.a * 0.3), ashF = smoothstep(0.6, 0.82, nF.b);
@@ -224,9 +226,9 @@ const HOLDS_TERM = /* glsl */ `
     /* -- drifts: dust on the lee of every rise (the trade wind blows toward the south-west: engine (-0.71, 0.71)) -- */
     float lee = clamp(dot(wn.xz, vec2(-0.7071, 0.7071)) * 3.0, -0.6, 1.0);
     vec4 nD = gNoiseT(xz * 0.0213 + 0.31);
-    float drift = smoothstep(0.56, 0.8, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.16 * lee) * (1.0 - smoothstep(0.35, 0.75, slope));
-    vec3 dustC = vec3(0.155, 0.128, 0.094) * (0.86 + 0.28 * nD.g);
-    hc = mix(hc, dustC, drift * 0.72);
+    float drift = smoothstep(0.63, 0.86, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.1 * lee) * (1.0 - smoothstep(0.35, 0.75, slope));
+    vec3 dustC = vec3(0.098, 0.082, 0.061) * (0.86 + 0.28 * nD.g);
+    hc = mix(hc, dustC, drift * 0.6);
     hp *= 1.0 - 0.65 * drift;
     hR = mix(hR, 0.97, drift);
 
@@ -250,13 +252,16 @@ const HOLDS_TERM = /* glsl */ `
         // the bowl, about 1.2 m deep: its floor faces the centre, steepest at the rim
         float tilt = 2.4 * (d / R) * inside;
         hp = mix(hp, hp * 0.35, inside * has) + vec3(-rdir.x, 0.0, -rdir.y) * tilt * has;
-        hc *= mix(1.0, 0.7, inside * has * (0.6 + 0.4 * (1.0 - d / R)));
+        hc *= mix(1.0, 0.6, inside * has * (0.6 + 0.4 * (1.0 - d / R)));
+        // the dug cinder heaped round the rim: a lip a little paler and dustier
+        float lip = (smoothstep(R - 0.5 - px, R - 0.1, d) - smoothstep(R + 0.05, R + 0.5 + px, d)) * has;
+        hc = mix(hc, hc * 1.35 + dustC * 0.12, lip * 0.6);
         hAO = mix(hAO, hAO * 0.62, inside * has);
         hc = mix(hc, hc * 0.7 + dustC * 0.3, drift * inside * has * 0.5);
         // the crescent wall on the north-east (engine (0.71, -0.71)): its arc +-75 deg, 0.7 m thick past the rim
         float face = dot(rdir, vec2(0.7071, -0.7071));
         float arc = smoothstep(0.2, 0.45, face) * has;
-        float w0 = R + 0.12, w1 = R + 0.82, wm = (w0 + w1) * 0.5;
+        float w0 = R + 0.1, w1 = R + 0.95, wm = (w0 + w1) * 0.5;
         float wall = (smoothstep(w0 - px, w0 + px, d) - smoothstep(w1 - px, w1 + px, d)) * arc;
         if (wall > 0.0) {
           // drystone: blocks about 0.4 m along the arc, each its own tone, dark joints between
@@ -265,16 +270,17 @@ const HOLDS_TERM = /* glsl */ `
           float bh = fract(sin(dot(bc + pc * 7.0, vec2(41.3, 289.1))) * 9137.7);
           vec2 bf = fract(vec2(ang, ring + floor(ang) * 0.5));
           float joint = (1.0 - smoothstep(0.0, 0.12, min(min(bf.x, 1.0 - bf.x), min(bf.y, 1.0 - bf.y)))) * (1.0 - smoothstep(0.08, 0.2, px));
-          vec3 stoneC = vec3(0.118, 0.106, 0.092) * (0.72 + 0.56 * bh) * (1.0 - 0.45 * joint);
+          vec3 stoneC = vec3(0.15, 0.136, 0.118) * (0.7 + 0.6 * bh) * (1.0 - 0.5 * joint);
           hc = mix(hc, stoneC, wall);
           // its faces: outward on the outer half, inward on the inner, its top flat
           float fo = clamp((d - wm) / (w1 - wm), -1.0, 1.0);
-          hp = mix(hp, vec3(rdir.x, 0.0, rdir.y) * fo * 1.3 * smoothstep(0.35, 0.9, abs(fo)), wall);
+          hp = mix(hp, vec3(rdir.x, 0.0, rdir.y) * fo * 1.8 * smoothstep(0.3, 0.85, abs(fo)), wall);
           hR = mix(hR, 0.86, wall);
           hAO = mix(hAO, 0.8 - 0.3 * joint, wall);
         }
-        // the vine at the bowl's foot: a lumpy mat 0.55-0.75 of the rim, green (85 %) or dormant
-        float vr = R * (0.5 + 0.2 * ph.y) * (0.82 + 0.3 * gNoiseT(rdir * 0.5 + pc * 0.37 + 0.5).r);
+        // the vine at the bowl's foot: a lumpy bush 0.3-0.45 of the rim, green (85 %) or dormant; past the plants' ring it
+        // keeps about two pixels, so a far pit still shows its green
+        float vr = R * (0.3 + 0.15 * ph.y) * (0.82 + 0.3 * gNoiseT(rdir * 0.5 + pc * 0.37 + 0.5).r) * mix(1.0, 1.6, smoothstep(0.12, 0.6, px));
         float vine = (1.0 - smoothstep(vr - px * 1.5, vr + px * 1.5, d)) * has;
         if (vine > 0.0) {
           float leaf = gNoiseT(xz * 1.37 + ph * 3.0).a * 0.6 + gNoiseT(xz * 0.53 + 0.2).b * 0.4;
@@ -369,9 +375,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   vec4 nMac = gNoiseT(xz * 0.0039);                 // cells 32, 16, 8, 4 m
   float macA = nMac.r * 0.6 + nMac.b * 0.4;
   /* M2 wave 2: the Holds. On their gentle ground the layer stack is skipped (HOLDS_TERM draws all of it); their steep
-   * faces keep the rock layer and blend into the lapilli over slope 0.55-0.95 */
+   * faces (over 44 deg) keep the rock layer and blend into the lapilli over slope 0.95-1.4 */
   float hold = vGround.x;
-  float hk = hold * (1.0 - smoothstep(0.55, 0.95, slope));
+  float hk = hold * (1.0 - smoothstep(0.95, 1.4, slope));
   bool hSkip = hk > 0.985;
 
   /* -- the five weights, then the three that survive ----------------------- */
