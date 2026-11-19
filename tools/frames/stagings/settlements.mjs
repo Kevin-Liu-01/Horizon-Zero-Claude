@@ -11,10 +11,10 @@
  *        dragon tree's canopy under 9 m, the line on >= 3 walls
  *   F35  the same lens after "True Ground" (state `after`): the line on 0 walls (the staging clears it; a cut wall
  *        stays cut)
- *   F36  a street at work: the lens on the cistern's lane, 4.3 m south-west of the cistern's centre (bible E -17.25,
- *        N -223.83), looking up the lane on bearing 45, 7 deg up, fov 50: the cistern's kerb in the lower left, the tree,
- *        the tube mouth at the top (34 m); written: 5 people at work, each held in its work clip (src/world/npc/people/
- *        holds.js AT_WORK). At 48311d0 a lens up the south-west lane on bearing 60 saw only the hillside (the ground under
+ *   F36  a street at work: the lens on the cistern's pad, 3.3 m south-south-east of its centre (bible E -15.65,
+ *        N -222.97), looking up the lane on bearing 20, 12 deg up, fov 45: the cistern's kerb lower left, the tree, the
+ *        tube mouth upper right (29 m); written: 5 people at work, each held in its work clip (src/world/npc/people/
+ *        holds.js AT_WORK). The first restage (E -17.25, N -223.83, bearing 45) stood a metre under the kerb. At 48311d0 a lens up the south-west lane on bearing 60 saw only the hillside (the ground under
  *        the village climbs 26 deg there); from wave 3 to the M2 exit the lens 15 m south-south-west of the tree (E -16.13,
  *        N -227.10, bearing 20, fov 55) put two of the five on one line of sight and one behind the trunk: about three
  *        read
@@ -48,7 +48,7 @@ export const FRAMES = [
   },
   {
     id: 'F36', subject: 'a Ninewalls street at work', in: 'M2', hour: 16.5, weather: 'trade',
-    at: { en: [-17.25, -223.83] }, bearing: 45, camera: { mode: 'eye', eye: 1.7, pitch: 7, fov: 50 },
+    at: { en: [-15.65, -222.97] }, bearing: 20, camera: { mode: 'eye', eye: 1.7, pitch: 12, fov: 45 },
     state: { pose: 'idle', hud: false },
     ref: { written: '5 people at work in ash-grey and carmine, each with a violet accent; the tube mouth and the cistern in frame.' },
     note: 'M2 fix wave: restaged up the cistern\'s lane; the five are held in their work clips (tools/build/settlements/at-work-probe-page.mjs counts them in the frozen frame).',
@@ -97,9 +97,9 @@ export const STAGINGS = {
     },
   },
   F36: {
-    // five of the Holds cast at work, held in their work clips (src/world/npc/people/holds.js AT_WORK: a picker sorting at
-    // d4's door, a farmer watering the tree's foot, a picker gathering under it, a farmer at the cistern's far kerb, a youth
-    // with the seed bag at d2's door)
+    // five of the Holds cast at work, held in their work clips (src/world/npc/people/holds.js AT_WORK: a youth with the seed
+    // bag at d3's door, a picker lifting a jar at the cistern, a farmer watering the tree's foot, a picker gathering under it,
+    // a farmer kneeling to draw water)
     async world(f, api) {
       if (!api.C.settlements?.ninewalls) api.standIn('no Ninewalls in this build');
       const H = api.C.people?.holds;
