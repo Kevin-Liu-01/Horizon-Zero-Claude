@@ -6,9 +6,11 @@
  * key, even fill), never graded against a reference (the gaff has none: Kevin's bars and the bible's words). F40-F43
  * (the guard, the pot cast, the hook-rip at contact, the Kit Rack) are wave 3's: their verbs are not built.
  *
- *   D-gaff-back    the gaff hanging from the back of her belt, three-quarter from behind (her right)
- *   D-gaff-side    the gaff in her right hand at the ready, side-on from her right
- *   D-gaff-front   the same, from in front
+ *   F42-stowed      the gaff hanging from the back of her belt, three-quarter from behind (her right)
+ *   F42-ready       the gaff in her right hand at the ready, side-on from her right
+ *   F42-readyfront  the same, from in front
+ * (ids: the gaff's frame number F42 with a kind, the frame set's `Fnn-kind` form; F42 itself, the hook-rip at contact
+ * on a Sickle, is wave 3's)
  *
  * Staging: the Tube Smith's hand-over (`hero.grantOroKit`, the gaff only: the Windwall and the pots are not built), then
  * for the ready, key 3 (quick slot 3: the draw, 0.333 s of sim time) and 1.2 s of settle. Wall clock: the subject is a
@@ -23,33 +25,33 @@ const STUDIO = { light: 'studio', hour: 13.0, weather: 'trade', at: 'place:openG
 /** @type {object[]} frameset.json-shaped frame definitions, `in: 'M2'` */
 export const frames = [
   {
-    id: 'D-gaff-back', subject: 'the Boat Gaff on her, from behind (her right), flat light', in: 'M2', ...STUDIO,
+    id: 'F42-stowed', subject: 'the Boat Gaff on her, from behind (her right), flat light', in: 'M2', ...STUDIO,
     camera: { mode: 'orbit', yawRel: 215, dist: 2.3, height: 1.0, target: 'body', fov: 40 },
     state: { pose: 'idle', hud: false },
     ref: { written: 'the gaff hangs butt up from the back of her belt right of her spine, its beak end behind her right thigh, clear of her legs, the quiver and the lance; it reads as a forged hook on a pine haft' },
     note: 'M2 wave 2 look (area D). KT0 moved the mount from the bible\'s left rear hip along the belt (kit-oro.mjs).',
   },
   {
-    id: 'D-gaff-side', subject: 'the Boat Gaff in her right hand at the ready, side-on, flat light', in: 'M2', ...STUDIO,
+    id: 'F42-ready', subject: 'the Boat Gaff in her right hand at the ready, side-on, flat light', in: 'M2', ...STUDIO,
     camera: { mode: 'orbit', yawRel: 270, dist: 2.5, height: 1.0, target: 'body', fov: 40 },
     state: { pose: 'idle', hud: false },
     ref: { written: 'Kevin\'s bars: the fist at her right hip, the haft up and forward, the beak below her shoulder, the hook out in front of the knuckles; no hand above the shoulder or behind the head' },
     note: 'M2 wave 2 look (area D): the ready the draw ends in (gaffLayer.js READY).',
   },
   {
-    id: 'D-gaff-front', subject: 'the Boat Gaff in her right hand at the ready, from in front, flat light', in: 'M2', ...STUDIO,
+    id: 'F42-readyfront', subject: 'the Boat Gaff in her right hand at the ready, from in front, flat light', in: 'M2', ...STUDIO,
     camera: { mode: 'orbit', yawRel: 330, dist: 2.5, height: 1.0, target: 'body', fov: 40 },
     state: { pose: 'idle', hud: false },
-    ref: { written: 'as D-gaff-side; the gaff\'s head reads (socket, beak, hook) at 2.5 m' },
+    ref: { written: 'as F42-ready; the gaff\'s head reads (socket, beak, hook) at 2.5 m' },
     note: 'M2 wave 2 look (area D).',
   },
 ];
 
-export const STAGED = { 'D-gaff-back': 'wall', 'D-gaff-side': 'wall', 'D-gaff-front': 'wall' };
+export const STAGED = { 'F42-stowed': 'wall', 'F42-ready': 'wall', 'F42-readyfront': 'wall' };
 
 /** @type {Record<string, { world?: Function, beforeFreeze?: Function }>} (each hook self-contained: serialised alone) */
 export const stagings = {
-  'D-gaff-back': {
+  'F42-stowed': {
     async world(f, api) {
     const DRAW = false;
     const C = api.C, hero = C.player?.hero;
@@ -74,7 +76,7 @@ export const stagings = {
     } else await api.sleep(400);
     },
   },
-  'D-gaff-side': {
+  'F42-ready': {
     async world(f, api) {
     const DRAW = true;
     const C = api.C, hero = C.player?.hero;
@@ -99,7 +101,7 @@ export const stagings = {
     } else await api.sleep(400);
     },
   },
-  'D-gaff-front': {
+  'F42-readyfront': {
     async world(f, api) {
     const DRAW = true;
     const C = api.C, hero = C.player?.hero;
