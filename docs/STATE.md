@@ -2194,3 +2194,143 @@ Two cloth regressions and two lane rows that failed before this run stay open (b
 5. A-sweep-wind's F15 front-right bend is a flake (2 of 3 at 2723593, failing once each at aba90a3 and 95a1ed0).
 
 **Rulings (the orchestrator):** EN4's sun-altitude bar is the built sky's noon peak (>= 45 deg); the sky is not raised. main is held until the Windwall raise keeps the fan in front of her and below the top of her head (the owner's bar).
+
+## The M2 fix wave and exit run 2 (Nov 19 2026)
+
+The fix wave had four lanes in one tree on `r5/int`: area D with hero-anim (the kit), area E (the hour), areas A+F
+(sky, world, engine hitches) and area B (Ninewalls people). No commit was pushed.
+
+- **Area D.** The Windwall's raise follows the arm: the fan stays shut until the arm is 0.4 of the way up and across
+  her front, and folds before the arm comes down (02b692b). The gaff's wrist step is paced (ed871c6). The bow and the
+  lance keep her head on her line and bound each elbow's swivel to 16 deg a step while a weapon is handled
+  (cc89130, eefedde, 7423c27).
+- **Area E.** The terrace Plumb reads from 9-14 m, waits 1.8 s before its first blow and stands still in its band;
+  the lookers strike one at a time; the noon rest wakes her at 11:30; a continued save at plumb-2 or a seal stage
+  stands its machines up again (5fb4925, 0f3e810, 6844217). The Transit's far form moved to 26 deg from the read
+  point, clear of the Kiln Yards (34032ed). The runner gained herd-safe topple stands and `--from plumb-2`.
+- **Areas A+F.** The walk grid labels its connected regions once per build, so a route to an unreachable cell is
+  answered at once (b689974; the herd-beat hitches). The calima disc is drawn on the camera's own ray (94f7cc8). The
+  Kiln Yards take the far-form air and the capped trade deck like the ground (d174a23). F45's lens pitch is -8.
+- **Area B.** F36 restaged at the cistern with five people held in their work clips; `F39-people` added for IN11
+  (788741e to 02f7125).
+
+Then the exit run measured `r5/int` at **02f7125** from one clean detached worktree (0 tracked files changed) on port
+5270, one Chrome at a time, with no lane running. It made no commit.
+
+**Verdict: Milestone 2 does not exit.**
+
+| # | exit condition | result at 02f7125 |
+|---|---|---|
+| 1 | `A-first-hour` plays its 28 beats in order, input-driven, no death, three runs | **FAIL**: 16/28 in all three chained runs |
+| 2 | the M2 frames accepted; the accepted frames not regressed | awaiting the owner; F08, F11 and F13 show her head a few degrees off; F44 fails its written target |
+| 3 | resident textures <= 175 MB with two peoples and two biomes | PASS: 137.33 MB (the ledger) |
+| 4 | `public/` <= 165 MB | PASS: 55.19 MB |
+| 5 | the frame bar in the fight frame | PASS in the headless form (F39: GPU 11.4 ms, 1798 frames in 30 s, 0 over 33 ms) |
+
+**Tier 0: PASS, 10 of 10.**
+- `vite build` OK, 4.28 MB of code. Name lint 0 hits in 926 files.
+- Licences: 243 files against 34 rows. Asset budgets: 54 GLBs, 0 over a cap.
+- Import graph 239 modules, 0 broken. 278 Node tests pass in 58 files. Boot 4.1 s, 0 errors.
+- Texture ledger 137.33 MB of 175. Shipped 59.46 MB (`public/` 55.19 MB).
+
+**The frame bar (TECH §9.1)** at 1600 x 900 CSS px, DPR 1.25, quality `high`, headless Chrome on ANGLE Metal.
+Tool: `tools/perf/exit-bar.mjs`. The 1-minute load average was 2.5-3.5.
+
+| line | F02 | F25 | F33 | F39 | F39-people | bar | result |
+|---|---|---|---|---|---|---|---|
+| median GPU, back-to-back readback (7 x 60 frames) | 9.9 | 13.1 | 11.1 | 11.4 | 11.4 | <= 14 ms | PASS |
+| frames presented in 30 s; over 33 ms | 1799; 0 | 1798; 0 | 1798; 0 | 1798; 0 | 1799; 0 | >= 1782; 0 | PASS |
+| p95 presented interval (headless) | 17.5 | 17.4 | 17.4 | 17.7 | 17.5 | <= 16.7 ms headed | not measurable headless (an empty page reads 18.0) |
+| main-thread JS per frame, p95 | 4.0 | 4.3 | 4.0 | 4.0 | 4.1 | <= 8.0 ms | PASS |
+| draws; triangles | 100; 1.62 M | 145; 1.47 M | 118; 1.22 M | 117; 1.06 M | 116; 1.06 M | <= 350; <= 6.5 M | PASS |
+
+- F39-people draws the same as F39: the five people shelter outside its lens. IN11 is not measured as written.
+- **Load (the built game):**
+  - Title interactive 4.59 s cold, 4.43 and 4.22 s warm (bar 5 s).
+  - New Game to control 0.38 s cold, 0.20 and 0.21 s warm.
+  - First load 49.74 MB in 254 requests (bar 60 MB). The 30 s after New Game: 0 frames over 33 ms.
+- **Hitches in the first hour: FAIL.** No run reached 10 minutes of play: the chained runs stop after about
+  4.5 minutes.
+  - Run 1: 6 frames over 33 ms and 1 over 50 ms (75.0 ms).
+  - Run 2: 6 and 1 (74.6 ms).
+  - Run 3 (screencast on, not graded): 7 and 1 (75.0 ms).
+  - In every run the 50 ms frame and 5-6 of the 33 ms frames fall in leg 2's walk into the Holds (about 99 s). The
+    herd-beat stretch of 34-44 ms frames seen at fa45e47 is gone.
+
+**Kept-stack rows** (three sessions): 80 rows. **72 action rows pass, 0 fail, 0 pending.**
+- A9-perf-budget passed alone on a quiet box: 59.9 fps median, load 2.96, 133 draws.
+- The 8 visual rows show the same poses as at fa45e47, except one film of V3-crouch-stalk: a violet sash panel
+  stretched about 1.5 m from her hip. Eight re-runs straight after (02f7125 twice, then b66f3dd, 02b692b, ed871c6,
+  cc89130, eefedde and 7423c27) did not show it. It is intermittent.
+
+**The slice:** 14 of 14, stopped at the reward.
+- Cross 58.4 s, lowest hp 75 under the kites. Topple 22.8 s with 2 arrows. End hp 78.
+- 1 frame over 33 ms (34.2 ms, at the ditch) and 0 over 50 ms in 84 s.
+- Save rows and the site clock: PASS. Leg 1 of each first-hour run was also 14/14.
+
+**The first hour** (`first-hour.mjs --chain`, three runs):
+
+| leg | run 1 | run 2 | run 3 (screencast) |
+|---|---|---|---|
+| 1 | 14/14 | 14/14 | 14/14 |
+| 2 | 2/8: stops at plumb-2, hp 98 | 2/8: stops at plumb-2, hp 98 | 2/8: stops at plumb-2, hp 100 |
+| 3 | 0/6: starts at the `herd` checkpoint | 0/6 | 0/6 |
+
+- **Why leg 2 stops.** The runner's terrace topple found 0 stands clear of the herd in three scans of 144 points,
+  2.5 s apart, and gave up after about 10 s. She was not hurt and did not die; the Plumb never struck.
+- **Two extra runs (not the row), legs from their fixtures:**
+  - Leg 2: 5/8. plumb-2 passed on the third scan (the first two also found 0 stands): 5 arrows, hp 100 -> 65,
+    all from the Sightline. Barbed passed, and Oro's hand-over was reached by input for the first time. stall, seal-1
+    and seal-2 fail by name: the runner does not drive the Screed fight.
+  - Leg 3: **6/6 for the first time.**
+    - The re-survey closed: a 15.0 s arc. Bearings T1 249.2 (0.037 deg off), T2 76.6 (0.24), the Sounding Ring
+      263.8 (0.156). Three Pegs came to look; one hit of 5.
+    - REST UNTIL NOON was pre-selected and she woke at 11:30. Calima was asked for at 11:30 and arrived.
+    - She reached the Malpais edge at 12:17. The Alidade was 0.05 deg off the far form at 111.1 m, and the stage was
+      reached at 12:19. The card itself was not on screen when it was read: the shot shows the quest banner.
+  - Leg 2 from `--from plumb-2`: plumb-2 passed (3 arrows, Sightline 30 hp), then barbed and oro. While it waited at
+    the stall, two Tiller tramples of 20 hp took her to 22.
+- **The rest dialog:** the NOON row now reads CALIMA BY NOON. The DAWN row also reads CALIMA BY NOON.
+
+**Lane rows (not kept):**
+- A-herd-ripple PASS: flashes nearest-first in 0.551 s; gaps 3.95 and 4.01 m at 4 s.
+- A-moving-cover PASS: 0 of 4 lee walks seen, 4 of 4 open walks seen within 4 s.
+- A-screed-fight PASS: one charge, 0 deg of deviation, a 2.997 s stall on wall-1, both seals off.
+- A102, A104 and A105 PASS.
+- **A100 FAIL, as before.** In the dodge the stowed lance tilts 34.5-87.9 deg.
+- **A101 FAIL.** In light-1 the left palm is 0.050 m off the haft (new). The guard tip is at 0.558 m (canon 0.35-0.55),
+  as before.
+- **A103 FAIL.** The blade stops 0.613 m short of the hull (0.522 m at the polish run).
+- **A106 FAIL.** A drawn left fist is 0.077 m inside a Plumb's shin on 1 frame. It passed at the polish run.
+
+**Node benches at 02f7125:**
+- **windwall-bench 8/8** (3/8 at b66f3dd). gaff-bench 19/19. pot-bench 7/7. A107: 18 cycles, 0 fail.
+- The handling bench: bow and lance 95 failing clauses in 25 of 26 cases (111). The gaff in the loop: 15 in 6 of 6 (21).
+- moving-cover: lee 0/10 seen, open 10/10. herd-bearing: beside 0/10, on it 10/10, held within 0 deg over 120 m.
+- calima-rows: EN3 visibility 154.7-168.7 m PASS. EN4 47.6-49.8 deg in the window PASS (the >= 45 deg ruling).
+- People cloth: worst person 0.0118 ms (bar 0.02). W2 writing: every row passes. `tools/gates/systems` 110/110.
+
+**Frames** (the Frame Set and the lane frames, 63 of 63 filmed, 0 console errors):
+- **Accepted frames:** 13 of 16 match the fa45e47 film within wind, grass and cloth. In F08, F11 and F13 her head is
+  turned a few degrees, from the fix wave's head-on-her-line change.
+- **F36:** five people at work. The written target is met.
+- **F45-transit:** the Transit's far form stands clear, left of the Kiln Yards. The Yards are fogged with the ground,
+  and the far form's legs are paler than the dust.
+- **F45:** the lens still looks into the slope. No sun disc is in frame.
+- **F44:** unchanged: the Alidade is not up at her face, and no planted Windwall can be read.
+- **F42:** unchanged: the Sickle is lost in the meadow.
+
+**Chrome used:** about 90 minutes over 23 launches, one at a time.
+
+---
+
+**What the next wave needs:**
+1. **The runner's terrace topple.** From the slice's save it finds no stand clear of the herd. It needs to wait for
+   the herd to pass or walk to a new place, not give up after three scans. This is a tool fix: from the fixtures the
+   beat passes.
+2. **The Screed fight driven by input in `first-hour.mjs`** (stall, seal-1, seal-2). Without it, 28/28 cannot be read.
+3. **The 75 ms frame on the walk into the Holds.** Every run has it.
+4. **A106 again.** It fails again: one frame of a fist 0.077 m inside a Plumb's shin.
+5. **The head turn in F08, F11 and F13.** The owner rules: keep the new head, or restore the old one in idle and
+   portraits.
+6. **The Transit card on screen at the read**, and the DAWN row's forecast.
