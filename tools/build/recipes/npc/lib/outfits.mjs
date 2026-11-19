@@ -20,6 +20,8 @@ import { clothTail } from '../../lib/human/wrap.mjs';
 import { bun, noise3, smooth } from '../../lib/human/face.mjs';
 import { ATLAS } from './atlas.mjs';
 import { matronOutfit } from './matron.mjs';
+import { ORO_PAINTERS } from './oro-sheet.mjs';
+import { KIT_PAINTERS } from './kit-sheet.mjs';
 
 const mix = (a, b, t) => a + (b - a) * t;
 const panelUV = (name, W = 1024) => ({ rect: ATLAS.sw[name], period: ATLAS.sw[name][2], W, pxPerM: 1 / 0.0016, v: [0, 1] });
@@ -77,7 +79,7 @@ function apron(ctx, { y0, y1, wTop, wBot, dye, swatch = 'panelA', lift = 0.01, c
     },
   });
   // (its back face a little darker than its front, not a dark hole: r0's V41 read the picker's apron lining as a black diamond)
-  ctx.add(twoSide ? P.twoSided(sheet, { shade: 0.8 }) : sheet, { dye, hide: true, stain });
+  ctx.add(twoSide ? P.twoSided(sheet, { shade: 0.8 }) : sheet, { dye, hide: true, stain, twin: twoSide });
   // the hem: a rolled, stitched edge with weight (r0: "a notched card", "a hung flag")
   if (hem) ctx.add(P.hemRoll(sheet, { rowOf: P.bottomRow(rows, cols), r: hem, uv: (a, b) => ctx.rectUV(swatch)(b, 0.98) }), { dye, stain });
   return sheet;
@@ -144,6 +146,16 @@ function cuffs(ctx, geo, xCut, dye) {
     const c = P.cuff({ geo, sgn: s, xCut, uv: ctx.uvOf('linen') });
     if (c) ctx.add(c, { dye });
   }
+}
+
+/**
+ * A Holds worker's hat (`spec.hat`: 'palm', a wide plaited palm hat for the sun on the ash pits and the herd's slope; the PEOPLE
+ * board's Trader wears one): the Pan porter's plait, its brim a little narrower, a cord of the Holds' wool round its crown.
+ */
+function holdsHat(ctx) {
+  if (ctx.spec?.hat !== 'palm') return;
+  const [top, under] = P.palmHat({ joint: ctx.J.Head, uv: ctx.uvOf('palm'), rBrim: 0.215, crownH: 0.09 });
+  ctx.add(top, { dye: HOLDS.wicker, noHide: true }); ctx.add(under, { dye: HOLDS.wicker, noHide: true, shade: 0.8 });
 }
 
 /* ================================================================= outfits */
@@ -339,6 +351,8 @@ export const OUTFITS = {
 
   /* 6 — Pit Farmer: ash wool, a leather belt with pouches, the back basket */
   farmer: {
+    // (M2 polish: on a sheet of each person's own, painted by what each piece is dyed: lib/kit-sheet.mjs)
+    sheet: { family: 'Ranger', painters: KIT_PAINTERS, density: { Male_Ranger_Feet_Boots: 0.7 } },
     parts: [
       { part: 'Male_Ranger_Body', dye: HOLDS.rust, target: 2900, collar: { y0: 1.44, push: 0.014 } },
       { part: 'Male_Ranger_Body_Belt', from: 'Male_Ranger_Body', meshes: /Belt/, dye: HOLDS.leather, target: 600 },
@@ -356,6 +370,7 @@ export const OUTFITS = {
         ctx.add(P.strap([[s * 0.1, 1.48, 0.0], [s * 0.13, 1.42, -0.1], [s * 0.1, 1.28, -0.13]], { grid: ctx.grid(), width: 0.032, lift: 0.006, uv: ctx.rectUV('leather'), skinNear: ctx.skinNear, along: 5, normalAt: (p) => [0, 0.3, -1] }), { dye: HOLDS.leatherDark });
       }
       sashEnd(ctx, { dye: HOLDS.olive, x: -0.17, y: 1.0, z: 0.05, len: 0.26 });
+      holdsHat(ctx);
       // the copper watering can, in his right hand for Farm_Watering only (r0: the clip played empty-handed, a mime). Its axes are
       // the clip's world up and forward at the middle of the pour, written in the hand's bind frame (read off M|Farm_Watering)
       const pr = ctx.palm('r');
@@ -366,6 +381,7 @@ export const OUTFITS = {
 
   /* 7 — Tiller-Follower: a long loose wool tunic over trousers, light wraps, the seed bag on its strap */
   follower: {
+    sheet: { family: 'Ranger', painters: KIT_PAINTERS, density: { Male_Ranger_Feet_Boots: 0.7 } },
     parts: [
       { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1500, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.wool },
       { part: 'Male_Ranger_Legs', dye: HOLDS.woolDark, target: 900 },
@@ -382,11 +398,13 @@ export const OUTFITS = {
       const j = ctx.chain('bag', 'pelvis', pts);
       ctx.add(P.sack({ c: [0.215, 0.87, 0.06], r: [0.075, 0.095, 0.05], uv: ctx.uvOf('wool'), skin: (p) => { const t = Math.max(0, Math.min(1, (0.98 - p[1]) / 0.16)); return P.chainSkin(j, t); } }), { dye: HOLDS.seed });
       strapBuckled(ctx, [[0.2, 0.98, 0.1], [0.08, 1.2, 0.15], [-0.11, 1.46, 0.08], [-0.13, 1.5, -0.02], [0.02, 1.25, -0.15], [0.2, 0.98, -0.08]], { width: 0.028, dye: HOLDS.leather, metal: HOLDS.iron, metalUV: 'iron', bu: 0.22, along: 22 });
+      holdsHat(ctx);
     },
   },
 
   /* 8 — Cochineal Picker: a wool top, a stained apron, a skirt over trousers, carmine to the elbow */
   picker: {
+    sheet: { family: 'Ranger', painters: KIT_PAINTERS, density: { Female_Ranger_Feet: 0.75 } },
     parts: [
       { part: 'Female_Ranger_Body', dye: HOLDS.wool, target: 1600 },
       { part: 'Female_Ranger_Body_Belt', from: 'Female_Ranger_Body', meshes: /Belt/, dye: HOLDS.leatherDark, target: 500 },
@@ -419,27 +437,51 @@ export const OUTFITS = {
    * tool belt (the hammer at the right hip, a pouch at the left), baggy wool trousers
    * into his boots */
   oro: {
+    // (M2 polish, the review: "flat blocks of colour"): the same pieces on a 1024² sheet of his own, painted (lib/oro-sheet.mjs)
+    // (texels where they are seen: the shirt's body is under the vest and the bib, the iron is small and dark)
+    sheet: { family: 'Ranger', painters: ORO_PAINTERS, density: { shirt: 0.55, boots: 0.8, iron: 0.6, handle: 0.7, apron: 1.2, apronHem: 0.8, sash: 1.25, sashEnd: 1.3, sashKnot: 0.9, vest: 1.1, pocket: 1.25, belt: 1.15, strap: 1.1, cuff: 1.0 } },
     parts: [
-      { part: 'Male_Ranger_Body', dye: HOLDS.wool, target: 3200, shade: 1.05, collar: { y0: 1.44, push: 0.014 } },
-      { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1300, cutX: 0.43, dropMat: /Regular/, cuff: HOLDS.woolDark },
-      { part: 'Male_Ranger_Legs', dye: HOLDS.woolDark, target: 1000, shade: 1.25 },
-      { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leatherDark, target: 1500, shade: 1.3 },
+      // (the shirt tucked in: its tail off under the belt; at 1a's film it hung pale to the knee beside the apron and read as a pale
+      // trouser leg)
+      { part: 'Male_Ranger_Body', slot: 'shirt', dye: HOLDS.wool, target: 3200, shade: 1.05, collar: { y0: 1.44, push: 0.014 }, cutBelow: 0.955 },
+      { part: 'Male_Ranger_Arms', slot: 'sleeves', dye: HOLDS.wool, target: 1300, cutX: 0.43, dropMat: /Regular/, cuff: HOLDS.woolDark },
+      { part: 'Male_Ranger_Legs', slot: 'trousers', dye: HOLDS.woolDark, target: 1000, shade: 1.25 },
+      { part: 'Male_Ranger_Feet_Boots', slot: 'boots', dye: HOLDS.leatherDark, target: 1500, shade: 1.3 },
     ],
     pieces(ctx) {
+      // every helper's pieces take a slot of the sheet: in the order they are added, iron wherever the dye is iron
+      const as = (...slots) => { let k = 0; return { ...ctx, add: (g, o = {}) => ctx.add(g, { ...o, slot: o.slot || (o.dye === HOLDS.iron ? 'iron' : slots[Math.min(k++, slots.length - 1)]) }) }; };
       // the vest: black wool, close, from the shoulders to the ribs (under the apron's bib it is only seen at the sides and back)
-      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('wool'), rows: 6, seg: 28, phi0: 58, phiFB: -30, phiSide: 22, lift: 0.009 }), { dye: HOLDS.lapilli, hide: true, shade: 1.6 });
+      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('wool'), rows: 6, seg: 28, phi0: 58, phiFB: -30, phiSide: 22, lift: 0.009 }), { dye: HOLDS.lapilli, hide: true, shade: 1.6, slot: 'vest' });
       // the bib apron: heavy leather in two broad folds, a thick turned edge, scorched and stained toward the hem
-      apron(ctx, { y0: 1.4, y1: 0.42, wTop: 0.15, wBot: 0.26, dye: HOLDS.leather, swatch: 'leather', lift: 0.02, chainKey: 'apron', foldAmp: 0.006, foldN: 2.3, hemWave: 0.002, rows: 13, cols: 13, hem: 0.0045,
+      apron(as('apron', 'apronHem'), { y0: 1.4, y1: 0.42, wTop: 0.15, wBot: 0.26, dye: HOLDS.leather, swatch: 'leather', lift: 0.02, chainKey: 'apron', foldAmp: 0.006, foldN: 2.3, hemWave: 0.002, rows: 13, cols: 13, hem: 0.0045,
         stain: { hex: HOLDS.leatherDark, at: (p) => 0.62 * smooth(0.78, 0.44, p[1]) + 0.5 * smooth(0.5, 0.78, noise3(p[0] * 17, p[1] * 17, 9)) } });
-      for (const s of [1, -1]) strapBuckled(ctx, [[s * 0.1, 1.39, frontZ(ctx, s * 0.1, 1.39) + 0.024], [s * 0.1, 1.5, 0.05], [s * 0.06, 1.53, -0.04], [-s * 0.05, 1.42, -0.13]], { width: 0.028, dye: HOLDS.leatherDark, metal: HOLDS.iron, metalUV: 'iron', bu: 0.12, along: 10 });
+      for (const s of [1, -1]) strapBuckled(as('strap'), [[s * 0.1, 1.39, frontZ(ctx, s * 0.1, 1.39) + 0.024], [s * 0.1, 1.5, 0.05], [s * 0.06, 1.53, -0.04], [-s * 0.05, 1.42, -0.13]], { width: 0.028, dye: HOLDS.leatherDark, metal: HOLDS.iron, metalUV: 'iron', bu: 0.12, along: 10 });
+      // the bib pocket: paler leather stitched onto the bib (a grid cast onto the bib, so it follows the chest's curve; at 1a's
+      // film a flat strip sank into it at its sides), his chisel and a file standing in it; on the trunk, as the bib above the waist
+      {
+        const trunk = P.trunkSkin(ctx.J), s0 = trunk(1.24);
+        const x0 = -0.002, x1 = 0.104, y0 = 1.292, y1 = 1.158;
+        ctx.add(P.surface({ rows: 4, cols: 6, at: (u, v) => { const x = mix(x0, x1, u), y = mix(y0, y1, v); return [x, y, frontZ(ctx, x, y) + 0.0045]; }, out: () => [0, 0, 1], uv: (u, v) => [u, v], skin: (p) => trunk(p[1]) }), { dye: HOLDS.leather, slot: 'pocket' });
+        for (const [x, r, top, lean] of [[0.03, 0.0062, 1.355, -0.012], [0.072, 0.0048, 1.335, 0.01]]) {
+          const z0 = frontZ(ctx, x, 1.2) + 0.004;
+          ctx.add(P.tube([[x, 1.2, z0], [x + lean * 0.5, (1.2 + top) / 2, z0 + 0.004], [x + lean, top, z0 + 0.008]], { r: (u) => r * (u > 0.8 ? 0.7 : 1), ring: 6, along: 3, skin: () => s0, uv: (u, v) => ctx.uvOf('iron')([u, v]) }), { dye: HOLDS.iron, noHide: true, slot: 'iron' });
+        }
+      }
       // the sash: the Holds' carmine, wound once at the waist, its end down the left hip
-      waistTie(ctx, { y: 1.06, dye: HOLDS.carmine, h: 0.05 });
-      sashEnd(ctx, { dye: HOLDS.carmine, x: 0.17, y: 1.04, z: 0.07, len: 0.34, width: 0.07 });
+      waistTie(as('sash'), { y: 1.06, dye: HOLDS.carmine, h: 0.05 });
+      sashEnd(as('sashEnd', 'sashKnot'), { dye: HOLDS.carmine, x: 0.17, y: 1.04, z: 0.07, len: 0.34, width: 0.07 });
       // the tool belt under it: leather, an iron buckle; the hammer at the right hip, a pouch at the left
-      belt(ctx, { y: 0.99, h: 0.04, dye: HOLDS.leatherDark, brass: HOLDS.iron });
-      pouch(ctx, { x: 0.21, y: 0.93, z: 0.03, r: [0.05, 0.06, 0.034], dye: HOLDS.leather });
+      belt(as('belt'), { y: 0.99, h: 0.04, dye: HOLDS.leatherDark, brass: HOLDS.iron });
+      pouch(as('pouch'), { x: 0.21, y: 0.93, z: 0.03, r: [0.05, 0.06, 0.034], dye: HOLDS.leather });
       const hip = ctx.prop('prop_hip', 'pelvis', [-0.22, 0.98, 0.0], [-0.22, 0.78, 0.0]);
-      for (const g of P.hammer({ at: [-0.225, 0.96, 0.02], dir: [0, -1, 0.02], joint: hip, uvWood: ctx.uvOf('wood'), uvHead: ctx.uvOf('iron') })) ctx.add(g, { dye: HOLDS.iron, noHide: true, prop: 'prop_hip' });
+      for (const g of P.hammer({ at: [-0.225, 0.96, 0.02], dir: [0, -1, 0.02], joint: hip, uvWood: ctx.uvOf('wood'), uvHead: ctx.uvOf('iron') }).map((g, k) => [g, k ? 'iron' : 'handle'])) ctx.add(g[0], { dye: HOLDS.iron, noHide: true, prop: 'prop_hip', slot: g[1] });
+      // the tongs, hung by their bows from the belt behind the hammer, jaws down
+      {
+        const sk = P.rigid(hip), x = -0.245, z = -0.07;
+        for (const s of [1, -1]) ctx.add(P.tube([[x, 1.0, z + s * 0.006], [x - 0.004, 0.86, z + s * 0.009], [x - 0.006, 0.74, z + s * 0.004], [x - 0.004, 0.7, z - s * 0.006]], { r: () => 0.0042, ring: 5, along: 6, skin: sk, uv: (u, v) => ctx.uvOf('iron')([u, v]) }), { dye: HOLDS.iron, noHide: true, prop: 'prop_hip', slot: 'iron' });
+        ctx.add(P.lathe({ c: [x - 0.006, 0.755, z], axis: [0, 0, 1], prof: [[0.0075, -0.012], [0.0075, 0.012], [0.001, 0.013]], seg: 8, skin: sk, uv: (u, v) => ctx.uvOf('iron')([u, v]) }), { dye: HOLDS.iron, noHide: true, prop: 'prop_hip', slot: 'iron' });
+      }
     },
   },
 

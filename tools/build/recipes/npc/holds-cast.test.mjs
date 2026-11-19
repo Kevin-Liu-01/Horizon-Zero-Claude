@@ -8,8 +8,8 @@
  *   - each at the M1.5b densities as the slice's cast is graded (density.mjs: face texel density equal to Brea's within 10 %, Oro's
  *     own faceK sheet included; the outfit >= 60 % of her linear density); <= 30 k triangles and <= 4 draws at the near tier
  *   - one violet accent each (Q6; F36's "each with a violet accent"): a violet dye in the person's own spec, and violet vertices
- *     on the near outfit or hair
- *   - every one of them on the Holds' one faction atlas (atlas-holds.glb), so the cast loads no sheet the Holds group does not
+ *     on the near outfit or hair, or (an outfit on a sheet of its own, M2 polish: the dye is in the paint, not the vertex colour)
+ *     at least 30 cm² of violet-dyed pieces on that sheet (r5Npc.outfitAtlas.sheet.dyeArea)
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,7 +37,7 @@ test('NW7: no two faces alike among Brea, Ansel, Oro and the Holds cast', async 
   assert.equal(r.alike.length, 0, `alike (<= ${r.threshold} mm): ${JSON.stringify(r.alike)}`);
 });
 
-test('NW7: each of the Holds cast at the M1.5b densities, triangles, draws; one violet accent; the Holds atlas', async () => {
+test('NW7: each of the Holds cast at the M1.5b densities, triangles, draws; one violet accent', async () => {
   const brea = await measure({ kind: 'hero', file: path.join(ROOT, 'public/models/hero/brea.glb'), outfitFile: path.join(ROOT, 'public/models/hero/outfit-pan-1.glb') });
   const IO = await io();
   const bad = [], rows = [];
@@ -76,7 +76,10 @@ test('NW7: each of the Holds cast at the M1.5b densities, triangles, draws; one 
     if (draws > 4) bad.push(`${id} draws ${draws}`);
     if (tris > 30000) bad.push(`${id} triangles ${tris}`);
     if (!accent) bad.push(`${id}: no violet in its spec`);
-    if (violet < 20) bad.push(`${id}: ${violet} violet vertices on the near outfit and hair`);
+    const dA = ex.r5Npc?.outfitAtlas?.sheet?.dyeArea || {};
+    const violetArea = [HOLDS.violet, HOLDS.violetDeep].reduce((a, h) => a + (dA[h.toUpperCase()] || 0), 0);
+    rows[rows.length - 1].violetSheetM2 = +violetArea.toFixed(4);
+    if (violet < 20 && violetArea < 0.003) bad.push(`${id}: ${violet} violet vertices on the near outfit and hair, ${violetArea.toFixed(4)} m² violet on its sheet`);
     if (faction !== 'holds') bad.push(`${id} faction ${faction}`);
   }
   console.log(JSON.stringify(rows));

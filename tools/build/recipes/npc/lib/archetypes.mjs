@@ -99,6 +99,8 @@ export const ARCHETYPES = [
     // M2 wave 3: his violet the rope belt; his face sheet to Brea's texel density (0.832 of hers at the default, holds-cast.test.mjs)
     dyes: { [HOLDS.rust]: HOLDS.violet },
     faceK: 1.2,
+    // (M2 polish: the lean one)
+    build: { torso: 0.93, arm: 0.92, leg: 0.95 },
     outfit: { key: 'follower' },
     clips: { idle: ['Idle_Rail_Loop', 'Farm_PlantSeed', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.0, lean: 0.04, swing: 1 } },
   },
@@ -139,6 +141,8 @@ export const ARCHETYPES = [
     face: { noseBridge: [-1.5, -3.0, 6.5], noseTip: [-2.5, -6.0, 8.0], cheek: [2.5, -2.5, 1.0], jaw: [5.5, -11.0, 1.5], chin: [0, -11.0, 4.0], brow: [0, -4.0, 10.5], upperLip: [0, -5.0, 3.0] },
     head: { kind: 'band', dye: '#5B2F6B', lining: '#41204E', seed: 191, hair: 'crop', tail: 'right', beard: 'full' },
     marks: { burn: true }, faceK: 2.3,
+    // (M2 polish: a smith's build, the arms and shoulders thick from the hammer)
+    build: { torso: 1.05, arm: 1.1, leg: 1.03 },
     outfit: { key: 'oro' },
     clips: { idle: ['Idle_Loop', 'Idle_Talking_Loop', 'Chest_Open'], stage: ['Idle_Loop', 'Idle_Talking_Loop', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.88, lean: 0.03, swing: 0.75 } },
   },
@@ -210,12 +214,15 @@ export const ARCHETYPES = [
     head: { kind: 'band', dye: HOLDS.violet, lining: HOLDS.violetDeep, seed: 162, hair: 'crop', tail: 'left', beard: 'full' },
     dyes: { [HOLDS.rust]: HOLDS.ash, [HOLDS.rustDeep]: HOLDS.woolDark },
     faceK: 1.2,
+    // (M2 polish, variety of build and hats: a stocky farmer under a wide palm hat)
+    hat: 'palm', build: { torso: 1.1, arm: 1.07, leg: 1.07 },
     outfit: { key: 'farmer' },
     clips: { idle: ['Farm_Harvest', 'Farm_PlantSeed', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.96, lean: 0.05, swing: 0.92 }, hand: ['Farm_Watering'] },
   },
   {
-    id: 'pit-farmer-3', n: 6, rngN: 63, name: 'Pit Farmer', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.75, age: 49, browK: 1.06,
-    tone: '#6C432C', iris: '#2A1D15', amber: '#4F3019', hair: '#2B2622', hairPaint: '#3A3430',
+    id: 'pit-farmer-3', n: 6, rngN: 63, name: 'Pit Farmer', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.75, age: 50, browK: 1.06,
+    // (M2 polish: the cast's elder at the top of the calling's range, greying, heavy in the middle)
+    tone: '#6C432C', iris: '#2A1D15', amber: '#4F3019', hair: '#57524C', hairPaint: '#6E6862', build: { torso: 1.08, arm: 0.98, leg: 1.0 },
     face: { noseBridge: [0, 3.0, 4.0], noseTip: [0, -6.0, 3.0], cheek: [-5.5, -3.5, -2.5], jaw: [-3.0, -9.0, 4.0], chin: [0, -9.5, -3.5], brow: [0, 4.5, 5.5], upperLip: [0, -4.0, 4.5] },
     // his violet the sash's end; the cap undyed ash wool
     head: { kind: 'cap', dye: HOLDS.woolDark, lining: HOLDS.lapilli, seed: 163, tail: 'right', beard: 'stubble' },
@@ -232,6 +239,8 @@ export const ARCHETYPES = [
     head: { kind: 'band', dye: HOLDS.violet, lining: HOLDS.violetDeep, seed: 172, hair: 'crop', tail: 'right', thin: true },
     dyes: { [HOLDS.wool]: HOLDS.ash, [HOLDS.woolDark]: HOLDS.carmineStain },
     faceK: 1.1,
+    // (M2 polish: a palm hat against the sun on the herd's slope)
+    hat: 'palm', build: { torso: 0.96, arm: 0.95, leg: 0.97 },
     outfit: { key: 'follower' },
     clips: { idle: ['Farm_PlantSeed', 'Idle_Rail_Loop', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.04, lean: 0.03, swing: 1 } },
   },
@@ -243,6 +252,7 @@ export const ARCHETYPES = [
     head: { kind: 'scarf', dye: HOLDS.carmineStain, lining: HOLDS.rustDeep, seed: 182, tail: 'right', knot: true },
     dyes: { [HOLDS.carmine]: HOLDS.violet, [HOLDS.lapilli]: HOLDS.ash, [HOLDS.wool]: HOLDS.woolDark },
     marks: { carmine: true }, faceK: 1.05,
+    build: { torso: 1.07, arm: 1.05, leg: 1.06 },
     outfit: { key: 'picker' },
     clips: { idle: ['Interact', 'PickUp_Table', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.98, lean: 0.02, swing: 0.95 } },
   },

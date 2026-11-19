@@ -35,6 +35,7 @@ import {
 import { emptyGeo, primToGeo, compact, join, filterTris, clipAbsX, clipTopY, soupOf, simplify, simplifySloppy, nearestSkin, dye, lin, tris, recomputeGeoNormals } from './geo.mjs';
 import { ATLAS, uvRect, mcoUV, NEUTRAL, HAIR_NEUTRAL } from './atlas.mjs';
 import { OUTFITS } from './outfits.mjs';
+import { paintSheet, loadSource } from './sheet.mjs';
 import { threeTree } from './clips.mjs';
 
 const SEX = {
@@ -432,6 +433,54 @@ async function loadPart(base, spec, SRC, dy) {
 
 /* ================================================================= the build */
 
+/**
+ * A person's build (`spec.build`: { torso, arm, leg }, each a girth factor, 1 the kit's own): every vertex moves out from the
+ * bone it is skinned to (the segment from the joint to its child), by its weights, so the trunk, the arms and the legs thicken or
+ * thin while the head, the hands and the feet keep the kit's (the face field and the hands' grips are unchanged). Applied to the
+ * body and the MCO parts as they are read, before anything is cast onto them, so every piece fits the person built.
+ */
+function buildField(base, dy, build) {
+  if (!build) return null;
+  const joints = base.getRoot().listSkins()[0].listJoints();
+  const isJ = new Set(joints);
+  const kOf = (n) => (/^(pelvis|spine_0[123])$/.test(n) ? build.torso ?? 1 : /^clavicle/.test(n) ? ((build.torso ?? 1) + (build.arm ?? 1)) / 2 : /^(upperarm|lowerarm)/.test(n) ? build.arm ?? 1 : /^(thigh|calf)/.test(n) ? build.leg ?? 1 : 1);
+  const seg = joints.map((j) => {
+    const k = kOf(j.getName());
+    if (Math.abs(k - 1) < 1e-6) return null;
+    const a = j.getWorldTranslation();
+    const kids = j.listChildren().filter((c) => isJ.has(c));
+    const pick = kids.find((c) => /spine|lowerarm|calf|hand|foot|upperarm|neck/.test(c.getName())) || kids[0];
+    const b = pick ? pick.getWorldTranslation() : [a[0], a[1] + 0.1, a[2]];
+    return { k, a: [a[0], a[1] - dy, a[2]], b: [b[0], b[1] - dy, b[2]] };
+  });
+  return (p, j, w, out) => {
+    out[0] = p[0]; out[1] = p[1]; out[2] = p[2];
+    for (let c = 0; c < 4; c++) {
+      const s = seg[j[c]];
+      if (!s || w[c] <= 0) continue;
+      const d = [s.b[0] - s.a[0], s.b[1] - s.a[1], s.b[2] - s.a[2]], L2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - s.a[0]) * d[0] + (p[1] - s.a[1]) * d[1] + (p[2] - s.a[2]) * d[2]) / L2));
+      for (let k = 0; k < 3; k++) out[k] += w[c] * (s.k - 1) * (p[k] - (s.a[k] + d[k] * t));
+    }
+    return out;
+  };
+}
+const buildPrim = (prim, F) => {
+  if (!F) return;
+  const P = prim.getAttribute('POSITION'), J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
+  const p = [0, 0, 0], j = [0, 0, 0, 0], w = [0, 0, 0, 0], o = [0, 0, 0];
+  for (let i = 0; i < P.getCount(); i++) { P.getElement(i, p); J.getElement(i, j); W.getElement(i, w); P.setElement(i, F(p, j, w, o)); }
+};
+const buildGeo = (g, F) => {
+  if (!F) return g;
+  const o = [0, 0, 0];
+  for (let i = 0; i < g.pos.length / 3; i++) {
+    F([g.pos[i * 3], g.pos[i * 3 + 1], g.pos[i * 3 + 2]], g.jnt.slice(i * 4, i * 4 + 4), g.wgt.slice(i * 4, i * 4 + 4), o);
+    g.pos[i * 3] = o[0]; g.pos[i * 3 + 1] = o[1]; g.pos[i * 3 + 2] = o[2];
+  }
+  return g;
+};
+
 export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf = null }) {
   const SRC = srcRoot();
   const SX = SEX[spec.sex];
@@ -444,6 +493,8 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const bodyPrim = bodyNode.getMesh().listPrimitives()[0], eyesPrim = eyesNode.getMesh().listPrimitives()[0], browPrim = browNode.getMesh().listPrimitives()[0];
   for (const p of [bodyPrim, eyesPrim, browPrim]) shiftPrim(p, -dy);
 
+  const BF = buildField(base, dy, spec.build);
+  buildPrim(bodyPrim, BF);
   const box0 = bbox(bodyPrim);
   const rawBodyH = box0.max[1] - box0.min[1];
   const S = spec.height / rawBodyH;
@@ -604,11 +655,16 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   }
   // (M1.5c: `when(spec)` keeps a stock part for some wearers of an outfit only: Mise's head wrap takes the old keeper's hood off)
   for (const ps of own ? [] : OUT.parts.filter((q) => !q.when || q.when(spec))) {
-    let g = await loadPart(base, ps, SRC, dy);
+    let g = buildGeo(await loadPart(base, ps, SRC, dy), BF);
     if (ps.cutX) g = clipAbsX(g, ps.cutX);
     if (ps.cutTop) g = clipTopY(g, ps.cutTop);
-    // the source UV -> the faction block, or a swatch for a part from another family
-    if (ps.swatch) {
+    // (`cutBelow`: a shirt's tail taken off under the belt, where the trousers are the layer that shows)
+    if (ps.cutBelow) g = filterTris(g, (ax, ay, az, bx, by, bz, cx, cy, cz) => Math.max(ay, by, cy) >= ps.cutBelow);
+    // the source UV -> the faction block, or a swatch for a part from another family (an outfit on a sheet of its own keeps the
+    // source charts: lib/sheet.mjs packs and paints them)
+    if (OUT.sheet && !ps.swatch) {
+      // (kept as they are)
+    } else if (ps.swatch) {
       const r = uvRect(ps.swatch);
       const n = g.pos.length / 3;
       for (let i = 0; i < n; i++) { const x = g.pos[i * 3], y = g.pos[i * 3 + 1], z = g.pos[i * 3 + 2]; const az = Math.atan2(x, z + 0.02); g.uv[i * 2] = r[0] + ((az / (2 * Math.PI) + 0.5) * 3 % 1) * r[2]; g.uv[i * 2 + 1] = r[1] + (((y * 3.2) % 1 + 1) % 1) * r[3]; }
@@ -629,7 +685,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     }
     const before = tris(g);
     if (ps.target && before > ps.target) g = await simplify(g, ps.target, { err: 0.018, lock: true });
-    pieces.push({ geo: g, dye: ps.dye, hide: !ps.noHideOnBody, shade: ps.shade ?? 1, part: ps.part, cut: ps.cutX, cuff: ps.cuff });
+    pieces.push({ geo: g, dye: ps.dye, hide: !ps.noHideOnBody, shade: ps.shade ?? 1, part: ps.part, cut: ps.cutX, cuff: ps.cuff, slot: ps.slot || null, mco: !!OUT.sheet && !ps.swatch });
     log(`  part ${ps.part}: ${before} -> ${tris(g)}`);
   }
   let gridCache = null;
@@ -658,7 +714,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   };
   const ctx = {
     spec, J, grid: gridOf, trunkGrid: trunkGridOf, skinNear, chain, prop,
-    add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; for (const q of list) pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null, stain: o.stain || null }); invalidate(); },
+    add(g, o = {}) { const list = Array.isArray(g) ? g : [g]; list.forEach((q, k) => pieces.push({ geo: q, dye: o.dye, hide: !!o.hide, noHide: !!o.noHide, shade: o.shade ?? 1, prop: o.prop || null, stain: o.stain || null, slot: Array.isArray(o.slot) ? o.slot[Math.min(k, o.slot.length - 1)] : o.slot || null, twin: o.twin ? q.pos.length / 6 : 0 })); invalidate(); },
     uvOf,
     rectUV: (name) => { const r = uvRect(name); return (u, v) => [r[0] + u * r[2], r[1] + v * r[3]]; },
     palm: (side) => { const c = side === 'r' ? base.getRoot().listSkins()[0].listJoints()[J.hand_r] : base.getRoot().listSkins()[0].listJoints()[J.hand_l]; const w = c.getWorldMatrix(); return [w[12] + (side === 'r' ? -0.072 : 0.072), w[13] - dy - 0.024, w[14] + 0.02]; },
@@ -672,7 +728,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       const r = uvRect('linen');
       const { cuff } = await import('./pieces.mjs');
       const g = cuff({ geo: q.geo, sgn: s, xCut: q.cut, uv: (w) => [r[0] + w[0] * r[2], r[1] + w[1] * r[3]] });
-      if (g) pieces.push({ geo: g, dye: q.cuff, hide: false, shade: 1 });
+      if (g) pieces.push({ geo: g, dye: q.cuff, hide: false, shade: 1, slot: 'cuff' });
       void n;
     }
   }
@@ -936,6 +992,34 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   hairGeo.jnt = hairGeo.jnt.map((v) => v);
   fixMale(hairGeo, dy);
 
+  // ---- an outfit on a sheet of its own (lib/sheet.mjs): the kit's pieces as built, unwrapped, packed and painted; the dyes, stains
+  // and shades go into the paint, the vertex colour keeps the contact shade below
+  let sheet = null;
+  if (OUT.sheet && !own) {
+    const SRC2 = srcRoot();
+    const fam = OUT.sheet.family || spec.family;
+    const srcBase = await loadSource(path.join(MCO_DIR(SRC2), `T_${fam}_BaseColor.png`), 1024);
+    const srcNormal = await loadSource(path.join(MCO_DIR(SRC2), `T_${fam}_Normal.png`), 1024);
+    // what each piece is dyed for this person (spec.dyes), and a seed of its own, for the painters
+    const dmap = Object.fromEntries(Object.entries(spec.dyes || {}).map(([a, b]) => [a.toUpperCase(), b]));
+    pieces.forEach((p, k) => { p.dyeHex = typeof p.dye === 'string' ? dmap[p.dye.toUpperCase()] || p.dye : null; p.seed = (spec.rngN ?? spec.n) * 17 + k; });
+    sheet = await paintSheet(pieces, { painters: OUT.sheet.painters, density: OUT.sheet.density, srcBase, srcNormal, log });
+    // what the sheet is painted in, by dye and bind area (the vertex colours no longer carry it: the cast's violet-accent row reads it)
+    const area = {};
+    for (const p of pieces) {
+      if (!p.dyeHex || p.mco) continue;
+      const g = p.geo; let A = 0;
+      for (let t = 0; t < g.idx.length; t += 3) {
+        const a = g.idx[t] * 3, b = g.idx[t + 1] * 3, c = g.idx[t + 2] * 3;
+        const u = [g.pos[b] - g.pos[a], g.pos[b + 1] - g.pos[a + 1], g.pos[b + 2] - g.pos[a + 2]], v = [g.pos[c] - g.pos[a], g.pos[c + 1] - g.pos[a + 1], g.pos[c + 2] - g.pos[a + 2]];
+        A += 0.5 * Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]);
+      }
+      const k = p.dyeHex.toUpperCase();
+      area[k] = +((area[k] || 0) + A).toFixed(5);
+    }
+    sheet.stats.dyeArea = area;
+  }
+
   // ---- the near outfit: contact shade against everything, then the dyes
   // M1.5c: `spec.dyes` re-dyes one person's copy of a calling's outfit (hex -> hex, upper case keys), so two people of one calling
   // differ (the Pan Houses' salt-white linen with one violet accent, Q6, in each person's own proportion)
@@ -951,6 +1035,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
       const keepCol = g.col && g.col.length === (g.pos.length / 3) * 4 ? g.col.slice() : null;
       vertexAO(g, grid, { rays: 24, maxD: 0.05, floor: 0.42, tint: [1, 0.97, 0.95] });
       if (keepCol) for (let i = 0; i < g.col.length; i++) g.col[i] *= keepCol[i];
+      if (sheet) continue;
       if (p.dye) dye(g, dyeOf(p.dye), NEUTRAL);
       // a stain over the dye: `stain.at(p)` 0..1 per vertex blends toward the stain's colour (a picker's carmine where her hands
       // wipe and where the hem drags, not a dyed panel)
@@ -1094,11 +1179,12 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
   const skin = root.listSkins()[0];
   const arm = nodeByName(base, 'Armature');
   const outfitMat = base.createMaterial('MI_Npc_Outfit').setMetallicFactor(1).setRoughnessFactor(1);
-  if (own) {
+  const ownTex = own || sheet;
+  if (ownTex) {
     // her own sheet: base colour, normal, ORM (R the detail class src/hero/clothShader.js reads, G roughness, B metal; the
     // contact shade is in COLOR_0), and the faction materials' fill (emissive = base x 0.07, scaled by the scene's ambient)
     const tex = (name, bytes) => base.createTexture(name).setImage(bytes).setMimeType('image/webp').setURI(`${name}.webp`);
-    const tb = tex(`npc-${spec.id}-outfit-base`, own.tex.base), tn = tex(`npc-${spec.id}-outfit-normal`, own.tex.normal), to = tex(`npc-${spec.id}-outfit-orm`, own.tex.orm);
+    const tb = tex(`npc-${spec.id}-outfit-base`, ownTex.tex.base), tn = tex(`npc-${spec.id}-outfit-normal`, ownTex.tex.normal), to = tex(`npc-${spec.id}-outfit-orm`, ownTex.tex.orm);
     outfitMat.setBaseColorTexture(tb).setNormalTexture(tn).setMetallicRoughnessTexture(to).setEmissiveTexture(tb).setEmissiveFactor([0.07, 0.07, 0.07]).setDoubleSided(false);
   }
   const hairMat = base.createMaterial('MI_Npc_Hair').setAlphaMode('MASK').setAlphaCutoff(0.5).setDoubleSided(false).setMetallicFactor(1).setRoughnessFactor(1);
@@ -1137,7 +1223,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
         pieces: pieces.map((p) => p.part || (p.prop ? `prop:${p.prop}` : 'procedural')).reduce((m, k) => { m[k] = (m[k] || 0) + 1; return m; }, {}),
         layers: pieces.filter((p) => !p.prop && !p.noHide).length,
         procedural: pieces.filter((p) => !p.part).length,
-        outfitAtlas: own ? { own: true, W: 1024, D: +own.D.toFixed(1), detailRep: own.detailRep, trimV: +own.trimV.toFixed(5), slots: own.slots, base: `npc-${spec.id}-outfit-base` } : null,
+        outfitAtlas: ownTex ? { own: true, W: 1024, D: +ownTex.D.toFixed(1), detailRep: ownTex.detailRep, trimV: +ownTex.trimV.toFixed(5), slots: ownTex.slots, base: `npc-${spec.id}-outfit-base`, kit: !!sheet, ...(sheet ? { sheet: sheet.stats } : {}) } : null,
         head: H.kind, hairParts: wrapped ? wrapped.parts : null, cards: cardCount, culled, eyesCulled,
       },
       r5Face: faceRec,
@@ -1145,7 +1231,7 @@ export async function buildNpc(spec, { file, provenance, log = () => {}, clipOf 
     },
   });
   log(`  ${spec.id}: ${JSON.stringify(tierTris)} ${stats.bytes} B, density ${(densityK + 0.04).toFixed(2)} shrink ${layout.shrink.toFixed(3)}, body box ${bodyBox.lo.toFixed(3)}..${bodyBox.hi.toFixed(3)}`);
-  return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou, ownOutfit: !!own };
+  return { ...stats, tiers: tierTris, face: faceRec.landmarks, iou: faceRec.iou, ownOutfit: !!ownTex };
 }
 
 /**
