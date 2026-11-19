@@ -56,4 +56,13 @@ export const CLIPS = {
    *    and the lance (key 2, at 0.03 s and at 0.20 s); her left side */
   hRoll: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 90, d: 3.4, h: 1.2, look: 0.9, fov: 46 },
     js: `${RESET} await w(0.3); ${K1} await w(0.08); p.dodge(); await w(1.4); C.combat._holsterT = 0.001; await w(1.2); ${K1} await w(0.30); p.dodge(); await w(1.4); C.combat._holsterT = 0.001; await w(1.2); ${K2} await w(0.03); p.dodge(); await w(1.4); mel.holsterLance(); await w(1.0); ${K2} await w(0.20); p.dodge(); await w(1.4); mel.holsterLance(); await w(1.0);` },
+  /* 11. (M2 polish) the lance's pull, close from her front-right: the right fist takes the haft from the left in front of
+   *     her left hip and carries it round her front to the guard (PULL_FRONT), twice */
+  hPull: { sim: true, frame: 'F16', pose: 'idle', lens: { a: -35, d: 1.7, h: 1.15, look: 1.0, fov: 44 },
+    js: `${RESET} await w(0.3); ${K2} await w(1.2); mel.holsterLance(); await w(1.1); ${K2} await w(1.2); mel.holsterLance(); await w(1.0);` },
+  /* 12. (M2 polish) the gaff in the loop, from her front: the hand-over (the gaff only), key 1 (the bow out), key 3 (the
+   *     bow back on her back, then the gaff drawn by her right hand), key 1 (the gaff back on its hanger, then the bow),
+   *     key 3 again, then the gaff stowed. Last of the clips: the kit stays granted in the page */
+  hGaffBow: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 15, d: 2.5, h: 1.15, look: 0.95, fov: 42 },
+    js: `${RESET} await p.hero?.grantOroKit?.({ gaff: true, windwall: false, pots: 0 }); await w(0.4); ${K1} await w(1.0); C.quickslots.select(3); await w(1.3); ${K1} await w(1.4); C.quickslots.select(3); await w(1.3); C.combat.gaff?.stow?.(); await w(1.0);` },
 };
