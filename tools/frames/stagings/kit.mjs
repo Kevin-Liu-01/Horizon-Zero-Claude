@@ -63,7 +63,54 @@ export const frames = [
   },
 ];
 
-export const STAGED = { 'F40-open': 'wall', 'F40-stowed': 'wall', 'F42-stowed': 'wall', 'F42-ready': 'wall', 'F42-readyfront': 'wall' };
+/* ---- wave 3 ("behaviour"): the verbs, each held at its key step (the verb's own clock clamped there, so a repeat
+ * holds the same step of it; only the wind and the cloth move) ---- */
+frames.push(
+  {
+    id: 'F40', subject: 'the Windwall guard, side-on from her left, the gaff in her right hand, flat light', in: 'M2', ...STUDIO,
+    camera: { mode: 'orbit', yawRel: 90, dist: 2.6, height: 1.0, target: 'body', fov: 40 },
+    state: { pose: 'idle', hud: false },
+    ref: { written: "Kevin's bars (no reference): the fan open on her left forearm in front of her body, its top under her shoulders, no hand, forearm or slat behind her head; the gaff at the ready in her right hand" },
+    note: 'M2 wave 3 (area D): windwallLayer.js GUARD, held in the guard (RMB with the gaff out).',
+  },
+  {
+    id: 'F40-front', subject: 'the Windwall guard from in front, flat light', in: 'M2', ...STUDIO,
+    camera: { mode: 'orbit', yawRel: 0, dist: 2.8, height: 1.0, target: 'body', fov: 40 },
+    state: { pose: 'idle', hud: false },
+    ref: { written: 'as F40: the crescent hangs from the forearm in front of her body' },
+    note: 'M2 wave 3 (area D).',
+  },
+  {
+    id: 'F41', subject: 'a pot cast at the release, side-on from her left, flat light', in: 'M2', ...STUDIO,
+    camera: { mode: 'orbit', yawRel: 90, dist: 2.6, height: 1.0, target: 'body', fov: 40 },
+    state: { pose: 'idle', hud: false },
+    ref: { written: "Kevin's bars: a pendulum, no hand above the shoulder; the release in front of her below her chest, the hip turned into it" },
+    note: 'M2 wave 3 (area D): potLayer.js, held at the release (src/combat/pots.js POT_CAST.releaseAt).',
+  },
+  {
+    id: 'F42', subject: 'the gaff hook-rip at contact on a Sickle, three-quarter front from her right', in: 'M2', hour: 16.5, weather: 'trade', at: 'place:openGround', bearing: 180,
+    camera: { mode: 'orbit', yawRel: 300, dist: 3.6, height: 1.2, target: { fwd: 0.7, side: 0, up: 0.9 }, fov: 45 },
+    state: { pose: 'idle', hud: false },
+    ref: { written: "Kevin's bars: the body performs it: the hook out in front at the Sickle's blade, the fist below her shoulder, her hips turned; never a hand behind the head" },
+    note: 'M2 wave 3 (area D): gaffLayer.js hookRip, held at the contact (the end of its H phase).',
+  },
+  {
+    id: 'F42-light', subject: 'the gaff light 1 at contact, side-on from her right, flat light', in: 'M2', ...STUDIO,
+    camera: { mode: 'orbit', yawRel: 300, dist: 2.6, height: 1.0, target: 'body', fov: 40 },
+    state: { pose: 'idle', hud: false },
+    ref: { written: "Kevin's bars: the hip leads, the fist across in front of her below her shoulder, the haft level, the hook leading" },
+    note: 'M2 wave 3 (area D): gaffLayer.js light1, held at its contact (the end of S).',
+  },
+  {
+    id: 'F43', subject: 'the Kit Rack open over the field, the world behind it', in: 'M2', hour: 16.5, weather: 'trade', at: 'place:openGround', bearing: 180,
+    camera: { mode: 'chase' },
+    state: { pose: 'idle', hud: true },
+    ref: { written: 'a half-ring at the right edge, five sectors (BOW, LANCE, GAFF, POTS, NET), the rim graduated every 6 deg, dark violet glass, the lilac selection line; the world unfrozen behind it; no centre wheel' },
+    note: 'M2 wave 3 (area D): src/ui/kitrack.js, opened as Tab does.',
+  },
+);
+
+export const STAGED = { 'F40-open': 'wall', 'F40-stowed': 'wall', 'F42-stowed': 'wall', 'F42-ready': 'wall', 'F42-readyfront': 'wall', F40: 'wall', 'F40-front': 'wall', F41: 'wall', F42: 'wall', 'F42-light': 'wall', F43: 'wall' };
 
 /** @type {Record<string, { world?: Function, beforeFreeze?: Function }>} (each hook self-contained: serialised alone) */
 export const stagings = {
@@ -108,7 +155,11 @@ export const stagings = {
       hero.oro?.dispose?.();
       // a fresh (empty) kit for whatever films next
       if (K) hero.oro = new K.constructor(C.player);
-      if (C.combat) C.combat.gaff = null;
+      // (wave 3: the Windwall and the pots are granted too; their states and layers go with the kit)
+      const ww = C.combat?.windwall; if (ww?.prop?.group) { ww.prop.group.visible = false; ww.prop.group.removeFromParent(); }
+      C.combat?.pots?.dispose?.();
+      if (an) { an._wwS = null; if (an._pots?.belt) for (const m of an._pots.belt) m.removeFromParent(); an._pots = null; }
+      if (C.combat) { C.combat.gaff = null; C.combat.windwall = null; C.combat.pots = null; C.combat.status = null; }
     });
     if (!C.combat?.gaff?.owned) { api.standIn('the gaff was not granted'); return; }
     await (C.combat.gaff.prop?.ready ?? Promise.resolve());
@@ -133,7 +184,11 @@ export const stagings = {
       hero.oro?.dispose?.();
       // a fresh (empty) kit for whatever films next
       if (K) hero.oro = new K.constructor(C.player);
-      if (C.combat) C.combat.gaff = null;
+      // (wave 3: the Windwall and the pots are granted too; their states and layers go with the kit)
+      const ww = C.combat?.windwall; if (ww?.prop?.group) { ww.prop.group.visible = false; ww.prop.group.removeFromParent(); }
+      C.combat?.pots?.dispose?.();
+      if (an) { an._wwS = null; if (an._pots?.belt) for (const m of an._pots.belt) m.removeFromParent(); an._pots = null; }
+      if (C.combat) { C.combat.gaff = null; C.combat.windwall = null; C.combat.pots = null; C.combat.status = null; }
     });
     if (!C.combat?.gaff?.owned) { api.standIn('the gaff was not granted'); return; }
     await (C.combat.gaff.prop?.ready ?? Promise.resolve());
@@ -158,7 +213,11 @@ export const stagings = {
       hero.oro?.dispose?.();
       // a fresh (empty) kit for whatever films next
       if (K) hero.oro = new K.constructor(C.player);
-      if (C.combat) C.combat.gaff = null;
+      // (wave 3: the Windwall and the pots are granted too; their states and layers go with the kit)
+      const ww = C.combat?.windwall; if (ww?.prop?.group) { ww.prop.group.visible = false; ww.prop.group.removeFromParent(); }
+      C.combat?.pots?.dispose?.();
+      if (an) { an._wwS = null; if (an._pots?.belt) for (const m of an._pots.belt) m.removeFromParent(); an._pots = null; }
+      if (C.combat) { C.combat.gaff = null; C.combat.windwall = null; C.combat.pots = null; C.combat.status = null; }
     });
     if (!C.combat?.gaff?.owned) { api.standIn('the gaff was not granted'); return; }
     await (C.combat.gaff.prop?.ready ?? Promise.resolve());
@@ -183,7 +242,11 @@ export const stagings = {
       hero.oro?.dispose?.();
       // a fresh (empty) kit for whatever films next
       if (K) hero.oro = new K.constructor(C.player);
-      if (C.combat) C.combat.gaff = null;
+      // (wave 3: the Windwall and the pots are granted too; their states and layers go with the kit)
+      const ww = C.combat?.windwall; if (ww?.prop?.group) { ww.prop.group.visible = false; ww.prop.group.removeFromParent(); }
+      C.combat?.pots?.dispose?.();
+      if (an) { an._wwS = null; if (an._pots?.belt) for (const m of an._pots.belt) m.removeFromParent(); an._pots = null; }
+      if (C.combat) { C.combat.gaff = null; C.combat.windwall = null; C.combat.pots = null; C.combat.status = null; }
     });
     if (!C.combat?.gaff?.owned) { api.standIn('the gaff was not granted'); return; }
     await (C.combat.gaff.prop?.ready ?? Promise.resolve());
@@ -194,4 +257,97 @@ export const stagings = {
     } else await api.sleep(400);
     },
   },
+};
+
+/* ---- wave 3's hooks: one prelude (the hand-over and its undo, in-page), each hook made from it ---- */
+const PRE = `
+  const C = api.C, hero = C.player?.hero;
+  if (!hero?.grantOroKit) { api.standIn('no hero.grantOroKit in this build'); return; }
+  await hero.grantOroKit({ gaff: true, windwall: true, pots: 3 });
+  api.undo(() => {
+    const cb = C.combat, an = C.player?.animator;
+    const g = cb?.gaff; if (g) { g.want = false; g.after = null; g.owned = false; g.verbs?.cancel?.(); if (g.prop?.group) { g.prop.group.visible = false; g.prop.group.removeFromParent(); } }
+    const ww = cb?.windwall; if (ww) { ww.owned = false; ww.want = false; ww.phase = 'stowed'; ww.plantedAt = null; if (ww.prop?.group) { ww.prop.group.visible = false; ww.prop.group.removeFromParent(); } }
+    const K = cb?.pots; if (K) { K.cancel?.(); K.dispose?.(); }
+    if (an) { an._gf = null; an._wwS = null; if (an._pots?.belt) for (const m of an._pots.belt) m.removeFromParent(); an._pots = null; an._oroKit = null; }
+    C.quickslots?.rack?.setOpen?.(false);
+    const KO = hero.oro; hero.oro?.dispose?.(); if (KO) hero.oro = new KO.constructor(C.player);
+    if (cb) { cb.gaff = null; cb.windwall = null; cb.pots = null; cb.status = null; }
+  });
+  if (!C.combat?.gaff?.owned) { api.standIn('the gaff was not granted'); return; }
+  await (C.combat.gaff.prop?.ready ?? Promise.resolve());
+  await (C.combat.windwall?.prop?.ready ?? Promise.resolve());
+  const drawGaff = async () => { if (C.quickslots?.select) C.quickslots.select(3); else C.combat.gaff.draw(); await api.sleep(900); if (!C.player?.animator?.gaffInHand?.()) api.standIn('the gaff is not in her hand after the draw'); };
+  /** hold a clock at \`at\`: wrap its step so it never passes it */
+  const holdAt = (obj, key, get, at) => { const s0 = obj[key].bind(obj); obj[key] = (dt) => s0(Math.min(dt, Math.max(0, at - get()))); api.undo(() => { obj[key] = s0; }); };
+  const waitFor = async (fn, ms = 4000) => { const t0 = performance.now(); while (!fn() && performance.now() - t0 < ms) await api.sleep(30); return fn(); };
+`;
+const AF = Object.getPrototypeOf(async function () {}).constructor;
+const hook = (body) => new AF('f', 'api', PRE + body);
+
+stagings.F40 = stagings['F40-front'] = {
+  beforeFreeze: hook(`
+    await drawGaff();
+    C.input.mouse.buttons |= 4;   // RMB held: the guard (the gaff is out, so the bow does not aim)
+    api.undo(() => { C.input.mouse.buttons &= ~4; });
+    const ok = await waitFor(() => C.combat.windwall?.phase === 'guard', 2000);
+    if (!ok) api.standIn('the Windwall did not come up to the guard');
+    await api.sleep(700);
+  `),
+};
+stagings.F41 = {
+  beforeFreeze: hook(`
+    const K = C.combat.pots, P = await import('/src/combat/pots.js');
+    if (!K?.owned) { api.standIn('no pots on her'); return; }
+    holdAt(K, 'step', () => K.casting?.t ?? 1e9, P.POT_CAST.releaseAt - 0.004);
+    const p = C.player.position, h = C.player.heading || 0;
+    if (!K.cast({ x: p.x + Math.sin(h) * 9, y: p.y, z: p.z + Math.cos(h) * 9 })) { api.standIn('the cast did not start'); return; }
+    await waitFor(() => (K.casting?.t ?? 0) >= P.POT_CAST.releaseAt - 0.005, 3000);
+    await api.sleep(400);
+  `),
+};
+stagings['F42-light'] = {
+  beforeFreeze: hook(`
+    await drawGaff();
+    const V = C.combat.gaff.verbs, G = await import('/src/combat/gaff.js');
+    const at = G.verbContactAt(G.GAFF_LIGHTS[0]);
+    V.strike();
+    holdAt(V, 'step', () => (V.verb ? V.t : 1e9), at - 0.001);
+    await waitFor(() => V.verb && V.t >= at - 0.002, 2000);
+    await api.sleep(400);
+  `),
+};
+stagings.F42 = {
+  beforeFreeze: hook(`
+    await drawGaff();
+    const M = C.machines, p = C.player, h = p.heading || 0;
+    const t0 = performance.now();
+    while (!M?.expansionReady && performance.now() - t0 < 30000) await api.sleep(200);
+    // a Sickle 1.9 m in front of her, facing her, held where it stands
+    const x = p.position.x + Math.sin(h) * 1.9, z = p.position.z + Math.cos(h) * 1.9;
+    const m = M?.spawn?.('sickle', x, z, { heading: h + Math.PI });
+    if (!m) api.standIn('no Sickle stood up'); else {
+      api.undo(() => { try { if (M.sites?.dispose) M.sites.dispose(m); else m.dispose?.(); } catch { try { m.dispose?.(); } catch { /* */ } } });
+      m.heading = h + Math.PI; m.root.position.set(x, C.terrain.getHeight(x, z), z); m.root.rotation.y = h + Math.PI;
+      await api.sleep(300);
+      const u0 = m.update; m.update = function () {}; api.undo(() => { m.update = u0; });
+    }
+    const V = C.combat.gaff.verbs, G = await import('/src/combat/gaff.js');
+    const at = G.verbContactAt(G.HOOK_RIP);
+    V.hookRip();
+    holdAt(V, 'step', () => (V.verb ? V.t : 1e9), at - 0.001);
+    await waitFor(() => V.verb && V.t >= at - 0.002, 2000);
+    await api.sleep(400);
+  `),
+};
+stagings.F43 = {
+  beforeFreeze: hook(`
+    const R = C.quickslots?.rack;
+    if (!R) { api.standIn('no Kit Rack in this build'); return; }
+    R.setOpen(true);
+    if (!R.open) api.standIn('the Kit Rack did not open');
+    await api.sleep(400);
+    const r = R.rect?.();
+    if (r && r.centreXK != null && r.centreXK < 0.85) api.standIn('the Kit Rack centre at ' + r.centreXK.toFixed(3) + ' of the width (bar 0.85)');
+  `),
 };
