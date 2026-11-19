@@ -146,6 +146,12 @@ const _hullRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3() }
  * whole-metre (Smi) coordinates for the aim march. `_hullOpts` is the hull raycast's options, reused.
  */
 const _hullOpts = { far: 220.5 };
+/**
+ * The aim's convergence (`_updateAimPoint`, M2 wave 0): a reticle ray that strikes no hull takes the depth of the machine
+ * the arrow's fall would pass within this many metres of (hull skin to the fallen ray). At the edge of it a shot
+ * misses the hull by about this much either way.
+ */
+const AIM_CONVERGE_GAP = 0.4;
 const _AP = new Float64Array(4);      // the aim march's bracket: a, b, f(a), f(b)
 
 /**
@@ -356,6 +362,10 @@ export class Combat {
     this.steady = new Steady();
     /** M1.6j the bow's sway while aiming (kit.js swayAt): radians, and the angle in degrees. 0 in Steady's hold. */
     this.sway = { yaw: 0, pitch: 0, deg: 0 };
+    /** M2 wave 0: the aim converges on the machine an arrow would pass (`_updateAimPoint`); that machine's kind, or null
+     *  (a kind, never the machine: a field holding one keeps a disposed machine alive) */
+    this.aimConverge = true;
+    this.aimNear = null;
     this._swayT = 0; this._holdFull = 0; this._swayShot = false;
     /**
      * `combat-no-nock-delay` + the character-lane handoff
@@ -1350,7 +1360,24 @@ export class Combat {
       _hullRay.direction.copy(_camDir);
       _hullOpts.far = best;
       const h = hulls.raycast(_hullRay, _hullOpts);
-      if (h && h.hit) { const P = this.aimPoint; P.x = h.x; P.y = h.y; P.z = h.z; return; }
+      if (h && h.hit) { const P = this.aimPoint; P.x = h.x; P.y = h.y; P.z = h.z; this.aimNear = null; return; }
+      /**
+       * M2 wave 0 (D5, the vial arrows that met nothing): THE AIM CONVERGES ON THE MACHINE THE SHOT WOULD PASS. The arrow
+       * leaves the nock (at her cheek, about 0.5 m beside and below the lens) toward the aim point, so it crosses the
+       * reticle's line only at the aim point's depth. A reticle held just over a target for the drop strikes no hull,
+       * and the aim point was the ground or the sky behind it (60-220 m): the arrow then crossed the reticle's line far
+       * past the target and passed it by the nock's offset, 0.3-0.5 m at 13-15 m. At 804543d (the slice's run 3) ten
+       * vial arrows at an unaware Plumb seen from its side met nothing that way, while a Plumb in attack (its head
+       * behind its glass, a hull at the glass's depth) was struck. Now, when the ray strikes no hull, the depth is
+       * that of the machine the arrow's fall would pass within AIM_CONVERGE_GAP of (hitHulls.nearPath), so the arrow
+       * crosses the reticle there. Only the depth moves: the aim point stays on the reticle's ray (no magnet).
+       */
+      if (this.aimConverge && hulls.nearPath) {
+        const def = AMMO[this.activeWeapon?.activeAmmo ?? 'hunter'];
+        const v = def && def.projectile === 'arrow' && !def.lob ? def.speed : 0;
+        const tN = v > 0 ? hulls.nearPath(cam.position, _camDir, best, 4.9 / (v * v), AIM_CONVERGE_GAP) : -1;
+        if (tN > 0 && tN < best) { best = tN; this.aimNear = hulls.nearKind; } else this.aimNear = null;
+      } else this.aimNear = null;
     } else {
       // spatial not installed (a bare unit test / an old save of the page):
       // fall back to the Round 3 path so aiming still resolves

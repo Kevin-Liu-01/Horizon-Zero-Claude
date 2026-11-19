@@ -281,6 +281,10 @@ export class HitHulls {
     this._candS = [];
     this._candT = [];
     this._n = 0;
+    /** `nearPath`'s answer: the kind of the machine the path passed closest to, and the gap (m). A kind, never the
+     *  machine: a field holding a machine keeps a disposed one alive (see arrows.js clearSweep) */
+    this.nearKind = null;
+    this.nearGap = null;
   }
 
   /* -------------------------------- build -------------------------------- */
@@ -776,6 +780,72 @@ export class HitHulls {
     }
     if (!bestHull) return null;
     return this._fill(bestSet, bestHull, o, d, best);
+  }
+
+  /**
+   * M2 wave 0 (combat's aim convergence, `combat._updateAimPoint`): WHICH MACHINE AN ARROW AIMED DOWN THIS RAY WOULD
+   * PASS, AND AT WHAT DEPTH, when the ray itself strikes no hull. The ray is the reticle's (camera) ray; the path tested
+   * is that ray fallen by `dropK * t^2` at depth t (the flight's own fall, g / 2v^2), so a reticle held over a target for
+   * the drop finds the target under it. Every living machine whose bounds the path comes near is walked in 0.2 m steps
+   * of depth between its bounds' entry and exit; at each step the gap from the path to each hull's skin (and to each
+   * small weak point, as the exact sweep tests them) is read. Returns the depth (m along the ray) of the smallest gap
+   * when it is at most `margin`, else -1; `this.nearKind` and `this.nearGap` say which kind and how close.
+   * No allocation.
+   */
+  nearPath(o, d, far, dropK, margin) {
+    const list = (this.ctx.machines && this.ctx.machines.list) || [];
+    let bestGap = margin, bestT = -1, bestM = null;
+    const ox = o.x, oy = o.y, oz = o.z, dx = d.x, dy = d.y, dz = d.z;
+    for (let i = 0; i < list.length; i++) {
+      const m = list[i];
+      if (!m || !m.root || m.alive === false) continue;
+      const cy0 = m.position.y + (m.height || 2) * 0.5;
+      const sx = m.size ? m.size.x : 2, sz = m.size ? m.size.z : 2;
+      const rad = 0.5 * Math.max(sx, sz, m.height || 2) + 1.2;
+      // the bounds' centre's depth along the ray, and the path's distance from it there
+      const tc = (m.position.x - ox) * dx + (cy0 - oy) * dy + (m.position.z - oz) * dz;
+      if (tc + rad < 0 || tc - rad > far) continue;
+      const fx = ox + dx * tc - m.position.x, fy = oy + dy * tc - dropK * tc * tc - cy0, fz = oz + dz * tc - m.position.z;
+      const lim = rad + margin;
+      if (fx * fx + fy * fy + fz * fz > lim * lim * 4) continue;
+      const set = this.sets.get(m) || this.build(m);
+      if (!set || !set.hulls.length) continue;
+      this._refresh(set);
+      const hulls = set.hulls, wps = m.weakPoints;
+      let t0 = tc - lim; if (t0 < 0.5) t0 = 0.5;
+      let t1 = tc + lim; if (t1 > far) t1 = far;
+      for (let t = t0; t <= t1; t += 0.2) {
+        const px = ox + dx * t, py = oy + dy * t - dropK * t * t, pz = oz + dz * t;
+        for (let k = 0; k < hulls.length; k++) {
+          const h = hulls[k];
+          if (h.off) continue;
+          if (px < h.minx - bestGap || px > h.maxx + bestGap || py < h.miny - bestGap || py > h.maxy + bestGap
+            || pz < h.minz - bestGap || pz > h.maxz + bestGap) continue;
+          closestOnSeg(px, py, pz, h.wax, h.way, h.waz, h.wbx, h.wby, h.wbz, _seg);
+          const g = Math.sqrt((px - _seg.x) * (px - _seg.x) + (py - _seg.y) * (py - _seg.y) + (pz - _seg.z) * (pz - _seg.z)) - h.wr;
+          if (g < bestGap) { bestGap = g; bestT = t; bestM = m; }
+        }
+        if (!wps) continue;
+        for (let k = 0; k < wps.length; k++) {
+          const w = wps[k];
+          if (!w || w.enabled === false || !w.obj || !(w.radius > 0) || w.radius > WP_SWEEP_MAX) continue;
+          let g;
+          if (w.axis && w.half > 0) {
+            _wa.copy(w.axis).multiplyScalar(w.half).applyMatrix4(w.obj.matrixWorld);
+            _wb.copy(w.axis).multiplyScalar(-w.half).applyMatrix4(w.obj.matrixWorld);
+            closestOnSeg(px, py, pz, _wa.x, _wa.y, _wa.z, _wb.x, _wb.y, _wb.z, _seg);
+          } else {
+            w.obj.getWorldPosition(_p);
+            _seg.x = _p.x; _seg.y = _p.y; _seg.z = _p.z;
+          }
+          g = Math.sqrt((px - _seg.x) * (px - _seg.x) + (py - _seg.y) * (py - _seg.y) + (pz - _seg.z) * (pz - _seg.z)) - w.radius;
+          if (g < bestGap) { bestGap = g; bestT = t; bestM = m; }
+        }
+      }
+    }
+    this.nearKind = bestM ? bestM.kind : null;
+    this.nearGap = bestM ? bestGap : null;
+    return bestT;
   }
 
   /** The shared hit record for a weak-point sphere (see `raycast`): `object` is the weak point's own node, so the
