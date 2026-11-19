@@ -36,13 +36,13 @@ export const lane = 'world';
 export const FRAMES = Object.freeze([
   {
     id: 'F33', subject: 'the Holds from Ninewalls Rise, golden (blockout)', in: 'M2', hour: 17.75, weather: 'trade',
-    at: 'trig:T2', bearing: 310, camera: { mode: 'eye', eye: 4.6, pitch: -5, fov: 55 }, state: { pose: 'idle', hud: false },
-    ref: { written: "wave 1 blockout: from T2's deck, Ninewalls' nine grey walls below on the left, the Plumb's bench on the brow beyond them, the herd's slope falling to the Pans on the left, the barranco beyond it; wave 2: 5-9 terrace tiers and >= 40 pit-cups countable, green on >= a third (HG2)" },
+    at: 'trig:T2', bearing: 305, camera: { mode: 'eye', eye: 9, pitch: -9, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { written: "wave 1 blockout: from 9 m over T2's deck (from its 4.6 m deck the Rise's own crown fills the lower half of the frame), Ninewalls' nine grey walls below, the slope above them to the Plumb's bench and the barranco, the Pans and Saltrow beyond; wave 2: 5-9 terrace tiers and >= 40 pit-cups countable, green on >= a third (HG2)" },
   },
   {
     id: 'F33-scar', subject: 'the Screed Scar from Benchmark 1 (blockout)', in: 'M2', hour: 17.75, weather: 'trade',
-    at: { en: [12, -282] }, bearing: 45, camera: { mode: 'chase', pitch: 3 }, state: { pose: 'idle', hud: false },
-    ref: { written: "wave 1 blockout: Brea on B1's pad on the Scar's planed floor, the floor 25 m wide between its two berms running dead straight up the Holds to the north-east skyline (HG1)" },
+    at: { en: [-60.5, -353.6] }, bearing: 45, camera: { mode: 'eye', eye: 20, pitch: -10, fov: 50 }, state: { pose: 'idle', hud: false },
+    ref: { written: "wave 1 blockout: 20 m over the Scar's floor 440 m from its north-east end, looking up it: the floor 25 m wide between its two berms running dead straight up the Holds past B1's pad (98 m ahead) toward the north-east skyline (HG1). From Brea's eye on its floor (a chase lens at B1, filmed at 0909873) the rising ground hides the line" },
   },
   {
     id: 'F33-trig', subject: "the T1 beat's lens: from T1's deck toward T2 (blockout)", in: 'M2', hour: 9, weather: 'trade',
