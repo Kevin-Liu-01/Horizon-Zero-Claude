@@ -1811,3 +1811,137 @@ and the T1 beat's lens). Everything else holds:
 8. Ninewalls on the skyline of F14, F15, F16, F18 and F19 is the blockout by design: those five join the skyline masks and are re-anchored once (the town ruling's pattern); Brea's figure, cloth and pose are still judged against the anchors.
 With these, main is fast-forwarded.
 
+
+## Milestone 2 wave 3: behaviour (Nov 19 2026)
+
+Wave 3 had four lanes in one tree on `r5/int`: C (instruments), D (kit, hero-anim, ui), E (systems, writing) and B
+(people), plus the engine's fight-frame work. No commit was pushed.
+
+- **Area C (instruments).**
+  - IN3: an Instrument's sightline stops at the sight occluders: a hull, the Windwall and the walls.
+  - The Screed fights only on Ninewalls' walls, within 160 m.
+  - The herd reports its lee (`herd-lee`).
+  - The Sickle's pack circles her and attacks in turn.
+  - A45c holds again. The cause was in the Tiller's art (a 0.6 m thigh on a 1.95 m shin); the art was fixed, not the gait.
+  - Page rows A-moving-cover and A-screed-fight. Frames F38 and F39.
+- **Area D (kit).**
+  - The rules in Node: the pots, the statuses, the Windwall's verbs and the gaff's.
+  - The verbs performed by the body: the gaff's three lights and the hook-rip; the Windwall's guard, bash and plant; the pots cast, fly and land.
+  - Oro's kit in play, the Kit Rack (quick slot 4 is the pots), and F as the pot cast.
+  - Frames F40-F43.
+- **Area E (systems, writing).**
+  - W2 as plain data.
+  - "The Scar" and "True Ground" wired after "Raker's Morning" (`src/game/hour.js`).
+  - The re-survey (`src/game/resurvey/`) and true ground.
+  - The runner drives the herd beat and the re-survey. F44 staged.
+- **Area B (people).**
+  - Eight Holds people at Ninewalls, Oro among them, with routines, shelter from the Screed, the youths trailing the herd and the Holds lookout rule.
+  - The walk grid is built while the title is up.
+  - F36 restaged three times.
+- **Engine.**
+  - The Holds' ground term in its own program, chosen per triangle.
+  - The crater's beds on the crater alone.
+  - HG4 tuning. `attrib.mjs` takes `hide:<child>` toggles.
+
+Then the review lane measured `r5/int` at **aba90a3** from one clean detached worktree (0 tracked files changed) on
+port 5270, one Chrome at a time. It changed no repo file.
+
+**Verdict: NOT CLEAN.** Four things block:
+1. **Two accepted frames changed outside every mask and outside her figure: F15 and F19.**
+   - The big cone's flank behind the town has lost its striped beds.
+   - The change is 2.7 % and 2.1 % of the pixels outside the mask and her box; at the wave 2 review it was 0.003 % and 0.002 %.
+   - A two-film bisect puts it at 11f4adb ("the crater's beds on the crater alone"). 44f3923 matches the wave 2 film (0.12 %), and 11f4adb matches aba90a3 (0.15 %).
+   - Intended, but not covered by a ruling.
+2. **A-moving-cover (IN3 on the page) fails.** 2 of 4 lee walks were seen, in two runs. The Node twin passes: 0 of 10 seen, and 10 of 10 out of the shadow seen within 4 s.
+3. **The first hour plays 19 of 28 beats.**
+   - Leg 2 has 2 frames over 50 ms (worst 74.7 ms) in 14,300.
+   - Leg 3 has one frame of 374.7 ms.
+   - In a second run of leg 3, the three Pegs that come to look killed her during the re-survey: hp 0 at 13.4 s of arc.
+4. **The Windwall bench passes 3 of 8.** The closed fan rises 0.023-0.067 m above her shoulders, behind her head plane, for 2-7 point-steps of the raise (guard, guardRelease, guardJog, guardCrouch, guardThenStowGaff). The gaff passes KT1 in 19 of 19 cases, but W3 fails in 3: the wrist jumps 0.097-0.141 m in one step.
+
+**Tier 0 at aba90a3: PASS, 10 of 10.**
+- `vite build` OK (4.22 MB of code), and green at all 37 wave 3 commits (9e51a01..aba90a3).
+- Name lint 0 hits in 897 files. Licences: 242 files against 33 rows. Asset budgets: 53 GLBs, 0 over a cap. Import graph 232 modules, 0 broken.
+- 257 Node tests pass in 51 files. Boot 4.1 s, 0 errors. Rendered-page name lint 0.
+- **Resident textures 119.33 MB** of 175 (61.42 MB at f6d3567). People alone are 91 MB, against a plan line of 39.
+- Shipped 56.94 MB, against the 60 MB first-load cap.
+
+**Kept-stack rows at aba90a3** (two sessions): 80 rows. **72 action rows pass**, the **8 visual rows** show the same
+poses as at the wave 2 review, **0 fail**.
+- A45c-foot-continuity: worst planted step 0.027 m (bar 0.05).
+- A9-perf-budget: 59.9 fps median, 133 draws, scene GPU 18.75 ms, load 2.66.
+- A45 0.049 m, A46 0.059 m, A3 6.75 m/s.
+- A65 passed on the runner's retry (a screenshot timeout).
+- V49: in all 12 tiles both elbows stay under the top of her head.
+
+**The slice at aba90a3** (`slice-hour.mjs --run-only`): **14 of 14**, stopped at the reward.
+
+| | run |
+|---|---|
+| Peg cross | 40.5 s, hp 100 -> 95 |
+| ditch | hidden 70 % of 5887 frames |
+| topple | 25.2 s, 2 arrows |
+| lowest hp | 85; two drinks |
+| reward | the Scout with Shrug |
+| save rows, site clock | PASS |
+| frames over 33 / 50 ms in play | 0 / 0 in 105 s and 12,370 frames (worst 32.7 ms) |
+
+**The first hour at aba90a3** (`first-hour.mjs --legs 1,2,3`, legs from fixtures, not chained): **19 of 28.**
+- **Leg 1:** 14/14, lowest hp 65, 0 frames over 33 ms in 17,008.
+- **Leg 2:** 2/8.
+  - walk: 101.1 s, ending 3.5 m from Ninewalls; it entered the Holds at 31.9 s.
+  - herd: 126.3 s, hp 86.
+  - plumb-2, barbed, oro, stall, seal-1, seal-2 fail by name: no topple driver, no Barbed arrow, no Screed on the walls.
+- **Leg 3:** 3/6.
+  - scar, survey and fade pass. The arc ran 15 s; T1 249.2°, 0.03° off; the line came off 1.2 s later. hp fell 72 to 43.
+  - rest-noon, calima-cross and read-transit are wave 4's.
+
+**The lane page rows at aba90a3:**
+- A-herd-ripple PASS: the lamps flash down the file in 0.55 s, and the gaps are 3.95 and 4.0 m at 4 s.
+- A-screed-fight PASS twice: one charge, heading deviation 0°, a 3.048 s stall on wall-1, both seals off, 0 cuts, the blade dropped.
+- A-moving-cover FAIL: 2 of 4 lee walks seen.
+
+**Node benches at aba90a3:**
+- pot-bench 7/7: the left hand stays at least 0.211 m under her shoulders.
+- moving-cover: lee 0/10 seen, open 10/10.
+- W2 writing 7/7: 38 cards of at most 3 lines; 251 lines, the widest 54 characters.
+- gaff-bench 16/19. windwall-bench 3/8.
+
+**The Holds' budget in the fight frame** (`attrib.mjs --probe d1 --pairs 8`, load 1.7-3.6):
+- **F25:** 13.80 ms, 144 draws, 1.46 M triangles.
+  - Base without the slice's Instruments and Saltrow: 12.40 ms.
+  - 1.10 ms is left under 13.5, and the stand-ins at the caps cost 1.35 ms: **it does not fit, by 0.25 ms**.
+  - 0.69 M drawn triangles fit (0.82 of the caps' load).
+- **F39:** void.
+  - The first reading was 11.2 ms and the last 35.0 ms; with everything hidden it read 32 ms.
+  - Another session's process held a CPU core through the second half.
+
+**Frames at aba90a3** (the Frame Set and the lane frames, `--lanes`, 58 of 58 filmed, 0 console errors):
+- **F15 and F19: the cone's flank changed** (above).
+- **Every other accepted frame matches** the wave 2 film within the cloth, the wind and the grass: F02, F03, F05, F08, F09, F10, F11, F13, F14, F16, F18, F20, F23-plumb and F24.
+- **The lane frames:**
+  - F38, F39, F40, F40-front, F41, F42, F42-light and F43 are new.
+  - F40-open is further: the fan opens downward now and is cut off at the frame's foot.
+  - F42's Sickle is lost in the tall grass.
+  - F36 shows one person at work, against a target of 5.
+  - F44 has its stand-ins: no planted Windwall.
+
+**Chrome used:** about 70 minutes over 14 launches.
+- Tier 0's boot 0.2 min, the frames 5.0, kept session 1 9.8, kept session 2 15.3.
+- The slice 5.0, the first hour 9.3, attrib 15.3.
+- The lane rows, the clips and the bisect about 12.
+
+---
+
+**Rulings this review asks for:**
+1. **The cone's flank.** Either it re-anchors F15 and F19 once, the town ruling's pattern (the beds were a banding across the whole cone, and the plain flank reads as cinder), or engine puts the beds back outside the crater.
+2. **The herd as cover.**
+   - The page row fails, and the game's herd beat by input ends with her beside the terrace Plumb, not behind a hull.
+   - The beat passes on `herd-lee` alone.
+   - Instruments to make the page row pass; systems to have the beat require her inside a hull's shadow from the Plumb.
+3. **The re-survey's danger.** The Pegs that come to look can kill her during the 15 s hold. Either the Windwall is planted in the beat (F44's stand-in), or the Pegs' damage in the hold is capped.
+
+**Rulings after the wave-3 review (the orchestrator):**
+- The crater's bedding now draws on the crater alone (11f4adb); the grey flank above the Holds lost bands that read as wood grain. That is closer to the references by design: F03, F15, F16 and F19 are re-anchored once (Brea unchanged), and F25 and F32 take it inside their masks.
+- main stays where it is: the Windwall's closed fan rises above her shoulders and behind her head plane in 2-7 steps of the raise, which breaks the owner's bar (never an arm or a held thing behind the head), and the herd-as-cover page row fails 2 of 4. Both are fixed before the next merge.
+
