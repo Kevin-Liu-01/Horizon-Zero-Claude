@@ -115,7 +115,8 @@ async function screedTable() {
 
 const med = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[b.length >> 1] : null; };
 const tiller = tillerTable();
-const files = fileTable(FORMS.tiller.chosen, 5.0, 4.0);
+// the chosen blockout form and the Tiller that plays (M2 wave 2: blockout.js form `built`)
+const files = [...fileTable(FORMS.tiller.chosen, 5.0, 4.0), ...fileTable('built', 5.0, 4.0)];
 const screed = await screedTable();
 const summary = {};
 for (const formId of Object.keys(FORMS.tiller.forms)) {
@@ -133,7 +134,7 @@ if (JSON_OUT) console.log(JSON.stringify({ ...out, tiller }, null, 1));
 else {
   console.log('IN0 Tiller sight shadow (m of her lee walk hidden; worst case over Ht 0-12 m, D 15-45 m, broadside and 45 deg):');
   for (const [k, v] of Object.entries(summary)) console.log(' ', k.padEnd(14), JSON.stringify(v));
-  console.log('IN0 a file of 3 and 6 (chosen form):');
+  console.log('IN0 a file of 3 and 6 (the chosen blockout form, then the built Tiller):');
   for (const r of files) console.log(' ', JSON.stringify(r));
   console.log('IN0 the Screed:', JSON.stringify(screed));
 }
