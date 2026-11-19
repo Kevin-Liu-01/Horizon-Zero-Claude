@@ -207,8 +207,10 @@ export class Person {
   /** Walk to a point in this person's walk style; `then` when there. */
   walkTo(x, z, then = null) {
     const W = this.spec.clips?.walk || { clip: 'Walk_Loop', ts: 1, lean: 0, swing: 1 };
-    const clip = W.also && !this._jog ? W.also : W.clip;
-    const ts = W.also && !this._jog ? 1 : W.ts;
+    // (M2 wave 3) `gaitOverride`: a routine's other gait for this walk (the Holds youths jog to catch the herd: ./holds.js)
+    const G = this.gaitOverride;
+    const clip = G || (W.also && !this._jog ? W.also : W.clip);
+    const ts = G ? 1 : W.also && !this._jog ? 1 : W.ts;
     const gait = this.sys.bank.clipPack.gaits[`${this.spec.sex}|${clip}`] || null;
     this.walking = { clip, gait, ts };
     this.lean = W.lean || 0;

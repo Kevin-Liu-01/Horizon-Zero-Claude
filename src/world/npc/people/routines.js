@@ -189,14 +189,18 @@ export class Routines {
 
   _rand(e) { e.seed = (e.seed * 16807) % 2147483647; return (e.seed - 1) / 2147483646; }
 
+  /** The places and the loops, made once (M2 wave 3: a settlement's own routines override this; ./holds.js). */
+  _ensure() { if (!this.L) { this.P = places(); this.L = loops(this.P); } }
+
   adopt(person, id) {
     if (!person || this._adopted.has(person)) return null;
-    if (!this.L) { this.P = places(); this.L = loops(this.P); }
+    this._ensure();
     const R = this.L[id];
     if (!R) return null;
     this._adopted.add(person);
     person._beatT = 0; person._beatEnd = Infinity;   // the people system's idle beats stay off
     const e = { person, id, R, k: 0, step: null, phase: 'do', t: 0, end: 0, path: [], act: 'start', seed: (person.seed || 7) * 7919 % 2147483647 || 7, night: null };
+    person._routine = this;   // (M2 wave 3) a talk-held person goes back to their loop, not to an idle beat (index.js _beat)
     this.list.push(e);
     // the first step: walked to from where they stand (the clip runs while they go)
     this._next(e, true);
@@ -319,6 +323,8 @@ export class Routines {
     if (this._checkT <= 0) { this._checkT = 1; this._gather(); }
     for (let i = 0; i < this.list.length; i++) {
       const e = this.list[i];
+      // (M2 wave 3) a person a dialogue holds (index.js `_beat`) stands in it; the loop goes on from its next step after
+      if (e.person._talkHeld) continue;
       if (e.phase !== 'do') {
         // a walk that does not end: the leg's length at 0.4 m/s plus 10 s, then the person is put on the mark (counted)
         e.goT = (e.goT || 0) + dt;
@@ -343,5 +349,12 @@ export class Routines {
     const i = this.list.findIndex((e) => e.person === person);
     if (i >= 0) this.list.splice(i, 1);
     this._adopted.delete(person);
+    if (person && person._routine === this) person._routine = null;
+  }
+
+  /** (M2 wave 3) The person's loop goes on from its next step (after a dialogue held them: index.js `_beat`). */
+  resume(person) {
+    const e = this.list.find((q) => q.person === person);
+    if (e) this._next(e);
   }
 }

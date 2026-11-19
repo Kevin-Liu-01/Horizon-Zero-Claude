@@ -80,9 +80,17 @@ export const STAGINGS = {
     },
   },
   F36: {
-    world(f, api) {
+    // M2 wave 3: five of the Holds cast at work (src/world/npc/people/holds.js AT_WORK: a farmer drawing water at the cistern,
+    // a picker scraping at the tree's foot, a youth filling his seed bag at a door, a picker sorting at the next, Oro at the anvil)
+    async world(f, api) {
       if (!api.C.settlements?.ninewalls) api.standIn('no Ninewalls in this build');
-      api.standIn('no Holds people in this build (wave 3): the street is empty');
+      const H = api.C.people?.holds;
+      if (!H?.stageAtWork) { api.standIn('no Holds people in this build: the street is empty'); return; }
+      api.undo(() => H.unstage());
+      const ps = await H.stageAtWork();
+      if (ps.length < 5) api.standIn(`${ps.length} of 5 people at work`);
+      // let the mixers pose them in their work clips before the settle
+      await api.frames(3);
     },
   },
 };

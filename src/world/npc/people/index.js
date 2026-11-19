@@ -4,6 +4,7 @@ import { NpcBank } from './bank.js';
 import { Person } from './person.js';
 import { FaceDirector } from './faces.js';
 import { Routines } from './routines.js';
+import { HoldsPeople } from './holds.js';
 import { TEXT } from '../../../game/text.js';
 
 /**
@@ -25,6 +26,9 @@ import { TEXT } from '../../../game/text.js';
  *   info()                    draws, casters, tris, atlases, per person
  *   faces                     M1.5f: the faces' director (./faces.js): Brea's face and every near person's, dialogue and gaze
  *   routines                  M1.5d: the Saltrow crew's and the lamp keeper's daily loops (./routines.js)
+ *   holds                     M2 wave 3: the Holds people at Ninewalls (./holds.js): Oro and the cast, their routines, the
+ *                             shelter under a Screed, the youths behind the herd, the Holds' lookout; streamed with her distance
+ *   person(id)                a cast member standing now by id ('oro', 'pit-farmer-2', ...), or null
  *   dispose()
  *
  * TIERS (R56). The nearest 6 within 18 m are near tier; then LOD1 to 35 m; LOD2 beyond; hidden past 90 m;
@@ -73,6 +77,10 @@ export class PeopleSystem {
     this.routines = new Routines(this);
     // the lookout's lines are writing's (src/game/text/barks/saltrow.json, set 'lookout'; the last is the all-clear)
     this.routines.lookout.lines = TEXT.barks?.sets?.find((x) => x.id === 'lookout')?.lines || null;
+    // M2 wave 3: the Holds people (their lookout's lines are writing's 'lookout-holds' set once it exists; until then the call
+    // is the gesture and the event, no subtitle)
+    this.holds = new HoldsPeople(this);
+    this.holds.routines.lookout.lines = TEXT.barks?.sets?.find((x) => x.id === 'lookout-holds')?.lines || null;
     this._breaFaceT = 0;
     this.list = [];
     this.archetypes = ARCHETYPE_IDS;
@@ -238,11 +246,16 @@ export class PeopleSystem {
     // (M1b closing fix) a quest scene with this person in its cast (the presenter's card; src/game/runtime.js people) stops
     // their work and holds them in talk; when the scene closes their beats go on from the next
     const SG = this.ctx.systemsGame, card = SG?.present?.card;
-    if (card && SG.people && (card.cast || [card.who]).some((w) => SG.people[w] === p)) {
-      if (!p._talkHeld) { p._talkHeld = true; p.stopWalk(); p.play('Idle_Talking_Loop', { fade: 0.3 }); p.showProps(this._propsFor(p, 'Idle_Talking_Loop')); }
+    if (card && (card.cast || [card.who]).some((w) => SG.people?.[w] === p || this.person(w) === p)) {
+      if (!p._talkHeld) {
+        p._talkHeld = true; p.stopWalk(); p.play('Idle_Talking_Loop', { fade: 0.3 }); p.showProps(this._propsFor(p, 'Idle_Talking_Loop'));
+        // (M2 wave 3, Oro's dialogue staging) a named person turns to face her for the scene (./holds.js faceToTalk)
+        if (p._named) this.holds.faceToTalk(p);
+      }
       return;
     }
-    if (p._talkHeld) { p._talkHeld = false; this._nextBeat(p); return; }
+    // the scene closed: a person a routine drives goes on with their loop (M2 wave 3), anyone else with their next beat
+    if (p._talkHeld) { p._talkHeld = false; if (p._routine) p._routine.resume(p); else this._nextBeat(p); return; }
     if (p.walking) return;
     p._beatT += dt;
     if (p._beatT < (p._beatEnd || 8)) return;
@@ -327,6 +340,9 @@ export class PeopleSystem {
     return p._tether;
   }
 
+  /** A cast member standing now, by id (M2 wave 3: the Holds' cast, Oro among them), or null. */
+  person(id) { return this.holds?.person(id) || null; }
+
   /** Force a tier for a gate (null: back to distance). */
   tierAt(p, tier) { if (tier === null) this._forced.delete(p); else this._forced.set(p, tier); }
 
@@ -351,6 +367,7 @@ export class PeopleSystem {
     // M1.5f: Brea's face, once her body stands (tried twice a second until it is there)
     if (!this.faces.brea && !this.faces.breaError && (this._breaFaceT -= dt) <= 0) { this._breaFaceT = 0.5; this.faces.installBrea(); }
     this.routines.update(dt);
+    this.holds.update(dt);
     const list = this.order;
     const n = list.length;
     if (!n) return;
@@ -409,6 +426,7 @@ export class PeopleSystem {
   }
 
   dispose() {
+    this.holds.dispose();
     for (const p of this.list.slice()) this.despawn(p);
     this.faces.dispose();
     this.bank.dispose();

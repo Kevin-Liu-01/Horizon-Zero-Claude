@@ -19,7 +19,7 @@
  * cut that variant by bible §8.9's fallback: it is a young adult farmhand now (its row says why).
  */
 export const PAN = { orchil: '#6B3F73', orchilDeep: '#4F2A5C', orchilNight: '#3A2146', linen: '#D9CFBA', linenDirty: '#BFB29B', salt: '#E4E0D6', brass: '#B08A45', carmine: '#A3213A', basalt: '#4A4A50', esparto: '#B59A62', tar: '#17151A', palm: '#C2A566', leather: '#5C3D29', lapilli: '#1C1B1E', wood: '#6E5238', iron: '#3C3A3C' };
-export const HOLDS = { lapilli: '#1C1B1E', rust: '#8E3B23', rustDeep: '#6A2A1A', wool: '#BDB19A', woolDark: '#7C7262', olive: '#5E5B38', leather: '#4B3122', leatherDark: '#2F2018', mica: '#8D8267', carmine: '#A3213A', carmineStain: '#7A1A2C', brass: '#A07A3F', wood: '#5D4530', iron: '#343236', wicker: '#9A7F52', seed: '#9D9A68' };
+export const HOLDS = { lapilli: '#1C1B1E', rust: '#8E3B23', rustDeep: '#6A2A1A', wool: '#BDB19A', woolDark: '#7C7262', olive: '#5E5B38', leather: '#4B3122', leatherDark: '#2F2018', mica: '#8D8267', carmine: '#A3213A', carmineStain: '#7A1A2C', brass: '#A07A3F', wood: '#5D4530', iron: '#343236', wicker: '#9A7F52', seed: '#9D9A68', violet: '#5B2F6B', violetDeep: '#41204E', ash: '#8E8A82' };
 
 export const ARCHETYPES = [
   {
@@ -82,6 +82,8 @@ export const ARCHETYPES = [
     tone: '#75492F', iris: '#30221A', amber: '#5C3A20', hair: '#1E1815',
     face: { noseBridge: [0, 1.5, 8.0], noseTip: [0, -4.0, 7.0], cheek: [-3.5, 2.0, -1.5], jaw: [-4.5, -7.0, -1.5], chin: [0, -8.0, 1.5], brow: [0, 2.0, 1.5], upperLip: [0, -2.5, -4.0] },
     head: { kind: 'cap', dye: HOLDS.rust, lining: HOLDS.rustDeep, seed: 66, tail: 'right', goggles: true, beard: 'stubble' },
+    // M2 wave 3 (M2.7: ash-grey and carmine, each with one violet accent): his violet the sash's hanging end
+    dyes: { [HOLDS.olive]: HOLDS.violet },
     outfit: { key: 'farmer' },
     clips: { idle: ['Farm_PlantSeed', 'Farm_Watering', 'Farm_Harvest'], walk: { clip: 'Walk_Loop', ts: 0.92, lean: 0.06, swing: 0.9 }, hand: ['Farm_Watering'] },
   },
@@ -94,6 +96,9 @@ export const ARCHETYPES = [
     tone: '#83573A', iris: '#2C1F16', amber: '#5A3A1F', hair: '#181210',
     face: { noseBridge: [0, 0, -3.5], noseTip: [0, 5.0, -6.0], cheek: [4.0, 0, 5.2], cheekS: 0.027, jaw: [-5.0, 4.0, 0.5], chin: [0, 4.5, -4.5], brow: [0, 1.5, -4.0], upperLip: [0, 2.5, 2.5] },
     head: { kind: 'band', dye: HOLDS.wool, lining: HOLDS.woolDark, seed: 77, hair: 'crop', tail: 'left', thin: true },
+    // M2 wave 3: his violet the rope belt; his face sheet to Brea's texel density (0.832 of hers at the default, holds-cast.test.mjs)
+    dyes: { [HOLDS.rust]: HOLDS.violet },
+    faceK: 1.2,
     outfit: { key: 'follower' },
     clips: { idle: ['Idle_Rail_Loop', 'Farm_PlantSeed', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.0, lean: 0.04, swing: 1 } },
   },
@@ -102,6 +107,8 @@ export const ARCHETYPES = [
     tone: '#865B3E', iris: '#2B1E17', amber: '#5A3A22', hair: '#1A1411',
     face: { noseBridge: [0, -0.5, -3.0], noseTip: [0, 4.5, -5.5], cheek: [5.0, 0.5, 5.6], cheekS: 0.025, jaw: [-3.6, 4.6, 2.4], chin: [0, 4.6, -5.2], brow: [0, 1.0, -3.5], upperLip: [0, 2.0, 3.5] },
     head: { kind: 'scarf', dye: HOLDS.carmine, lining: HOLDS.rustDeep, seed: 88, tail: 'left', knot: true },
+    // M2 wave 3: her violet the waist tie (the scarf stays the Holds' carmine; a violet lining did not show)
+    dyes: { [HOLDS.carmine]: HOLDS.violet },
     marks: { carmine: true },
     outfit: { key: 'picker' },
     clips: { idle: ['PickUp_Table', 'Interact', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.0, lean: 0.0, swing: 1 } },
@@ -187,6 +194,58 @@ export const ARCHETYPES = [
     outfit: { key: 'keeper' },
     clips: { idle: ['Idle_Rail_Call', 'Idle_Talking_Loop', 'Idle_Loop'], stage: ['Idle_Talking_Loop', 'Idle_Rail_Call', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.82, lean: 0.09, swing: 0.7 }, carry: 'cane' },
   },
+
+  /*
+   * M2 wave 3 (area B; BUILD M2.7, briefs §5 NW7) — THE HOLDS' CAST: unnamed Ninewalls people beside the four Holds archetypes
+   * above, so Ninewalls has Oro, three Pit Farmers, two Tiller-Followers and two Cochineal Pickers, no two faces alike. Each is a
+   * second (or third) person of the calling, with a face, age, height, skin, hair and headwear of their own and their own copy of
+   * the dress re-dyed (`dyes`) in ash-grey and carmine with one violet accent (Q6). The Tiller-Followers are young farmhands at
+   * full scale: the adolescent build is cut (bible §8.9's fallback, as for 'tiller-follower' above).
+   */
+  {
+    id: 'pit-farmer-2', n: 6, rngN: 62, name: 'Pit Farmer', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.71, age: 33, browK: 0.9,
+    tone: '#83563A', iris: '#2D2018', amber: '#5E3C21', hair: '#15100D',
+    face: { noseBridge: [0, -2.5, 2.0], noseTip: [0, 3.0, -4.0], cheek: [5.5, 3.0, 4.5], jaw: [6.0, 3.5, 3.0], chin: [0, 6.0, -2.0], brow: [0, -3.0, -2.0], upperLip: [0, 3.5, -3.0] },
+    // his violet the head band; the vest's rust to the ash grey of the Holds' undyed wool
+    head: { kind: 'band', dye: HOLDS.violet, lining: HOLDS.violetDeep, seed: 162, hair: 'crop', tail: 'left', beard: 'full' },
+    dyes: { [HOLDS.rust]: HOLDS.ash, [HOLDS.rustDeep]: HOLDS.woolDark },
+    faceK: 1.2,
+    outfit: { key: 'farmer' },
+    clips: { idle: ['Farm_Harvest', 'Farm_PlantSeed', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.96, lean: 0.05, swing: 0.92 }, hand: ['Farm_Watering'] },
+  },
+  {
+    id: 'pit-farmer-3', n: 6, rngN: 63, name: 'Pit Farmer', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.75, age: 49, browK: 1.06,
+    tone: '#6C432C', iris: '#2A1D15', amber: '#4F3019', hair: '#2B2622', hairPaint: '#3A3430',
+    face: { noseBridge: [0, 3.0, 4.0], noseTip: [0, -6.0, 3.0], cheek: [-5.5, -3.5, -2.5], jaw: [-3.0, -9.0, 4.0], chin: [0, -9.5, -3.5], brow: [0, 4.5, 5.5], upperLip: [0, -4.0, 4.5] },
+    // his violet the sash's end; the cap undyed ash wool
+    head: { kind: 'cap', dye: HOLDS.woolDark, lining: HOLDS.lapilli, seed: 163, tail: 'right', beard: 'stubble' },
+    dyes: { [HOLDS.olive]: HOLDS.violet, [HOLDS.rust]: HOLDS.carmine, [HOLDS.rustDeep]: HOLDS.carmineStain },
+    faceK: 1.15,
+    outfit: { key: 'farmer' },
+    clips: { idle: ['Farm_Watering', 'Farm_Harvest', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.88, lean: 0.08, swing: 0.8 }, hand: ['Farm_Watering'] },
+  },
+  {
+    id: 'tiller-follower-2', n: 7, rngN: 72, name: 'Tiller-Follower', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.69, age: 19, browK: 0.74,
+    tone: '#8E6142', iris: '#30231A', amber: '#5C3D22', hair: '#120E0C',
+    face: { noseBridge: [0, 2.5, -6.0], noseTip: [0, -2.0, -8.5], cheek: [-4.5, 3.5, 3.0], cheekS: 0.026, jaw: [-6.5, -2.0, -3.5], chin: [0, -2.5, -7.5], brow: [0, 4.0, -6.0], upperLip: [0, -1.5, -5.0] },
+    // his violet the head band; the tunic the darker ash, the trousers the carmine-stained wool
+    head: { kind: 'band', dye: HOLDS.violet, lining: HOLDS.violetDeep, seed: 172, hair: 'crop', tail: 'right', thin: true },
+    dyes: { [HOLDS.wool]: HOLDS.ash, [HOLDS.woolDark]: HOLDS.carmineStain },
+    faceK: 1.1,
+    outfit: { key: 'follower' },
+    clips: { idle: ['Farm_PlantSeed', 'Idle_Rail_Loop', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.04, lean: 0.03, swing: 1 } },
+  },
+  {
+    id: 'cochineal-picker-2', n: 8, rngN: 82, name: 'Cochineal Picker', faction: 'holds', family: 'Ranger', sex: 'F', height: 1.64, age: 33, browK: 0.78,
+    tone: '#7A4F35', iris: '#2A1D15', amber: '#553620', hair: '#1D1612',
+    face: { noseBridge: [0, 2.0, 4.0], noseTip: [0, -3.0, 6.5], cheek: [-2.0, -2.5, -3.0], cheekS: 0.024, jaw: [3.5, -5.5, -3.0], chin: [0, -6.0, 5.0], brow: [0, -2.5, 4.0], upperLip: [0, -3.0, -1.5] },
+    // her violet the waist tie; the scarf the carmine-stained wool; the skirt the ash grey and the top the darker wool
+    head: { kind: 'scarf', dye: HOLDS.carmineStain, lining: HOLDS.rustDeep, seed: 182, tail: 'right', knot: true },
+    dyes: { [HOLDS.carmine]: HOLDS.violet, [HOLDS.lapilli]: HOLDS.ash, [HOLDS.wool]: HOLDS.woolDark },
+    marks: { carmine: true }, faceK: 1.05,
+    outfit: { key: 'picker' },
+    clips: { idle: ['Interact', 'PickUp_Table', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.98, lean: 0.02, swing: 0.95 } },
+  },
 ];
 
 /**
@@ -194,5 +253,11 @@ export const ARCHETYPES = [
  * (M1.5b) stands beside them in Saltrow and is not counted here.
  */
 export const CAST = ['lantern-keeper', 'salt-raker', 'salt-raker-2', 'salt-porter', 'salt-porter-2', 'boat-caulker', 'boat-caulker-2', 'lantern-keeper-2'];
+
+/**
+ * M2 wave 3 — the Holds' cast at Ninewalls (briefs §5 NW7): Tube Smith Oro, three Pit Farmers, two Tiller-Followers, two Cochineal
+ * Pickers. src/world/npc/people/holds.js HOLDS_CAST is the same list (the game cannot import the build's files).
+ */
+export const HOLDS_CAST = ['oro', 'pit-farmer', 'pit-farmer-2', 'pit-farmer-3', 'tiller-follower', 'tiller-follower-2', 'cochineal-picker', 'cochineal-picker-2'];
 
 export const byId = Object.fromEntries(ARCHETYPES.map((a) => [a.id, a]));

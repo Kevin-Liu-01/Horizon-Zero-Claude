@@ -493,7 +493,11 @@
         "public/models/npc/salt-raker-2.glb",
         "public/models/npc/salt-porter-2.glb",
         "public/models/npc/boat-caulker-2.glb",
-        "public/models/npc/lantern-keeper-2.glb"
+        "public/models/npc/lantern-keeper-2.glb",
+        "public/models/npc/pit-farmer-2.glb",
+        "public/models/npc/pit-farmer-3.glb",
+        "public/models/npc/tiller-follower-2.glb",
+        "public/models/npc/cochineal-picker-2.glb"
       ],
       "title": "Universal Base Characters + Modular Character Outfits [Standard] -> the NPC archetypes 1-9 and the slice's cast (M1.5c)",
       "author": "Quaternius",

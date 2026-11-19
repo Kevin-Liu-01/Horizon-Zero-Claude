@@ -56,10 +56,10 @@ export class FaceDirector {
     return this.brea;
   }
 
-  /** The face of a speaker id in the writing ('brea', 'ansel', 'mise'). */
+  /** The face of a speaker id in the writing ('brea', 'ansel', 'mise'; M2 wave 3: 'oro' and the Holds' cast, ./holds.js). */
   faceOf(who) {
     if (who === 'brea') return this.brea;
-    return this.ctx.systemsGame?.people?.[who]?.face || null;
+    return this.ctx.systemsGame?.people?.[who]?.face || this.ctx.people?.person?.(who)?.face || null;
   }
 
   /** Once a frame, before the first face of the frame updates. */
