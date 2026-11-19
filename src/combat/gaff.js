@@ -76,7 +76,16 @@ export class GaffWeapon {
     this.after = null;        // 'lance' | 'bow' | null: what the stow hands the right hand to once it is home
     this.prop = null;
     this.requests = 0;
+    this.verbs = new GaffVerbs();
+    /** combat's contact hook (set by combat.js; the animator calls it on the contact step, the pose set) */
+    this.onContact = null;
   }
+
+  /** LMB with the gaff in her hand: a light (or the next of the chain). */
+  strike() { return this.owned && this.inHand && this.want ? this.verbs.strike() : false; }
+
+  /** R with the gaff in her hand: the hook-rip. */
+  hookRip() { return this.owned && this.inHand && this.want ? this.verbs.hookRip() : false; }
 
   /** The hand-over: she owns it from now (the held mesh loads now, once). */
   grant() {

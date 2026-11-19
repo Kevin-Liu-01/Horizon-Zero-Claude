@@ -21,6 +21,8 @@
 import * as THREE from 'three';
 import { GAFF_DRAW, GAFF_STOW, phaseAt, phaseEnd, ease } from './handling.js';
 
+const Y_UP = new THREE.Vector3(0, 1, 0), X_RT = new THREE.Vector3(1, 0, 0);
+
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
 const _sAx = new THREE.Vector3(), _sHk = new THREE.Vector3();
 /** private scratch of _gaffHandQ / _gaffForearm / _gaffReadyQ (callers' scratch never passes through them) */
@@ -48,6 +50,36 @@ const _viaR = new THREE.Vector3();
  *  the gaff pass outside her hip. */
 const SWING_OUT = 0.06;
 const _via = new THREE.Vector3();
+/**
+ * THE VERBS (M2 wave 3; the phase tables are src/combat/gaff.js GAFF_LIGHTS / HOOK_RIP, read off `gaff.verbs`). Each
+ * key is the wrist off her right shoulder (char, turned with her shoulders by SWING_TURN of their yaw) and the haft's
+ * line (butt -> beak; the fist is kept straight on the forearm, so the hook stands on the finger line). Every key keeps
+ * the fist below her shoulder and the haft level or below it, so no part of the gaff rises over her shoulders and
+ * nothing passes behind her head (KT1). `hip` is the pelvis's yaw at the end of the wind-up and of the strike (rad,
+ * + toward her left); the shoulders follow it `LAG` s behind and `COIL` times as far (KT7: the hip leads).
+ */
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const VK = (p, a) => ({ p: V3(...p), a: V3(...a).normalize() });
+const VERB_KEYS = {
+  // the forehand: cocked out to her right at her chest, the haft level and out; across in front of her, the hook leading
+  light1: { W: VK([-0.25, -0.23, 0.10], [-0.85, -0.05, 0.52]), M: VK([-0.06, -0.28, 0.32], [0.0, -0.26, 1]), S: VK([0.13, -0.33, 0.24], [0.72, -0.28, 0.62]), hip: [-0.20, 0.22], pole: V3(-0.55, -0.75, -0.35) },
+  // the backhand return at her belt, left to right
+  light2: { W: VK([0.13, -0.33, 0.22], [0.70, -0.25, 0.66]), M: VK([-0.07, -0.34, 0.27], [0.0, -0.22, 1]), S: VK([-0.27, -0.31, 0.14], [-0.80, -0.22, 0.56]), hip: [0.16, -0.22], pole: V3(-0.70, -0.65, -0.30) },
+  // the pull-cut: cocked back at her right chest, the beak driven out in front, then dragged down and back to her hip
+  light3: { W: VK([-0.15, -0.27, 0.05], [-0.10, -0.06, 1]), M: VK([-0.10, -0.29, 0.21], [0.0, -0.22, 1]), S: VK([-0.05, -0.32, 0.33], [0.05, -0.38, 1]), D: VK([-0.17, -0.38, 0.10], [-0.20, -0.50, 0.84]), hip: [-0.12, 0.12], pole: V3(-0.70, -0.65, -0.30) },
+  // the hook-rip: the hook out in front at the part, caught, and hauled back as her hips drop back
+  hookRip: { W: VK([-0.06, -0.31, 0.33], [0.04, -0.36, 1]), P: VK([-0.15, -0.37, -0.01], [-0.10, -0.35, 0.93]), hip: [-0.06, -0.14], pole: V3(-0.70, -0.65, -0.30) },
+};
+/** The shoulders follow the hip this far behind (s) and this much further (KT7). */
+const LAG = 0.075, COIL = 1.35;
+/** How much of the shoulders' yaw the wrist keys turn with. */
+const SWING_TURN = 0.6;
+/** The head keeps its line: this share of the shoulders' turn is taken back out of it. */
+const HEAD_KEEP = 0.75;
+/** The settle: a stow (or a swap) asked mid-verb first brings the fist back to the ready over this long (s). */
+const SETTLE_S = 0.12;
+const _vw = new THREE.Vector3(), _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _vq = new THREE.Quaternion();
+
 /** The reach's elbow pole: out to her right and back (the elbow leads the hand round the hip). */
 const POLE_REACH = new THREE.Vector3(-0.85, -0.15, -0.50).normalize();
 /** How far the draw lifts the gaff up its own axis out of the frog before the swing (m), and out from the hip. */
@@ -85,6 +117,9 @@ export class GaffLayer {
       take: new THREE.Vector3(), takeQ: new THREE.Quaternion(), grip: new THREE.Vector3(),
       lifted: new THREE.Vector3(), readyQ: new THREE.Quaternion(), readyW: new THREE.Vector3(), readyAx: new THREE.Vector3(),
       wrist: new THREE.Vector3(), handQ: new THREE.Quaternion(), map: null,
+      // the verbs (wave 3)
+      lastW: new THREE.Vector3(), lastAx: new THREE.Vector3(0, 0.38, 0.88), lastOk: false, vStart: new THREE.Vector3(), vStartAx: new THREE.Vector3(),
+      vId: null, vCount: -1, hipYaw: 0, shYaw: 0, hipRaw: 0, vHip0: 0, vSh0: 0, pdz: 0, settleT: 0, contactAt: -1, verbPhase: '',
     });
   }
 
@@ -96,7 +131,7 @@ export class GaffLayer {
     const G = this._gaffState();
     out.owner = G.owner; out.mode = G.mode; out.phase = G.phase; out.k = G.k; out.t = G.t; out.curl = G.curl;
     out.gripAt = G.gripAt; out.releaseAt = G.releaseAt; out.readyAt = G.readyAt; out.requestAt = G.requestAt; out.palmMiss = G.palmMiss;
-    out.w = G.w;
+    out.w = G.w; out.verb = G.vId; out.verbPhase = G.verbPhase; out.hipYaw = G.hipYaw; out.shYaw = G.shYaw; out.pdz = G.pdz; out.contactAt = G.contactAt; out.settleT = G.settleT;
     return out;
   }
 
@@ -201,15 +236,30 @@ export class GaffLayer {
     const b = this.b;
     if (!gaff?.owned || !b.handR || !b.upArmR || !this._gaffMap()) { G.w = 0; return 0; }
     const want = !!gaff.want;
+    const V = gaff.verbs;
+    G.pdz = 0;
+    // a stow asked mid-verb: the verb stops and the fist first settles back to the ready (SETTLE_S), then the stow runs
+    if (!want && G.was && V?.busy && G.owner === 'handR' && G.mode === 0) { V.cancel(); G.settleT = SETTLE_S; G.vId = null; }
     // the right hand is the lance's while it is out: a draw waits for the lance to be home
     const lanceOut = !!(this.ctx.combat?.melee && (this.ctx.combat.melee.stance !== 'holstered' || this.ctx.combat.melee.lanceInHand));
-    if (want !== G.was && !(want && lanceOut && G.owner !== 'handR')) { this._gaffRequest(want); G.was = want; }
+    if (want !== G.was && !(want && lanceOut && G.owner !== 'handR') && !(G.settleT > 0)) { this._gaffRequest(want); G.was = want; }
     const prop = gaff.prop;
     if (G.mode === 0) {
-      if (G.owner !== 'handR') { G.w = 0; G.phase = ''; if (this._oroKit) this._oroKit.tiltK = 0; this._gaffShowHeld(prop, false); return 0; }
+      if (G.owner !== 'handR') { G.w = 0; G.phase = ''; G.lastOk = false; V?.cancel?.(); if (this._oroKit) this._oroKit.tiltK = 0; this._gaffShowHeld(prop, false); return 0; }
       if (this._oroKit) this._oroKit.tiltK = 1;
-      // in hand, idle: the fist holds the ready (wave 3 drives it from the verbs)
-      this._gaffReadyPose(1, dt);
+      if (G.settleT > 0) {
+        G.settleT = Math.max(0, G.settleT - dt);
+        this._gaffSettlePose(1 - G.settleT / SETTLE_S);
+      } else if (V?.busy) {
+        // a verb: the arm and the body from its phase (src/combat/gaff.js GaffVerbs, stepped here on sim time)
+        const ev = V.step(dt);
+        if (V.busy || ev) this._gaffVerbPose(V, dt, gaff, ev);
+        else this._gaffReadyPose(1, dt);
+      } else {
+        // in hand, idle: the fist holds the ready
+        G.vId = null; G.verbPhase = ''; G.hipYaw = 0; G.shYaw = 0; G.hipRaw = 0; G.curV = null;
+        this._gaffReadyPose(1, dt);
+      }
       G.w = 1;
       this._gaffShowHeld(prop, true);
       return 1;
@@ -389,7 +439,8 @@ export class GaffLayer {
     // a little of the stride in the carried fist
     const sw = Math.sin((this.loco?.phase ?? 0) * Math.PI * 2) * 0.03 * (this._moveW || 0);
     _v2.z += sw; _v2.y += Math.abs(sw) * 0.3;
-    this._gaffReadyQ(_v2, G.readyQ);
+    this._gaffReadyQ(_v2, G.readyQ, G.lastAx);
+    G.lastW.copy(_v2); G.lastOk = true;
     this._ikArm('r', _v2, READY.pole, w, null);
     this._liveW(b.handR.bone, _q3);
     this.space.setCharQ(b.handR, _q3.slerp(G.readyQ, w));
@@ -397,6 +448,144 @@ export class GaffLayer {
     const grip = this.melee?.gripR;
     if (grip) this._wrapFingers('r', grip, 1, 0.55, w);
     void dt;
+  }
+
+  /**
+   * A verb's step (M2 wave 3): the body first (the pelvis turns, the shoulders follow LAG behind, the hook-rip's hips
+   * drop back), then the fist along its keys off the shoulder as the body left it, straight on the forearm, the haft on
+   * the key's line. `ev` is the verbs' event this step ('contact' fires the gaff's onContact once the pose is set).
+   */
+  _gaffVerbPose(V, dt, gaff, ev) {
+    const b = this.b, G = this._gaffState();
+    const v = V.verb;
+    if (!v) { this._gaffReadyPose(1, dt); return; }
+    const K = VERB_KEYS[v.id];
+    if (V.count !== G.vCount) {
+      // a new verb: it starts from where the fist was last drawn (the ready, or the last light's end)
+      G.vCount = V.count; G.vId = v.id;
+      // (a chained light starts from the last one's body and fist: the hip from its yaw, the shoulders blended off
+      // their lag over the first 0.1 s, the fist's start taken back out of the shoulders' turn)
+      G.vHip0 = G.hipRaw || 0; G.vSh0 = G.shYaw || 0;
+      // (the shoulders finish the last verb's turn on its own curve for the first LAG of this one)
+      G.prevV = G.curV || null; G.prevK = G.curK || null; G.prevEnd = G.curT || 0; G.prevHip0 = G.curHip0 || 0;
+      if (!(G.lastOk && G.prevV)) G.prevV = null;
+      G.curV = v; G.curK = K; G.curHip0 = G.vHip0;
+      this._charOf(b.upArmR.bone, _v1);
+      _vq.setFromAxisAngle(Y_UP, -G.vSh0 * SWING_TURN);
+      G.vStart.copy(G.lastOk ? G.lastW : _vb.copy(_v1).add(READY.fromShoulder)).sub(_v1).applyQuaternion(_vq);
+      G.vStartAx.copy(G.lastAx).applyQuaternion(_vq);
+    }
+    G.verbPhase = V.phase;
+    // ---- the body: the hip's yaw now, the shoulders' LAG behind (standing: a stride owns her hips)
+    const standW = 1 - Math.min(1, this._moveW || 0);
+    const crouchK = 1 - 0.4 * (this._crouchW || 0);
+    const hip0 = G.vHip0 || 0;
+    const Hr = this._gaffHipCurve(v, K, V.t, hip0);
+    G.curT = V.t;
+    // the shoulders: COIL times the hip's yaw LAG ago; a chained verb's start from where the last one left them,
+    // blended onto this one's curve over its wind-up
+    const blend = 1 - ease(V.t / Math.max(1e-3, v.W));
+    const Sh = COIL * crouchK * this._gaffHipCurve(v, K, V.t - LAG, hip0) * (1 - blend) + (G.vSh0 || 0) * blend;
+    G.hipRaw = Hr;
+    G.hipYaw = Hr * crouchK * standW; G.shYaw = Sh;
+    if (b.pelvis && G.hipYaw !== 0) this._rot(b.pelvis, Y_UP, G.hipYaw);
+    const sp = Sh - G.hipYaw;
+    if (b.spine1) this._rotL(b.spine1, Y_UP, sp * 0.30);
+    if (b.spine2) this._rotL(b.spine2, Y_UP, sp * 0.36);
+    if (b.spine3) this._rotL(b.spine3, Y_UP, sp * 0.34);
+    if (b.head) this._rotL(b.head, Y_UP, -Sh * HEAD_KEEP);
+    // the hook-rip: the hips drop back as the part comes free, the trunk leans back over them
+    if (v.id === 'hookRip') {
+      const k = V.phase === 'P' ? ease(V.k) : V.phase === 'R' ? 1 - ease(V.k) : 0;
+      G.pdz = -v.pelvisBack * k;
+      if (b.spine2 && k > 0) this._rot(b.spine2, X_RT, -0.10 * k);
+    }
+    // ---- the fist: the keys off the shoulder (char), turned with the shoulders by SWING_TURN of their yaw
+    this._charOf(b.upArmR.bone, _v1);
+    this._gaffVerbKey(v, K, V.phase, V.k, G, _vw, _va);
+    _vq.setFromAxisAngle(Y_UP, Sh * SWING_TURN);
+    _vw.applyQuaternion(_vq).add(_v1);
+    _va.applyQuaternion(_vq).normalize();
+    const pole = K.pole;
+    // the fist straight on the forearm the IK gives, the haft as near the key's line as that allows
+    this._gaffForearm(_vw, pole, _r1);
+    this._gaffStraight(_r1, _va, _r3, _r4);
+    this._gaffHandQ(_r3, _r4, _hq2a);
+    this._ikArm('r', _vw, pole, 1, null);
+    this._liveW(b.handR.bone, _q3);
+    this.space.setCharQ(b.handR, _q3.slerp(_hq2a, 1));
+    G.curl = 1;
+    const grip = this.melee?.gripR;
+    if (grip) this._wrapFingers('r', grip, 1, 0.55, 1);
+    G.lastW.copy(_vw); G.lastAx.copy(_r3); G.lastOk = true;
+    if (ev === 'contact') { G.contactAt = G.simT; try { gaff.onContact?.(v); } catch (e) { console.warn('[gaff] contact', e); } }
+  }
+
+  /** The pelvis's yaw at verb time `t`: 0 -> hip[0] over W, -> hip[1] over S (or the hook-rip's H+P), -> 0 over R. */
+  _gaffHipCurve(v, K, t, hip0 = 0) {
+    if (t <= 0) return hip0;
+    const [h0, h1] = K.hip;
+    const W = v.W, S = v.id === 'hookRip' ? v.H + v.P : v.S, R = v.R;
+    if (t < W) return hip0 + (h0 - hip0) * ease(t / W);
+    if (t < W + S) return h0 + (h1 - h0) * ease((t - W) / S);
+    if (t < W + S + R) return h1 * (1 - ease((t - W - S) / R));
+    return 0;
+  }
+
+  /** The wrist (off the shoulder, char, unturned) and the haft's line at phase `ph`, share `k`. Into w, a. */
+  _gaffVerbKey(v, K, ph, k, G, w, a) {
+    const ready = _vb.copy(READY.fromShoulder);
+    if (v.id === 'hookRip') {
+      if (ph === 'W') { const e = ease(k); w.copy(G.vStart).lerp(K.W.p, e); a.copy(G.vStartAx).lerp(K.W.a, e); }
+      else if (ph === 'H') { w.copy(K.W.p); a.copy(K.W.a); }
+      else if (ph === 'P') { const e = even(k, 0.3); w.copy(K.W.p).lerp(K.P.p, e); a.copy(K.W.a).lerp(K.P.a, e); }
+      else { const e = ease(k); w.copy(K.P.p).lerp(ready, e); a.copy(K.P.a).lerp(READY.axis, e); }
+      return;
+    }
+    if (ph === 'W') { const e = ease(k); w.copy(G.vStart).lerp(K.W.p, e); a.copy(G.vStartAx).lerp(K.W.a, e); return; }
+    if (ph === 'S') {
+      const e = even(k, 0.25);
+      bez(K.W.p, K.M.p, K.S.p, e, w);
+      if (e < 0.5) a.copy(K.W.a).lerp(K.M.a, e * 2); else a.copy(K.M.a).lerp(K.S.a, e * 2 - 1);
+      return;
+    }
+    // R: the pull-cut drags back to its hip first; the others come back to the ready
+    if (K.D) {
+      if (k < 0.55) { const e = ease(k / 0.55); w.copy(K.S.p).lerp(K.D.p, e); a.copy(K.S.a).lerp(K.D.a, e); }
+      else { const e = ease((k - 0.55) / 0.45); w.copy(K.D.p).lerp(ready, e); a.copy(K.D.a).lerp(READY.axis, e); }
+      return;
+    }
+    const e = ease(k);
+    w.copy(K.S.p).lerp(ready, e); a.copy(K.S.a).lerp(READY.axis, e);
+  }
+
+  /** The settle (a stow asked mid-verb): the fist from where it was last drawn back to the ready over SETTLE_S. */
+  _gaffSettlePose(k) {
+    const b = this.b, G = this._gaffState();
+    this._charOf(b.upArmR.bone, _v1);
+    _v2.copy(_v1).add(READY.fromShoulder);
+    const e = ease(k);
+    _vw.copy(G.lastW).lerp(_v2, e);
+    _va.copy(G.lastAx).lerp(READY.axis, e).normalize();
+    this._gaffForearm(_vw, READY.pole, _r1);
+    this._gaffStraight(_r1, _va, _r3, _r4);
+    this._gaffHandQ(_r3, _r4, _hq2a);
+    this._ikArm('r', _vw, READY.pole, 1, null);
+    this.space.setCharQ(b.handR, _hq2a);
+    const grip = this.melee?.gripR;
+    if (grip) this._wrapFingers('r', grip, 1, 0.55, 1);
+    G.lastW.copy(_vw); G.lastAx.copy(_r3);
+    G.hipYaw = 0; G.shYaw = 0; G.hipRaw = 0; G.curV = null; G.verbPhase = 'settle';
+  }
+
+  /** The hook's tip, world (the held gaff's hookTip socket), into `out`; false when the gaff is not in her hand. */
+  gaffHookWorld(out) {
+    const prop = this.ctx.combat?.gaff?.prop;
+    const r = prop?.inner?.children?.[0];
+    if (!r || !prop.group.visible || !prop.sockets?.hookTip) return false;
+    r.updateWorldMatrix(true, false);
+    out.copy(prop.sockets.hookTip).applyMatrix4(r.matrixWorld);
+    return true;
   }
 
   /** Show (or hide) the held gaff in her right fist, placed by the hand-to-prop map. */

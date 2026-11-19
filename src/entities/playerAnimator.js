@@ -1504,7 +1504,7 @@ export class PlayerAnimator {
 
     /* ============ OVERLAY 4d: the Boat Gaff — draw, carry, stow (M2) ============ */
     // (gaffLayer.js: nothing runs until the hand-over; then it owns the right arm while the gaff is out or moving)
-    if (this.ctx.combat?.gaff?.owned && !dead) this._gaffLayer(dt);
+    if (this.ctx.combat?.gaff?.owned && !dead) { this._gaffLayer(dt); pdz += this._gf?.pdz || 0; }
 
     /* ================ OVERLAY 5: hit react / death / weary ================ */
     pdy += this._reactLayer(dt, p, dodgeW, aimW, carryW);

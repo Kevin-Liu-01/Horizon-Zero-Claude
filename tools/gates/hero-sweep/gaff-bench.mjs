@@ -62,6 +62,13 @@ gaff.prop = new HeldGaff({ assets: {} });
   gaff.prop.sockets = sockets; gaff.prop.length = sockets.tip?.y ?? 0.625; gaff.prop.inner = inner; gaff.prop.group.add(inner);
 }
 const M = buildSweep(R, THREE);
+// the pelvis's char forward at the rest pose, as a bone-local turn (so hipYawM reads 0 at her idle)
+const PELVIS_FWD = new THREE.Quaternion();
+{
+  for (let i = 0; i < 30; i++) step(R);
+  const q = an._liveW(an.b.pelvis.bone, new THREE.Quaternion());
+  PELVIS_FWD.copy(q).invert();
+}
 const b = an.b;
 const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _inv = new THREE.Matrix4();
 const ch = (bone) => { bone.getWorldPosition(_v); return _v.applyMatrix4(_inv).toArray(); };
@@ -111,6 +118,12 @@ function record(t) {
   const [fl, dv] = wristAngles(); r.flex = +fl.toFixed(2); r.dev = +dv.toFixed(2);
   Object.assign(r, gaffPts());
   r.stance = R.melee?.stance;
+  // the body (KT7): the pelvis's yaw (its +Z in char, about +Y) and the shoulder line's (left -> right shoulder), and
+  // the pelvis's position; the verb's phase from the layer
+  r.verb = G.verb ?? null; r.verbPhase = G.verbPhase ?? '';
+  r.pelvis = ch(b.pelvis.bone);
+  { const q = an._liveW(b.pelvis.bone, new THREE.Quaternion()); const f = new THREE.Vector3(0, 0, 1).applyQuaternion(q.multiply(PELVIS_FWD)); r.hipYawM = Math.atan2(f.x, f.z); }
+  r.shYawM = Math.atan2(-(r.shR[2] - r.shL[2]), r.shR[0] - r.shL[0]) ;
   if (args.includes('--dbg')) { const g = oro._g; r.dbg = { off: g?.off?.toArray().map((x) => +x.toFixed(3)), shove: +(g?.shove ?? 0).toFixed(4), tilt: oro.tiltK, held: oro.held, follow: !!oro.follow, sq: oro.socket.quaternion.toArray().map((x) => +x.toFixed(3)), sp: oro.socket.position.toArray().map((x) => +x.toFixed(3)) }; }
   return r;
 }
@@ -118,10 +131,10 @@ const fwd = (speed) => { const p = R.player; p.velocity.set(Math.sin(p.heading) 
 const halt = () => { R.player.velocity.set(0, 0, 0); R.player.moveSpeed = 0; };
 /** home: everything back where a case starts (gaff on its hanger, the lance holstered, standing) */
 function home() {
-  gaff.want = false; gaff.after = null;
+  gaff.want = false; gaff.after = null; gaff.verbs?.cancel();
   for (let i = 0; i < 60; i++) step(R);
   reset(R);
-  const G = an._gaffState(); G.mode = 0; G.owner = 'carry'; G.was = false; G.t = 0; oro.setHeld(0);
+  const G = an._gaffState(); G.mode = 0; G.owner = 'carry'; G.was = false; G.t = 0; G.settleT = 0; G.lastOk = false; oro.setHeld(0);
   gaff.prop.group.visible = false;
   for (let i = 0; i < 30; i++) step(R);
 }
@@ -136,7 +149,32 @@ const CASES = {
   gaffHeldSprint: { speed: SPEEDS.sprint, pre: () => { gaff.draw(); for (let i = 0; i < 40; i++) step(R); R.player.sprinting = true; }, secs: 1.5, go: () => {}, post: () => { R.player.sprinting = false; } },
   swapLanceToGaff: { pre: () => { R.melee.drawLance(); for (let i = 0; i < 60; i++) step(R); }, secs: 1.4, go: () => gaff.draw() },
   swapGaffToLance: { pre: () => { gaff.draw(); for (let i = 0; i < 50; i++) step(R); }, secs: 1.4, go: () => gaff.stow('lance') },
+  // ---- the verbs (M2 wave 3): the three lights chained by presses inside the combo window, the hook-rip, from idle,
+  // a jog and a crouch, and the interrupts (a stow or a swap asked mid-verb)
+  ...verbCases(),
 };
+function verbCases() {
+  const held = () => { gaff.draw(); for (let i = 0; i < 50; i++) step(R); };
+  const heldJog = () => { gaff.draw(); for (let i = 0; i < 50; i++) { fwd(SPEEDS.jog); step(R); } };
+  const heldCrouch = () => { R.player.crouching = true; gaff.draw(); for (let i = 0; i < 60; i++) step(R); };
+  const up = () => { R.player.crouching = false; };
+  // the chain: press at 0.14 s and 0.36 s (inside light 1's and light 2's windows)
+  const chain = (i) => { if (i === 8 || i === 21) gaff.verbs.strike(); };
+  const C = {
+    lights: { pre: held, secs: 1.2, go: () => gaff.verbs.strike(), each: chain, verb: true },
+    lightsJog: { speed: SPEEDS.jog, pre: heldJog, secs: 1.2, go: () => gaff.verbs.strike(), each: chain, verb: true },
+    lightsCrouch: { pre: heldCrouch, secs: 1.2, go: () => gaff.verbs.strike(), each: chain, verb: true, post: up },
+    hookRip: { pre: held, secs: 1.0, go: () => gaff.verbs.hookRip(), verb: true, rip: true },
+    hookRipJog: { speed: SPEEDS.jog, pre: heldJog, secs: 1.0, go: () => gaff.verbs.hookRip(), verb: true },
+    hookRipCrouch: { pre: heldCrouch, secs: 1.0, go: () => gaff.verbs.hookRip(), verb: true, post: up },
+    // interrupts: the stow asked at the strike's contact, mid-recover, and a swap to the lance at the hook-rip's pull
+    lightThenStow: { interrupt: true, pre: held, secs: 1.0, go: () => gaff.verbs.strike(), each: (i) => { if (i === 11) gaff.stow(); }, verb: true },
+    light2ThenStow: { interrupt: true, pre: held, secs: 1.2, go: () => gaff.verbs.strike(), each: (i) => { if (i === 8) gaff.verbs.strike(); if (i === 26) gaff.stow(); }, verb: true },
+    hookRipThenLance: { interrupt: true, pre: held, secs: 1.6, go: () => gaff.verbs.hookRip(), each: (i) => { if (i === 22) gaff.stow('lance'); }, verb: true },
+    lightsThenHookRip: { interrupt: true, pre: held, secs: 1.6, go: () => gaff.verbs.strike(), each: (i) => { if (i === 8) gaff.verbs.strike(); if (i === 50) gaff.verbs.hookRip(); }, verb: true },
+  };
+  return C;
+}
 
 function grade(name, L, m) {
   const fails = [];
@@ -183,7 +221,7 @@ function grade(name, L, m) {
   // W3: the wrist's rate
   let w3 = 0, w3At = null;
   // (the steps the gaff layer holds the arm: a swap's lance draw is the lance's own row)
-  for (let i = 1; i < L.length; i++) { if (!(L[i].w > 0) && !(L[i - 1].w > 0)) continue; const d = Math.hypot(...[0, 1, 2].map((k) => L[i].wristR[k] - L[i - 1].wristR[k])); if (d > w3) { w3 = d; w3At = L[i].t; } }
+  for (let i = 1; i < L.length; i++) { if (!(L[i].w > 0) && !(L[i - 1].w > 0)) continue; if (L[i].verb || L[i - 1].verb) continue; const d = Math.hypot(...[0, 1, 2].map((k) => L[i].wristR[k] - L[i - 1].wristR[k])); if (d > w3) { w3 = d; w3At = L[i].t; } }
   out.W3 = { wristStepMaxM: +w3.toFixed(4), at: w3At };
   // (at a run the body itself carries the wrist ~0.08-0.11 m a step: the rate is graded standing; reported at a run)
   if (!CASES[name].speed && w3 > 0.08) fail(`W3 the right wrist moved ${w3.toFixed(3)} m in a step (bar 0.08, t ${w3At})`);
@@ -197,6 +235,47 @@ function grade(name, L, m) {
     const lr = L.findIndex((r) => r.stance === 'ready');
     out.KT3.swapS = lr >= 0 ? L[lr].t : null;
     if (!(out.KT3.swapS <= 0.65)) fail(`KT3 swap gaff to lance ${out.KT3.swapS} s (bar 0.65)`);
+  }
+  // KT7 (the verbs): in each strike the pelvis's yaw rate peaks >= 40 ms before the shoulder line's (standing); the
+  // hook-rip's pull takes her pelvis back 0.10-0.25 m; the contacts
+  if (CASES[name].verb) {
+    const strikes = [];
+    let cur = null;
+    for (let i = 1; i < L.length; i++) {
+      const r = L[i], p = L[i - 1];
+      const on = r.verb && (r.verbPhase === 'S' || r.verbPhase === 'W' || r.verbPhase === 'P' || r.verbPhase === 'H');
+      if (on && (!cur || cur.verb !== r.verb || (p.verbPhase === 'R' && r.verbPhase === 'W'))) { cur = { verb: r.verb, i0: i, i1: i }; strikes.push(cur); }
+      if (on && cur) cur.i1 = i;
+      if (!on) cur = null;
+    }
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+    out.KT7 = strikes.map((st) => {
+      // (signed: the turn INTO the blow, the way the hip turns across the strike; a chained light's shoulders are still
+      // finishing the last one's turn as its wind-up starts)
+      let hv = 0, ht = null, sv = 0, stt = null;
+      const iS = L.findIndex((r, i) => i >= st.i0 && r.verbPhase !== 'W');
+      const sg = Math.sign(wrap(L[Math.min(L.length - 1, st.i1)].hipYawM - L[Math.max(0, iS)].hipYawM)) || 1;
+      for (let i = Math.max(1, st.i0); i <= Math.min(L.length - 1, st.i1 + 6); i++) {
+        const dh = sg * wrap(L[i].hipYawM - L[i - 1].hipYawM), ds = sg * wrap(L[i].shYawM - L[i - 1].shYawM);
+        const own = L[i].verb === st.verb && L[i].verbPhase === 'W' && i <= st.i1;
+        if (!own && dh > hv) { hv = dh; ht = L[i].t; }
+        if (!own && ds > sv) { sv = ds; stt = L[i].t; }
+      }
+      return { verb: st.verb, hipPeakT: ht, shPeakT: stt, leadMs: ht != null && stt != null ? Math.round((stt - ht) * 1000) : null, hipRateDeg: +(hv * D).toFixed(2), shRateDeg: +(sv * D).toFixed(2) };
+    });
+    out.verbs = [...new Set(L.map((r) => r.verb).filter(Boolean))];
+    if (!CASES[name].speed && !/Crouch/.test(name) && !CASES[name].interrupt) {
+      for (const k of out.KT7) if (k.verb !== 'hookRip' && !(k.leadMs >= 40)) fail(`KT7 ${k.verb}: the hip leads the shoulders by ${k.leadMs} ms (bar 40)`);
+    }
+    if (CASES[name].rip) {
+      const z0 = L[0].pelvis[2];
+      const back = Math.max(...L.map((r) => z0 - r.pelvis[2]));
+      out.KT7rip = { pelvisBackM: +back.toFixed(3) };
+      if (!(back >= 0.10 && back <= 0.25)) fail(`KT7 the hook-rip takes her pelvis back ${back.toFixed(3)} m (band 0.10-0.25)`);
+    }
+    // the wrist's rate inside a swing (reported; W3 is graded outside the swings)
+    let wv = 0; for (let i = 1; i < L.length; i++) { if (!L[i].verb) continue; wv = Math.max(wv, Math.hypot(...[0, 1, 2].map((k) => L[i].wristR[k] - L[i - 1].wristR[k]))); }
+    out.swingWristStepMaxM = +wv.toFixed(4);
   }
   out.fails = fails;
   return out;
@@ -217,6 +296,7 @@ for (const name of only) {
   const N = Math.round(c.secs * 60);
   for (let i = 0; i < N; i++) {
     if (c.speed) fwd(c.speed); else halt();
+    c.each?.(i);
     step(R);
     M.sample({ T: +((i + 1) / 60).toFixed(3) });
     L.push(record((i + 1) / 60));
@@ -226,7 +306,7 @@ for (const name of only) {
   const g = grade(name, L, m);
   res.cases[name] = g;
   logs[name] = L;
-  console.log(`${name.padEnd(16)} ${g.fails.length ? 'FAIL' : 'PASS'}  ` + JSON.stringify({ ev: g.events, KT3: g.KT3, W1: g.W1, W2: g.W2, W3: g.W3, KT1: { behind: g.KT1.behind, plane: g.KT1.plane, propAbove: g.KT1.propAboveShoulderSteps, propBehind: g.KT1.propBehindHeadSteps } }));
+  console.log(`${name.padEnd(16)} ${g.fails.length ? 'FAIL' : 'PASS'}  ` + JSON.stringify({ ev: g.events, KT3: g.KT3, W1: g.W1, W2: g.W2, W3: g.W3, KT7: g.KT7, KT7rip: g.KT7rip, verbs: g.verbs, swingStep: g.swingWristStepMaxM, KT1: { behind: g.KT1.behind, plane: g.KT1.plane, propAbove: g.KT1.propAboveShoulderSteps, propBehind: g.KT1.propBehindHeadSteps } }));
   for (const f of g.fails) console.log(`    - ${f}`);
 }
 const failing = Object.values(res.cases).filter((g) => g.fails.length).length;
