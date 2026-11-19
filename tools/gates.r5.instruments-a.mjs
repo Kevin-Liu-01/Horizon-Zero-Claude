@@ -1090,6 +1090,10 @@ const A_SCREED_FIGHT = `(async () => {
   const names = ['screed-engage', 'screed-charge', 'screed-stalled', 'screed-stalled-rock', 'seal-off', 'screed-seized', 'screed-cut', 'screed-done', 'player-damage'];
   const offs = names.map((n) => ev.on?.(n, (e) => { if (n === 'player-damage' && e?.from !== m) return; log.push({ n, t: +simNow().toFixed(3), wall: e?.wall ?? null, seal: e?.seal ?? null, part: e?.part ?? null, failSoft: e?.failSoft ?? null, sealsOff: e?.sealsOff ?? null }); }));
   await simSleep(1.0, heal);
+  // IN5's reed clause (M2 wave 4): the blade levels the cover mask under it in the charge (ctx.terrain.cutCover, wrapped)
+  const T0 = __C.terrain, cut0 = T0 && T0.cutCover;
+  let reedCuts = 0;
+  if (typeof cut0 === 'function') T0.cutCover = function (seg, w) { reedCuts++; return cut0.call(this, seg, w); };
   const stand = { x: at.x + fx * 9.5, z: at.z + fz * 9.5 };
   standAt(stand.x, stand.z, at.x, at.z);
   let chargeT = null, stepped = false, stallT0 = null, stallS = null, maxDev = 0, worked = false;
@@ -1111,6 +1115,7 @@ const A_SCREED_FIGHT = `(async () => {
     }
   });
   for (const o of offs) o?.();
+  if (typeof cut0 === 'function') T0.cutCover = cut0;
   const rep = m.fight();
   const has = (n) => log.filter((e) => e.n === n);
   const stalled = has('screed-stalled')[0] || null;
@@ -1119,7 +1124,8 @@ const A_SCREED_FIGHT = `(async () => {
   const pass = has('screed-charge').length === 1 && !!stalled && stalled.wall === 'wall-1' && stallS !== null && Math.abs(stallS - 3.0) <= 0.2
     && maxDev < 3 && has('player-damage').length === 0 && seals.join() === 'ram-1,ram-2' && !!done && done.sealsOff === true && rep.cuts.length === 0 && rep.bladeDropped;
   return { pass, detail: { bar: 'one charge; heading within 3 deg once committed; stall on wall-1 3.0 s +-0.2 (sim); no blade blow; seal-off ram-1, ram-2; done with the seals off; 0 walls cut; blade dropped',
-    charges: has('screed-charge').length, maxHeadingDevDeg: +maxDev.toFixed(3), stalled, stallS, bladeBlows: has('player-damage').length, seals, done, report: rep, log: log.slice(0, 30) } };
+    charges: has('screed-charge').length, maxHeadingDevDeg: +maxDev.toFixed(3), stalled, stallS, bladeBlows: has('player-damage').length, seals, done, report: rep, log: log.slice(0, 30),
+    reedLevelled: { cutCoverCalls: typeof cut0 === 'function' ? reedCuts : null, brainLevelled: m.brain.levelled ?? null } } };
 })()`;
 
 const GATES = [

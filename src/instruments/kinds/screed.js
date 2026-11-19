@@ -59,7 +59,11 @@ class Screed extends base.Cls {
   constructor(ctx, manager, opts = {}) {
     super(ctx, manager, opts);
     this.walkSpeed = SCREED_RULES.walk; this.runSpeed = SCREED_RULES.chargeSpeed;
-    this.brain = new ScreedBrain({ x: this.position.x, z: this.position.z, heading: opts.heading ?? this.heading, walls: WALLS, obstacles: opts.obstacles || [] });
+    // IN5: reed under the blade's swept footprint is levelled in the world's one cover mask (src/game/reeds:
+    // ctx.terrain.cutCover, the contract the Peg's transect cuts through); a disc of the blade's half-width per point
+    const T = ctx.terrain;
+    const reed = { level: (x, z, r) => { const cut = T && T.cutCover; if (typeof cut === 'function') { try { cut.call(T, [x, z, x, z], 2 * r); } catch { /* contract not live */ } } } };
+    this.brain = new ScreedBrain({ x: this.position.x, z: this.position.z, heading: opts.heading ?? this.heading, walls: WALLS, obstacles: opts.obstacles || [], reed });
     // the fight (screed-rules.js ScreedFight): on the village, then back out the way it came and down the Scar
     this.fightRules = new ScreedFight(this.brain, { centre: { x: NW_CENTRE.x, z: NW_CENTRE.z }, arena: { x: NW_CENTRE.x, z: NW_CENTRE.z, r: 160 },
       away: [{ x: this.position.x, z: this.position.z }, { x: SCAR.b.x, z: SCAR.b.z }] });
