@@ -45,6 +45,7 @@ import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { fixture } from './first-hour-fixtures.mjs';
+import * as SH from './slice-hour.mjs';
 import { SCAR_STAGES, TRUE_GROUND_STAGES, SCAR_ID, TRUE_GROUND_ID, TRANSIT_CARD, NEW_BEATS } from '../../../src/game/quest/scar-plan.js';
 import { siteById, TRIG } from '../../../src/world/island/sites.js';
 import { BENCHMARKS } from '../../../src/world/sites/layout.js';
@@ -56,7 +57,11 @@ const PORT = guardPort(flag('--port'));
 if (PORT === 5173) throw new Error('5173 is never used');
 const LEGS = (flag('--legs', '1,2,3') || '').split(',').map((s) => Number(s.trim())).filter((n) => [1, 2, 3].includes(n));
 const LABEL = flag('--label', 'systems-first-hour');
-const LEG_BUDGET_S = Number(flag('--leg-budget', 300));
+const LEG_BUDGET_S = Number(flag('--leg-budget', 720));
+// (wave 4) --chain: each leg after the first starts from the record the leg before it left in its store (leg 1's is the
+// slice run's newest record, which slice-hour.mjs writes into its report), CONTINUE pressed on it: the save carried
+// across the hour, a launch a leg. Without it a leg run alone starts from its fixture.
+const CHAIN = args.includes('--chain');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[first-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -76,7 +81,7 @@ const PLACES = {
 };
 
 const report = {
-  row: 'A-first-hour (skeleton)', commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(), legs: [], beats: null,
+  row: 'A-first-hour', chain: CHAIN, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(), legs: [], beats: null,
   newBeats: NEW_BEATS.length, places: PLACES,
 };
 
@@ -389,13 +394,217 @@ async function driveResurvey(page) {
   return { ok: !!rep.done, onPad, wallS: +((Date.now() - t0) / 1000).toFixed(1), log, report: rep };
 }
 
+
+/* ------------------------------------------------------------------ wave 4: the rest of the hour, by input */
+
+const scarNow = () => window.__CTX__.quests?.['the-scar']?.current?.()?.id ?? (window.__CTX__.quests?.['the-scar']?.done ? 'done' : null);
+const tgNow = () => window.__CTX__.quests?.['true-ground']?.current?.()?.id ?? (window.__CTX__.quests?.['true-ground']?.done ? 'done' : null);
+
+/** THE SECOND PLUMB: toppled as the slice's topple is (slice-hour.mjs fight(): the vial, Reed arrows, the stands it scans). */
+async function driveTopple(page, K) {
+  await page.evaluate(() => { window.__probeQuest = 'the-scar'; });
+  try {
+    const T = await page.evaluate(() => window.__CTX__.systemsGame.A.terrace);
+    const w = await walkPath(page, T, 34, 60);
+    const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 28, maxS: 150, tolDeg: 0.08, reach: 220 });
+    return { walk: { ok: w.ok, why: w.why ?? null }, ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length };
+  } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
+}
+
+/** BARBED ARROWS: the bow in hand, X until the Barbed arrow is on the string, R held (the quick-make), as a player makes them. */
+async function driveBarbed(page, K) {
+  await K.tap('Digit1'); await sleep(250);
+  const ammoId = () => page.evaluate(() => window.__CTX__.combat?.activeWeapon?.activeAmmo ?? null);
+  for (let i = 0; i < 5 && (await ammoId()) !== 'hardpoint'; i++) { await K.tap('KeyX'); await sleep(180); }
+  const on = await ammoId();
+  const before = await page.evaluate(() => window.__CTX__.combat?.ammo?.hardpoint ?? null);
+  const why = await page.evaluate(() => window.__CTX__.combat?.craftBlocker?.('hardpoint') ?? window.__CTX__.combat?.canCraft?.('hardpoint') ?? null).catch(() => null);
+  for (let i = 0; i < 2; i++) {
+    await K.down('KeyR'); await sleep(1800); await K.up('KeyR'); await sleep(400);
+    if (await page.evaluate(() => !!window.__CTX__.quests['the-scar'].report().reached.includes('barbed'))) break;
+  }
+  const after = await page.evaluate(() => window.__CTX__.combat?.ammo?.hardpoint ?? null);
+  // back to the Reed arrow for what follows
+  for (let i = 0; i < 5 && (await ammoId()) !== 'hunter'; i++) { await K.tap('KeyX'); await sleep(180); }
+  return { selected: on, canCraft: why, before, after };
+}
+
+/** ORO: to the tube mouth, E, his scene played through (Space, and the exit station). */
+async function driveOro(page, K) {
+  const A = await page.evaluate(() => window.__CTX__.systemsGame.A.oro);
+  const w = await walkPath(page, A, 2.4, 60);
+  await sleep(400);
+  await SH.holdE(page, K, 500);
+  await sleep(400);
+  await page.evaluate(() => { window.__probeQuest = 'the-scar'; });
+  try { await SH.playScene(page, K, 60); } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
+  const r = await waitReached(page, SCAR_ID, 'oro', 6000);
+  return { walk: { ok: w.ok, why: w.why ?? null }, reached: r.ok, kit: await page.evaluate(() => ({ gaff: !!window.__CTX__.player?.hero?.kit?.gaff, given: !!window.__CTX__.systemsGame?.hour?._kitGiven })) };
+}
+
+/** The Screed, as the runner sees it: where it stands, its heading, the fight's own report. */
+const screedNow = () => {
+  const C = window.__CTX__, P = C.player.position;
+  const m = (C.machines?.list || []).find((q) => q && q.kind === 'screed' && q.alive !== false && !q._disposed);
+  if (!m) return null;
+  const f = m.fight?.() ?? {};
+  const h = m.brain?.heading ?? 0;
+  const seals = Object.entries(f.seals || {}).filter(([, v]) => v !== 'off').map(([k]) => k);
+  return { i: C.machines.list.indexOf(m), x: m.position.x, z: m.position.z, heading: h, fx: Math.sin(h), fz: Math.cos(h), phase: f.phase ?? null, mode: f.mode ?? null,
+    sealsLeft: seals, seals: f.seals, cuts: (f.cuts || []).length, stalls: (f.stalls || []).length, failSoft: !!f.failSoft,
+    d: Math.hypot(m.position.x - P.x, m.position.z - P.z), px: P.x, pz: P.z, hp: Math.round(C.player.health),
+    // her side of its heading (+ right) and how far in front of it she stands
+    ahead: (P.x - m.position.x) * Math.sin(h) + (P.z - m.position.z) * Math.cos(h), side: (P.x - m.position.x) * Math.cos(h) - (P.z - m.position.z) * Math.sin(h),
+    stage: window.__CTX__.quests['the-scar'].current()?.id ?? 'done' };
+};
+
+/** One arrow on a part of machine i: RMB, Steady, the draw with the look on the game's own flight, loosed. */
+async function looseOn(page, K, i, part, { drawMs = 850, tolDeg = 0.12 } = {}) {
+  await K.mouse('right', true); await sleep(320);
+  await K.up('ShiftLeft'); await sleep(40); await K.down('ShiftLeft'); await sleep(50);
+  await K.mouse('left', true);
+  const t0 = Date.now();
+  let sol = null;
+  try {
+    while (Date.now() - t0 < drawMs || (sol && sol.ds < 0.99 && Date.now() - t0 < drawMs + 700)) {
+      sol = await page.evaluate(SH.solveShot, i, part, tolDeg);
+      if (!sol) break;
+    }
+  } finally {
+    try { await K.mouse('left', false); } catch { /* */ }
+    await sleep(Math.max(450, 1000 * (sol?.tf ?? 0) + 200));
+    await K.up('ShiftLeft');
+    try { await K.mouse('right', false); } catch { /* */ }
+  }
+  return sol ? { first: sol.first, missM: sol.missM, clear: sol.clear, ds: sol.ds } : null;
+}
+
+/**
+ * THE SCREED BY INPUT (stall, seal-1, seal-2), the wall trick as the Node twin plays it (tools/instruments/screed-fight
+ * .test.mjs): out of the village to 10 m in front of it, between it and the outer wall; a 5 m sidestep in its wind-up;
+ * its charge meets the wall and stalls; then arrows on the ram seals from beside it (two each), the nearest first.
+ */
+async function driveScreed(page, K, stage, maxS = 120) {
+  const t0 = Date.now(), log = [];
+  let sidestepped = false, shots = 0, lastPhase = null;
+  await K.tap('Digit1'); await sleep(200);
+  for (;;) {
+    const S = await page.evaluate(screedNow);
+    if (!S) return { ok: false, why: 'no Screed', log };
+    if (S.stage !== stage) return { ok: true, s: +((Date.now() - t0) / 1000).toFixed(1), shots, log: log.slice(-12), cuts: S.cuts, stalls: S.stalls };
+    if ((Date.now() - t0) / 1000 > maxS) return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-12) };
+    const st = await page.evaluate(where);
+    if (st.dead || st.state === 'dead') return { ok: false, why: 'died', log };
+    if (S.phase !== lastPhase) { log.push({ t: +((Date.now() - t0) / 1000).toFixed(1), phase: S.phase, mode: S.mode, d: +S.d.toFixed(1), ahead: +S.ahead.toFixed(1), side: +S.side.toFixed(1), hp: S.hp, cuts: S.cuts }); lastPhase = S.phase; }
+    if (S.phase !== 'windup' && S.phase !== 'charge') sidestepped = false;
+    if (st.hp < 45) await SH.drink(page, K, 92);
+    // its wind-up: step out of its line, 5 m to the side she already leans to
+    if ((S.phase === 'windup' || S.phase === 'charge') && Math.abs(S.side) < 4 && S.ahead > 0 && !sidestepped) {
+      sidestepped = true;
+      const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
+      await walkTo(page, { x: S.px + rx * 5.5, z: S.pz + rz * 5.5 }, 0.8, 2.2);
+      continue;
+    }
+    if (stage === 'stall') {
+      // in front of it, 10 m, on its line, while it walks (or waits)
+      if (S.phase === 'walk' || S.phase === 'wait' || S.phase == null) {
+        const goal = { x: S.x + S.fx * 10, z: S.z + S.fz * 10 };
+        const dg = Math.hypot(goal.x - S.px, goal.z - S.pz);
+        if (dg > 2.2) { if (dg > 25) await walkPath(page, goal, 2, 12); else await walkTo(page, goal, 1.5, 4); }
+        else await sleep(150);
+        // face it (the charge reads her in front; the look does not matter to it, but she watches it)
+        await page.evaluate(face, S.x, S.z);
+      } else await sleep(100);
+      continue;
+    }
+    // seal-1 / seal-2: beside it, not in its line, and an arrow on the nearest seal not off
+    if (!S.sealsLeft.length) { await sleep(200); continue; }
+    if (Math.abs(S.side) < 4 && S.ahead > 0 && S.ahead < 26 && S.phase !== 'stall') {
+      const sgn = S.side >= 0 ? 1 : -1;
+      await walkTo(page, { x: S.x + S.fx * 8 + S.fz * sgn * 7, z: S.z + S.fz * 8 - S.fx * sgn * 7 }, 1.2, 3);
+      continue;
+    }
+    if (S.d > 22) { await walkTo(page, { x: S.x + S.fx * 8 + S.fz * 7, z: S.z + S.fz * 8 - S.fx * 7 }, 2, 6); continue; }
+    const part = S.sealsLeft.length === 2 ? (S.side >= 0 ? 'sealR' : 'sealL') : S.sealsLeft[0];
+    const r = await looseOn(page, K, S.i, part);
+    shots++;
+    log.push({ t: +((Date.now() - t0) / 1000).toFixed(1), shot: part, phase: S.phase, d: +S.d.toFixed(1), ...(r || {}) });
+  }
+}
+
+/** THE REST AT NINEWALLS: to the Brazier, E held to kindle it, E to sit; the dialog's selected row read off the page; Enter. */
+async function driveRest(page, K) {
+  const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('ninewalls'); return b ? { x: b.obj.position.x, z: b.obj.position.z, seat: b.obj.seat ? { x: b.obj.seat.x, z: b.obj.seat.z } : null } : null; });
+  if (!A) return { ok: false, why: 'no Ninewalls Brazier' };
+  const w = await walkPath(page, A.seat ?? A, 1.6, 60);
+  const out = { walk: { ok: w.ok, why: w.why ?? null } };
+  const mode = () => page.evaluate(() => window.__CTX__.braziers.dialog('ninewalls')?.mode ?? null);
+  out.mode0 = await mode();
+  if (out.mode0 === 'kindle') { await SH.holdE(page, K, 2400); await sleep(400); out.kindled = await page.evaluate(() => window.__CTX__.braziers.lit.has('ninewalls')); }
+  out.mode1 = await mode();
+  if (out.mode1 === 'refused') {
+    out.refusedBy = await page.evaluate(() => window.__CTX__.braziers.dialog('ninewalls')?.by ?? null);
+    // a careful player waits for the lamps to settle (up to 20 s), then tries again
+    for (let i = 0; i < 20 && (await mode()) === 'refused'; i++) await sleep(1000);
+  }
+  await SH.holdE(page, K, 600);
+  await sleep(500);
+  out.dialog = await page.evaluate(() => ({ open: !!window.__CTX__.systemsGame?.present?.busy, rows: [...document.querySelectorAll('#cal-sys .sys-row')].map((r) => ({ label: r.firstChild?.textContent ?? '', sel: r.classList.contains('sel'), forecast: r.querySelector('small')?.textContent ?? '' })), refuse: document.querySelector('#cal-sys .sys-refuse')?.textContent ?? null }));
+  out.shot = await shot(page, 'l3-rest-dialog');
+  out.hour0 = await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3));
+  out.saves0 = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); const r = n ? S.latest(n) : null; return r ? { kind: r.kind, reason: r.reason, savedAt: r.savedAt } : null; });
+  await K.tap('Enter');
+  for (let i = 0; i < 30; i++) { await sleep(300); if (await page.evaluate(() => !window.__CTX__.braziers.resting && !window.__CTX__.systemsGame.present.busy)) break; }
+  await sleep(800);
+  out.hour1 = await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3));
+  out.saves1 = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); const r = n ? S.latest(n) : null; return r ? { kind: r.kind, reason: r.reason, savedAt: r.savedAt, hour: r.hour } : null; });
+  out.namedSave = !!out.saves1 && out.saves1.kind === 'named' && out.saves1.reason === 'brazier' && out.saves1.savedAt !== out.saves0?.savedAt;
+  // she stands up from the seat
+  await K.tap('KeyW'); await sleep(300);
+  return out;
+}
+
+/** CALIMA AT NOON, AND THE CROSSING: the weather read until it is calima (asked for at noon), then to the Malpais edge. */
+async function driveCross(page) {
+  const out = {};
+  const t0 = Date.now();
+  for (let i = 0; i < 40; i++) { const w = await page.evaluate(() => ({ asked: window.__CTX__.systemsGame?.hour?._calimaAsked ?? null, weather: window.__CTX__.environment.weather, calimaW: +(window.__CTX__.environment.weatherParams?.calima ?? 0).toFixed(2) })); out.weather = w; if (w.weather === 'calima') break; await sleep(500); }
+  out.askedAfterS = +((Date.now() - t0) / 1000).toFixed(1);
+  const at = await page.evaluate(() => { const H = window.__CTX__.systemsGame?.hour; H?._malpaisEdge?.(); return window.__CTX__.systemsGame.A['malpais-edge'] ?? null; });
+  if (!at) return { ...out, ok: false, why: 'no Malpais edge anchor' };
+  out.anchor = at;
+  out.walk = await walkPath(page, at, 4, 120);
+  out.reached = await waitReached(page, TRUE_GROUND_ID, 'calima-cross', 6000);
+  out.calimaW = await page.evaluate(() => +(window.__CTX__.environment.weatherParams?.calima ?? 0).toFixed(2));
+  out.shot = await shot(page, 'l3-calima-edge');
+  return out;
+}
+
+/** READ THE TRANSIT: the Alidade up (V), the look onto the far form's head and held; the card read off the page. */
+async function driveTransit(page, K) {
+  const out = {};
+  const head = await page.evaluate(() => { const H = window.__CTX__.systemsGame?.hour; const f = H?._transitFar?.(); return f?.head ? { x: f.head.x, y: f.head.y, z: f.head.z, standIn: !!f.standIn } : null; });
+  if (!head) return { ok: false, why: 'no far form to read' };
+  out.far = head;
+  if (!(await page.evaluate(() => !!window.__CTX__.sighting?.on))) { await K.tap('KeyV'); await sleep(900); }
+  for (let i = 0; i < 12; i++) {
+    out.aim = await page.evaluate(aimPoint, head.x, head.y, head.z, 0.5);
+    await sleep(250);
+    if (await page.evaluate(() => !!window.__CTX__.quests['true-ground'].report().reached.includes('read-transit'))) break;
+  }
+  out.card = await page.evaluate(() => ({ line: document.querySelector('#cal-sys .sys-far b')?.textContent ?? null, on: !!document.querySelector('#cal-sys .sys-far.on'), hour: +window.__CTX__.environment.time.toFixed(3) }));
+  out.shot = await shot(page, 'l3-transit-card');
+  if (await page.evaluate(() => !!window.__CTX__.sighting?.on)) { await K.tap('KeyV'); await sleep(300); }
+  return out;
+}
+
 /* ------------------------------------------------------------------ one leg in its own launch */
 
-async function boot(page, leg) {
+async function boot(page, leg, startRec = null) {
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__CTX__?.state === 'title' && !!window.__CTX__?.progression?.saves?.store, { timeout: 180000, polling: 200 });
   // the fixture, written as a save on disk is: into the store, then the game opened again (the title reads it at boot)
-  const rec = { ...fixture(leg), savedAt: Date.now() };
+  const rec = startRec ? { ...startRec, savedAt: Date.now() } : { ...fixture(leg), savedAt: Date.now() };
   const wrote = await page.evaluate((r) => { const st = window.__CTX__.progression.saves.store; st.setActive(1); return st.write(r); }, rec);
   if (!wrote?.ok) throw new Error(`fixture ${leg} not written: ${JSON.stringify(wrote)}`);
   await page.goto('about:blank', { waitUntil: 'load', timeout: 30000 });
@@ -420,8 +629,8 @@ async function boot(page, leg) {
   return rec;
 }
 
-async function runLeg(leg) {
-  const L = { leg, from: `fixture(${leg})`, beats: [], rows: {}, console: [], error: null };
+async function runLeg(leg, startRec = null) {
+  const L = { leg, from: startRec ? `the record leg ${leg - 1} left (${startRec.kind} '${startRec.reason}', hour ${startRec.hour})` : `fixture(${leg})`, beats: [], rows: {}, console: [], error: null };
   let vite = null, browser = null, profile = null, slotTaken = false;
   const t0 = Date.now();
   try {
@@ -446,7 +655,9 @@ async function runLeg(leg) {
     page.on('console', (m) => { if (m.type() === 'error') L.console.push(m.text().slice(0, 300)); });
     page.on('pageerror', (e) => L.console.push(`pageerror: ${String(e).slice(0, 300)}`));
     await page.evaluateOnNewDocument(installHitch);
-    const rec = await boot(page, leg);
+    await page.evaluateOnNewDocument(`window.__aimPoint = ${SH.aimPoint.toString()};`);
+    const K = SH.keys(page);
+    const rec = await boot(page, leg, startRec);
     const tPlay = Date.now();
     const T = () => +((Date.now() - tPlay) / 1000).toFixed(1);
     // the crossings the regions seam fires from here on
@@ -481,6 +692,21 @@ async function runLeg(leg) {
       } else if (st.id === 'survey') {
         played.resurvey = await driveResurvey(page);
         played.alidade = await page.evaluate(() => ({ on: !!window.__CTX__.sighting?.on }));
+      } else if (st.id === 'plumb-2') {
+        played.topple = await driveTopple(page, K);
+      } else if (st.id === 'barbed') {
+        played.barbed = await driveBarbed(page, K);
+      } else if (st.id === 'oro') {
+        played.oro = await driveOro(page, K);
+      } else if (st.id === 'stall' || st.id === 'seal-1' || st.id === 'seal-2') {
+        played.screed = await driveScreed(page, K, st.id, st.id === 'stall' ? 150 : 120);
+        if (st.id === 'seal-2') played.checkpoint = await waitReached(page, SCAR_ID, 'seal-2', 3000);
+      } else if (st.id === 'rest-noon') {
+        played.rest = await driveRest(page, K);
+      } else if (st.id === 'calima-cross') {
+        played.cross = await driveCross(page);
+      } else if (st.id === 'read-transit') {
+        played.transit = await driveTransit(page, K);
       } else if (st.id === 'fade') {
         // the line comes off the walls after the re-survey: wait for the stage (up to 8 s)
         played.fadeWait = await waitReached(page, qidOf(leg), 'fade', 8000);
@@ -495,9 +721,13 @@ async function runLeg(leg) {
       log(`leg ${leg} ${st.id}: ${b.ok ? 'PASS' : 'FAIL'} hp ${b.hp} t ${b.t} s ${b.why ? `(${b.why.slice(0, 160)})` : ''}`);
       if (st.id === 'survey' && played.alidade?.on) { await page.keyboard.press('KeyV'); await sleep(400); }
       // a beat that did not pass stops the leg's driving: the beats after it wait on it (each still probed and named)
-      if (!b.ok && !['rest-noon', 'calima-cross', 'read-transit'].includes(st.id)) driveOn = false;
+      if (!b.ok) driveOn = false;
     }
     L.hitch = await page.evaluate(() => { const H = window.__hitch; return { frames: H.n, maxMs: +H.max.toFixed(1), over33: H.over33, over50: H.over50 }; });
+    // the record this leg leaves (the next leg's start with --chain): the store's newest, as CONTINUE would load it
+    L.endRecord = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); return n ? S.latest(n) : null; }).catch(() => null);
+    L.endRecordAt = L.endRecord ? { kind: L.endRecord.kind, reason: L.endRecord.reason, hour: L.endRecord.hour, x: L.endRecord.position?.x, z: L.endRecord.position?.z } : null;
+    L.hour = await page.evaluate(() => window.__CTX__.systemsGame?.hour?.report?.() ?? null).catch(() => null);
     L.end = { ...(await page.evaluate(where)), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), systemErrors: await page.evaluate(() => (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 8)) };
   } catch (e) {
     L.error = String(e?.stack || e).slice(0, 1200);
@@ -532,6 +762,8 @@ function runLeg1() {
         L.beats = (r.beats || []).map((b) => ({ leg: 1, beat: b.stage, ok: !!b.ok, why: b.ok ? null : (b.why || r.why || 'stopped'), hp: b.hp ?? null, seconds: b.seconds ?? null }));
         L.reached = r.spine?.reached ?? null; L.stoppedAt = r.stoppedAt; L.why = r.why; L.hitch = r.hitch ?? null; L.rows = Object.fromEntries(Object.entries(r.rows || {}).map(([k, v]) => [k, v?.pass ?? v?.ok ?? null]));
         L.chromeSeconds = r.chromeSeconds ?? L.chromeSeconds;
+        L.endRecord = r.finalRecord ?? null;
+        L.endRecordAt = r.finalRecord ? { kind: r.finalRecord.kind, reason: r.finalRecord.reason, hour: r.finalRecord.hour } : null;
       }
       const ok = L.beats.filter((b) => b.ok).length;
       L.passed = `${ok}/14`;
@@ -544,9 +776,12 @@ function runLeg1() {
 
 mkdirSync(runDir, { recursive: true });
 try {
+  let carry = null;
   for (const leg of LEGS) {
-    log(`leg ${leg}`);
-    const L = leg === 1 ? await runLeg1() : await runLeg(leg);
+    log(`leg ${leg}${CHAIN && carry ? ' (from the record the leg before left)' : ''}`);
+    const L = leg === 1 ? await runLeg1() : await runLeg(leg, CHAIN ? carry : null);
+    carry = L.endRecord ?? null;
+    if (L.endRecord) { L.endRecord = undefined; }
     report.legs.push(L);
     writeFileSync(path.join(runDir, 'report.json'), JSON.stringify(report, null, 2));
   }

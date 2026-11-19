@@ -111,7 +111,8 @@ async function shot(page, name) {
 /* ------------------------------------------------------------- in-page */
 
 const probe = () => {
-  const C = window.__CTX__, g = C?.systemsGame, s = C?.spine, p = C?.player;
+  // (M2 wave 4) the first-hour runner reads its own quest's stage through this probe: window.__probeQuest names it
+  const C = window.__CTX__, g = C?.systemsGame, s = window.__probeQuest ? C?.quests?.[window.__probeQuest] : C?.spine, p = C?.player;
   const cur = s?.current?.();
   const a = cur?.anchor ? g?.A?.[cur.anchor] : null;
   const busy = !!g?.present?.busy;
@@ -141,6 +142,7 @@ const targetsOf = (kind, part) => {
     if (part === 'lamp') o = m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj;
     else if (part === 'vial') o = m._vialWp?.obj ?? m.weakPoints?.find((w) => w.name === 'vial')?.obj;
     else if (part === 'bob') o = m._bob?.attached !== false ? m._bob?.mesh : null;
+    else if (/^seal/.test(part)) o = m.weakPoints?.find((w) => w.name === part && w.enabled !== false)?.obj ?? null;   // (M2 wave 4) the Screed's ram seals
     if (o) o.getWorldPosition(v); else v.set(m.position.x, m.position.y + 0.9, m.position.z);
     // the arrow falls (combat/arrows.js: g 9.8, the Reed arrow 62 m/s at full draw): hold over by that fall. Without
     // it, 30 shots at 29 m with the look within 0.35 deg of the lamp all passed under it (f90d2b0)
@@ -219,7 +221,7 @@ async function solveShot(mi, part, tolDeg) {
   dts.sort((a, b) => a - b);
   const dt = dts.length ? dts[dts.length >> 1] : 1 / 60;
   const lat = 2 * (span > 0 ? span / 8 : 1 / 60);
-  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : part === 'lamp' ? 'weak:lamp' : part === 'alert' ? 'any' : null;
+  const want = part === 'vial' ? 'weak:vial' : part === 'bob' ? 'bob' : part === 'lamp' ? 'weak:lamp' : part === 'alert' ? 'any' : /^seal/.test(part) ? `weak:${part}` : null;
   const aims = [];
   if (part === 'vial' && m._vialWp?.obj) {
     const w = m._vialWp, c = w.obj.getWorldPosition(new V());
@@ -275,7 +277,8 @@ async function solveShot(mi, part, tolDeg) {
     for (const q of ok.slice(0, 3)) aims.push(q);
     for (const up of [0, 0.07]) aims.push(c.clone().setY(c.y + up));
   } else {
-    const o = part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null) : null;
+    const o = part === 'lamp' ? (m._lampWp?.obj ?? m.weakPoints?.find((w) => w.name === 'lamp')?.obj) : part === 'bob' ? (m._bob?.attached !== false ? m._bob?.mesh : null)
+      : /^seal/.test(part) ? (m.weakPoints?.find((w) => w.name === part)?.obj ?? null) : null;
     aims.push(o ? o.getWorldPosition(new V()) : new V(m.position.x, m.position.y + 0.9, m.position.z));
   }
   const sp = new V(), dir = new V();
@@ -1090,7 +1093,12 @@ async function reloadContinue(page, tag) {
 
 /* ---------------------------------------------------------------- main */
 
-try {
+// (M2 wave 4) importable: tools/gates/systems/first-hour.mjs drives the hour's fights with this file's own drivers (the
+// topple, the shot solve); the run below starts only when this file is the one node was asked to run
+const IS_MAIN = !!process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+export { probe, targetsOf, aimPoint, solveShot, scanStands, waitStill, walkTo, walkPath, playScene, holdE, drink, fight, readyBow, keys, kiteFrom, face };
+
+if (IS_MAIN) try {
   mkdirSync(runDir, { recursive: true });
   if (await portOpen(PORT)) throw new Error(`port ${PORT} already in use`);
   const slot = await takeMachineSlot({ who: `systems slice-hour ${PORT}`, waitS: 1800, log });
@@ -1507,6 +1515,8 @@ try {
 
   // save-continue row: what the store holds, then QUIT (the document is unloaded), the same tab opened again on the
   // game, CONTINUE on the title: the same stage, satchel, place and hour
+  // (M2 wave 4) the record the run leaves, whole: the first-hour run's leg 2 starts from it with --chain
+  report.finalRecord = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); return n ? S.latest(n) : null; }).catch(() => null);
   report.rows['save-continue'] = await reloadContinue(page, 'c');
   await bctx.close();
 } catch (e) {

@@ -13,7 +13,11 @@
  * banked, three bearing pips (T1 and T2 taken, the Ring to come), and the three Pegs that come to look placed where a
  * lured Peg is at 10 s (about 7.9 m along from its station 27 m out). The planted Windwall is area D's verb (wave 3):
  * planted when `combat.windwall.plant` exists, else named a stand-in. Wall clock: film with --repeat 2.
- * F46 needs the TRADE screen (wave 4): not staged.
+ * F46 (wave 4): THE TRADE SCREEN at the Ninewalls tube-mouth counter, 12:30 in trade weather: Brea at the counter's
+ * front (settlements' PLACES.counter, 1.3 m out toward the street), the counter opened as "The Scar"'s reward opens it
+ * (`systemsGame.hour.counter.open()`), salt x60 (the Scar's pay) and one Plumb bob in her satchel so both columns hold
+ * something, and the screen opened (`counter.openScreen()`): BIBLE 18's words, the grades as 3 px rules, the world
+ * frosted behind the glass. A UI slate: wall clock, film with --repeat 2.
  */
 export const lane = 'systems';
 
@@ -27,9 +31,17 @@ export const frames = [
     ref: { written: 'the Alidade up in front of her face, the planted Windwall between her and one approaching Instrument, three bearing pips, the 15 s arc; the Scar running to the horizon' },
     note: 'wave 3: the re-survey staged at 10 s of the hold (the arc, the pips, the Pegs coming to look); the Windwall is a stand-in until area D plants it (see run.json standIns)',
   },
+  {
+    id: 'F46', subject: 'the TRADE screen at the Ninewalls counter', in: 'M2', hour: 12.5, weather: 'trade',
+    at: { en: [1.8, -204.7] }, bearing: 57,
+    camera: { mode: 'orbit', yawRel: 165, dist: 3.4, height: 1.9, target: { fwd: 3, side: 0, up: 1.1 }, fov: 50, lookAt: 'off' },
+    state: { pose: 'idle', hud: false },
+    ref: { written: "BIBLE 18's words exactly (TRADE · GIVE · TAKE), prices in salt, the three trade grades as a 3 px rule; glass" },
+    note: 'wave 4: the counter opened and its screen up (src/ui/trade.js); run.json holds the words on the screen',
+  },
 ];
 
-export const STAGED = { F44: 'wall' };
+export const STAGED = { F44: 'wall', F46: 'wall' };
 
 /** @type {Record<string, { world?: Function, beforeFreeze?: Function }>} in-page hooks per frame id */
 export const stagings = {
@@ -74,6 +86,26 @@ export const stagings = {
     async beforeFreeze(f, api) {
       const p = api.C.player;
       api.standIn(`before the freeze: her fade ${p?.fade}, solidCut ${p?.solidCut?.toFixed?.(2)}, lensGap ${p?.lensGap?.toFixed?.(2)}, solidReach ${p?.solidReach?.toFixed?.(2)}`);
+    },
+  },
+  F46: {
+    async world(f, api) {
+      const C = api.C, H = C.systemsGame?.hour, K = H?.counter;
+      if (!K?.openScreen) { api.standIn('no Ninewalls counter in this build (src/game/trade/counter.js)'); return; }
+      const inv = C.inventory;
+      const salt0 = inv?.count?.('metal-shards') ?? 0, bob0 = inv?.count?.('machine-core') ?? 0;
+      if (inv?.add) { inv.add('metal-shards', Math.max(0, 60 - salt0)); if (bob0 < 1) inv.add('machine-core', 1); }
+      api.undo(() => { try { if (inv?.take) { inv.take('metal-shards', Math.max(0, (inv.count('metal-shards') ?? 0) - salt0)); if (bob0 < 1 && inv.count('machine-core') > 0) inv.take('machine-core', 1); } } catch { /* */ } });
+      const was = K.opened;
+      K.opened = false; K.open();
+      api.undo(() => { K.opened = was; K._sync?.(); });
+      K.openScreen();
+      await api.sleep(400);
+      api.undo(() => { C.tradeOpen?.close?.(); });
+      const ui = await import('/src/ui/trade.js');
+      const w = ui.tradeWords?.();
+      window.__f46 = w;
+      api.standIn(`the TRADE screen: words ${JSON.stringify(w?.words ?? null)}, ${w?.rows ?? 0} rows, grades ${JSON.stringify([...new Set(w?.grades ?? [])])}`);
     },
   },
 };
