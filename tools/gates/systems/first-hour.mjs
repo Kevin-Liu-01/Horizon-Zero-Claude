@@ -281,6 +281,8 @@ async function runLeg(leg) {
   let vite = null, browser = null, profile = null, slotTaken = false;
   const t0 = Date.now();
   try {
+    // the leg before's Vite (its own, or slice-hour's) takes a few seconds to let the port go after its SIGTERM
+    for (let i = 0; i < 60 && (await portOpen(PORT)); i++) await sleep(500);
     if (await portOpen(PORT)) throw new Error(`port ${PORT} already in use`);
     const slot = await takeMachineSlot({ who: `systems first-hour leg ${leg} ${PORT}`, waitS: 1800, log });
     if (!slot.ok) throw new Error(slot.why);
