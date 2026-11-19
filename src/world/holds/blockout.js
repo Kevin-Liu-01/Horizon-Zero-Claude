@@ -23,7 +23,7 @@
  * after its macro grids exist, on every thread), so no pass of the macro sees the Scar and nothing outside its band
  * moves: the sites keep their anchors and the sight rays their notches.
  */
-import { SCAR } from '../island/sites.js';
+import { SCAR, TRIG } from '../island/sites.js';
 import { ISLAND_SCALE as S } from '../island/extent.js';
 
 const ss = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
@@ -61,16 +61,39 @@ export function scarPoint(u, v) {
   return { e: A.e + DE * u + PE * v, n: A.n + DN * u + PN * v };
 }
 
+/**
+ * Benchmark 1 (bible §3.4: E 12, N -282, on the Scar's line) and the breaches in the spoil where its re-survey's
+ * bearings cross a berm: a berm across a bearing hides the mark it points at (the Rise's ground already grazes the
+ * line to T2's top: 0.22 m under it before the Scar, so a 1 m berm there hides T2 from B1's Alidade). Past the
+ * breach a sight notch keeps the bearing open over the Rise's ground, as the recipe's own pass keeps the ten trig
+ * rays open (a low-passed cut, SIGHT_NOTCH.margin under the line from the Alidade to the mark's top). Each breach: the berm's side, the metres along
+ * the bearing's run across the band in the Scar's (u, v) frame, its half-width (full) and its ease (m).
+ */
+export const B1 = Object.freeze({ e: 12, n: -282 });
+/** B1's Alidade over the ground (systems' HR0 eye), and the clearance the notch keeps under a bearing to a mark's top. */
+export const B1_EYE = 1.55;
+export const SIGHT_NOTCH = Object.freeze({ margin: 0.5, half: 1.5, ease: 3.5, from: 3 });
+export const BREACHES = Object.freeze(['T2'].map((id) => {
+  const t = TRIG.find((q) => q.id === id), f0 = scarFrame(B1.e, B1.n), f1 = scarFrame(t.e, t.n);
+  // the bearing as a segment in the Scar's (u, v) frame, from B1 to where it leaves the Scar's band
+  const side = Math.sign(f1.v - f0.v), vOut = side * (SCAR_LINE.half + SCAR_LINE.BERM_IN + SCAR_LINE.BERM_OUT + SCAR_LINE.APRON + 2);
+  const k = (vOut - f0.v) / (f1.v - f0.v);
+  return Object.freeze({ to: id, side, u0: f0.u, v0: f0.v, u1: f0.u + (f1.u - f0.u) * k, v1: vOut, half: 1.5, ease: 3 });
+}));
+
+
 /* ------------------------------------------------------------ other pieces ---- */
-/** The Plumb's bench above Ninewalls: centre, the level disc's radius and its ease-out (authored frame). */
-export const PLUMB_TERRACE = Object.freeze({ e: -46, n: -138, r0: 4, r1: 8.5, lamp: 3.4 });
+/** The Plumb's bench above Ninewalls: centre, the level disc's radius and its ease-out (authored frame), and its lamp
+ * over its feet (plumb.js eyeHeight). 122 m NNW of Ninewalls' centre and 12 m above it, on the open face of the slope:
+ * a lamp 2.5 m up cannot see past a brow below it, so the bench stands below the brow, not on it (HG0). */
+export const PLUMB_TERRACE = Object.freeze({ e: -70, n: -107, r0: 2.5, r1: 5, lamp: 2.5 });
 
-/** The herd's slope: from its foot (south-west, the side Brea comes up from Saltrow) to below the terrace, outside the
- * nine walls' north-west end (settlements' ninewalls-layout.js: OUTER_R 67.65, arcs from bearing 305). */
-export const HERD_SLOPE = Object.freeze([Object.freeze({ e: -130, n: -215 }), Object.freeze({ e: -60, n: -150 })]);
+/** The herd's slope: from its foot (south-west, the side Brea comes up from Saltrow) to 39 m below the bench, outside
+ * the nine walls' north-west end (settlements' ninewalls-layout.js: OUTER_R 67.65, arcs from bearing 305). */
+export const HERD_SLOPE = Object.freeze([Object.freeze({ e: -140, n: -205 }), Object.freeze({ e: -65, n: -145 })]);
 
-/** The barranco north-west of the herd's slope, from its head below the terrace down to the Pans' edge: a polyline
- * downhill, its depth and half-width (m); about 33 m from the herd's line, so the two roads are two. */
+/** The barranco north-west of the herd's slope, from its head 18 m below the bench down to the Pans' edge: a polyline
+ * downhill, its depth and half-width (m); 18-21 m from the herd's line, so the two roads are two. */
 export const BARRANCO = Object.freeze({
   path: Object.freeze([[-58, -120], [-80, -133], [-100, -150], [-118, -161], [-138, -176]].map(([e, n]) => Object.freeze({ e, n }))),
   depth: 2.4, half: 3.0, bank: 7.0,
@@ -84,6 +107,7 @@ export const FOOTPRINT = (() => {
   for (const u of [-SCAR_LINE.END, LEN + SCAR_LINE.END]) for (const v of [-reach, reach]) { const p = scarPoint(u, v); grow(p.e, p.n, 0); }
   grow(PLUMB_TERRACE.e, PLUMB_TERRACE.n, PLUMB_TERRACE.r1);
   for (const p of BARRANCO.path) grow(p.e, p.n, BARRANCO.half + BARRANCO.bank + 1);
+  for (const br of BREACHES) { const t = TRIG.find((q) => q.id === br.to); grow(B1.e, B1.n, 8); grow(t.e, t.n, 8); }
   return Object.freeze({ e0, e1, n0, n1 });
 })();
 
@@ -91,7 +115,7 @@ export const FOOTPRINT = (() => {
 const STEP = 2;                       // m between profile stations
 const U0 = -SCAR_LINE.END - 2 * STEP; // the first station
 const NST = Math.ceil((LEN + 2 * SCAR_LINE.END + 4 * STEP) / STEP) + 1;
-const P = { ready: false, c: new Float64Array(NST), s: new Float64Array(NST), terrace: 0, barr: null };
+const P = { ready: false, c: new Float64Array(NST), s: new Float64Array(NST), terrace: 0, barr: null, notch: [] };
 
 const _barSeg = [];
 for (let i = 0; i + 1 < BARRANCO.path.length; i++) {
@@ -139,6 +163,11 @@ export function buildHoldsProfile(natural) {
     }
     P.c[k] = c / wc - SCAR_LINE.FLOOR_CUT; P.s[k] = sl / wc;
   }
+  // B1's bearings: the line from the Alidade (on the Scar's floor at B1) to each mark's top (its natural ground + 4 m)
+  P.notch = BREACHES.map((br) => {
+    const t = TRIG.find((q) => q.id === br.to), f0 = scarFrame(B1.e, B1.n);
+    return { ae: B1.e, an: B1.n, ay: null, be: t.e, bn: t.n, by: natural(t.e, t.n) + 4, f0 };
+  });
   // the bench stands at the natural ground of its centre: on the slope's brow, so a lamp on it sees down the slope
   // (cut deeper, the brow hides the slope; filled, its own lip does)
   P.terrace = natural(PLUMB_TERRACE.e, PLUMB_TERRACE.n);
@@ -154,6 +183,7 @@ export function buildHoldsProfile(natural) {
     P.barr[k] = lo - BARRANCO.depth;
   }
   P.ready = true;
+  for (const q of P.notch) q.ay = scarFloor(q.f0.u, q.f0.v) + B1_EYE;
   return P;
 }
 
@@ -200,6 +230,14 @@ export function holdsHeight(e, n, h) {
       const hb = Q.BERM_H * (1 + Q.BERM_VAR * (vn(u / 23 + side) * 2 - 1));
       target += hb * (av < vc ? ss(v0, vc, av) : 1 - ss(vc, v1, av));
       if (av > v1) target += (h - target) * ss(v1, v2, av);
+      // a breach: no berm, and the floor's plane handed straight back to the ground at the edge
+      for (let i = 0; i < BREACHES.length; i++) {
+        const br = BREACHES[i];
+        if (Math.sign(v) !== br.side) continue;
+        const du = br.u1 - br.u0, dv = br.v1 - br.v0, tt = Math.min(1, Math.max(0, ((u - br.u0) * du + (v - br.v0) * dv) / (du * du + dv * dv)));
+        const k = 1 - ss(br.half, br.half + br.ease, Math.hypot(u - br.u0 - du * tt, v - br.v0 - dv * tt));
+        if (k > 0) target += (plane + (h - plane) * ss(v0, vc + 1, av) - target) * k;
+      }
     }
     out += (target - out) * wA;
   }
@@ -215,6 +253,16 @@ export function holdsHeight(e, n, h) {
     const wE = ss(0, 8, bq.along) * ss(0, 8, BAR_LEN - bq.along) * 0.85 + 0.15;   // shallow at the head and the mouth
     const bedH = out + (bed - out) * wE;
     if (bedH < out) out += (bedH - out) * (1 - ss(BARRANCO.half, bw, bq.d));
+  }
+  /* B1's sight notches */
+  for (let i = 0; i < P.notch.length; i++) {
+    const q = P.notch[i], dx = q.be - q.ae, dz = q.bn - q.an, L2 = dx * dx + dz * dz, L = Math.sqrt(L2);
+    const t = ((e - q.ae) * dx + (n - q.an) * dz) / L2, d = t * L;
+    if (d < SIGHT_NOTCH.from || d > L - 4) continue;
+    const off = Math.abs((e - q.ae) * dz - (n - q.an) * dx) / L;
+    if (off > SIGHT_NOTCH.half + SIGHT_NOTCH.ease) continue;
+    const cap = q.ay + (q.by - q.ay) * t - SIGHT_NOTCH.margin;
+    if (out > cap) out += (cap - out) * (1 - ss(SIGHT_NOTCH.half, SIGHT_NOTCH.half + SIGHT_NOTCH.ease, off)) * ss(SIGHT_NOTCH.from, SIGHT_NOTCH.from + 4, d);
   }
   return out;
 }

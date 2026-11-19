@@ -19,7 +19,7 @@ import { ensureMacro, heightAt, biomesAt, BIOMES } from '../../src/world/island/
 import { SITES, TRIG, REST, siteById } from '../../src/world/island/sites.js';
 import { GRID } from '../../src/world/island/bake.js';
 import { BENCHMARKS } from '../../src/world/sites/layout.js';
-import { SCAR_LINE, PLUMB_TERRACE, HERD_SLOPE, BARRANCO, FOOTPRINT, scarFrame, scarPoint, scarFloor } from '../../src/world/holds/blockout.js';
+import { SCAR_LINE, PLUMB_TERRACE, HERD_SLOPE, BARRANCO, FOOTPRINT, BREACHES, scarFrame, scarPoint, scarFloor } from '../../src/world/holds/blockout.js';
 
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -274,12 +274,26 @@ function section(u, hf) {
   const L = Ls.edge, R = Rs.edge;
   return { L, R, width: L != null && R != null ? R - L : null, centre: L != null && R != null ? (L + R) / 2 : null, bermL: Ls.height, bermR: Rs.height, backL: Ls.back, backR: Rs.back };
 }
+/** A station inside a declared breach (B1's bearings cut through a berm) is moved along the Scar until both berms
+ * stand at it: a breach is the design, and the row names where each one is. */
+function inBreach(u) {
+  const crest = SCAR_LINE.half + SCAR_LINE.BERM_IN;
+  for (const br of BREACHES) {
+    const du = br.u1 - br.u0, dv = br.v1 - br.v0, v = br.side * crest;
+    const t = Math.min(1, Math.max(0, ((u - br.u0) * du + (v - br.v0) * dv) / (du * du + dv * dv)));
+    if (Math.hypot(u - br.u0 - du * t, v - br.v0 - dv * t) < br.half + br.ease + 1) return br;
+  }
+  return null;
+}
 function scarRows(label, hf) {
-  const st = [];
+  const st = [], moved = [];
   for (let i = 0; i < 10; i++) {
-    const u = SCAR_LINE.len * (i + 0.5) / 10;
+    let u = SCAR_LINE.len * (i + 0.5) / 10;
+    const u0 = u, br = inBreach(u);
+    if (br) { while (inBreach(u) && u < u0 + 40) u += 0.5; moved.push(`${r1(u0)} -> ${r1(u)} (the breach on B1's bearing to ${br.to})`); }
     st.push({ u: r1(u), ...section(u, hf) });
   }
+  if (moved.length) say(`  [${label}] stations moved out of a breach: ${moved.join('; ')}`);
   // the centreline's straightness: the stations' centres against their own best straight line (in the Scar frame)
   const cs = st.filter((s) => s.centre != null);
   let su = 0, sc = 0, suu = 0, suc = 0;
