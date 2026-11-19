@@ -98,28 +98,28 @@
    "note": "r2 closer/same/same/same; exit closer/closer/same/closer; originality pass both; written target: none (crop comparison only)"
   },
   "F14": {
-   "date": "2026-11-15",
-   "commit": "fb6d5f0",
-   "run": "20261115T093344Z-fb6d5f0-m1a-r3-exit",
+   "date": "2026-11-19",
+   "commit": "a0b2aa7",
+   "run": "20261119T100205Z-a0b2aa7-engine-d10-reanchor-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "r2 closer/closer/same/closer; exit closer/closer/same/closer; originality pass both; bar (idle hands, pose hash) not failing: A11-idle-alive and V2-idle-frame PASS at fb6d5f0, no failing pose-hash reading on record"
+   "note": "RE-ANCHORED (M2 wave 0 D10 (the town ruling, M1b wave 2; M2 brief rule 2: a re-anchored frame is staged on simulation time). F14 is now staged on simulation time (tools/frames/page.mjs SIM_IDLE, e42cf7f: the slate, 1.5 s of idle from the constructor clocks, 91 sim frames), filmed at a0b2aa7 from a clean detached worktree, 3x in one session (repeats 1v2 0.001 %, 1v3 0.002 % of pixels over 10; her box 0.003 % and 0.005 %). Against the fb6d5f0 anchor: the same lens place, her mark, bearing and hour; the same idle (arms down beside the body, the left hand by the lance's butt, the bow and lance on her back, head turned to the lens); she stands about 5 % larger because the anchor's fov had wandered to 42.1 (combat's hip-FOV ease, fixed since: the frame's fov 40 is held); the grid cloth (on since 4d11034) hangs the wrap's tail down her back where the anchor's streamed out in a gust (the sim staging starts the gusts at 0); the clouds differ (drift starts at 0). No town in this frame. Whole frame 65 % of pixels over 10 against the anchor (fov, clouds, cloth), so the anchor is moved, not kept); the picture is repeat 2 (F14-r2.png) of run 20261119T100205Z-a0b2aa7-engine-d10-reanchor-partial-x3 at a0b2aa7; the anchor at fb6d5f0 is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/closer/same/closer; exit closer/closer/same/closer; originality pass both; bar (idle hands, pose hash) not failing: A11-idle-alive and V2-idle-frame PASS at fb6d5f0, no failing pose-hash reading on record"
   },
   "F15": {
-   "date": "2026-11-15",
-   "commit": "fb6d5f0",
-   "run": "20261115T154520Z-fb6d5f0-anchor-restage-fb6d5f0-partial-x3",
+   "date": "2026-11-19",
+   "commit": "a0b2aa7",
+   "run": "20261119T100205Z-a0b2aa7-engine-d10-reanchor-partial-x3",
    "provisional": true,
    "rule": "PROCESS §4 two-page rule",
    "pages": [
     "20261115T060956Z-dee526d-m1a-r2-review",
     "20261115T093344Z-fb6d5f0-m1a-r3-exit"
    ],
-   "note": "RE-FILMED (M1a regfix 3, the orchestrator ruling after regressions run 2): the anchor is fb6d5f0 staged on simulation time at gait phase 0.0271 (194 frames: slate, 1.5 s idle, sprint; tools/frames/page.mjs 7a, copied into a detached fb6d5f0 worktree, never committed there); the second staging of that session, which matched the third on all but 0.191 % of pixels (the first: 0.62 %). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/same/closer; exit closer/closer/same/closer; originality pass both; bar (wrists beside the body, forearms clear the case) not failing: A-sweep-run PASS (6448b3d), no failing reading since"
+   "note": "RE-ANCHORED (M2 wave 0 D10 (the town ruling, M1b wave 2: Saltrow stands where the bible puts it; the animation-bar frames are judged on Brea). Filmed on simulation time at a0b2aa7 from a clean detached worktree, 3x in one session (194 sim frames each, gait phase 0.0271 as the fb6d5f0 anchor; repeats 1v2 0.135 %, 1v3 0.13 % of pixels over 10, her box 0.80 % and 0.76 %). Against the fb6d5f0 anchor: the same lens (place and fov 45), the same stride frozen at the same phase (left ball forward, fists beside the body, forearms clear of the case); the town now stands behind her where the anchor showed the meadow and salt cones (the ruling), and the grid cloth (since 4d11034) hangs the sash panels closer to the belt where the anchor's rear panel trailed back to her knee; whole frame 51 % of pixels over 10 (the town, the clouds, the cloth)); the picture is repeat 2 (F15-r2.png) of run 20261119T100205Z-a0b2aa7-engine-d10-reanchor-partial-x3 at a0b2aa7; the anchor at fb6d5f0 is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: RE-FILMED (M1a regfix 3, the orchestrator ruling after regressions run 2): the anchor is fb6d5f0 staged on simulation time at gait phase 0.0271 (194 frames: slate, 1.5 s idle, sprint; tools/frames/page.mjs 7a, copied into a detached fb6d5f0 worktree, never committed there); the second staging of that session, which matched the third on all but 0.191 % of pixels (the first: 0.62 %). The wall-clock anchor is in accepted/withdrawn/. Provisional status and pages unchanged. Earlier: r2 closer/same/same/closer; exit closer/closer/same/closer; originality pass both; bar (wrists beside the body, forearms clear the case) not failing: A-sweep-run PASS (6448b3d), no failing reading since"
   },
   "F16": {
    "date": "2026-11-15",
