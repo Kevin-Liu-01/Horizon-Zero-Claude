@@ -996,12 +996,16 @@ export class BreaCloth {
       //  centimetres off its cell's particles), as a bit mask over the piece's list; a vertex none of whose free corners
       //  has one is not skinned. At a sprint the fronts ride the thighs every frame: 190 us a frame without it)
       const dm = P.vdm || (P.vdm = new Int32Array(N)), act = P.vact || (P.vact = new Int32Array(V.n));
-      const ro = P.ro; ro.fill(0);
+      // (the offsets the bones still carry from the last frame's pass: a round's rewrite moves those bones too)
+      const stale = P.vstale || (P.vstale = new Uint8Array(N));
+      const ro = P.ro;
+      for (let i = 0; i < N; i++) stale[i] = ro[i * 3] !== 0 || ro[i * 3 + 1] !== 0 || ro[i * 3 + 2] !== 0 ? 1 : 0;
+      ro.fill(0);
       // (M2 wave 0, cost: the same answer for less. A round re-tests only what the last round moved: a vertex is skinned
       //  from its corners' bones, whose turn reads the particles (which this pass never moves) and whose place reads the
       //  particle plus its drawing offset, so a vertex none of whose corners moved stands where it stood and pushes as it
       //  did, i.e. not at all. `chg` marks the particles whose offset moved in the last round (all of them before the
-      //  first); the colliders are culled to the scanned particles' bounding sphere first (the axis's box half-diagonal,
+      //  first; after it, those too whose bones still carried last frame's offset, which the first rewrite clears); the colliders are culled to the scanned particles' bounding sphere first (the axis's box half-diagonal,
       //  the larger inner radius and the reach: never one that could hold a particle). Node: the bench's rows and the
       //  sweep's clip counts unchanged, the digests bit-identical)
       const chg = P.vchg || (P.vchg = new Uint8Array(N)), el = P.vel || (P.vel = new Int32Array(C.length));
@@ -1062,7 +1066,7 @@ export class BreaCloth {
       const nchg = P.vnchg || (P.vnchg = new Uint8Array(N));
       for (let it = 0; it < VPASS.iters && na > 0; it++) {
         let nn = 0, movedAny = false;
-        nchg.fill(0);
+        if (it === 0) nchg.set(stale); else nchg.fill(0);
         for (let q = 0; q < na; q++) {
           const j = act[q];
           let m = 0;
