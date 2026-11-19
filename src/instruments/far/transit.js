@@ -9,9 +9,10 @@ import { TRANSIT_CARD } from '../../game/quest/scar-plan.js';
  * three pale 20 m graduated staff legs, the tripod head with three Plumbs hung under it, the drum with its ring of five
  * lamps, the 9 m telescope, the caged level vial, four pennants; 22.0 m, 11.7 k triangles, one material, nothing
  * emissive), NO BEHAVIOUR (it is scenery: not a machine, no perception, no collider, no climb volume, no shadow), the
- * scene's fog (the calima) over it. It stands on the Malpais shelf at STATION, about 40 m above the beat's anchor and 86 m
- * from it on a bearing of 36 deg (21 deg left of the Kiln Yards' stacks), broadside to her: its feet are under the
- * shelf's lip from there, its legs and drum stand clear.
+ * scene's fog (the calima) over it. It stands on the Malpais shelf at STATION, about 45 m above the beat's anchor and 86 m
+ * from it on a bearing of 26 deg, broadside to her, its legs and drum clear against the dust. (M2 fix wave, area E, the
+ * smallest change: it stood at 36 deg, where its legs (+-5 deg at 86 m) met the near cooling-tower stub of the Kiln Yards
+ * (42-54 deg from the anchor) and it read as part of the ruin in F45-transit at fa45e47; at 26 deg it stands 11 deg clear.)
  *
  * NEVER AGAINST A LOW SUN, NEVER OUTSIDE THE BEAT'S WINDOW (bible 7.4 #12, BUILD M2.9 "the beat is locked to 12:00 ±
  * 0:30", EN4). It is drawn only while BOTH hold: the hour is inside WINDOW and the sun stands at least SUN_MIN_DEG up
@@ -30,7 +31,7 @@ import { TRANSIT_CARD } from '../../game/quest/scar-plan.js';
  */
 export const URL = '/models/instruments/transit-far.glb';
 /** Where it stands (engine x, z) and the beat's anchor it is set broadside to (hour.js `_malpaisEdge`, 22 m inside). */
-export const STATION = Object.freeze({ x: 183.7, z: 13.6, view: Object.freeze({ x: 133.2, z: 83.2 }) });
+export const STATION = Object.freeze({ x: 170.9, z: 5.9, view: Object.freeze({ x: 133.2, z: 83.2 }) });
 /** BUILD M2.9: the beat is locked to 12:00 ± 0:30 (hour.js CALIMA_WINDOW is the same). */
 export const WINDOW = Object.freeze([11.5, 12.5]);
 /**
