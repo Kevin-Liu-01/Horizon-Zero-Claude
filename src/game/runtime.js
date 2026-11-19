@@ -7,6 +7,7 @@ import { Braziers } from './brazier/braziers.js';
 import { installReeds } from './reeds/index.js';
 import { SiteClock } from './sites/clock.js';
 import { SiteRefill, HourMeter } from './sites/refill.js';
+import { saveFieldsOf } from './save/fields.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
 import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
@@ -25,6 +26,8 @@ export const RUNG_ARMOR = Object.freeze({ starter: 'pan-1', scout: 'pan-2' });
  *   ctx.siteClock      the site clock (src/game/sites/clock.js, M1.6n): hours played plus slept, the cleared sites
  *   ctx.siteRefill     its live half (src/game/sites/refill.js): every MachineSite returns on the clock, not on a timer
  *   ctx.systemsGame    this runtime: anchors, rung, report(), newGame(), restoreQuest()
+ *   ctx.regions        Milestone 2: the regions seam's live half ({ map, tracker, loader }, engine.attachRegions)
+ *   ctx.saveFields     Milestone 2: the save seam (src/game/save/fields.js), each area's { get, set } pair
  * and adds itself as a system (update at the sim rate; the presenter's subtitles at real time).
  *
  * STUBS FOR WHAT LATER ITEMS OWN, named so they are easy to retire:
@@ -524,6 +527,8 @@ export class SystemsGame {
     // the site clock: the hour's forward steps are hours played (a rest counts its hours slept when it begins)
     this.hours.read(this.ctx.environment?.time);
     if (this.ctx.state === 'playing') this.siteRefill.update(dt);
+    // the regions seam: her position each step while playing (a teleport across a border fires its crossing once)
+    if (this.ctx.state === 'playing' && this.ctx.player) this.ctx.engine?.regionTick?.(this.ctx.player.position.x, this.ctx.player.position.z);
     const now = performance.now();
     const real = this._lastReal ? Math.min(0.1, (now - this._lastReal) / 1000) : 0;
     this._lastReal = now;
@@ -544,6 +549,9 @@ export class SystemsGame {
 
 export function installGame(ctx) {
   installReeds(ctx);   // M1.6e: reed cover, the gust clock, the rule (src/game/reeds); ctx.terrain.cutCover
+  // Milestone 2: the regions (engine's seam, src/core/regions.js) built behind the loading sheet; ticked in update()
+  ctx.regions = ctx.engine?.attachRegions?.({ assets: ctx.assets, events: ctx.events }) ?? null;
+  saveFieldsOf(ctx);   // the save seam (src/game/save/fields.js): areas register their { get, set } pairs on it
   const sys = new SystemsGame(ctx);
   ctx.game?.systems?.push?.(sys);
   return sys;

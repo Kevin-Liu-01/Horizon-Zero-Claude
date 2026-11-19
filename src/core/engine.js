@@ -14,6 +14,7 @@ import { CSMFrustum } from 'three/examples/jsm/csm/CSMFrustum.js';
 import { Look, SH_A, SH_K, SH_XMAX, AGX_MIN_EV, AGX_MAX_EV, setsForHour as setsForHourInto } from './look.js';
 import LOOK_GRADE from './look.grade.json';
 import { configureKTX2 } from './ktx2.js';
+import { RegionMap, RegionTracker, RegionLoader } from './regions.js';
 
 /**
  * M0.7 (three r169 -> r187): the soft-shadow type. three r182 rewrote shadows on native depth textures with hardware
@@ -2321,6 +2322,46 @@ export class Engine {
     const had = this._csmMaterials.delete(material);
     try { this.csm?.shaders?.delete?.(material); } catch (err) { /* CSM internals moved */ }
     return had;
+  }
+
+  // -------------------------------------------------------------- regions
+
+  /**
+   * Milestone 2 (the regions seam, src/core/regions.js): its live half. `attachRegions` builds the region map behind
+   * the loading sheet (the 4 m label grid and each region's signed distance, about 25 ms on top of the island macro
+   * the terrain has already built) and returns `{ map, tracker, loader }`; `regionTick(x, z)` feeds Brea's position
+   * each simulation step (the systems runtime, src/game/runtime.js). A crossing is emitted on `events` as
+   * `region-enter` / `region-leave` (and `region-approach` / `region-depart`), once each, with the seam's 20 m of
+   * hysteresis. A region's deferred rows are fetched through `assets.loadExtra` when it is approached and a failure is
+   * retried on the loader's backoff: never awaited by the frame, never a boot row (the first load carries no Holds
+   * file, EN2). `regionStatus()` is what the rows read.
+   */
+  attachRegions({ assets = null, events = null } = {}) {
+    if (this.regions) return this.regions;
+    const t0 = performance.now();
+    const map = new RegionMap().build();
+    const tracker = new RegionTracker(map);
+    const loader = new RegionLoader(tracker, {
+      load: (region, rows) => (assets?.loadExtra ? assets.loadExtra(rows) : Promise.resolve()),
+    });
+    for (const type of ['enter', 'leave', 'approach', 'depart']) {
+      tracker.on(type, (e) => { try { events?.emit?.(`region-${type}`, e); } catch (err) { console.warn('[CAL] regions: a listener threw:', err?.message || err); } });
+    }
+    this.regions = { map, tracker, loader, buildMs: Math.round(performance.now() - t0) };
+    return this.regions;
+  }
+
+  regionTick(x, z) {
+    const R = this.regions;
+    if (!R || !Number.isFinite(x) || !Number.isFinite(z)) return;
+    R.tracker.update(x, z);
+    R.loader.tick();
+  }
+
+  regionStatus() {
+    const R = this.regions;
+    if (!R) return null;
+    return { current: R.tracker.current, resident: R.tracker.resident(), loads: R.loader.status(), buildMs: R.buildMs, history: R.tracker.history.slice(-32) };
   }
 
   // -------------------------------------------------------------- warm-up
