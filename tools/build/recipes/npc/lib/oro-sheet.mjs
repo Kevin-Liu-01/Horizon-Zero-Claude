@@ -26,9 +26,9 @@ import {
 } from './paint-kit.mjs';
 
 const C = {
-  shirt: dyeRGB(HOLDS.wool, 0.9), trousers: dyeRGB('#4C4741', 1.0), binding: dyeRGB(HOLDS.rustDeep, 1.05), boot: dyeRGB(HOLDS.leatherDark, 1.3),
+  shirt: dyeRGB(HOLDS.wool, 0.9), trousers: dyeRGB('#383430', 1.0), binding: dyeRGB(HOLDS.rustDeep, 1.05), boot: dyeRGB(HOLDS.leatherDark, 1.3),
   vest: dyeRGB(HOLDS.lapilli, 1.7), apron: dyeRGB(HOLDS.leather, 1.08), apronDark: dyeRGB(HOLDS.leatherDark, 1.0),
-  strap: dyeRGB(HOLDS.leatherDark, 1.15), pocket: dyeRGB('#6A4A33', 1.0), carmine: dyeRGB('#7E2332', 1.0),
+  strap: dyeRGB(HOLDS.leatherDark, 1.15), pocket: dyeRGB('#6A4A33', 1.0), carmine: dyeRGB('#6C1F2B', 1.0),
   carmineDeep: dyeRGB(HOLDS.carmineStain, 1.0), iron: hexRGB('#3A383C'), wood: dyeRGB(HOLDS.wood, 1.0), ash: [136, 132, 124],
   gold: hexRGB('#B8914A'), goldDeep: hexRGB('#8A5D1E'), thread: [164, 146, 112], patch: dyeRGB('#6E675C', 1.0),
   soot: [28, 24, 22], sweat: [120, 104, 80],
@@ -87,7 +87,7 @@ function trousers(t, o) {
     soot(t, o, (tt) => 0.5 * Math.exp(-(((tt.Y - 0.82) / 0.12) ** 2)), { col: [42, 38, 34], k: 0.45, seed: 10 });
     fray(t, o, t.edge(), { reach: 0.007 });
   }
-  dust(t, o, { col: C.ash, from: 0.62, to: 0.1, k: 0.55, seed: 2 });
+  dust(t, o, { col: C.ash, from: 0.45, to: 0.06, k: 0.5, seed: 2 });
 }
 
 function boots(t, o) {
@@ -191,8 +191,8 @@ function belt(t, o) {
 
 function sash(t, o) {
   wool(t, o, C.carmine, { seed: 61, mottle: 0.16, streak: 0.08 });
-  // faded paler where it faces up and the sun takes it, darker in its folds
-  over(o, [190, 120, 120], 0.18 * sstep(0.1, 0.9, t.ny));
+  // faded a little where it faces up and the sun takes it
+  over(o, [150, 92, 88], 0.14 * sstep(0.1, 0.9, t.ny));
   const e = t.edge();
   ticks(t, o, e, { d0: 0.0085, per: 0.0075, long: 5, short: 0.004, longL: 0.007, w: 0.001, col: C.gold });
   fray(t, o, e, { reach: 0.004, pale: [176, 110, 100] });

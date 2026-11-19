@@ -13,7 +13,8 @@
  * Reads window.__CTX__ only; restores the camera it found.
  */
 export async function probe(frame) {
-  if (frame?.id !== 'F37') return { skipped: 'measured on F37 only' };
+  if (frame?.id === 'F36') return street();
+  if (frame?.id !== 'F37') return { skipped: 'measured on F37 and F36 only' };
   const THREE = await import('/tools/look/three.mjs');
   const C = window.__CTX__, E = C.engine, R = E.renderer, cam = C.camera, p = C.player;
   const out = {};
@@ -79,5 +80,31 @@ export async function probe(frame) {
   cam.position.copy(cam0.pos); cam.quaternion.copy(cam0.q); cam.fov = cam0.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
   E.render(0);
   out.heightM = r3(top - foot.y);
+  return out;
+}
+
+/**
+ * F36 (the street at work): the Holds people's own sheets close to: each of the four nearest the lens from 2.2 m in front of
+ * them at their chest height (the game's own render, the lens restored after), with its tier and archetype.
+ */
+async function street() {
+  const THREE = await import('/tools/look/three.mjs');
+  const C = window.__CTX__, E = C.engine, R = E.renderer, cam = C.camera;
+  const cam0 = { pos: cam.position.clone(), q: cam.quaternion.clone(), fov: cam.fov };
+  const P = (C.people?.list || []).filter((q) => q.group?.visible !== false);
+  P.sort((a, b) => a.group.position.distanceTo(cam0.pos) - b.group.position.distanceTo(cam0.pos));
+  const out = { people: [] };
+  try {
+    for (const a of P.slice(0, 4)) {
+      const foot = a.group.position.clone(), fwd = new THREE.Vector3(Math.sin(a.group.rotation.y), 0, Math.cos(a.group.rotation.y));
+      cam.position.copy(foot).addScaledVector(fwd, 2.2).add(new THREE.Vector3(0, 1.2, 0));
+      cam.lookAt(foot.clone().add(new THREE.Vector3(0, 0.9, 0))); cam.fov = 42; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      E.render(0);
+      out.people.push({ id: a.id, archetype: a.archetype, tier: a.tier, distM: Math.round(foot.distanceTo(cam0.pos) * 10) / 10 });
+      (out.closeups ||= {})[a.archetype] = R.domElement.toDataURL('image/jpeg', 0.9);
+    }
+  } catch (e) { out.error = String(e?.message || e).slice(0, 300); }
+  cam.position.copy(cam0.pos); cam.quaternion.copy(cam0.q); cam.fov = cam0.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+  E.render(0);
   return out;
 }
