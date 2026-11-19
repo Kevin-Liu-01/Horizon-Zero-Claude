@@ -418,3 +418,22 @@ I17: the shells.js default colour is fixed (df43631); close it once A-lamp-canon
   still varies 18-78 s run to run. note.
 - **Three gate files do not load in a detached worktree** (they read planning docs that left the tree). note.
 - The F23 (Gauge) and F25 GPU margin is 0.6-0.8 ms under the 14 ms bar on this machine.
+
+## M2 wave 0 additions (Nov 19 2026)
+
+- **major** A45c-foot-continuity: failed in the M2 wave 0 check's session at 72296aa (a Tiller's planted foot 0.0489 m
+  in a 13.8 ms frame: 3.545 m/s, bar 3) and passed twice alone. The row divides one simulation step by wall time;
+  either read the step over simulation time or rule the m/s clause on the median of three runs.
+- **major** W1 (9 clauses) and W2 (6 clauses) of the handling bench still fail at a0b2aa7: 114 failing clauses in 25 of
+  26 cases.
+- **major** Cloth D3 is open: C10, C4, C5 and the landing; A-sweep-climb 1 clipping frame in the page; the restated
+  wind row fails one clause.
+- **major** hit-feel-lance fails 3 of 4 runs at 8c7fb32.
+- **note** A76 stays pending until a kind declares a third weight class (the footfall classes read light and medium).
+- **note** F08 and the other wall-clock idle frames can catch the quiver-strap break; F14 is now on simulation time.
+  Staging F08-F13 the same way would make their check one film.
+- **note** F08: a dark trouser flap shows through the front-right sash panel (present at 701b366 too).
+- **note** A107 at a sprint rose from 0.016 m (7474b9f) to 0.063 m behind the head band at 72296aa (bar 0.10); still a
+  pass, but nearer its bar after wave 0 (not traced to a commit).
+- **note** A3 and A65 pass only on the runner's retry.
+- **note** The opening shot at New Game: a townsperson stands in the camera (since before wave 5).

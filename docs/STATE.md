@@ -1581,3 +1581,114 @@ two slice runs 10.4, the frames 0.7, the F23 repeats 1.4, A9 alone 0.5.
 ---
 
 **Decision (the orchestrator):** the check is CLEAN at 7474b9f; main is fast-forwarded to r5/int. Milestone 1b now waits only on the owner (playing the slice on 5173 and answering the pages) and the look items in the backlog (F31's near stems and hidden water, F25's dyke line).
+
+## Milestone 2 wave 0: the debt before content (Nov 19 2026)
+
+Wave 0 had four lanes in one tree on `r5/int`, each on a debt item of the Milestone 2 briefs. No commit was pushed.
+
+- **Engine (D1, D10).** `tools/perf/attrib.mjs --probe d1` splits the back-to-back frame along what M0.8 left
+  unattributed: draws and triangles per scene child and per cascade, GPU ms of the costliest children, each cascade,
+  the post chain and the 1/64-pixel frame (paired on/off toggles), and the Holds' fight load as stand-in geometry at
+  its caps (`--standins`). The tool takes the Chrome slot itself and waits for a calm machine. `tools/perf/holds-budget.mjs`
+  turns a d1 run into each frame's split and the fight-frame budget. **The ground's shader is the largest single
+  cost**: the terrain alone is about 6 ms of the 12.75-13.45 ms fight frames.
+
+  | frame (commit) | GPU, back-to-back | per-pixel | main-view geometry | shadow maps | floor | post | terrain alone |
+  |---|---|---|---|---|---|---|---|
+  | F25 (001e349) | 12.75 ms | 7.8 | 3.5 | 0.4 | 1.4 | 1.35 | 6.05 ms (24 draws, 95 k tris) |
+  | F23 Gauge (72296aa) | 13.45 ms | 8.3 | 3.7 | 0.0 | 1.3 | 2.15 | 6.25 ms |
+  | F02 (001e349) | 10.2 ms | 5.4 | 3.4 | 0.4 | 1.3 | 1.9 | 1.85 ms |
+  | F32 (001e349) | 9.25 ms | 5.3 | 1.5 | 0.5 | 1.2 | 1.55 | 3.85 ms |
+
+  "Back-to-back" includes 1.4-2.1 ms of CPU submit. At the caps the Holds' fight load measured 1.35 ms (class by
+  class, about ±1 ms on a loaded machine) against 1.6 ms left under 14 ms; the written budget trims it to 1.1 ms to
+  keep 0.5 ms of headroom. Draws, not GPU time, are the tighter limit. F14 (the idle) is now staged on simulation
+  time (`page.mjs` `SIM_IDLE`), and F14 and F15 were re-anchored at a0b2aa7 on simulation time.
+- **Weapons (D2).** The quick draw: RMB with the bow on her back sends the string hand to the quiver at the request
+  while the bow hand takes the bow; aim from stowed is 0.867 s again. The lance's haft fist keeps its full wrap and
+  the guard's elbow bar holds through the first steps of a stow on the move. W6 and W9 pass for both weapons in every
+  bench case. **W1 (9 clauses) and W2 (6 clauses) still fail**; the handling bench is at 114 failing clauses in 25 of
+  26 cases (139 at 1d2de89).
+- **Cloth (D3).** The old sash-panel and wrap-tail chain path is deleted (the grid cloth owns those chains). The quiver
+  collider uses this frame's quiver pose, and the Node sweep's clip frames go from 5 to 0. The drawing pass costs
+  0.064 ms (was 0.108). The wind row (A-sweep-wind) is restated for the grid cloth (`docs/GATES.md` §3 D; every band
+  unchanged). **D3 is not closed**: C10, C4, C5 and the landing still fail; in the page A-sweep-climb has 1 clipping
+  frame and the restated wind row fails one clause.
+- **Instruments (D5, D6).** Every kind declares a size class (Peg and Plumb small, Tiller and Gauge medium), with the
+  per-class caps and the encounter rule in `src/instruments/lib/sizeclass.js`; doctrine spawns and site respawns ask
+  `encounterAllows` first. When the reticle's ray strikes no hull, the aim takes the depth of the machine the arrow
+  would pass (`core/hitHulls.js` `nearPath`): a careful vial shot from 13-20 m now hits 16 of 18 (0 of 12 from 15-20 m
+  before). A hit near the Plumb's bob swings the pendulum away from the blow. **A76 stays pending** (no kind is in a
+  third weight class) and hit-feel-lance still fails 3 of 4 runs.
+
+Then the check lane measured `r5/int` at **72296aa** from one clean detached worktree (0 tracked files changed) on
+port 5270, one Chrome at a time. It changed no repo file.
+
+**Verdict: NOT CLEAN, on one flaky kept row.** A45c-foot-continuity failed in its session (a Tiller's planted foot read
+3.545 m/s, bar 3) and passed on both re-runs alone. Every other kept row passes or is pending as before, no accepted
+frame is further, and the slice played 14/14.
+
+**Tier 0 at 72296aa: PASS, 10 of 10.**
+- `vite build` OK (3.96 MB of code). Name lint 0 hits in 787 files.
+- Licences 231 files against 31 rows. Asset budgets clean (now graded per size class: Peg 10030 of 25000 triangles,
+  Plumb 21002 of 25000, Tiller 26480 of 50000, Gauge 19704 of 50000). Import graph 205 modules, 0 broken.
+- Resident textures 61.42 MB of 175 MB. Shipped 53.18 MB (`public/` 49.22 MB + code 3.96 MB; cap 110 MB).
+- 171 Node tests pass in 32 files (two outfit-fit cases skipped, as before). Boot 3.8 s, 0 errors. Rendered-page name
+  lint 0.
+
+**Kept-stack rows at 72296aa** (two sessions, every row reached, then two short re-runs): 80 rows, **69 pass** in
+session (71 after the re-runs), **8 visual** judged against their 701b366 shots (the same poses), **1 fails** in
+session (A45c), **2 pending** in session (A9 on load, A76).
+- **A45c-foot-continuity:** in session, a Tiller (alert, 6 m/s) planted foot moved 0.0489 m in one rendered frame
+  of 13.8 ms wall time: 3.545 m/s (bar 3; the per-frame bar of 0.12 m passes). At 701b366 the same row read 0.044 m in
+  a 16.6 ms frame, 2.649 m/s. Two re-runs alone at 72296aa: 0 m/s, 0 slips over 2 cm, the Tiller alert at 6 m/s
+  both times. No gait or machine-motion source changed in wave 0 (the Tiller's file only gains its size class). The
+  row divides one simulation step by the wall-clock frame, so a short frame reads fast; it is the flake the backlog
+  already names.
+- A9-perf-budget: PENDING in session (1-minute load 3.33), then PASS twice on a quiet box (load 2.55 and 2.72):
+  59.9 fps median, 130 draw calls, scene GPU 20.82 and 17.98 ms.
+- A76-footfalls: PENDING. The kinds now declare their classes, which the footfall weights read as two (light,
+  medium); the row needs three.
+- A16: knuckle to the jaw anchor 0.014 m, hook to nock 0.0083 m. A17: hand to quiver 0.035 m (0.132 at 701b366; the
+  quick draw), loose 0.075 m behind. A107: behind the head band at a jog 0.069 m, at a sprint 0.063 m (bar 0.10; 0.057
+  and 0.016 at 7474b9f). A44b 0.054 m (bar 0.1). A3 6.75 m/s.
+- A90: geometries 399 -> 398, textures -3, heap -1.1 %. A90-rig-reclaim and A90b 0 growth, 0 offenders.
+- A3 and A65 passed on the runner's retry (A3: a 90 s wait timed out; A65: a screenshot timeout).
+- Visual rows (V1, V2, V3, V4, V13, V21, V49, V-traversal): the same poses as at 701b366. V49: in all 12 tiles both
+  elbows stay under the top of her head and no forearm crosses behind it. V-traversal: the ledge-climb's sash panels
+  now hang instead of one panel standing out level across the thigh.
+- The runner still reports three gate files that do not load in a detached worktree (`gates.r5.brand`,
+  `gates.r5.gates-perf`, `gates.r5.shell-ui`); none of the kept rows comes from them.
+
+**The slice at 72296aa, one run (`--run-only`):**
+
+| | run |
+|---|---|
+| beats | 14 of 14, in order, stopped at the reward (quest done) |
+| Peg cross | 61.4 s, hp 100 -> 53, one drink to 93; three kites |
+| ditch | hidden 56 % of 3907 frames, the Plumb never suspicious |
+| topple | 15.0 s; vial arrows from 13.3 and 11.3 m, then the bob from 9.6 m |
+| lowest hp | 53 (in the cross) |
+| reward | the Scout with Shrug |
+| save rows, site clock | reload, T1, continue, site clock: PASS |
+| frames over 33 / 50 ms in play | 0 / 0 (worst 33.3 ms) in 78 s and 9267 frames |
+
+- No death. Under the Loading sheets, 10 frames each, counted apart (worst 158 ms at New Game). The opening shot still
+  has a townsperson standing in the camera at New Game.
+
+**Frames at 72296aa** (the 16 accepted frames, one film, 0 console errors; then F08, F09 and F10 three times each):
+- **No accepted frame is further than its anchor.**
+- F14 and F15 match their new simulation-time anchors (0.01 % and 0.14 % of pixels over 10 of 255).
+- F16, F18, F19: the same poses as their anchors; only the grid cloth's panels differ.
+- F08: the first film caught the idle's quiver-strap break (her right arm out at the shoulder, the wall-clock
+  staging); all three repeats match the anchor (arms down). Same.
+- F02, F03, F05, F09, F10, F11, F13, F20, F23 (Plumb), F24: the same as their anchors and as 701b366, within the
+  cloth, the hair wrap, the wind and the clouds.
+
+**Chrome used:** about 36 minutes over 8 launches: Tier 0's boot 0.2, kept session 1 8.4, kept session 2 17.8 (over
+the 15-minute cap: A90's 30 cycles alone are 5.3 minutes), the A9 and A45c re-runs 1.6, the frames 1.8, the slice 5.9,
+the repeats 0.7.
+
+---
+
+**Ruling (the orchestrator):** A45c-foot-continuity divides one simulation step's slip by the wall-clock frame, so a short frame reads fast (0.0489 m in a 13.8 ms frame = 3.5 m/s, the same step that read 2.6 m/s in a 16.6 ms frame); it is restated to grade the slip per simulation step (<= 0.05 m) beside its per-frame 0.12 m bar. With that, the check is clean and main is fast-forwarded.
