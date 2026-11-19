@@ -368,6 +368,20 @@ export class BreaCloth {
         // (round 5, cost: the quiver is read off the stow kit's skinned vertices; with every piece asleep only the legs'
         //  wake test runs, and the quiver keeps last frame's place)
         if (this._allAsleep && C.primed) continue;
+        // (M2 wave 0, C1: the quiver hangs on THIS frame's pelvis. Its hanger is posed by the stow kit after the animator
+        //  (HeroRig.update, stowkit.js _solveQuiver: the hold against the pelvis's turn, the swing, the arm's shove), so
+        //  here it stood where last frame's pelvis turn put it: 12 mm off the drawn quiver on average at a run, up to
+        //  55 mm, and 38 / 146 mm in a roll (Node), and the tail and a panel went into the drawn quiver with every
+        //  particle clear of ours (the Node sweep's sprint 3 frames, roll 1). The kit's own pose call, with this frame's
+        //  dt, puts the hanger on this frame's pelvis and arm; its two stepped states (the swing and the shove) are put
+        //  back after it, so the kit's own call after the animator steps them from the same place and poses the quiver
+        //  from scratch, as before: the drawn quiver is unchanged)
+        const sk = an.ctx?.player?.hero?.kit;
+        if (sk?.attached && sk.quiverSocket && typeof sk._solveQuiver === 'function') {
+          const sw0 = sk._quiverSwing, o = sk._qOff, ox = o?.x, oy = o?.y, oz = o?.z;
+          sk._solveQuiver(dt);
+          sk._quiverSwing = sw0; if (o) { o.x = ox; o.y = oy; o.z = oz; }
+        }
         C.kit.getVertexPosition(C.kitIdx[0], _v1); C.kit.localToWorld(_v1);
         C.kit.getVertexPosition(C.kitIdx[1], _v2); C.kit.localToWorld(_v2);
         C.on = C.kit.visible !== false && C.kit.parent != null;
@@ -1010,6 +1024,13 @@ export class BreaCloth {
       //  sweep's clip counts unchanged, the digests bit-identical)
       const chg = P.vchg || (P.vchg = new Uint8Array(N)), el = P.vel || (P.vel = new Int32Array(C.length));
       chg.fill(1);
+      // (M2 wave 0, C1: a vertex once tested against a collider this frame stays tested against it in the later rounds:
+      //  `vmk`, its colliders so far. A vertex half on the pins rides the belt row, which the pass moves too, but the
+      //  pins name no collider: when the other vertices' pushes took its free corners out of reach of a raised thigh,
+      //  the vertex was no longer tested, and the pins' moves put it back 0.7 mm inside the thigh (the Node sweep's
+      //  climb, panelR, the one clip frame left at 497ca16))
+      const vmk = P.vmk || (P.vmk = new Int32Array(V.n));
+      vmk.fill(0);
       const scan = (first) => {
         let bx0 = 9e9, bx1 = -9e9, by0 = 9e9, by1 = -9e9, bz0 = 9e9, bz1 = -9e9, ns = 0;
         for (let i = 0; i < N; i++) {
@@ -1050,13 +1071,13 @@ export class BreaCloth {
         //  and the particles moved, before any corner is read)
         let dLo = 0, dHi = 0, cLo = 0, cHi = 0;
         for (let i = 0; i < N; i++) { if (dm[i]) { if (i < 32) dLo |= 1 << i; else dHi |= 1 << (i - 32); } if (chg[i]) { if (i < 32) cLo |= 1 << i; else cHi |= 1 << (i - 32); } }
-        if (!(dLo | dHi)) return 0;
+        if (first && !(dLo | dHi)) return 0;
         if (first) { cLo = -1; cHi = -1; }
         const VL = V.cLo, VH = V.cHi;
         let n = 0;
         for (let j = 0; j < V.n; j++) {
           const lo = VL[j], hi = VH[j];
-          if (((lo & dLo) | (hi & dHi)) && ((lo & cLo) | (hi & cHi))) act[n++] = j;
+          if (((lo & dLo) | (hi & dHi) | vmk[j]) && ((lo & cLo) | (hi & cHi))) act[n++] = j;
         }
         return n;
       };
@@ -1069,8 +1090,9 @@ export class BreaCloth {
         if (it === 0) nchg.set(stale); else nchg.fill(0);
         for (let q = 0; q < na; q++) {
           const j = act[q];
-          let m = 0;
+          let m = vmk[j];
           for (let k = 0; k < 4; k++) { const pi = V.part[j * 4 + k]; if (pi >= 0) m |= dm[pi]; }
+          vmk[j] = m;
           // the vertex as the renderer will skin it
           let vx = 0, vy = 0, vz = 0;
           for (let k = 0; k < 4; k++) {
