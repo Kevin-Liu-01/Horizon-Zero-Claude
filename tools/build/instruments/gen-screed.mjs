@@ -157,10 +157,11 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
       const a = pt(u + 1e-3, v).sub(pt(u - 1e-3, v)), b = pt(u, v + 1e-3).sub(pt(u, v - 1e-3));
       return new THREE.Vector3().crossVectors(a, b).normalize();   // toward +z (forward)
     };
-    const face = (sign, off, surf, tone) => {
+    const face = (sign, off, surf, tone, v0 = 0, v1 = 1, u0 = 0, u1 = 1) => {
       const ps = [], ns = [];
-      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
-        const q = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([a, b]) => { const u = a / nx, v = b / ny, n = nrm(u, v); return { p: pt(u, v).addScaledVector(n, off), n: n.clone().multiplyScalar(sign) }; });
+      const nyy = Math.max(1, Math.round(ny * (v1 - v0))), nxx = Math.max(1, Math.round(nx * (u1 - u0)));
+      for (let j = 0; j < nyy; j++) for (let i = 0; i < nxx; i++) {
+        const q = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]].map(([a, b]) => { const u = u0 + (u1 - u0) * a / nxx, v = v0 + (v1 - v0) * b / nyy, n = nrm(u, v); return { p: pt(u, v).addScaledVector(n, off), n: n.clone().multiplyScalar(sign) }; });
         const tri = sign > 0 ? [q[0], q[1], q[2], q[0], q[2], q[3]] : [q[0], q[2], q[1], q[0], q[3], q[2]];
         for (const t of tri) { ps.push(t.p.x, t.p.y, t.p.z); ns.push(t.n.x, t.n.y, t.n.z); }
       }
@@ -170,7 +171,10 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
       H('head').add(g, { surf, tone, wear: 0.6 });
       g.dispose();
     };
-    face(1, 0, 'bronze', 0xa98448);              // the worn bronze face
+    // the face: three riveted white-enamel plates (gunmetal seams between them) over a worn bronze wear strip
+    face(1, -0.004, 'graphite', C.GUNMETAL, 0.27, 1);
+    for (const [u0, u1, t] of [[0, 0.327, C.ENAMEL], [0.337, 0.663, ENAMEL_LOW], [0.673, 1, C.ENAMEL]]) face(1, 0.006, 'glaze', t, 0.27, 1, u0, u1);
+    face(1, 0.004, 'bronze', 0xa98448, 0, 0.27);
     face(-1, -B.t, 'graphite', C.GUNMETAL);      // the back
     // the ribs on the back, the top roll, the cutting edge, the enamel end plates
     for (let k = 0; k <= 6; k++) {

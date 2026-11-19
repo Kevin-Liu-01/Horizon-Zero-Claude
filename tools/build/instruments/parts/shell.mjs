@@ -266,8 +266,8 @@ export function surveyLeg(H, Lg, opts = {}) {
  * A flat enamel plate (outline in the plate's local XY, metres) placed by `M` (local +Z out of the plate), `d` thick,
  * a brass strip along its lowest edge (`foot`: true), rivets every `every` m inside its top edge.
  */
-export function skirtPlate(b, outline, M, { d = 0.03, foot = true, every = 0.16, tone = C.ENAMEL, inset = 0.035, rows = 2 } = {}) {
-  plate(b, outline, d, 0.006, M, { surf: 'glaze', tone, wear: 0.45 });
+export function skirtPlate(b, outline, M, { d = 0.03, foot = true, every = 0.16, tone = C.ENAMEL, inset = 0.035, rows = 2, surf = 'glaze' } = {}) {
+  plate(b, outline, d, 0.006, M, { surf, tone, wear: 0.45 });
   const xs = outline.map((q) => q[0]), ys = outline.map((q) => q[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const out = new THREE.Vector3(0, 0, 1).transformDirection(M);

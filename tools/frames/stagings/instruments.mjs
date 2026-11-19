@@ -57,8 +57,10 @@ const unfade = {
   beforeFreeze(f, api) {
     const p = api.C.player;
     if (!p) return;
-    window.__lineupFade = { id: f.id, fade: p.fade ?? null, fadeCur: p._fadeCur ?? null, solidCut: p.solidCut ?? null, lensGap: p.lensGap ?? null, boomLength: p.boomLength ?? null };
-    if ((p._fadeCur ?? 1) < 0.999 || (p.fade ?? 1) < 0.999) {
+    window.__lineupFade = { id: f.id, fade: p.fade ?? null, fadeCur: p._fadeCur ?? null, applied: p._fadeApplied ?? null, uniform: p._mats?.[0]?.u?.value ?? null, solidCut: p.solidCut ?? null, lensGap: p.lensGap ?? null, boomLength: p.boomLength ?? null };
+    // also when the fade is 1 but was never pushed (`_fadeApplied` -1): a teleport resets the fields to 1 without
+    // writing the dither uniforms, so her materials can keep the last frame's dither
+    if ((p._fadeCur ?? 1) < 0.999 || (p.fade ?? 1) < 0.999 || p._fadeApplied !== 1) {
       p.fade = 1; p._fadeCur = 1; p._fadeApplied = -1;
       try { p._applyFade(1 / 60, performance.now() / 1000); } catch (e) { api.standIn(`hero fade not reset: ${e.message}`); }
     }

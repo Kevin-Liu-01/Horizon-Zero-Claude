@@ -138,3 +138,33 @@ export function seatFeet(machine, steps = 40) {
     return +(_sf.y - leg.L.ankleH - T.getHeight(_sf.x, _sf.z)).toFixed(3);
   });
 }
+
+/**
+ * A LEVEL GLASS, NOT A LAMP (M2 wave 2; the Plumb's round 2 fix as one helper). A vial's or a flask's flat emissive
+ * makes the machine's eye system take it for a lens (`Machine._collectEmissive`), and it then glows in the lamp's
+ * state colour (the corrected Tiller's hopper vial filmed magenta-pink at 6e9c089). Every mesh whose name matches `re`
+ * leaves `_eyeMats` and keeps its own pale ice at intensity 1; `levelGlassTick` takes it dark over 0.8 s on death.
+ * Returns the glow records (call before `attachRigRuntime`, as the Gauge and the Plumb do).
+ */
+export function levelGlass(machine, re) {
+  const out = [];
+  machine.model.traverse((o) => {
+    if (!o.isMesh || !re.test(o.name || '')) return;
+    const m = o.material;
+    if (!m || Array.isArray(m) || !m.emissive || out.some((g) => g.mat === m)) return;
+    machine._eyeMats = machine._eyeMats.filter((e) => e.mat !== m);
+    m.emissiveIntensity = 1;
+    out.push({ mat: m, k: 1 });
+  });
+  return out;
+}
+
+/** Per update: the glass holds 1 while it lives and falls to 0 over 0.8 s once it is dead. */
+export function levelGlassTick(machine, glows, dt) {
+  for (let i = 0; i < glows.length; i++) {
+    const g = glows[i];
+    if (machine.alive ? g.k === 1 : g.k <= 0) continue;
+    g.k = machine.alive ? 1 : Math.max(0, g.k - dt / 0.8);
+    g.mat.emissiveIntensity = g.k;
+  }
+}

@@ -7,7 +7,7 @@ import { snapSockets } from '../../entities/machines/rig/sockets.js';
 import { ExpansionMachine } from '../../entities/machines/rig/expansion-base.js';
 import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.js';
 import { prepareEntry, installHull } from '../lib/hull.js';
-import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup } from '../lib/kindkit.js';
+import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup, levelGlass, levelGlassTick } from '../lib/kindkit.js';
 import { installHerdRipple, fileStep, fileHold, rippleTick } from './tiller-herd.js';
 import { hullShapes, hullShapesInto } from '../lib/blockout.js';
 import { setOccluder, clearOccluders } from '../lib/sight.js';
@@ -96,6 +96,9 @@ export class Tiller extends ExpansionMachine {
     this._occShapes = null;
     this.lootTable = rollLoot([{ id: 'metal-shards', min: 8, max: 14 }, { id: 'wire', min: 1, max: 2 }]);
 
+    // the hopper's level vial is glass, not a lamp: it keeps its pale ice (lib/kindkit.js `levelGlass`)
+    this._glass = levelGlass(this, /-vial$/);
+
     attachRigRuntime(this, { quantise: false });   // keep the generated palette
     buildRig(this, entry.r5Rig);
     this._auger = mountTool(this, auger, {
@@ -138,6 +141,7 @@ export class Tiller extends ExpansionMachine {
     const h = this.herd, f = h ? h.file : null;
     if (f !== null && f !== undefined && f.leader === this && this.alive) f.record(this.position.x, this.position.z);
     if (this._rippleAt >= 0) rippleTick(this);
+    levelGlassTick(this, this._glass, dt);
     this._publishOccluders();
     return r;
   }

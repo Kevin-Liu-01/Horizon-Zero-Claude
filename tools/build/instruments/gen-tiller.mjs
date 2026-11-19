@@ -48,6 +48,8 @@ export const OUTPUTS = ['public/models/instruments/tiller.glb'];
 const BANNER_PALE = 0xa392ab;
 /** A slightly dustier enamel for the belly plates (they sit in the hull's own shade). */
 const ENAMEL_LOW = 0xd8cdb8;
+/** The skirt's two gunmetals (a little lighter than the joints', so its plates and rivets still read). */
+const SKIRT = 0x46474b, SKIRT_B = 0x3d3e42;
 
 /** Design constants (before the recentre). */
 export const TILLER = Object.freeze({
@@ -128,7 +130,8 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
   // flank plates: three per side, hanging from a gunmetal rail under the strake (the stilts pass outside them)
   // the hem is a shallow arc: 0.5 m over the ground amidships, rising to `skirtEnd` at the bow and stern
   const hemAt = (z) => T.skirtBot + (T.skirtEnd - T.skirtBot) * Math.pow(Math.min(1, Math.abs(z) / 1.66), 2.2);
-  const SK = [[-1.66, -0.58, 'pelvis', C.ENAMEL], [-0.54, T.split - 0.02, 'pelvis', ENAMEL_LOW], [T.split + 0.02, 0.62, 'chest', C.ENAMEL], [0.66, 1.62, 'chest', ENAMEL_LOW]];
+  // the skirt is the undercarriage's gunmetal (the board's white plates over dark joints): the enamel hull reads above it
+  const SK = [[-1.66, -0.58, 'pelvis', SKIRT], [-0.54, T.split - 0.02, 'pelvis', SKIRT_B], [T.split + 0.02, 0.62, 'chest', SKIRT], [0.66, 1.62, 'chest', SKIRT_B]];
   for (const s of [1, -1]) {
     for (const [za, zb, bone, tone] of SK) {
       const L = zb - za, mz = (za + zb) / 2, h = T.skirtTop - T.skirtBot;
@@ -136,14 +139,14 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
       // the hem follows the arc (local x runs along +z on the right flank, -z on the left)
       const hem = [];
       for (let k = 0; k <= 6; k++) { const lx = -L / 2 + (L * k) / 6; hem.push([lx, hemAt(mz + s * lx) - T.skirtBot - h / 2]); }
-      skirtPlate(H(bone), [...hem, [L / 2, h / 2], [-L / 2, h / 2]], M, { d: T.skirtD, every: 0.2, tone, foot: false, rows: 1 });
+      skirtPlate(H(bone), [...hem, [L / 2, h / 2], [-L / 2, h / 2]], M, { d: T.skirtD, every: 0.2, tone, foot: false, rows: 1, surf: 'graphite' });
       // a brass hem strip along the arc
       for (let k = 0; k < 6; k++) {
         const a = new THREE.Vector3(hem[k][0], hem[k][1] + 0.012, 0).applyMatrix4(M), b = new THREE.Vector3(hem[k + 1][0], hem[k + 1][1] + 0.012, 0).applyMatrix4(M);
         strut(H(bone), a, b, T.skirtD * 0.75, T.skirtD * 0.75, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
       }
       // a gunmetal batten down each plate's middle (stiffener)
-      strut(H(bone), new THREE.Vector3(0, hem[3][1] + 0.04, T.skirtD / 2 + 0.004).applyMatrix4(M), new THREE.Vector3(0, h / 2 - 0.05, T.skirtD / 2 + 0.004).applyMatrix4(M), 0.014, 0.014, { surf: 'graphite', tone: C.GUNMETAL, sides: 6 });
+      strut(H(bone), new THREE.Vector3(0, hem[3][1] + 0.04, T.skirtD / 2 + 0.004).applyMatrix4(M), new THREE.Vector3(0, h / 2 - 0.05, T.skirtD / 2 + 0.004).applyMatrix4(M), 0.014, 0.014, { surf: 'bronze', tone: C.BRASS, sides: 6, wear: 0.6 });
       // the hanger rail and two hangers to the hull
       strut(H(bone), V(s * (T.skirtX - 0.005), T.skirtTop - 0.01, za + 0.03), V(s * (T.skirtX - 0.005), T.skirtTop - 0.01, zb - 0.03), 0.022, 0.022, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
       for (const f of [0.22, 0.78]) {
@@ -156,7 +159,12 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
   for (const [z, s, bone] of [[1.62, 1, 'chest'], [-1.66, -1, 'pelvis']]) {
     const w = 1.18, h = T.skirtTop - T.endPlateBot;
     const M = basis(V(-s, 0, 0), V(0, 1, 0), V(0, 0, s), V(0, T.endPlateBot + h / 2, z));
-    skirtPlate(H(bone), [[-w / 2 + 0.08, -h / 2], [w / 2 - 0.08, -h / 2], [w / 2, -h / 2 + 0.06], [w / 2, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + 0.06]], M, { d: T.skirtD, every: 0.2, rows: 1 });
+    skirtPlate(H(bone), [[-w / 2 + 0.08, -h / 2], [w / 2 - 0.08, -h / 2], [w / 2, -h / 2 + 0.06], [w / 2, h / 2], [-w / 2, h / 2], [-w / 2, -h / 2 + 0.06]], M, { d: T.skirtD, every: 0.2, rows: 1, surf: 'graphite', tone: SKIRT });
+    // a grille of brass slats over it (a cowcatcher's face, not a cabinet door)
+    for (let k = 1; k <= 4; k++) {
+      const y = T.endPlateBot + (h * k) / 5;
+      strut(H(bone), V(-w / 2 + 0.07, y, z + s * 0.022), V(w / 2 - 0.07, y, z + s * 0.022), 0.012, 0.012, { surf: 'bronze', tone: C.BRASS, sides: 6, wear: 0.6 });
+    }
     strut(H(bone), V(-w / 2 + 0.02, T.skirtTop - 0.01, z - s * 0.01), V(w / 2 - 0.02, T.skirtTop - 0.01, z - s * 0.01), 0.02, 0.02, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
   }
 

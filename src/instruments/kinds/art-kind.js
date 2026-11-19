@@ -5,6 +5,7 @@ import { snapSockets } from '../../entities/machines/rig/sockets.js';
 import { ExpansionMachine } from '../../entities/machines/rig/expansion-base.js';
 import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.js';
 import { prepareEntry, installHull } from '../lib/hull.js';
+import { levelGlass, levelGlassTick } from '../lib/kindkit.js';
 import { setOccluder, clearOccluders } from '../lib/sight.js';
 import { hullShapes } from '../lib/blockout.js';
 
@@ -42,6 +43,8 @@ export function artKind({ id, kind, url, sizeClass, plannedRole, displayName, ga
         this.addWeakPoint('lamp', this.body, S.lamp[0], S.lamp[1], S.lamp[2], Math.max(0.15, (S.lampR ?? 0.12) * 1.3), 2.2);
       }
       for (const w of weak(S)) this.addWeakPoint(w.name, this.body, w.at[0], w.at[1], w.at[2], w.r, w.mult ?? 2.0);
+      // a vial or a flask is glass, not a lamp: it keeps its pale ice (lib/kindkit.js `levelGlass`)
+      this._glass = levelGlass(this, /-(vial|flask)$/);
       attachRigRuntime(this, { quantise: false });
       buildRig(this, entry.r5Rig);
       this.gait = new GaitController(this, this.rig, gait);
@@ -64,6 +67,7 @@ export function artKind({ id, kind, url, sizeClass, plannedRole, displayName, ga
      */
     update(dt, t) {
       const r = super.update(dt, t);
+      levelGlassTick(this, this._glass, dt);
       if (this.alive && this.state !== 'patrol' && this.state !== 'dead') this.setState('patrol');
       if (this.sc) this.sc.suspicion = 0;
       const p = this.position, h = this.heading, o = this._occAt;
