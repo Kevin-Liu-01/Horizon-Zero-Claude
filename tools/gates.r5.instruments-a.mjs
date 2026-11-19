@@ -352,13 +352,13 @@ const A_HERD_RIPPLE = `(async () => {
   const s = sentryKind ? __M.spawn(sentryKind, back.x, back.z) : null;
   await wait(400);
   const flashes = ms.map(() => null);
+  const ripples0 = __M._herdRipple ? __M._herdRipple.ripples : 0;   // read before the chime (it ripples synchronously)
   const t0 = simNow();
   if (s) s.forceState('alert'); else __CTX__.events.emit('plumb-chime', { machine: null, x: back.x, z: back.z });
   // lamp flashes (the telegraph record: steady 1.6x, pinhole); then IN1 (M2 wave 1): no flight, the file closes at walk
   const walk = ms.map((m) => m.walkSpeed), bearing0 = ms.map((m) => m.heading);
   let maxOverWalk = -1e9, maxTurnDeg = 0, gapsAt4 = null, alarmT = null;
   const ang = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d) * 180 / Math.PI; };
-  const ripples0 = __M._herdRipple ? __M._herdRipple.ripples : 0;
   while (simNow() - t0 < 12) {
     await new Promise(r => requestAnimationFrame(r)); heal();
     const t = simNow() - t0;
