@@ -107,10 +107,10 @@ export const topOf = (w, state = 'whole') => (state === 'cut' ? w.lineH + w.line
  * The terraces' numbers (m; ./ninewalls-ground.js). A riser's bank is `bankK` of its height wide, within
  * bankMin..bankMax, below a `ledge` in front of the wall's low face; a terrace hands back to the hillside over `fadeM`
  * of arc towards a wall's end and is smoothed along its arc over `smoothM`. A pad stands `padEdge` past a dwelling's
- * walls and blends over `padBlend`. The road is `roadHalf` each side of its centreline, handed back over `roadMargin`.
+ * walls and blends over `padBlend` or more: wide enough that its bank falls no steeper than `padGrade`. The road is `roadHalf` each side of its centreline, handed back over `roadMargin`.
  */
 export const TERRACE = Object.freeze({
-  ledge: 0.5, bankK: 0.55, bankMin: 0.8, bankMax: 2.6, fadeM: 10, smoothM: 7, padEdge: 0.6, padBlend: 2.0, roadHalf: 2.2, roadMargin: 3.5,
+  ledge: 0.5, bankK: 0.55, bankMin: 0.8, bankMax: 2.6, fadeM: 10, smoothM: 7, padEdge: 0.6, padBlend: 2.0, padGrade: 0.68, roadHalf: 2.2, roadMargin: 3.5,
 });
 
 /**

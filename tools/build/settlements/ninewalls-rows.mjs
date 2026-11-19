@@ -18,8 +18,12 @@
  *       tree; a wall counts when at least a fifth of its stations in frame show 4 px or more of face
  *   plus the site: the Scar's berm clear of every wall, B1 and the Rise outside the outer wall, the trig rays from T2
  *   clear of every wall, the walk in (the open south-west).
- * NW3 (its data half): every wall's colliders and occluder pieces cover its arc to within 0.1 m, the occluder list
- * holds all nine. The mesh half is the page's (wave 2).
+ * NW3: every wall's colliders, occluder pieces and (M2 wave 2) the kit's mesh cover its arc to within 0.1 m, the occluder
+ * list holds all nine.
+ * NW4 (its Node half): from the road's end in the village, every place reachable on foot on a 0.5 m walk grid as the game's
+ * (src/core/nav.js WALK, over the ground at the bake's 1.94 m nodes as terrain.getHeight reads it: a cell steeper than 0.75 shut, every collider of the village standing 0.25-1.9 m over the ground
+ * grown by 0.32 m): the tube mouth, the cistern, its Brazier, the counter, the third wall's niche; no two adjacent
+ * rooflines equal (NW0 (b)).
  */
 import { writeFileSync } from 'node:fs';
 import { heightAt } from '../../../src/world/island/recipe.js';
@@ -27,6 +31,7 @@ import { SCAR, TRIG, TRIG_TOP, siteById } from '../../../src/world/island/sites.
 import { BENCHMARKS } from '../../../src/world/sites/layout.js';
 import { B1 as HOLDS_B1 } from '../../../src/world/holds/blockout.js';
 import { ISLAND_SCALE } from '../../../src/world/island/extent.js';
+import { GRID } from '../../../src/world/island/bake.js';
 import { ninewallsNatural, ninewallsGroundTables, wallFaces, bankOf } from '../../../src/world/settlements/ninewalls-ground.js';
 import { wallsGeometry, townGeometry } from '../../../src/world/settlements/ninewalls-kit.js';
 import { segmentHit } from '../../../src/instruments/lib/sight.js';
@@ -290,7 +295,7 @@ out.nw0.c = { lens: { at: F34.at.en, eye: F34.camera.eye, y: r1(lens.pos.y), bea
       const ux = (c[0] - a[0]) / l, uz = (c[1] - a[1]) / l;
       const gl = ground(x0 - uz * 1.5, z0 + ux * 1.5), grr = ground(x0 + uz * 1.5, z0 - ux * 1.5);
       const cf = Math.atan2(Math.abs(gl - grr), 3) / D2R;
-      if (nearTurn(x0, z0, AL[i] + l * t0)) crossTurn = Math.max(crossTurn, cf); else { if (cf > crossMax && process.env.NW_DEBUG) console.error("cross", i, x0.toFixed(1), z0.toFixed(1), cf.toFixed(1), gl.toFixed(2), grr.toFixed(2)); crossMax = Math.max(crossMax, cf); }
+      if (nearTurn(x0, z0, AL[i] + l * t0)) crossTurn = Math.max(crossTurn, cf); else crossMax = Math.max(crossMax, cf);
       devMax = Math.max(devMax, Math.abs(ninewallsNatural(x0, z0) - (a[2] + (c[2] - a[2]) * t0)));
       seg.push({ dl, gr });
       L += dl;
@@ -394,6 +399,79 @@ out.kit = { wallTris: wallSoup.tris, townTris: town.soup.tris, draws: 2, rosette
 out.nw3 = { walls: nw3, occluderWalls: new Set(occ.map((o) => o.id)).size, occluderPieces: occ.length, colliders: cols.length,
   pass: nw3.every((w) => w.worstColliderGap <= 0.1 && w.worstOccluderGap <= 0.1 && w.meshArcGap <= 0.1 && w.meshVerts > 0) && new Set(occ.map((o) => o.id)).size === 9 };
 
+
+/* ---------------------------------------------------------------- NW4 (Node half): the places on foot */
+{
+  const CELL = 0.5, RAD = 0.32, HALF = 80, N = Math.round((2 * HALF) / CELL) + 1, X0 = CENTRE.x - HALF, Z0 = CENTRE.z - HALF;
+  // the ground as the game draws it and its walk grid reads it: the recipe at the bake's 1.94 m nodes, bilinear between
+  // (src/world/terrain.js getHeight; the recipe's ridged relief has creases sharper than any grid the game keeps)
+  const GS = GRID.step, GH = GRID.half, nodes = new Map();
+  const node = (ix, iz) => { const k = ix * 100003 + iz; let v = nodes.get(k); if (v === undefined) { v = ground(ix * GS - GH, iz * GS - GH); nodes.set(k, v); } return v; };
+  const baked = (x, z) => { const fx = (x + GH) / GS, fz = (z + GH) / GS, ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz;
+    const a = node(ix, iz) + (node(ix + 1, iz) - node(ix, iz)) * tx, b = node(ix, iz + 1) + (node(ix + 1, iz + 1) - node(ix, iz + 1)) * tx; return a + (b - a) * tz; };
+  const H = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) H[j * N + i] = baked(X0 + i * CELL, Z0 + j * CELL);
+  const open = new Uint8Array(N * N);
+  for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
+    const h = H[j * N + i], gx = (H[j * N + i + 1] - h) / CELL, gz = (H[(j + 1) * N + i] - h) / CELL;
+    open[j * N + i] = Math.hypot(gx, gz) <= 0.75 ? 1 : 0;
+  }
+  for (const c of cols) {
+    const sh = c.shape;
+    if (sh.type === 'box') {
+      const [cx, cy, cz] = sh.c, [hx, hy, hz] = sh.half, yaw = sh.yaw || 0, co = Math.cos(-yaw), si = Math.sin(-yaw);
+      const r = Math.hypot(hx, hz) + RAD;
+      for (let j = Math.max(0, Math.floor((cz - r - Z0) / CELL)); j <= Math.min(N - 1, Math.ceil((cz + r - Z0) / CELL)); j++)
+        for (let i = Math.max(0, Math.floor((cx - r - X0) / CELL)); i <= Math.min(N - 1, Math.ceil((cx + r - X0) / CELL)); i++) {
+          const x = X0 + i * CELL, z = Z0 + j * CELL, ox = x - cx, oz = z - cz;
+          const lx = ox * co - oz * si, lz = ox * si + oz * co;
+          if (Math.abs(lx) > hx + RAD || Math.abs(lz) > hz + RAD) continue;
+          const g = H[j * N + i];
+          if (cy + hy < g + 0.25 || cy - hy > g + 1.9) continue;
+          open[j * N + i] = 0;
+        }
+    } else if (sh.type === 'capsule') {
+      const [ax, , az] = sh.a, r = sh.radius + RAD;
+      for (let j = Math.max(0, Math.floor((az - r - Z0) / CELL)); j <= Math.min(N - 1, Math.ceil((az + r - Z0) / CELL)); j++)
+        for (let i = Math.max(0, Math.floor((ax - r - X0) / CELL)); i <= Math.min(N - 1, Math.ceil((ax + r - X0) / CELL)); i++)
+          if (Math.hypot(X0 + i * CELL - ax, Z0 + j * CELL - az) <= r) open[j * N + i] = 0;
+    }
+  }
+  const idx = (x, z) => { const i = Math.round((x - X0) / CELL), j = Math.round((z - Z0) / CELL); return i < 0 || j < 0 || i >= N || j >= N ? -1 : j * N + i; };
+  const nearestOpen = (x, z) => { let best = -1, bd = Infinity; for (let dj = -6; dj <= 6; dj++) for (let di = -6; di <= 6; di++) { const k = idx(x + di * CELL, z + dj * CELL); if (k >= 0 && open[k]) { const d = Math.hypot(di, dj); if (d < bd) { bd = d; best = k; } } } return best; };
+  // from the village's own lane: the cistern's, 3 m past the road's end toward the cistern (the road is a bench cut into a
+  // 30 deg hillside, its banks steeper than people walk, so the grid is entered where it runs out into the village)
+  const end = ROAD.at(-1), cq = PLACES.cistern, dl = Math.hypot(cq.x - end[0], cq.z - end[1]);
+  const s0 = nearestOpen(end[0] + (cq.x - end[0]) / dl * 3, end[1] + (cq.z - end[1]) / dl * 3);
+  const dist = new Float64Array(N * N).fill(Infinity);
+  // Dijkstra on 8 neighbours (a binary heap)
+  const heap = [], push = (k, d) => { heap.push([d, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  if (s0 >= 0) { dist[s0] = 0; push(s0, 0); }
+  const DI = [1, -1, 0, 0, 1, 1, -1, -1], DJ = [0, 0, 1, -1, 1, -1, 1, -1];
+  while (heap.length) {
+    const [d, k] = pop();
+    if (d > dist[k]) continue;
+    const i = k % N, j = (k / N) | 0;
+    for (let q = 0; q < 8; q++) {
+      const i2 = i + DI[q], j2 = j + DJ[q];
+      if (i2 < 0 || j2 < 0 || i2 >= N || j2 >= N) continue;
+      const k2 = j2 * N + i2;
+      if (!open[k2]) continue;
+      if (q >= 4 && (!open[j * N + i2] || !open[j2 * N + i])) continue;
+      const nd = d + (q >= 4 ? Math.SQRT2 : 1) * CELL;
+      if (nd < dist[k2]) { dist[k2] = nd; push(k2, nd); }
+    }
+  }
+  const M = PLACES.tubeMouth, tg = dirOf(M.b + 180), Cq = PLACES.cistern, Kq = PLACES.counter, Bq = PLACES.brazier, Nq = PLACES.niche;
+  const toward = (q, b, d) => { const v = dirOf(b); return { x: q.x + v.x * d, z: q.z + v.z * d }; };
+  const targets = {
+    tubeMouth: toward(M, M.b + 180, 2.4), cistern: toward(Cq, 218 + 180, Cq.r + 0.9), brazier: toward(Bq, 218, 1.2),
+    counter: toward(Kq, Kq.b + 180, 1.3), niche: toward(Nq, Nq.b + 180, 0.9), tree: toward(PLACES.tree, 200, PLACES.tree.trunkR + 1.4),
+  };
+  const reach = Object.fromEntries(Object.entries(targets).map(([k, p]) => { const t = nearestOpen(p.x, p.z); return [k, { walkM: t >= 0 && Number.isFinite(dist[t]) ? r1(dist[t]) : null, snapM: t >= 0 ? r2(Math.hypot(X0 + (t % N) * CELL - p.x, Z0 + ((t / N) | 0) * CELL - p.z)) : null }]; }));
+  out.nw4 = { from: 'the cistern\'s lane at the road\'s end', reach, rooflinesEqual: rooflineCheck().length, pass: Object.values(reach).every((q) => q.walkM != null) && rooflineCheck().length === 0 };
+}
 out.nw0.pass = out.nw0.a.pass && out.nw0.b.pass && out.nw0.c.pass && out.nw0.d.pass && out.nw0.e.pass && scar.pass && trigRays.every((t) => !t.wallHits) && rise.outside && out.site.b1.agree && out.site.b1.bible;
 
 const J = flag('--json');
@@ -414,4 +492,5 @@ console.log(`site: Scar clear >= ${SCAR_CLEAR} m (least ${scar.minWall}): ${yes(
 { const q = out.site.b1; console.log(`site: B1 (sites/layout.js bm-01 at ${q.layout.x}, ${q.layout.z}; the Holds' blockout ${r2(q.holds.x)}, ${r2(q.holds.z)}: ${q.agree ? 'agree' : 'DISAGREE'}, ${q.bible ? 'at' : 'NOT at'} the bible's E 12, N -282) ${q.toCentre} m from the centre, ${q.toNearestWall} m from the nearest wall, ${q.scarDist} m off the Scar's line; Ninewalls' ground moves it ${q.groundMoved} m`); }
 console.log(`NW3: ${out.nw3.colliders} colliders, ${out.nw3.occluderPieces} occluder pieces over ${out.nw3.occluderWalls} walls; worst gaps to the arc: colliders ${Math.max(...nw3.map((w) => w.worstColliderGap))} m, occluders ${Math.max(...nw3.map((w) => w.worstOccluderGap))} m, the kit's mesh ${Math.max(...nw3.map((w) => w.meshArcGap))} m: ${yes(out.nw3.pass)}`);
 console.log(`kit: walls ${out.kit.wallTris} tris, the houses, tree and places ${out.kit.townTris} tris, ${out.kit.draws} draws (the stand-in budget ${out.kit.budget.tris} tris, ${out.kit.budget.draws} draws); ${out.kit.rosettes} rosettes on the tree, ${out.kit.kerbStones} kerb stones`);
+console.log(`NW4 (Node half), on foot from ${out.nw4.from}: ${Object.entries(out.nw4.reach).map(([k, q]) => `${k} ${q.walkM == null ? 'UNREACHABLE' : q.walkM + ' m'}`).join(', ')}; equal adjacent rooflines ${out.nw4.rooflinesEqual}: ${yes(out.nw4.pass)}`);
 console.log(`NW0: ${yes(out.nw0.pass)}`);

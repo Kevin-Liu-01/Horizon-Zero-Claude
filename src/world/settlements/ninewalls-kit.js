@@ -226,8 +226,15 @@ function dwelling(S, d, ground) {
   const p = L.dwellingPlace(d), g = ground(p.x, p.z), seed = d.r * 7.7 + d.b;
   const c = Math.cos(p.ry), s = Math.sin(p.ry);
   const W = (lx, y, lz) => [p.x + c * lx + s * lz, y, p.z - s * lx + c * lz];
-  const hw = d.w / 2, hd = d.d / 2, roofT = 0.2, wallTop = g + d.h - roofT, foot = g - 0.35;
-  const doorX = (hash(seed) - 0.5) * (d.w - 2.2), doorW = 0.92, doorTop = g + 1.25, inset = 0.42;
+  const hw = d.w / 2, hd = d.d / 2, roofT = 0.2, wallTop = g + d.h - roofT;
+  // sunk into the hillside: its foundation 0.35 m under the lowest ground at its walls, its roof at the centre's ground plus h
+  let gLow = g;
+  for (let k = 0; k <= 8; k++) for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { const q = W(sx * hw * (k / 8), 0, sz * hd); gLow = Math.min(gLow, ground(q[0], q[2])); const r2 = W(sx * hw, 0, sz * hd * (k / 8)); gLow = Math.min(gLow, ground(r2[0], r2[2])); }
+  const foot = gLow - 0.35;
+  const doorX = (hash(seed) - 0.5) * (d.w - 2.2), doorW = 0.92, inset = 0.42;
+  // the door's sill at the ground in front of it; the house's floor and the door's head go with it
+  const dq = W(doorX, 0, hd + 0.3), gDoor = Math.min(wallTop - 1.45, ground(dq[0], dq[2]));
+  const doorTop = gDoor + 1.25;
   const batter = 0.05;
   // the walls, battered in toward the roof: each face from foot to the wall's top; the front around its door
   const corner = (sx, sz, y) => { const k = (y - foot) / (wallTop - foot); return W(sx * (hw - batter * k), y, sz * (hd - batter * k)); };
@@ -269,7 +276,7 @@ function dwelling(S, d, ground) {
   {
     const z0 = hd - batter * 0.3, z1 = z0 - inset;
     const jl = (lx, y, lz) => W(lx, y, lz);
-    const y0 = g - 0.3, y1 = doorTop;
+    const y0 = gDoor - 0.3, y1 = doorTop;
     for (const sx of [-1, 1]) {
       const x = doorX + sx * doorW / 2;
       const A = jl(x, y0, z0), B = jl(x, y0, z1), Cc = jl(x, y1, z1), Dd = jl(x, y1, z0);
@@ -279,11 +286,11 @@ function dwelling(S, d, ground) {
     S.quad(jl(doorX - doorW / 2, y1, z0), jl(doorX - doorW / 2, y1, z1), jl(doorX + doorW / 2, y1, z1), jl(doorX + doorW / 2, y1, z0), { col: PAL.void, kind: 2 });
     // the back: a plank door on two houses in three, else the dark of the room
     const open = hash(seed, 5) < 0.34;
-    S.quad(jl(doorX - doorW / 2, g - 1.1, z1), jl(doorX + doorW / 2, g - 1.1, z1), jl(doorX + doorW / 2, y1, z1), jl(doorX - doorW / 2, y1, z1),
-      { col: open ? PAL.void : PAL.woodDark, kind: 2, uv: [[0, 0], [doorW, 0], [doorW, y1 - g + 1.1], [0, y1 - g + 1.1]] });
+    S.quad(jl(doorX - doorW / 2, gDoor - 1.1, z1), jl(doorX + doorW / 2, gDoor - 1.1, z1), jl(doorX + doorW / 2, y1, z1), jl(doorX - doorW / 2, y1, z1),
+      { col: open ? PAL.void : PAL.woodDark, kind: 2, uv: [[0, 0], [doorW, 0], [doorW, y1 - gDoor + 1.1], [0, y1 - gDoor + 1.1]] });
     // the step down to the sunk floor: two dark treads in the reveal
     for (let k = 0; k < 2; k++) {
-      const y = g - 0.3 - k * 0.32, zz = z0 - 0.06 - k * 0.16;
+      const y = gDoor - 0.3 - k * 0.32, zz = z0 - 0.06 - k * 0.16;
       S.quad(jl(doorX - doorW / 2, y, zz), jl(doorX + doorW / 2, y, zz), jl(doorX + doorW / 2, y, zz - 0.18), jl(doorX - doorW / 2, y, zz - 0.18), { col: PAL.barkDark, kind: 2 });
     }
     // the lintel: a timber beam, proud of the wall
@@ -309,21 +316,21 @@ function dwelling(S, d, ground) {
   }
   // the yard: a water jar by the door, on some a woven palm shade or a stone bench, a stack of vine prunings
   {
-    const jar = W(doorX + (doorW / 2 + 0.45) * (hash(seed, 10) > 0.5 ? 1 : -1), g, hd + 0.38);
-    S.lathe(jar[0], jar[1], jar[2], [[0.1, 0], [0.2, 0.12], [0.23, 0.3], [0.17, 0.48], [0.09, 0.56], [0.1, 0.62], [0.0, 0.62]], 10, { col: PAL.clay, kind: 2 });
+    const jar = W(doorX + (doorW / 2 + 0.45) * (hash(seed, 10) > 0.5 ? 1 : -1), 0, hd + 0.38);
+    S.lathe(jar[0], ground(jar[0], jar[2]) - 0.02, jar[2], [[0.1, 0], [0.2, 0.12], [0.23, 0.3], [0.17, 0.48], [0.09, 0.56], [0.1, 0.62], [0.0, 0.62]], 10, { col: PAL.clay, kind: 2 });
     if (hash(seed, 11) < 0.4) {
       const lx = doorX + (hash(seed, 12) > 0.5 ? 1.4 : -1.4);
-      for (const sx of [-0.8, 0.8]) { const q = W(lx + sx, g, hd + 1.5); S.tube([q[0], g - 0.1, q[2]], [q[0], g + 1.9, q[2]], 0.045, 0.04, 5, { col: PAL.woodDark, kind: 2 }); }
-      const a = W(lx - 1.0, g + 1.95, hd + 1.6), b = W(lx + 1.0, g + 1.95, hd + 1.6), cc = W(lx + 1.0, wallTop + 0.05, hd - 0.05), dd = W(lx - 1.0, wallTop + 0.05, hd - 0.05);
+      for (const sx of [-0.8, 0.8]) { const q = W(lx + sx, 0, hd + 1.5), gq = ground(q[0], q[2]); S.tube([q[0], gq - 0.1, q[2]], [q[0], gDoor + 1.9, q[2]], 0.045, 0.04, 5, { col: PAL.woodDark, kind: 2 }); }
+      const a = W(lx - 1.0, gDoor + 1.95, hd + 1.6), b = W(lx + 1.0, gDoor + 1.95, hd + 1.6), cc = W(lx + 1.0, wallTop + 0.05, hd - 0.05), dd = W(lx - 1.0, wallTop + 0.05, hd - 0.05);
       S.quad(a, b, cc, dd, { col: PAL.straw, kind: 2 });
     } else if (hash(seed, 13) < 0.5) {
-      const q = W(doorX + (hash(seed, 14) > 0.5 ? 1.6 : -1.6), g + 0.22, hd + 0.4);
+      const q0 = W(doorX + (hash(seed, 14) > 0.5 ? 1.6 : -1.6), 0, hd + 0.4), gb = ground(q0[0], q0[2]), q = [q0[0], gb + 0.22, q0[2]];
       S.box(q[0], q[1], q[2], 0.7, 0.05, 0.2, p.ry, { col: PAL.stone, kind: 0 });
-      for (const sx of [-0.55, 0.55]) { const r = W(doorX + (hash(seed, 14) > 0.5 ? 1.6 : -1.6) + sx, g + 0.09, hd + 0.4); S.box(r[0], r[1], r[2], 0.12, 0.11, 0.17, p.ry, { col: PAL.stone, kind: 0 }); }
+      for (const sx of [-0.55, 0.55]) { const r = W(doorX + (hash(seed, 14) > 0.5 ? 1.6 : -1.6) + sx, gb + 0.09, hd + 0.4); S.box(r[0], r[1], r[2], 0.12, 0.11, 0.17, p.ry, { col: PAL.stone, kind: 0 }); }
     }
     if (hash(seed, 15) < 0.5) {
-      const q = W(-hw + 0.5, g, -hd - 0.35);
-      for (let k = 0; k < 7; k++) { const a = hash(seed, 20 + k) * 0.5 - 0.25; S.tube([q[0] + k * 0.11 * c, g + 0.06 + (k % 3) * 0.09, q[2] - k * 0.11 * s], [q[0] + k * 0.11 * c + Math.cos(p.ry + Math.PI / 2 + a) * 1.1, g + 0.06 + (k % 3) * 0.09, q[2] - k * 0.11 * s - Math.sin(p.ry + Math.PI / 2 + a) * 1.1], 0.025, 0.02, 4, { col: PAL.woodDark, kind: 2 }); }
+      const q = W(-hw + 0.5, 0, -hd - 0.35), gp = ground(q[0], q[2]);
+      for (let k = 0; k < 7; k++) { const a = hash(seed, 20 + k) * 0.5 - 0.25; S.tube([q[0] + k * 0.11 * c, gp + 0.06 + (k % 3) * 0.09, q[2] - k * 0.11 * s], [q[0] + k * 0.11 * c + Math.cos(p.ry + Math.PI / 2 + a) * 1.1, gp + 0.06 + (k % 3) * 0.09, q[2] - k * 0.11 * s - Math.sin(p.ry + Math.PI / 2 + a) * 1.1], 0.025, 0.02, 4, { col: PAL.woodDark, kind: 2 }); }
     }
   }
 }
@@ -481,7 +488,7 @@ function niche(S, ground) {
 
 /** The Guild notice board (bible §8.4: Saltrow and Ninewalls): two posts, a board, a few pale notes pinned to it. */
 function noticeBoard(S, ground) {
-  const q = L.polar(72, 14.2), g = ground(q.x, q.z), ry = Math.atan2(L.CENTRE.x - q.x, L.CENTRE.z - q.z);
+  const q = L.polar(46, 15.2), g = ground(q.x, q.z), ry = Math.atan2(L.CENTRE.x - q.x, L.CENTRE.z - q.z);
   const c = Math.cos(ry), s = Math.sin(ry), W = (lx, y, lz) => [q.x + c * lx + s * lz, g + y, q.z - s * lx + c * lz];
   for (const lx of [-0.62, 0.62]) { const p = W(lx, 0, 0); S.tube([p[0], g - 0.2, p[2]], [p[0], g + 1.85, p[2]], 0.05, 0.045, 6, { col: PAL.woodDark, kind: 2 }); }
   const b = W(0, 1.3, 0.04);
@@ -552,21 +559,29 @@ float nwNoise(vec2 p) {
   return mix(mix(nwHash(i), nwHash(i + vec2(1.0, 0.0)), f.x), mix(nwHash(i + vec2(0.0, 1.0)), nwHash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 float nwFbm(vec2 p) { return 0.55 * nwNoise(p) + 0.3 * nwNoise(p * 2.07 + 3.1) + 0.15 * nwNoise(p * 4.3 - 1.7); }
-/* coursed drystone: wavy courses 0.27 m high; stones of their own length; returns the stone's height (0 in a joint) */
+/* drystone (no mortar): irregular basalt stones laid in rough courses, a Voronoi of points jittered in cells 0.44 x 0.28 m
+   (each row of cells shifted by its own amount, so no joint runs straight up); edge is the distance to the stone's
+   border (F2 - F1), dark and deep in the gap; returns the stone's height, 0 in a joint */
 float nwStone(vec2 uv, out vec3 sid) {
-  float rowH = 0.27;
-  float vy = uv.y + 0.05 * sin(uv.x * 0.73 + 1.3) + 0.025 * sin(uv.x * 2.31 + 0.4);
-  float row = floor(vy / rowH), fy = fract(vy / rowH);
-  float rh = nwHash(vec2(row, 7.13));
-  float len = 0.3 + 0.32 * rh;
-  float ux = uv.x + row * 0.41 + rh * 3.0;
-  float cell = floor(ux / len), fx = fract(ux / len);
-  sid = vec3(nwHash(vec2(cell, row)), nwHash(vec2(cell + 13.1, row)), nwHash(vec2(cell, row + 5.3)));
-  // a stone is rounder than its cell: its corners eaten, its top and bottom bowed by its own hash
-  float ex = min(fx, 1.0 - fx) * len, ey = min(fy, 1.0 - fy) * rowH;
-  ey -= 0.012 * (sid.y - 0.5) * sin(fx * 3.14159);
-  float e = min(ex, ey) - 0.35 * max(0.0, 0.05 - length(vec2(max(0.0, 0.05 - ex), max(0.0, 0.05 - ey))));
-  return smoothstep(0.004, 0.05, e);
+  vec2 cs = vec2(0.44, 0.28);
+  vec2 q = uv / cs;
+  float row0 = floor(q.y);
+  float f1 = 9.0, f2 = 9.0; vec2 id1 = vec2(0.0);
+  for (int j = -1; j <= 1; j++) {
+    float rj = row0 + float(j);
+    float shift = nwHash(vec2(rj, 3.7));
+    for (int i = -1; i <= 1; i++) {
+      vec2 c = vec2(floor(q.x - shift) + float(i), rj);
+      vec2 h = vec2(nwHash(c + 0.17), nwHash(c.yx + 4.3));
+      vec2 pt = vec2(c.x + shift + 0.2 + 0.6 * h.x, rj + 0.3 + 0.4 * h.y);
+      vec2 dv = (q - pt) * cs;
+      float d = length(dv * vec2(0.85, 1.0));
+      if (d < f1) { f2 = f1; f1 = d; id1 = c; } else if (d < f2) { f2 = d; }
+    }
+  }
+  sid = vec3(nwHash(id1), nwHash(id1 + 13.1), nwHash(id1.yx + 5.3));
+  float edge = (f2 - f1) * 0.5;
+  return smoothstep(0.006, 0.045, edge) * (0.75 + 0.25 * smoothstep(0.0, 0.12, f2 - f1));
 }
 vec3 nwBumpN(vec3 surfPos, vec3 surfN, float h, float faceDir) {
   vec3 sx = dFdx(surfPos), sy = dFdy(surfPos);
@@ -585,15 +600,18 @@ const FRAG_COLOR = `
   vec3 base = diffuseColor.rgb;
   if (k == 0) {
     vec3 sid; float st = nwStone(vNwUV, sid);
-    // basalt stones: black to grey, a rust one in six, a pale vesicular one in seven
-    vec3 sc = mix(vec3(0.05, 0.047, 0.045), vec3(0.16, 0.148, 0.134), sid.x);
-    sc = mix(sc, vec3(0.19, 0.088, 0.046), step(0.835, sid.y));
-    sc = mix(sc, vec3(0.27, 0.255, 0.235), step(0.86, sid.z) * (1.0 - step(0.835, sid.y)));
+    // basalt stones: near-black to weathered grey, one in seven a warmer brown, one in nine dusted pale; at range (the
+    // pattern under a few pixels) each stone's tone goes to the wall's mean, so a wall far off is one stone colour
+    float far = clamp(max(fwidth(vNwUV.x), fwidth(vNwUV.y)) / 0.09, 0.0, 1.0);
+    vec3 sc = mix(vec3(0.042, 0.04, 0.038), vec3(0.1, 0.094, 0.086), sid.x);
+    sc = mix(sc, vec3(0.105, 0.07, 0.05), step(0.86, sid.y) * 0.7);
+    sc = mix(sc, vec3(0.15, 0.145, 0.135), step(0.89, sid.z) * (1.0 - step(0.86, sid.y)) * 0.8);
     float pit = smoothstep(0.66, 0.8, nwNoise(vNwUV * 41.0 + sid.xy * 9.0));
-    sc *= 1.0 - 0.35 * pit;
-    sc *= 0.86 + 0.28 * nwNoise(vNwUV * 9.0 + sid.zx * 5.0);
-    vec3 joint = vec3(0.026, 0.024, 0.022) * (0.8 + 0.4 * nwNoise(vNwUV * 17.0));
-    vec3 c = mix(joint, sc, st);
+    sc *= 1.0 - 0.3 * pit;
+    sc *= 0.88 + 0.24 * nwNoise(vNwUV * 9.0 + sid.zx * 5.0);
+    sc = mix(sc, vec3(0.068, 0.064, 0.059), far * 0.8);
+    vec3 joint = vec3(0.016, 0.015, 0.014) * (0.8 + 0.4 * nwNoise(vNwUV * 17.0));
+    vec3 c = mix(mix(joint, sc, st), vec3(0.058, 0.055, 0.051), far * 0.5);
     // the vertex colour is the dust: lapilli in the joints first, then over the stones low down
     vec3 dust = base;
     float dk = clamp(1.0 - (dust.r + dust.g + dust.b) / 3.0, 0.0, 1.0);
@@ -601,7 +619,7 @@ const FRAG_COLOR = `
     // the Datum Line: flat vermilion ink over the stones, thinner in the joints
     c = mix(c, uNwLine * (0.78 + 0.22 * st), vNwPaint * (0.55 + 0.45 * st));
     diffuseColor.rgb = c;
-    nwHgt = (st * (0.82 + 0.18 * sid.x) + 0.12 * nwNoise(vNwUV * 23.0)) * 0.026;
+    nwHgt = (st * (0.82 + 0.18 * sid.x) + 0.12 * nwNoise(vNwUV * 23.0)) * 0.03 * (1.0 - far);
     nwRough = mix(0.98, 0.9, st);
   } else if (k == 1) {
     vec2 p = vNwW.xz + vec2(vNwW.y * 0.7, -vNwW.y * 0.6);
@@ -618,8 +636,8 @@ const FRAG_COLOR = `
   } else if (k == 3) {
     vec2 p = vNwW.xz + vec2(vNwW.y * 0.7, -vNwW.y * 0.6);
     float n = nwFbm(p * 1.4), f = nwNoise(p * 11.0);
-    vec3 rc = mix(vec3(0.03, 0.028, 0.027), vec3(0.11, 0.09, 0.075), n);
-    rc = mix(rc, vec3(0.16, 0.07, 0.035), smoothstep(0.62, 0.8, nwNoise(p * 0.7 + 4.0)) * 0.6);
+    vec3 rc = mix(vec3(0.03, 0.028, 0.027), vec3(0.09, 0.082, 0.074), n);
+    rc = mix(rc, vec3(0.1, 0.06, 0.04), smoothstep(0.66, 0.85, nwNoise(p * 0.7 + 4.0)) * 0.45);
     diffuseColor.rgb = rc * (0.8 + 0.4 * f) * base;
     nwHgt = (n * 0.06 + f * 0.012);
     nwRough = 0.95;
@@ -654,7 +672,7 @@ export function kitMaterial(env) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = nwRough;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = nwBumpN(-vViewPosition, normal, nwHgt, faceDirection);');
   };
-  m.customProgramCacheKey = () => 'cal-ninewalls-kit-1';
+  m.customProgramCacheKey = () => 'cal-ninewalls-kit-2';
   env?.registerMaterial?.(m);
   return m;
 }
