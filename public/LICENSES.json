@@ -38,11 +38,12 @@
       "id": "armory-orokit-m2",
       "paths": [
         "public/models/armory/gaff-*.glb",
+        "public/models/armory/windwall-*.glb",
         "public/models/armory/kit-oro.glb"
       ],
-      "title": "Armory: Oro's kit (the Boat Gaff held, and every piece of the kit as she carries it), on the shared weapon atlas (all procedural)",
+      "title": "Armory: Oro's kit (the Boat Gaff and the Pine Windwall held, and every piece of the kit as she carries it), on the shared weapon atlas (all procedural)",
       "author": "CALIMA project",
-      "source_url": "tools/build/recipes/weapons/gaff-boat.mjs,tools/build/recipes/weapons/kit-oro.mjs",
+      "source_url": "tools/build/recipes/weapons/gaff-boat.mjs,tools/build/recipes/weapons/windwall-pine.mjs,tools/build/recipes/weapons/kit-oro.mjs",
       "licence": "project-original"
     },
     {
