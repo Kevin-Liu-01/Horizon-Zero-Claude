@@ -47,8 +47,11 @@ import { setOccluder, clearOccluders } from '../lib/sight.js';
  * (src/instruments/lib/sight.js, blockout.js form `built`): behaviour (moving cover, IN3) reads them in wave 3.
  *
  * THE LAMP (bible §7.2 / §7.4 "Weak point: drum lamp"): the kit lamp drum's face at the bow (r5Sockets.lens), lens
- * radius 0.171 m (a weak point of 0.22 m: >= 0.25 m across, >= 5 px at 40 m); a precise hit darkens it for 6 s
+ * radius 0.144 m (a weak point of 0.22 m: >= 0.25 m across, >= 5 px at 40 m); a precise hit darkens it for 6 s
  * (`machine.lampDarkT`). The drum turns in its yoke (the `head` bone) within LOOK_YAW of the hull's heading.
+ * M2 wave 3: the drum stands off the centreline on the bow's right shoulder, a telescope barrel beside its vertical
+ * circle, with a levelling staff on the left shoulder; at wave 2 it sat centred over a chin shelf under a visor and
+ * read as a face with one eye (the never list: no eye).
  */
 
 const URL = '/models/instruments/tiller.glb';

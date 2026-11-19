@@ -16,11 +16,16 @@
  *     serial "06" in brass numerals on the bow flanks;
  *   - a DUST SKIRT of riveted enamel plates hanging from both flanks to 0.5 m over the ground (brass foot strips), and
  *     a bow and a stern plate to 0.9 m: the hull's sight shadow (src/instruments/lib/blockout.js form `built`);
- *   - SIX HIGH-KNEED STILTS outside the skirt (gunmetal thighs under enamel greaves, brass knee hubs at 2.0 m, enamel
- *     shins with a vermilion graduation, gunmetal pistons, riveted disc feet), alternating tripod;
- *   - at the bow the LAMP: a kit lamp drum (brass bezel, the vernier on its face) in a gunmetal U-yoke on a graduated
- *     brass turret ring set on a chin shelf: a theodolite's drum on the hull, never on a neck (the `head` bone turns
- *     it in its yoke);
+ *   - SIX HIGH-KNEED STILTS outside the skirt (gunmetal thighs under enamel greaves, brass knee hubs at 1.9-2.05 m,
+ *     enamel shins with a vermilion graduation, gunmetal pistons, riveted disc feet), alternating tripod. The thigh is
+ *     1.0 m and the shin 2.0 m (M2 wave 3: at 0.6 / 1.95 the leg could not fold short enough for its own stance: the
+ *     solver's fold limit, |l1 - l2| + 0.12 max(l1, l2) = 1.58 m, stood above the 1.36-1.39 m hip-to-plant distance of
+ *     every stance, so each planted foot rode up and down by the shortfall and A45c read 0.052-0.056 m a step; now the
+ *     limit is 1.24 m: tools/instruments/foot-slip-bench.mjs);
+ *   - at the bow the LAMP: a kit lamp drum, long as a telescope barrel (brass bezel, the vernier on its face, a finder
+ *     tube along its top, the vertical circle edge-on beside it) in a gunmetal U-yoke on a graduated brass turret ring,
+ *     set OFF the centreline on the bow's right shoulder, with a levelling staff on the left: a theodolite set up on the
+ *     hull, never a head with one eye and never on a neck (the `head` bone turns it in its yoke);
  *   - on the crown a turned enamel SEED HOPPER with a brass rim (the vernier) and a pale-ice LEVEL VIAL in a brass
  *     cradle under a tilted gyroscope ring; aft two ANTENNAE with spike finials to 2.70 m, the taller carrying a small
  *     faded orchil BANNER on a yard;
@@ -65,9 +70,9 @@ export const TILLER = Object.freeze({
   split: 0.3,                                   // the pelvis / chest seam
   skirtX: 0.665, skirtTop: 1.42, skirtBot: 0.5, skirtEnd: 0.66, skirtD: 0.03,
   endPlateBot: 0.9,
-  hipX: 0.75, hipY: 1.62, hipZ: 1.15, footX: 0.80, footZ: 1.48, footY: 0.13, thigh: 0.6, shin: 1.95, pad: 0.12,
+  hipX: 0.75, hipY: 1.62, hipZ: 1.15, footX: 0.80, footZ: 1.48, footY: 0.13, thigh: 1.0, shin: 2.0, pad: 0.12,
   chinY: 1.54, chinZ0: 1.52, chinZ1: 2.02,
-  drumC: [0, 1.86, 1.70], drumR: 0.19, drumDepth: 0.26,
+  drumC: [0, 1.86, 1.56], drumR: 0.16, drumDepth: 0.44, drumOX: 0.22,
   hopperZ: -0.15, mastZ: -1.22, top: 2.70,
 });
 
@@ -169,27 +174,53 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
   }
 
   /* ------------------------------- the bow: chin shelf, turret, lamp drum ------ */
+  /* NOT A FACE (M2 wave 3; the wave 2 review: "from the front it can read as a face with one eye"). At wave 2 one round
+   * drum sat on the bow's centreline over a chin shelf with a visor above it: a lit disc centred on a rounded hull, a
+   * jaw under it and a brow over it, which is a one-eyed face. The theodolite now stands OFF the centreline on the
+   * bow's right shoulder (T.drumOX), as a survey instrument is set up on a hull, not as a head: its shelf is a
+   * bracket under it alone, the drum is a longer telescope barrel (T.drumDepth) with a finder tube along its top and the
+   * instrument's vertical circle edge-on beside it (a line from the front, a graduated disc from the side), and the
+   * visor (the brow) is gone. The left shoulder carries a levelling staff, so the bow reads as two different
+   * instruments, never as a pair of eyes. */
+  const OX = T.drumOX;
   const CHZ = (T.chinZ0 + T.chinZ1) / 2;
-  rbox(H('chest'), V(0, T.chinY, CHZ), [0.6, 0.07, T.chinZ1 - T.chinZ0], 0.02, { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
-  strut(H('chest'), V(-0.3, T.chinY - 0.035, T.chinZ1 - 0.01), V(0.3, T.chinY - 0.035, T.chinZ1 - 0.01), 0.016, 0.016, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
-  for (const s of [1, -1]) strut(H('chest'), V(s * 0.24, T.chinY - 0.03, T.chinZ0 + 0.02), V(s * 0.16, 1.36, 1.5), 0.026, 0.022, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
-  const TUR = V(0, T.chinY + 0.04, T.drumC[2] + 0.12);
+  rbox(H('chest'), V(OX, T.chinY, CHZ), [0.44, 0.07, T.chinZ1 - T.chinZ0], 0.02, { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
+  strut(H('chest'), V(OX - 0.22, T.chinY - 0.035, T.chinZ1 - 0.01), V(OX + 0.22, T.chinY - 0.035, T.chinZ1 - 0.01), 0.016, 0.016, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
+  for (const s of [1, -1]) strut(H('chest'), V(OX + s * 0.17, T.chinY - 0.03, T.chinZ0 + 0.02), V(OX * 0.6 + s * 0.12, 1.36, 1.5), 0.026, 0.022, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
+  const TUR = V(OX, T.chinY + 0.04, T.drumC[2] + 0.12);
   limbRing(H('chest'), at(TUR.x, TUR.y, TUR.z), 0.12, 0.25, 0.022, { ticks: 24, faceSurf: 'bronze', faceTone: C.BRASS });
   rivetRing(H('chest'), TUR.clone().add(V(0, 0.012, 0)), V(0, 1, 0), 0.235, 10, 0.009);
   // the yoke (head bone): a gunmetal post, a cross bar, two enamel cheeks with brass trunnions
-  const DR = V(...T.drumC), DC = DR.clone().add(V(0, 0, T.drumDepth / 2));
+  const DR = V(OX + T.drumC[0], T.drumC[1], T.drumC[2]), DC = DR.clone().add(V(0, 0, T.drumDepth / 2));
   strut(H('neck'), TUR.clone().add(V(0, 0.01, 0)), TUR.clone().add(V(0, 0.07, 0)), 0.07, 0.06, { surf: 'graphite', tone: C.GUNMETAL, sides: 14 });
-  strut(H('head'), V(-0.27, TUR.y + 0.07, DC.z), V(0.27, TUR.y + 0.07, DC.z), 0.03, 0.03, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
+  strut(H('head'), V(OX - 0.27, TUR.y + 0.07, DC.z), V(OX + 0.27, TUR.y + 0.07, DC.z), 0.03, 0.03, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
   for (const s of [1, -1]) {
     plate(H('head'), [[-0.07, -0.02], [0.07, -0.02], [0.05, 0.27], [-0.05, 0.27]], 0.024, 0.005,
-      basis(V(0, 0, -s), V(0, 1, 0), V(s, 0, 0), V(s * 0.255, TUR.y + 0.07, DC.z)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.45 });
-    strut(H('head'), V(s * (T.drumR + 0.005), DC.y, DC.z), V(s * 0.285, DC.y, DC.z), 0.042, 0.042, { surf: 'bronze', tone: C.BRASS, sides: 12, wear: 0.6 });
-    rivet(H('head'), V(s * 0.286, DC.y, DC.z), V(s, 0, 0), 0.012);
+      basis(V(0, 0, -s), V(0, 1, 0), V(s, 0, 0), V(OX + s * 0.255, TUR.y + 0.07, DC.z)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.45 });
+    strut(H('head'), V(OX + s * (T.drumR + 0.005), DC.y, DC.z), V(OX + s * 0.285, DC.y, DC.z), 0.042, 0.042, { surf: 'bronze', tone: C.BRASS, sides: 12, wear: 0.6 });
+    rivet(H('head'), V(OX + s * 0.286, DC.y, DC.z), V(s, 0, 0), 0.012);
   }
   const dr = lampDrum(H('head'), DR, V(0, 0, 1), { r: T.drumR, depth: T.drumDepth, ticks: 16 });
-  // a visor over the drum (enamel, riveted): shade for the iris in a low sun
-  plate(H('head'), [[-0.17, 0], [0.17, 0], [0.13, 0.08], [-0.13, 0.08]], 0.012, 0.003,
-    basis(V(-1, 0, 0), V(0, 0.25, 1).normalize(), V(0, 1, -0.25).normalize(), V(0, DR.y + T.drumR * 1.04, DR.z + T.drumDepth - 0.06)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
+  // the vertical circle on the inboard trunnion: a graduated brass disc square to the axle (edge-on from the bow)
+  limbRing(H('head'), basis(V(0, 1, 0), V(-1, 0, 0), V(0, 0, 1), V(OX - 0.31, DC.y, DC.z)), 0.05, 0.2, 0.02,
+    { ticks: 36, faceSurf: 'bronze', faceTone: C.BRASS, outerSurf: 'glaze', outerTone: C.ENAMEL });
+  // the finder: a slim brass tube along the barrel's top, toward the outboard side
+  strut(H('head'), V(OX + 0.07, DR.y + T.drumR + 0.05, DR.z + 0.02), V(OX + 0.07, DR.y + T.drumR + 0.05, DR.z + T.drumDepth - 0.04), 0.024, 0.024, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.5 });
+  for (const k of [0.2, 0.8]) strut(H('head'), V(OX + 0.05, DR.y + T.drumR - 0.01, DR.z + T.drumDepth * k), V(OX + 0.07, DR.y + T.drumR + 0.04, DR.z + T.drumDepth * k), 0.01, 0.01, { surf: 'graphite', tone: C.GUNMETAL, sides: 6 });
+  // the levelling staff on the left shoulder: a gunmetal foot, an enamel staff with vermilion graduations, a brass cap
+  {
+    const SX = -0.3, SZ = T.chinZ0 - 0.06;
+    let y0s = 0;   // the hull's skin at x = SX on the bow (the left half of the section, u 0.5-1)
+    for (let u = 0.5, best = Infinity; u <= 1; u += 0.005) { const q = skin.at(u, SZ).p; if (q.y > 1.66 && Math.abs(q.x - SX) < best) { best = Math.abs(q.x - SX); y0s = q.y; } }
+    const y1s = y0s + 0.5;
+    strut(H('chest'), V(SX, y0s - 0.05, SZ), V(SX, y0s + 0.04, SZ), 0.05, 0.045, { surf: 'graphite', tone: C.GUNMETAL, sides: 10 });
+    strut(H('chest'), V(SX, y0s + 0.04, SZ), V(SX, y1s, SZ), 0.024, 0.022, { surf: 'glaze', tone: C.ENAMEL, sides: 8, wear: 0.4 });
+    for (let k = 1; k <= 4; k++) {
+      const y = y0s + 0.04 + (k * (y1s - y0s - 0.04)) / 5;
+      strut(H('chest'), V(SX, y - 0.012, SZ), V(SX, y + 0.012, SZ), 0.0255, 0.0255, { surf: 'glaze', tone: C.VERM, sides: 8 });
+    }
+    strut(H('chest'), V(SX, y1s, SZ), V(SX, y1s + 0.03, SZ), 0.03, 0.018, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
+  }
 
   /* ------------------------------- the crown: hopper, vial, gyro, antennae ----- */
   const crown = (z) => skin.at(0, z).p;
@@ -271,7 +302,7 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
       { name: 'pelvis', pos: sh(V(0, 1.7, -0.95)), r: 0.9 },
       { name: 'chest', pos: sh(V(0, 1.7, T.split)), r: 0.75 },
       { name: 'neck', pos: sh(TUR), r: 0.25 },
-      { name: 'head', pos: sh(DC), r: 0.3, tip: sh(V(0, DC.y, DR.z + T.drumDepth + 0.2)) },
+      { name: 'head', pos: sh(DC), r: 0.3, tip: sh(V(DC.x, DC.y, DR.z + T.drumDepth + 0.2)) },
     ],
     tail: [
       { name: 'tail1', pos: sh(TAIL0), r: 0.3 },
