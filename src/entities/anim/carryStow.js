@@ -778,7 +778,10 @@ export class CarryStow {
          * open hand does not go home, it goes for the haft. The lance layer runs after this one and has had the left arm
          * since the release (meleeLayer: the bow is out of the hand); this phase only kept the bow's sequence open. The stow ends
          * a step after the release: the fingers open off the seated limb */
-        if (this.ctx.combat?.melee?.stance === 'draw' && B.relDone) { B.mode = 0; B.readyAt = B.simT; B.w = 0; B.inHand = false; B.phase = ''; return 0; }
+        /* (M2 polish, W3 in key2MidBowUnstow: the right hand still on its way to the regrip (an unstow turned back before its
+         *  grip) is let go here too, as in mode 0: returned without it, that step's right arm was the clip's (the lance layer
+         *  leaves it to the bow while `bowRightBusy`), and the wrist went 0.466 m out to her side and 0.422 m back in two steps) */
+        if (this.ctx.combat?.melee?.stance === 'draw' && B.relDone) { B.mode = 0; B.readyAt = B.simT; B.w = 0; B.inHand = false; B.phase = ''; this._bowRightHand(dt); return 0; }
         const tE = T.total, ke = clamp((B.t - tRel) / (tE - tRel), 0, 1);
         this._charOf(b.handL.bone, _bpB);                 // the clip's wrist (before this layer)
         _bpB.add(_bpE.copy(palmOff).applyQuaternion(_bpQ));
@@ -1127,7 +1130,8 @@ export class CarryStow {
     } else {
       B.quick = false;
       // the lance asked for (key 2) is the player's request; the 8 s timer is the game's
-      const asked = !!mel && (mel.stance === 'draw' || mel.stance === 'ready' || mel.stance === 'swing');
+      // (M2 polish: ...and key 3, the gaff asked for with the bow out: the bow's stow is the swap's first half)
+      const asked = (!!mel && (mel.stance === 'draw' || mel.stance === 'ready' || mel.stance === 'swing')) || !!cmb?.gaff?.want;
       B.tempo = asked ? 'ask' : 'timer';
       B.T = asked ? BOW_STOW_R.ask : BOW_STOW_R.timer;
       B.lOpen = false; B.revOk = false; B.sWait = 0; B.revPalmOk = false; B.hqRevOk = false;
@@ -1206,6 +1210,16 @@ export class CarryStow {
   bowRightBusy() {
     const B = this._bp;
     return !!B && B.rOn === 1;
+  }
+
+  /** M2 polish (the gaff in the loop): does the bow's sequence still have, or still need, her RIGHT hand? Its regrip
+   *  holds it (`bowRightBusy`), and a stow with the bow in the carry's fist will need it for its regrip; from the reverse
+   *  fist on (the stow's D and S) the right is free. The gaff's draw waits on this, then its take on the release. */
+  bowNeedsRight() {
+    const B = this._bp;
+    if (!B) return false;
+    if (B.rOn === 1) return true;
+    return B.owner === 'handL' && B.pose !== 'rev';
   }
 
   /**

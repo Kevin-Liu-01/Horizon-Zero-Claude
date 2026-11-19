@@ -54,7 +54,7 @@ export function gradeCase(kind, L, meta = {}) {
   const out = { kind, steps: L.length, fails: [] };
   // (M1a weapons fix 1: W9's mid-draw and mid-stow cases: the second key comes mid-sequence, so the draw's own path and
   //  time bars (W4, W7) are not theirs; W1-W3, W6, W9 and W11's per-step clauses hold)
-  meta.w9mid = /^key[12]Mid/.test(meta.name || '');
+  meta.w9mid = /^key[123]Mid/.test(meta.name || '');
   const fail = (s) => out.fails.push(s);
   const n = L.length;
   // ---- ownership events
@@ -246,6 +246,8 @@ export function gradeCase(kind, L, meta = {}) {
     if (outside) fail(`W2 ${outside} owner changes outside a grip or release event (${outAt.slice(0, 3).join(', ')})`);
     // the visible prop's far end may not jump between any two steps by more than its rate (a teleport check)
     let both = 0; for (const r of L) if (r.bowOwner === 'handL' && r.lanceOwner !== 'carry') both++;
+    // (M2 polish, the gaff in the loop: the gaff in her right fist with the bow in her left, or with the lance)
+    for (const r of L) if (r.gaffOwner === 'handR' && (r.bowOwner === 'handL' || r.lanceOwner !== 'carry')) both++;
     w2.bothInHandsSteps = both;
     if (both) fail(`W2 both weapons in her hands on ${both} steps`);
     out.W2 = w2;
@@ -357,6 +359,9 @@ export function gradeCase(kind, L, meta = {}) {
     if (kind === 'swap12') { const i = first(L, (r) => r.bowHome); w7.bowStowAskS = i >= 0 ? r3(L[i].t) : null; }
     if (kind === 'swap21') { const i = first(L, (r) => r.stance === 'holstered'); w7.lanceStowAskS = i >= 0 ? r3(L[i].t) : null; }
     if (kind === 'aim') { const i = first(L, (r) => r.loosable); w7.rmbToLoosableS = i >= 0 ? r3(L[i].t) : null; }
+    // (M2 polish, the gaff in the loop: key 3 with the bow out, to the gaff at its ready; key 1 with the gaff out, to the bow)
+    if (kind === 'swapBG') { const i = first(L, (r) => r.gaffReady); w7.gaffReadyS = i >= 0 ? r3(L[i].t) : null; const h = first(L, (r) => r.bowHome); w7.bowStowAskS = h >= 0 ? r3(L[h].t) : null; }
+    if (kind === 'swapGB') { const i = first(L, (r) => r.bowReady); w7.bowReadyS = i >= 0 ? r3(L[i].t) : null; const h = first(L, (r) => r.gaffHome && r.t > 0.05); w7.gaffHomeS = h >= 0 ? r3(L[h].t) : null; }
     out.W7 = w7;
     const band = (v, lo, hi, what) => { if (meta.w9mid) return; if (v == null) fail(`W7 ${what}: never`); else if (v < lo || v > hi) fail(`W7 ${what} ${v} s (band ${lo}-${hi})`); };
     if (kind === 'bowUnstow') band(w7.bowReadyS, 0.30, 0.40, 'bow unstow');
@@ -367,6 +372,9 @@ export function gradeCase(kind, L, meta = {}) {
     if (kind === 'swap12') band(w7.lanceReadyS, 0.45, 0.65, 'swap 1 to 2');
     if (kind === 'swap12' && !meta.w9mid) band(w7.bowStowAskS, 0.30, 0.37, 'bow asked stow (in swap 1 to 2)');
     if (kind === 'swap21') band(w7.bowReadyS, 0.45, 0.65, 'swap 2 to 1');
+    // (M2 briefs KT3: "no swap over 650 ms")
+    if (kind === 'swapBG') band(w7.gaffReadyS, 0, 0.65, 'swap bow to gaff');
+    if (kind === 'swapGB') band(w7.bowReadyS, 0, 0.65, 'swap gaff to bow');
     /* (M1a weapons fix round 1, the judge's FIX LIST 3: "RMB from stowed to loosable no later than W0's value". W0 is
      *  0d3feb5; the RMB case did not exist there, so it was measured there with this bench's own case (its handling files
      *  laid over that tree, no source change): 0.867 s, with the bow popping 0.63 m at the grip and the arrow on the string 26
@@ -380,9 +388,13 @@ export function gradeCase(kind, L, meta = {}) {
     if (want) {
       const e = L[n - 1];
       const atGrip = want === 'bow' ? (e.bowS == null || e.bowS >= 0.999) && e.bowVis === 'held' : true;
-      const ok = want === 'bow' ? e.bowOwner === 'handL' && e.lanceOwner === 'carry' && atGrip : (e.lanceOwner === 'handR' || e.lanceOwner === 'both') && e.bowOwner === 'carry';
-      out.W9 = { want, ok, end: { bow: e.bowOwner, lance: e.lanceOwner, stance: e.stance } };
-      if (!ok) fail(`W9 asked for the ${want}: ended with the bow ${e.bowOwner}, the lance ${e.lanceOwner}`);
+      let ok = want === 'bow' ? e.bowOwner === 'handL' && e.lanceOwner === 'carry' && atGrip : (e.lanceOwner === 'handR' || e.lanceOwner === 'both') && e.bowOwner === 'carry';
+      // (M2 polish: the gaff in the loop: key 3 ends with the gaff in her right fist and both others on her back; key 1 with
+      //  the gaff back on its hanger)
+      if (want === 'gaff') ok = e.gaffOwner === 'handR' && e.bowOwner === 'carry' && e.lanceOwner === 'carry';
+      else if (e.gaffOwner != null && e.gaffOwner !== 'carry') ok = false;
+      out.W9 = { want, ok, end: { bow: e.bowOwner, lance: e.lanceOwner, gaff: e.gaffOwner ?? null, stance: e.stance } };
+      if (!ok) fail(`W9 asked for the ${want}: ended with the bow ${e.bowOwner}, the lance ${e.lanceOwner}${e.gaffOwner != null ? `, the gaff ${e.gaffOwner}` : ''}`);
     }
   }
   // ---- W8 no pop into the aim (RMB from stowed): from the bow's grip event to full raise (aim weight >= 0.99)

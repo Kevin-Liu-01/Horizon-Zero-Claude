@@ -78,6 +78,8 @@ const SWING_TURN = 0.35;
 const HEAD_KEEP = 0.75;
 /** The settle: a stow (or a swap) asked mid-verb first brings the fist back to the ready over this long (s). */
 const SETTLE_S = 0.12;
+/** M2 polish: the most the take waits, at the close, for the bow's release in a swap from the bow (s) */
+const BOW_TAKE_WAIT = 0.35;
 const _vw = new THREE.Vector3(), _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _vq = new THREE.Quaternion();
 
 /** The reach's elbow pole: out to her right and back (the elbow leads the hand round the hip). */
@@ -242,7 +244,16 @@ export class GaffLayer {
     if (!want && G.was && V?.busy && G.owner === 'handR' && G.mode === 0) { V.cancel(); G.settleT = SETTLE_S; G.vId = null; }
     // the right hand is the lance's while it is out: a draw waits for the lance to be home
     const lanceOut = !!(this.ctx.combat?.melee && (this.ctx.combat.melee.stance !== 'holstered' || this.ctx.combat.melee.lanceInHand));
-    if (want !== G.was && !(want && lanceOut && G.owner !== 'handR') && !(G.settleT > 0)) { this._gaffRequest(want); G.was = want; }
+    /* (M2 polish: ...and for the bow to be back on her back: the bow in her left fist, or its regrip holding her right hand
+     *  (combat keeps the bow stowed while the gaff is asked for, `_updateWield`, so its stow runs first). Drawn beside it,
+     *  key 3 with the bow out had both weapons in her hands) */
+    /*  The reach may start while the bow's stow is still seating it with the left hand (from its reverse fist on, the
+     *  right free: `bowNeedsRight`): the take
+     *  waits, at the close, for the bow's release (`BOW_TAKE_WAIT` at most), so the two are never in her hands together
+     *  and the swap is not the two sequences end to end */
+    const bowHeld = this.bowInHand?.() === true;
+    const bowOut = (this.bowNeedsRight ? this.bowNeedsRight() : this.bowRightBusy?.()) === true;
+    if (want !== G.was && !(want && (lanceOut || bowOut) && G.owner !== 'handR') && !(G.settleT > 0)) { this._gaffRequest(want); G.was = want; G.bowWait = 0; }
     const prop = gaff.prop;
     if (G.mode === 0) {
       if (G.owner !== 'handR') { G.w = 0; G.phase = ''; G.lastOk = false; V?.cancel?.(); if (this._oroKit) this._oroKit.tiltK = 0; this._gaffShowHeld(prop, false); return 0; }
@@ -266,6 +277,11 @@ export class GaffLayer {
     }
     G.t += dt;
     const T = G.T;
+    // (the take waits at the close while the bow is still in her left fist: see the request above)
+    if (G.mode === 1 && G.owner !== 'handR' && bowHeld && (G.bowWait || 0) < BOW_TAKE_WAIT) {
+      const tC = phaseEnd(T, 'C') - 1e-4;
+      if (G.t > tC) { G.bowWait = (G.bowWait || 0) + (G.t - tC); G.t = tC; }
+    }
     phaseAt(T, G.t, _ph);
     const i = _ph[0], k = _ph[1], name = T.phases[i][0];
     G.phase = name; G.k = k;

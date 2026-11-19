@@ -1125,6 +1125,14 @@ export class Combat {
     /* (M1a weapons step 1, hero-anim: a draw asked for counts as out, so the bow is stowed first, and the lance's draw
      *  waits for its release: melee.js `_advanceStance`) */
     const lanceOut = !!this.melee && (!!this.melee.lanceInHand || this.melee.stance === 'draw');
+    /* (M2 polish, hero-anim: the gaff in the loop, ruling R8 "never both in hand". The gaff is her RIGHT hand's and the
+     *  bow her LEFT's, so nothing kept them apart: key 3 with the bow out (or a machine alert near her with the gaff out)
+     *  had the bow in her left fist and the gaff in her right. The bow is on her back while the gaff is asked for or still
+     *  in her fist: key 3 stows the bow first (the gaff's draw waits for its release, gaffLayer.js), and key 1 brings the
+     *  bow once the gaff is back on its hanger. An aim, as for the lance, puts the gaff away first) */
+    const g = this.gaff;
+    if (aiming && g?.owned && g.want) g.stow(null);
+    const gaffOut = !!g?.owned && (!!g.want || !!g.inHand);
     if (aiming || this._drawing) this._holsterT = HOLSTER_TIME;
     else this._holsterT = Math.max(0, this._holsterT - realDt);
 
@@ -1143,7 +1151,7 @@ export class Combat {
         break;
       }
     }
-    this.weaponDrawn = !!playing && !lanceOut && (aiming || this._holsterT > 0 || threat);
+    this.weaponDrawn = !!playing && !lanceOut && !gaffOut && (aiming || this._holsterT > 0 || threat);
   }
 
   /** The Wirelayer's placement state, shown centred above the reticle. */

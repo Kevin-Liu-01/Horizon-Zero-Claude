@@ -38,7 +38,7 @@ const CASE = flag('--case');
 const SELF = fileURLToPath(import.meta.url);
 /* ---- the parent: one child process a case (and a W10 run), at most --jobs at once */
 if (!CASE) {
-  const { CASE_NAMES, W10_SEQS, W10_KINDS } = await import('./handling-cases.mjs');
+  const { CASE_NAMES, GAFF_CASE_NAMES, W10_SEQS, W10_KINDS } = await import('./handling-cases.mjs');
   const jobs = Math.max(1, Number(flag('--jobs', 4)));
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'hbench-'));
   const runChild = (extra) => new Promise((res) => {
@@ -54,7 +54,7 @@ if (!CASE) {
     });
   });
   const pool = async (tasks) => { const out = new Array(tasks.length); let k = 0; await Promise.all(Array.from({ length: jobs }, async () => { while (k < tasks.length) { const i = k++; out[i] = await tasks[i](); } })); return out; };
-  const only = flag('--only') ? flag('--only').split(',') : (flag('--w10') ? [] : CASE_NAMES);
+  const only = flag('--only') ? flag('--only').split(',') : (flag('--w10') ? [] : [...CASE_NAMES, ...(args.includes('--no-gaff') ? [] : GAFF_CASE_NAMES)]);
   const out = { commit: flag('--commit', '?'), process: 'one Node process a case', cases: {} };
   const logs = {};
   const res = await pool(only.map((name) => () => runChild(['--case', name])));
@@ -66,6 +66,14 @@ if (!CASE) {
     console.log(`${name.padEnd(15)} ${g.fails.length ? 'FAIL' : 'pass'}  ${JSON.stringify({ ev: g.events, W7: g.W7 })}`);
     for (const f of g.fails) console.log(`    - ${f}`);
   });
+  {
+    // (M2 polish: the bow-and-lance cases and the gaff-loop cases, counted apart)
+    const tally = (names) => { let c = 0, k = 0, n = 0; for (const nm of names) { const g = out.cases[nm]; if (!g || g.error) continue; n++; if (g.fails?.length) { c++; k += g.fails.length; } } return { cases: n, failingCases: c, clauses: k }; };
+    const bl = tally(only.filter((x) => CASE_NAMES.includes(x))), gl = tally(only.filter((x) => GAFF_CASE_NAMES.includes(x)));
+    out.tally = { bowLance: bl, gaffLoop: gl };
+    if (bl.cases) console.log(`bow and lance: ${bl.clauses} failing clauses in ${bl.failingCases} of ${bl.cases} cases`);
+    if (gl.cases) console.log(`the gaff in the loop: ${gl.clauses} failing clauses in ${gl.failingCases} of ${gl.cases} cases`);
+  }
   if (flag('--w10')) {
     const seqs = flag('--w10-only') ? flag('--w10-only').split(',') : W10_SEQS;
     const tasks = [], keys = [];
@@ -118,6 +126,37 @@ const M = buildSweep(R, THREE);
 const { an, model } = R;
 const NEW = typeof an.handlingInfo === 'function';
 const { SOCKETS } = await import(path.join(ROOT, 'src/hero/sockets.js'));
+
+/* ---- M2 polish (the gaff in the loop): Oro's kit and the held gaff, granted as HeroRig.grantOroKit does (gaff-bench.mjs's
+ * setup), only in the gaff-loop cases' processes */
+const GAFF_CASE = /Gaff|key3/.test(CASE || '');
+let gaff = null;
+if (GAFF_CASE) {
+  const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+  const { MeshoptDecoder } = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+  const { HeroOroKit } = await import(path.join(ROOT, 'src/hero/orokit.js'));
+  const { ensureGaff, HeldGaff } = await import(path.join(ROOT, 'src/combat/gaff.js'));
+  await MeshoptDecoder.ready;
+  const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+  const parse = (file) => { const b = readFileSync(path.join(ROOT, file)); return new Promise((res, rej) => loader.parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.length), '', res, rej)); };
+  R.ctx.combat = R.combat;
+  const oro = new HeroOroKit({ model, ctx: R.ctx, get animator() { return an; } });
+  oro.entry = { root: (await parse('public/models/armory/kit-oro.glb')).scene };
+  oro.attach();
+  oro.owned = { gaff: true, windwall: false, pots: 0 }; oro._apply();
+  const hu = R.hero.update.bind(R.hero);
+  R.hero.update = (dt) => { hu(dt); an._oroKit = oro; oro.solve(dt); };
+  gaff = ensureGaff(R.ctx);
+  gaff.owned = true;
+  gaff.prop = new HeldGaff({ assets: {} });
+  const root = (await parse('public/models/armory/gaff-boat.glb')).scene;
+  const inner = new THREE.Group(); inner.add(root);
+  inner.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
+  inner.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI));
+  const sockets = {};
+  root.traverse((o) => { if (!o.isMesh && o !== root && o.parent?.isMesh) sockets[o.name] = o.position.clone(); });
+  gaff.prop.sockets = sockets; gaff.prop.length = sockets.tip?.y ?? 0.625; gaff.prop.inner = inner; gaff.prop.group.add(inner);
+}
 
 /* ---- combat's bow, stood in (combat.js constructor, `_initStow`, `_placeInHand` carry branch, `_updateWield`) */
 const node = an.handAttach('l');
@@ -197,13 +236,20 @@ function combatStep(dt) {
   } else { emu.drawing = false; C.drawStrength = 0; }
   emu.loosable = emu.drawing && C.drawStrength > 0.02 && (!an.looseReady || an.looseReady());
   if (p.aiming) emu.holsterT = 8; else emu.holsterT = Math.max(0, emu.holsterT - dt);
-  C.weaponDrawn = !lanceOut && (p.aiming || emu.holsterT > 0);
+  // (M2 polish: combat's rule with the gaff, `_updateWield`: an aim puts it away, and the bow stays on her back while it is
+  //  asked for or still in her fist)
+  if (gaff && p.aiming && gaff.want) gaff.stow(null);
+  const gaffOut = !!gaff && (gaff.want || an.gaffInHand?.() === true);
+  C.weaponDrawn = !lanceOut && !gaffOut && (p.aiming || emu.holsterT > 0);
   const pathHand = an.bowInHand ? an.bowInHand() : null;
   const wield = pathHand ?? C.weaponDrawn;
   if (wield) { placeInHand(p.aiming); if (pathHand !== null) an.bowPathPose?.(group); } else placeOnBack();
 }
 const key1 = () => { R.melee.holsterLance(true); if (NEW) emu.holsterT = 8; };    // quickslots.select(1) (+ noteCombatAction: NEW)
 const key2 = () => { R.melee.drawLance(); };                                     // quickslots.select(2)
+// (M2 polish: quickslots.select(3) and select(1) with the gaff owned: 3 draws it; 1 puts it back on its hanger, then the bow)
+const key3 = () => { gaff.draw(); };
+const key1g = () => { if (gaff.want || an.gaffInHand?.()) gaff.stow(null); key1(); };
 const fwd = (speed) => { const p = R.player; p.velocity.set(Math.sin(p.heading) * speed, 0, Math.cos(p.heading) * speed); p.moveSpeed = speed; };
 function tick(speed = 0) { if (speed) fwd(speed); step(R); combatStep(1 / 60); }
 
@@ -387,6 +433,8 @@ function record(t) {
   r.curlGeoL = cg(r.fingL, r.wristL); r.curlGeoR = cg(r.fingR, r.wristR);
   r.footL = b.footL ? ch(b.footL.bone) : null; r.footR = b.footR ? ch(b.footR.bone) : null;
   r.reachYaw = H && typeof H.bow.yaw === 'number' ? +(H.bow.yaw * D).toFixed(3) : 0;
+  // (M2 polish: the gaff's owner and sequence, in the gaff-loop cases)
+  if (gaff) { const G = an.gaffInfo(); r.gaffOwner = G.owner; r.gaffMode = G.mode; r.gaffReady = G.owner === 'handR' && G.mode === 0; r.gaffHome = G.owner !== 'handR' && G.mode === 0; }
   // (a debugging probe: HB_DBG names an expression over an, ml, mel, B (carryStow's sequence), H; its value is kept as r.dbg)
   if (DBG) { try { r.dbg = DBG(an, ml, mel, an._bp, H); } catch (e) { r.dbg = String(e); } }
   return r;
@@ -434,9 +482,21 @@ Object.assign(CASES, {
   key2MidBowStow: { kind: 'swap12', tempo: 'ask', w9: 'lance', pre: () => settleBowOut(), go: () => { emu.holsterT = 0; }, secs: 1.6, each: (i) => { if (i === 12) key2(); } },
   key1MidLanceStow: { kind: 'swap21', tempo: 'ask', w9: 'bow', pre: () => settleLanceOut(), go: () => R.melee.holsterLance(), secs: 1.6, each: (i) => { if (i === 9) key1(); } },
 });
+/* M2 polish (the gaff in the loop): key 3 with the bow out (the bow's asked stow, then the gaff drawn by the right hand),
+ * key 1 with the gaff out (the gaff back on its hanger, then the bow), standing and at a jog; key 3 in the middle of the
+ * bow's unstow and key 1 in the middle of the gaff's draw */
+function settleGaffOut(speed = 0) { key3(); for (let i = 0; i < 60; i++) tick(speed); }
+Object.assign(CASES, {
+  swapBowToGaff: { kind: 'swapBG', tempo: 'ask', w9: 'gaff', pre: () => settleBowOut(), go: key3, secs: 1.4 },
+  swapGaffToBow: { kind: 'swapGB', tempo: 'ask', w9: 'bow', pre: () => settleGaffOut(), go: key1g, secs: 1.4 },
+  swapBowToGaffJog: { kind: 'swapBG', tempo: 'ask', jog: true, w9: 'gaff', pre: () => settleBowOut(SPEEDS.jog), go: key3, secs: 1.4 },
+  swapGaffToBowJog: { kind: 'swapGB', tempo: 'ask', jog: true, w9: 'bow', pre: () => settleGaffOut(SPEEDS.jog), go: key1g, secs: 1.4 },
+  key3MidBowUnstow: { kind: 'swapBG', tempo: 'ask', w9: 'gaff', pre: () => {}, go: () => { emu.holsterT = 8; }, secs: 1.6, each: (i) => { if (i === 9) key3(); } },
+  key1MidGaffDraw: { kind: 'swapGB', tempo: 'ask', w9: 'bow', pre: () => {}, go: key3, secs: 1.6, each: (i) => { if (i === 9) key1g(); } },
+});
 CASES.bowUnstow.w9 = 'bow'; CASES.lanceDraw.w9 = 'lance'; CASES.swap12.w9 = 'lance'; CASES.swap21.w9 = 'bow';
 CASES.swap12Jog.w9 = 'lance'; CASES.swap21Jog.w9 = 'bow';
-{ const { CASE_NAMES } = await import('./handling-cases.mjs'); for (const n of CASE_NAMES) if (!CASES[n]) throw new Error(`handling-cases.mjs names ${n}, the bench has no such case`); }
+{ const { CASE_NAMES, GAFF_CASE_NAMES } = await import('./handling-cases.mjs'); for (const n of [...CASE_NAMES, ...GAFF_CASE_NAMES]) if (!CASES[n]) throw new Error(`handling-cases.mjs names ${n}, the bench has no such case`); }
 
 /* ---- W10: an interrupt injected at step k of a sequence (`--inject kind@k`) */
 const OPP = { bowUnstow: () => { emu.holsterT = 0; }, bowStowTimer: () => { emu.holsterT = 8; }, lanceDraw: () => R.melee.holsterLance(), lanceStowAsk: () => R.melee.drawLance(), lanceStowTimer: () => R.melee.drawLance(), swap12: key1, swap21: key2 };
