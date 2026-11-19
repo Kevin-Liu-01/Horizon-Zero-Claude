@@ -105,7 +105,7 @@ async function boot() {
 }
 /** Swap free (MB): the mem-guard also kills gate Chromes on a near-full swap (free < 500 MB with pressure 2 or free < 45 %). */
 const swapFreeMB = () => { try { const m = /free = ([\d.]+)M/.exec(execFileSync('sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8' })); return m ? Math.round(Number(m[1])) : null; } catch { return null; } };
-const calm = () => machineMemory().ok && (swapFreeMB() ?? 1e9) >= 800;
+const calm = () => machineMemory().ok && (swapFreeMB() ?? 1e9) >= 600;
 const alive = () => !!(browser && browser.connected !== false && page && !page.isClosed());
 try {
   const set = loadFrameSet();
