@@ -11,8 +11,10 @@
  *        dragon tree's canopy under 9 m, the line on >= 3 walls
  *   F35  the same lens after "True Ground" (state `after`): the line on 0 walls (the staging clears it; a cut wall
  *        stays cut)
- *   F36  a street at work: the lens in the south-west lane (bible E -23.21, N -222.54) looking up it on bearing 60,
- *        the cistern and the tube mouth in frame; written: 5 people at work (none at blockout: wave 3's cast)
+ *   F36  a street at work: the lens 15 m south-south-west of the tree (bible E -16.13, N -227.10) looking on bearing 20
+ *        across the slope, the cistern (bearing 359 from it), the tree (20) and the tube mouth (45) in frame; written: 5
+ *        people at work (none at blockout: wave 3's cast). At 48311d0 a lens up the south-west lane on bearing 60 saw
+ *        only the hillside (the ground under the village climbs 26 deg there)
  *   F37  Oro beside Brea at 3 m: the PEOPLE crop; Oro is wave 2 (no person by that id until then)
  *
  * The world hooks run in the page (each serialised on its own; `api.C` is the game's ctx). A frame filmed before the
@@ -36,7 +38,7 @@ export const FRAMES = [
   },
   {
     id: 'F36', subject: 'a Ninewalls street at work', in: 'M2', hour: 16.5, weather: 'trade',
-    at: { en: [-23.21, -222.54] }, bearing: 60, camera: { mode: 'eye', eye: 1.7, pitch: 3, fov: 55 },
+    at: { en: [-16.13, -227.1] }, bearing: 20, camera: { mode: 'eye', eye: 1.7, pitch: 8, fov: 55 },
     state: { pose: 'idle', hud: false },
     ref: { written: '5 people at work in ash-grey and carmine, each with a violet accent; the tube mouth and the cistern in frame.' },
   },
