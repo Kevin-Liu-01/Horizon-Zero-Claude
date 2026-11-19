@@ -47,6 +47,12 @@ const STREAM_IN = 130;
 export const ARCHETYPE_IDS = ['salt-raker', 'guild-matron', 'salt-porter', 'boat-caulker', 'lantern-keeper', 'pit-farmer', 'tiller-follower', 'cochineal-picker', 'tube-smith'];
 const PAN_IDS = ARCHETYPE_IDS.slice(0, 5), HOLDS_IDS = ARCHETYPE_IDS.slice(5);
 /**
+ * M2 wave 2: the named people a quest or a frame spawns by id (`spawn('oro')`), each its own GLB under public/models/npc/.
+ * Not archetypes: no staged group or cast draws on them, so the slice's world is unchanged. Tube Smith Oro
+ * (tools/build/recipes/npc/lib/archetypes.mjs 'oro') stands at the tube mouth from wave 3 (the Holds people's routines).
+ */
+export const NAMED_IDS = ['oro'];
+/**
  * M1.5c — the slice's cast (tools/build/recipes/npc/lib/archetypes.mjs CAST): Lantern-Keeper Mise ('lantern-keeper') and seven unnamed
  * Pan Houses people of archetypes 1, 3, 4 and 5 (the Harvester, Trader, Sailor and Healer callings), each with a face and head set of
  * their own. Where they stand and what they do in Saltrow is the settlements' (M1.5a) and the routines' (M1.5d); the W1 group above
@@ -70,6 +76,7 @@ export class PeopleSystem {
     this._breaFaceT = 0;
     this.list = [];
     this.archetypes = ARCHETYPE_IDS;
+    this.named = NAMED_IDS;
     this.cast = SLICE_CAST;
     this.group = new THREE.Group();
     this.group.name = 'people';

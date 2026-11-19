@@ -117,6 +117,26 @@ export const ARCHETYPES = [
   },
 
   /*
+   * M2 wave 2 (area B) — TUBE SMITH ORO (bible §6.2, archetype 9, the Crescent Holds; BUILD M2.7): Ninewalls' smith, who
+   * hands Brea the Boat Gaff, the Pine Windwall and the pots at 0:35. The ONE finished person of M2, built on the shared kit
+   * as the Holds people are, with a face of his own (not the archetype's: the Tube Smith archetype stays the unnamed one of
+   * the cast), a face sheet at Brea's texel density (faceK) and the PEOPLE board's construction on the smith's work: an
+   * undyed wool shirt with its sleeves rolled to the elbow over bare, scarred forearms, a black wool vest, a heavy leather
+   * bib apron scorched at the hem, the carmine sash of the Holds with one end hanging, a tool belt (hammer, a pouch),
+   * baggy trousers gathered into boots; his one violet the band on his brow (Q6). Grey coming into the
+   * beard at the chin. M 47, 1.83 m, a long face under a heavy brow, a long nose broken once, deep-set eyes.
+   */
+  {
+    id: 'oro', n: 9, rngN: 91, name: 'Tube Smith Oro', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.83, age: 47, browK: 1.18,
+    tone: '#6E4630', iris: '#2B1D15', amber: '#4E2F17', hair: '#201A17', hairPaint: '#3C3632',
+    face: { noseBridge: [-1.5, -3.0, 6.5], noseTip: [-2.5, -6.0, 8.0], cheek: [2.5, -2.5, 1.0], jaw: [5.5, -11.0, 1.5], chin: [0, -11.0, 4.0], brow: [0, -4.0, 10.5], upperLip: [0, -5.0, 3.0] },
+    head: { kind: 'band', dye: '#5B2F6B', lining: '#41204E', seed: 191, hair: 'crop', tail: 'right', beard: 'full' },
+    marks: { burn: true }, faceK: 2.3,
+    outfit: { key: 'oro' },
+    clips: { idle: ['Idle_Loop', 'Idle_Talking_Loop', 'Chest_Open'], stage: ['Idle_Loop', 'Idle_Talking_Loop', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.88, lean: 0.03, swing: 0.75 } },
+  },
+
+  /*
    * M1.5c — the slice's cast: unnamed Pan Houses people from archetypes 1, 3, 4 and 5 beside the four above, each a second person of
    * that archetype's calling (the Harvester, the Trader, the Sailor, the Healer) with a face, age, height, skin, hair, headwear and
    * earrings of their own, and their own copy of the calling's dress re-dyed (`dyes`), all in salt-white linen with one violet

@@ -413,6 +413,36 @@ export const OUTFITS = {
     },
   },
 
+  /* M2 — Tube Smith Oro (archetypes.mjs 'oro'): the PEOPLE board's construction on the smith's work. An undyed wool shirt, its
+   * sleeves rolled to the elbow (bare forearms, the burns on them), a black wool vest over it (the capelet cut short and close),
+   * the heavy leather bib apron scorched toward the hem, the Holds' carmine sash knotted at the left hip with an end hanging, a
+   * tool belt (the hammer at the right hip, a pouch at the left), baggy wool trousers
+   * into his boots */
+  oro: {
+    parts: [
+      { part: 'Male_Ranger_Body', dye: HOLDS.wool, target: 3200, shade: 1.05, collar: { y0: 1.44, push: 0.014 } },
+      { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1300, cutX: 0.43, dropMat: /Regular/, cuff: HOLDS.woolDark },
+      { part: 'Male_Ranger_Legs', dye: HOLDS.woolDark, target: 1000, shade: 1.25 },
+      { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leatherDark, target: 1500, shade: 1.3 },
+    ],
+    pieces(ctx) {
+      // the vest: black wool, close, from the shoulders to the ribs (under the apron's bib it is only seen at the sides and back)
+      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('wool'), rows: 6, seg: 28, phi0: 58, phiFB: -30, phiSide: 22, lift: 0.009 }), { dye: HOLDS.lapilli, hide: true, shade: 1.6 });
+      // the bib apron: heavy leather in two broad folds, a thick turned edge, scorched and stained toward the hem
+      apron(ctx, { y0: 1.4, y1: 0.42, wTop: 0.15, wBot: 0.26, dye: HOLDS.leather, swatch: 'leather', lift: 0.02, chainKey: 'apron', foldAmp: 0.006, foldN: 2.3, hemWave: 0.002, rows: 13, cols: 13, hem: 0.0045,
+        stain: { hex: HOLDS.leatherDark, at: (p) => 0.62 * smooth(0.78, 0.44, p[1]) + 0.5 * smooth(0.5, 0.78, noise3(p[0] * 17, p[1] * 17, 9)) } });
+      for (const s of [1, -1]) strapBuckled(ctx, [[s * 0.1, 1.39, frontZ(ctx, s * 0.1, 1.39) + 0.024], [s * 0.1, 1.5, 0.05], [s * 0.06, 1.53, -0.04], [-s * 0.05, 1.42, -0.13]], { width: 0.028, dye: HOLDS.leatherDark, metal: HOLDS.iron, metalUV: 'iron', bu: 0.12, along: 10 });
+      // the sash: the Holds' carmine, wound once at the waist, its end down the left hip
+      waistTie(ctx, { y: 1.06, dye: HOLDS.carmine, h: 0.05 });
+      sashEnd(ctx, { dye: HOLDS.carmine, x: 0.17, y: 1.04, z: 0.07, len: 0.34, width: 0.07 });
+      // the tool belt under it: leather, an iron buckle; the hammer at the right hip, a pouch at the left
+      belt(ctx, { y: 0.99, h: 0.04, dye: HOLDS.leatherDark, brass: HOLDS.iron });
+      pouch(ctx, { x: 0.21, y: 0.93, z: 0.03, r: [0.05, 0.06, 0.034], dye: HOLDS.leather });
+      const hip = ctx.prop('prop_hip', 'pelvis', [-0.22, 0.98, 0.0], [-0.22, 0.78, 0.0]);
+      for (const g of P.hammer({ at: [-0.225, 0.96, 0.02], dir: [0, -1, 0.02], joint: hip, uvWood: ctx.uvOf('wood'), uvHead: ctx.uvOf('iron') })) ctx.add(g, { dye: HOLDS.iron, noHide: true, prop: 'prop_hip' });
+    },
+  },
+
   /* 9 — Tube Smith: a leather bib apron to the shin, bare forearms, a belt with a hammer */
   smith: {
     parts: [
