@@ -23,6 +23,7 @@
 import { ISLAND_SCALE as S } from './extent.js';
 import { SITES, TRIG, TRIG_TOP, SIGHT_PAIRS, SALT_FIELD as SF, CISTERN } from './sites.js';
 import { buildHoldsProfile, holdsHeight, scarWeight } from '../holds/blockout.js';
+import { buildNinewallsGround, ninewallsHeight } from '../settlements/ninewalls-ground.js';
 
 export const BIOMES = Object.freeze(['pans', 'holds', 'malpais', 'cloudline', 'flank', 'caldera']);
 export const SEA_LEVEL = 0;
@@ -406,6 +407,9 @@ export function ensureMacro(shared = null) {
    * reads its reference heights off the finished grids once, here and on every worker (the shared branch above), and
    * is applied in heightAt only: no pass above sees it, so nothing outside its footprint moves */
   buildHoldsProfile(heightAuthored);
+  // (M2 wave 2, area B) Ninewalls' terraces, pads and road (src/world/settlements/ninewalls-ground.js), read off the
+  // ground with the Holds' blockout on it, applied last in heightAt; nothing outside the village and its road moves
+  buildNinewallsGround((e, n) => holdsHeight(e, n, heightAuthored(e, n)));
   return M;
 }
 
@@ -1075,7 +1079,7 @@ function heightAuthored(e, n) {
 export function heightAt(x, z) {
   if (!M.ready) ensureMacro();
   const e = x / S, n = -z / S;
-  return holdsHeight(e, n, heightAuthored(e, n));
+  return ninewallsHeight(e, n, holdsHeight(e, n, heightAuthored(e, n)));
 }
 
 /** Biome weights at an engine point into `out` [pans, holds, malpais, cloudline, flank, caldera]. */

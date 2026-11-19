@@ -1,11 +1,12 @@
 /**
  * NINEWALLS' ROW 0 AND THE WALL DATA ROWS, in Node (M2 wave 1, area B; no Chrome, no three).
  *
- *   node tools/build/settlements/ninewalls-rows.mjs [--json <out.json>] [--flat]
+ *   node tools/build/settlements/ninewalls-rows.mjs [--json <out.json>] [--natural]
  *
- * NW0, the geometry check at blockout (M2 briefs §5): the numbers the design assumes, measured on the blockout and on
- * the island recipe as it stands (src/world/island/recipe.js heightAt; `--flat` puts the village on a level pad at its
- * stated height instead, the ground area A would grade):
+ * NW0, the geometry check (M2 briefs §5), RESTATED TO THE TERRACES (the orchestrator's ruling 4 after the wave 1
+ * blockout: "Ninewalls stands on terraces, each crescent wall a riser; NW0's pad clause is restated to the terraces"):
+ * measured on the island recipe as it stands (src/world/island/recipe.js heightAt, which carries Ninewalls' own ground,
+ * src/world/settlements/ninewalls-ground.js; `--natural` measures the hillside before it, as the blockout stood):
  *   (a) the fight: between the outer three walls a 6.5 x 3.6 m Screed stands and charges 25 m: the longest straight
  *       run of its 3.6 m body (plus 0.5 m clear each side) inside each annulus and inside both walls' spans, cross-
  *       checked with the seam's own segmentHitsWall; the ground's grade along and across that run; the radial run
@@ -23,26 +24,28 @@
 import { writeFileSync } from 'node:fs';
 import { heightAt } from '../../../src/world/island/recipe.js';
 import { SCAR, TRIG, TRIG_TOP, siteById } from '../../../src/world/island/sites.js';
+import { BENCHMARKS } from '../../../src/world/sites/layout.js';
+import { B1 as HOLDS_B1 } from '../../../src/world/holds/blockout.js';
+import { ISLAND_SCALE } from '../../../src/world/island/extent.js';
+import { ninewallsNatural, ninewallsGroundTables, wallFaces, bankOf } from '../../../src/world/settlements/ninewalls-ground.js';
 import { segmentHit } from '../../../src/instruments/lib/sight.js';
 import {
   WALLS, OUTER_R, CENTRE, DWELLINGS, PLACES, SCAR_CLEAR, polar, bearingOf, dirOf, inSpan, stations, wallBoxes,
-  segmentHitsWall, wallOccluders, dwellingPlace, scarDistance, rooflineCheck, ninewallsColliders, topOf,
+  segmentHitsWall, wallOccluders, dwellingPlace, scarDistance, rooflineCheck, ninewallsColliders, topOf, wallSides, ROAD, TERRACE,
 } from '../../../src/world/settlements/ninewalls-layout.js';
 import { FRAMES } from '../../../tools/frames/stagings/settlements.mjs';
 
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
-const FLAT = args.includes('--flat');
+const NATURAL = args.includes('--natural');
 const D2R = Math.PI / 180;
 const r2 = (x) => Math.round(x * 100) / 100, r1 = (x) => Math.round(x * 10) / 10;
-const PAD_R = OUTER_R + 6;
-/** The ground: the recipe, or (--flat) a level pad at the stated height out to PAD_R blended over 20 m. */
-const ground = FLAT
-  ? (x, z) => { const d = Math.hypot(x - CENTRE.x, z - CENTRE.z), k = Math.min(1, Math.max(0, (d - PAD_R) / 20)); return CENTRE.h * (1 - k) + heightAt(x, z) * k; }
-  : (x, z) => heightAt(x, z);
+heightAt(0, 0);   // the recipe's grids and Ninewalls' tables
+/** The ground: the recipe as built (the terraces, pads and road on it), or (--natural) the hillside before them. */
+const ground = NATURAL ? (x, z) => ninewallsNatural(x, z) : (x, z) => heightAt(x, z);
 
 const SCREED = { L: 6.5, W: 3.6, charge: 25, clear: 0.5 };
-const out = { ground: FLAT ? `level pad at ${CENTRE.h} m to ${r1(PAD_R)} m` : 'island recipe heightAt', walls: [], nw0: {}, nw3: {} };
+const out = { ground: NATURAL ? 'the hillside before Ninewalls\' ground (ninewallsNatural)' : 'island recipe heightAt (with the terraces, pads and road)', walls: [], nw0: {}, nw3: {} };
 
 /* ---------------------------------------------------------------- the walls */
 for (const w of WALLS) {
@@ -130,7 +133,7 @@ const roofs = DWELLINGS.map((d) => {
   const p = dwellingPlace(d), gy = ground(p.x, p.z), roof = gy + d.h;
   // the nearest point of the innermost wall's arc
   const b = bearingOf(p.x, p.z), bb = inSpan(inner, b) ? b : (Math.abs(((b - inner.to + 540) % 360) - 180) < Math.abs(((b - inner.from + 540) % 360) - 180) ? inner.to : inner.from);
-  const q = polar(bb, inner.r), wallTop = ground(q.x, q.z) + inner.h;
+  const q = polar(bb, inner.r), wallTop = wallSides(inner, ground, { ...q, b: bb }).hi + inner.h;
   return { id: d.id, roofAbove: d.h, roofY: r2(roof), innerWallTopY: r2(wallTop), relative: d.h < inner.h, absolute: roof < wallTop };
 });
 out.nw0.b = { roofs, relative: roofs.filter((r) => r.relative).length, absolute: roofs.filter((r) => r.absolute).length,
@@ -221,8 +224,99 @@ out.nw0.c = { lens: { at: F34.at.en, eye: F34.camera.eye, y: r1(lens.pos.y), bea
   toCentre: r1(Math.hypot(lens.pos.x - CENTRE.x, lens.pos.z - CENTRE.z)) }, walls: count, countable: count.filter((c) => c.countable).length, roofsSeen,
   pass: count.every((c) => c.countable) };
 
+/* ---------------------------------------------------------------- (d) the terraces */
+{
+  const G = ninewallsGroundTables();
+  const rings = [];
+  for (let j = 0; j < WALLS.length - 1; j++) {
+    const outer = WALLS[j], inner = WALLS[j + 1];
+    // the level part of the ring at each bearing: clear of the ledge and bank of whichever wall's low side is in it
+    let worst = 0, n = 0, along = [], narrow = Infinity;
+    let ra = inner.r + inner.t / 2, rb = outer.r - outer.t / 2;
+    for (let b = 0; b < 360; b += 1) {
+      const W = Math.min(G.w[j][b], G.w[j + 1][b]);
+      if (W < 0.999) continue;
+      const fi = wallFaces(j + 1, b), fo = wallFaces(j, b);
+      ra = inner.r + inner.t / 2 + (fi.outer < fi.inner ? TERRACE.ledge + bankOf(fi.inner - fi.outer) : 0) + 0.15;
+      rb = outer.r - outer.t / 2 - (fo.inner < fo.outer ? TERRACE.ledge + bankOf(fo.outer - fo.inner) : 0) - 0.15;
+      narrow = Math.min(narrow, rb - ra);
+      if (rb - ra < 0.3) continue;
+      const rr = [ra, (ra + rb) / 2, rb];
+      const hs = rr.map((r) => { const p = polar(b, r); return ground(p.x, p.z); });
+      const fall = Math.atan2(Math.max(...hs) - Math.min(...hs), rb - ra) / D2R;
+      worst = Math.max(worst, fall); n++;
+      const rm = (ra + rb) / 2, p0 = polar(b, rm), p1 = polar(b + 1, rm);
+      if (Math.min(G.w[j][(b + 1) % 360], G.w[j + 1][(b + 1) % 360]) >= 0.999) along.push(Math.abs(Math.atan2(ground(p1.x, p1.z) - ground(p0.x, p0.z), rm * D2R) / D2R));
+    }
+    along.sort((a, b) => a - b);
+    rings.push({ ring: `${outer.id}..${inner.id}`, levelledBearings: n, levelWidthMin: r2(narrow), crossFallMaxDeg: r1(worst), alongMedianDeg: along.length ? r1(along[along.length >> 1]) : null, alongMaxDeg: along.length ? r1(along.at(-1)) : null });
+  }
+  const risers = WALLS.map((w, k) => {
+    const hs = [];
+    for (let b = 0; b < 360; b += 2) { if (G.w[k][b] < 0.999) continue; const f = wallFaces(k, b); hs.push(Math.abs(f.outer - f.inner)); }
+    hs.sort((a, b) => a - b);
+    return { id: w.id, median: hs.length ? r2(hs[hs.length >> 1]) : 0, max: hs.length ? r2(hs.at(-1)) : 0 };
+  });
+  // cut and fill against the hillside, over the village's disc (2 m grid)
+  let cut = 0, fill = 0, cutMax = 0, fillMax = 0, cells = 0;
+  for (let x = CENTRE.x - OUTER_R - 4; x <= CENTRE.x + OUTER_R + 4; x += 2) for (let z = CENTRE.z - OUTER_R - 4; z <= CENTRE.z + OUTER_R + 4; z += 2) {
+    if (Math.hypot(x - CENTRE.x, z - CENTRE.z) > OUTER_R + 4) continue;
+    const d = heightAt(x, z) - ninewallsNatural(x, z);
+    if (d < 0) { cut -= d * 4; cutMax = Math.max(cutMax, -d); } else { fill += d * 4; fillMax = Math.max(fillMax, d); }
+    cells++;
+  }
+  const BAR_CROSS = 2;
+  out.nw0.d = { rings, risers, cutM3: Math.round(cut), fillM3: Math.round(fill), cutMax: r2(cutMax), fillMax: r2(fillMax), crossFallBarDeg: BAR_CROSS,
+    pass: !NATURAL && rings.every((q) => q.levelledBearings > 0 && q.crossFallMaxDeg <= BAR_CROSS) };
+}
+
+/* ---------------------------------------------------------------- (e) the walk in */
+{
+  let L = 0, gradeMax = 0, crossMax = 0, crossTurn = 0, devMax = 0;
+  const seg = [];
+  // cumulative arc length at each point, to tell a hairpin's inside (another part of the road within reach, far along it)
+  const AL = [0]; for (let i = 1; i < ROAD.length; i++) AL.push(AL[i - 1] + Math.hypot(ROAD[i][0] - ROAD[i - 1][0], ROAD[i][1] - ROAD[i - 1][1]));
+  const nearTurn = (x, z, s0) => ROAD.some((q, i) => Math.abs(AL[i] - s0) > 6 && Math.hypot(q[0] - x, q[1] - z) < 2 * TERRACE.roadHalf + 3);
+  for (let i = 0; i + 1 < ROAD.length; i++) {
+    const a = ROAD[i], c = ROAD[i + 1], l = Math.hypot(c[0] - a[0], c[1] - a[1]), n = Math.max(1, Math.ceil(l));
+    for (let k = 0; k < n; k++) {
+      const t0 = k / n, t1 = (k + 1) / n;
+      const x0 = a[0] + (c[0] - a[0]) * t0, z0 = a[1] + (c[1] - a[1]) * t0, x1 = a[0] + (c[0] - a[0]) * t1, z1 = a[1] + (c[1] - a[1]) * t1;
+      const g0 = ground(x0, z0), g1 = ground(x1, z1), dl = l / n;
+      const gr = Math.atan2(g1 - g0, dl) / D2R;
+      gradeMax = Math.max(gradeMax, Math.abs(gr));
+      // across: 1.5 m either side of the centreline
+      const ux = (c[0] - a[0]) / l, uz = (c[1] - a[1]) / l;
+      const gl = ground(x0 - uz * 1.5, z0 + ux * 1.5), grr = ground(x0 + uz * 1.5, z0 - ux * 1.5);
+      const cf = Math.atan2(Math.abs(gl - grr), 3) / D2R;
+      if (nearTurn(x0, z0, AL[i] + l * t0)) crossTurn = Math.max(crossTurn, cf); else { if (cf > crossMax && process.env.NW_DEBUG) console.error("cross", i, x0.toFixed(1), z0.toFixed(1), cf.toFixed(1), gl.toFixed(2), grr.toFixed(2)); crossMax = Math.max(crossMax, cf); }
+      devMax = Math.max(devMax, Math.abs(ninewallsNatural(x0, z0) - (a[2] + (c[2] - a[2]) * t0)));
+      seg.push({ dl, gr });
+      L += dl;
+    }
+  }
+  // her sprint (player.js: 6.75 m/s on the flat, A3) scaled by _gradeScale's uphill law, surface normal from the grade
+  const SPRINT = 6.75;
+  const pace = (grDeg) => { const g = Math.sin(Math.abs(grDeg) * D2R), flat = Math.max(0.35, Math.cos(grDeg * D2R)); return SPRINT * flat * (grDeg > 0 ? Math.min(1, Math.max(0.26, 1 - g * 1.45)) : Math.min(1.14, 1 + g * 0.22)); };
+  let tRoad = 0; for (const q of seg) tRoad += q.dl / pace(q.gr);
+  // leg 2's fixture (first-hour-fixtures.mjs sliceEnd: Brea at the cistern's rest, 262.6, 217.6) to the road's foot on the flat
+  const FIX = { x: -262.647, z: 217.625 }, foot = ROAD[0], end = ROAD.at(-1);
+  const dFlat = Math.hypot(foot[0] - FIX.x, foot[1] - FIX.z), tFlat = dFlat / SPRINT;
+  const endR = Math.hypot(end[0] - CENTRE.x, end[1] - CENTRE.z);
+  // the straight climb the blockout's run took (the fall line of the west face), at the same law
+  let tDirect = 0, dDirect = 0;
+  { const a = { x: -111.6, z: 214.8 }, b = { x: CENTRE.x - 30, z: CENTRE.z }, n = 60;
+    for (let k = 0; k < n; k++) { const x0 = a.x + (b.x - a.x) * k / n, z0 = a.z + (b.z - a.z) * k / n, x1 = a.x + (b.x - a.x) * (k + 1) / n, z1 = a.z + (b.z - a.z) * (k + 1) / n, dl = Math.hypot(x1 - x0, z1 - z0);
+      tDirect += dl / pace(Math.atan2(ground(x1, z1) - ground(x0, z0), dl) / D2R); dDirect += dl; } }
+  out.nw0.e = { road: { points: ROAD.length, length: r1(L), gradeMaxDeg: r1(gradeMax), crossFallMaxDeg: r1(crossMax), crossFallHairpinsDeg: r1(crossTurn), offNaturalMax: r2(devMax), endToCentre: r1(endR) },
+    walk: { fromFixtureFlat: r1(dFlat), seconds: r1(tFlat + tRoad), flatS: r1(tFlat), roadS: r1(tRoad), directClimb: { m: r1(dDirect), s: r1(tDirect) } },
+    pass: !NATURAL && gradeMax <= 15 && crossMax <= 8 && endR <= 30 && tFlat + tRoad <= 120 };
+}
+
 /* ---------------------------------------------------------------- the site */
-const B1 = { x: 12, z: 282 };
+const bm1 = BENCHMARKS.find((b) => b.id === 'bm-01');
+const B1 = { x: bm1.x, z: bm1.z };
+const B1h = { x: HOLDS_B1.e * ISLAND_SCALE, z: -HOLDS_B1.n * ISLAND_SCALE };
 const t2 = TRIG.find((t) => t.id === 'T2');
 const rise = { toCentre: r1(Math.hypot(t2.x - CENTRE.x, t2.z - CENTRE.z)), outside: Math.hypot(t2.x - CENTRE.x, t2.z - CENTRE.z) > OUTER_R + 5, groundT2: r1(ground(t2.x, t2.z)) };
 const trigRays = [['T1', 'T2'], ['T2', 'T3'], ['T2', 'T6']].map(([p, q]) => {
@@ -232,11 +326,11 @@ const trigRays = [['T1', 'T2'], ['T2', 'T3'], ['T2', 'T6']].map(([p, q]) => {
   return { pair: `${p}-${q}`, wallHits: hits };
 });
 const scar = { clear: SCAR_CLEAR, minWall: Math.min(...out.walls.map((w) => w.scarMin)), pass: out.walls.every((w) => w.scarMin >= SCAR_CLEAR) };
-const b1code = { x: 19, z: 243 }; // src/world/sites/layout.js bm-01 as it stands (area A reconciles it to the bible)
 out.site = {
   centreGround: r1(ground(CENTRE.x, CENTRE.z)), statedH: CENTRE.h, outerR: OUTER_R, rise, scar, trigRays,
-  b1Bible: { toCentre: r1(Math.hypot(B1.x - CENTRE.x, B1.z - CENTRE.z)), toNearestWall: r1(Math.min(...WALLS.flatMap((w) => stations(w, 1).map((p) => Math.hypot(p.x - B1.x, p.z - B1.z) - w.t / 2)))), scarDist: r1(scarDistance(B1.x, B1.z)) },
-  b1Code: { toCentre: r1(Math.hypot(b1code.x - CENTRE.x, b1code.z - CENTRE.z)), scarDist: r1(scarDistance(b1code.x, b1code.z)) },
+  b1: { layout: B1, holds: B1h, agree: Math.hypot(B1.x - B1h.x, B1.z - B1h.z) < 0.05, bible: Math.hypot(B1.x - 12, B1.z - 282) < 0.05,
+    toCentre: r1(Math.hypot(B1.x - CENTRE.x, B1.z - CENTRE.z)), toNearestWall: r1(Math.min(...WALLS.flatMap((w) => stations(w, 1).map((p) => Math.hypot(p.x - B1.x, p.z - B1.z) - w.t / 2)))), scarDist: r1(scarDistance(B1.x, B1.z)),
+    groundMoved: r2(heightAt(B1.x, B1.z) - ninewallsNatural(B1.x, B1.z)) },
   openSide: { from: Math.max(...WALLS.map((w) => w.to)), to: 360 + Math.min(...WALLS.map((w) => w.from)) },
   groundRing: [10, 26, 47, 67].map((r) => ({ r, ...Object.fromEntries([0, 45, 90, 135, 180, 225, 270, 315].map((b) => { const p = polar(b, r); return [b, r1(ground(p.x, p.z))]; })) })),
 };
@@ -276,7 +370,7 @@ const nw3 = WALLS.map((w) => {
 out.nw3 = { walls: nw3, occluderWalls: new Set(occ.map((o) => o.id)).size, occluderPieces: occ.length, colliders: cols.length,
   pass: nw3.every((w) => w.worstColliderGap <= 0.1 && w.worstOccluderGap <= 0.1) && new Set(occ.map((o) => o.id)).size === 9 };
 
-out.nw0.pass = out.nw0.a.pass && out.nw0.b.pass && out.nw0.c.pass && scar.pass && trigRays.every((t) => !t.wallHits) && rise.outside;
+out.nw0.pass = out.nw0.a.pass && out.nw0.b.pass && out.nw0.c.pass && out.nw0.d.pass && out.nw0.e.pass && scar.pass && trigRays.every((t) => !t.wallHits) && rise.outside && out.site.b1.agree && out.site.b1.bible;
 
 const J = flag('--json');
 if (J) writeFileSync(J, JSON.stringify(out, null, 1));
@@ -289,7 +383,10 @@ console.log(`NW0 ground under the village (r <= ${r1(OUTER_R)} m): slope median 
 console.log(`NW0 (b) roofs below wall-top: ${out.nw0.b.both} of ${DWELLINGS.length} (relative ${out.nw0.b.relative}, absolute ${out.nw0.b.absolute}); equal neighbours ${out.nw0.b.rooflinesEqual.length}: ${yes(out.nw0.b.pass)}`);
 console.log(`NW0 (c) from F34's lens (${out.nw0.c.lens.toCentre} m from the centre, lens at ${out.nw0.c.lens.y} m): ${out.nw0.c.countable} of 9 countable; roofs seen ${roofsSeen}: ${yes(out.nw0.c.pass)}`);
 for (const c of count) console.log(`  ${c.id}: ${c.shown} of ${c.inFrame} stations show >= 4 px (median ${c.facePxMedian} px)`);
+{ const d = out.nw0.d; console.log(`NW0 (d) the terraces: ${d.rings.map((q) => `${q.ring} level at ${q.levelledBearings} deg (level width >= ${q.levelWidthMin} m), cross-fall <= ${q.crossFallMaxDeg} deg, along ${q.alongMedianDeg}/${q.alongMaxDeg} deg`).join('; ')}: ${yes(d.pass)}`);
+  console.log(`NW0 (d) risers (high terrace less low, median / max m): ${d.risers.map((q) => `${q.id} ${q.median}/${q.max}`).join(', ')}; cut ${d.cutM3} m3 (<= ${d.cutMax} m), fill ${d.fillM3} m3 (<= ${d.fillMax} m)`); }
+{ const e = out.nw0.e; console.log(`NW0 (e) the road: ${e.road.points} points, ${e.road.length} m, grade <= ${e.road.gradeMaxDeg} deg, cross-fall <= ${e.road.crossFallMaxDeg} deg on its legs (${e.road.crossFallHairpinsDeg} deg on a hairpin's inside), off the hillside <= ${e.road.offNaturalMax} m, ends ${e.road.endToCentre} m from the centre; the walk from leg 2's fixture ${e.walk.seconds} s at her sprint (flat ${e.walk.fromFixtureFlat} m ${e.walk.flatS} s, road ${e.walk.roadS} s; the fall line the blockout's run took: ${e.walk.directClimb.m} m in ${e.walk.directClimb.s} s): ${yes(e.pass)}`); }
 console.log(`site: Scar clear >= ${SCAR_CLEAR} m (least ${scar.minWall}): ${yes(scar.pass)}; Rise ${rise.toCentre} m: ${yes(rise.outside)}; trig rays ${trigRays.map((t) => `${t.pair} ${t.wallHits}`).join(', ')}`);
-console.log(`site: B1 (bible) ${out.site.b1Bible.toCentre} m from the centre, ${out.site.b1Bible.toNearestWall} m from the nearest wall, ${out.site.b1Bible.scarDist} m off the Scar's line; B1 (layout.js) ${out.site.b1Code.toCentre} m, ${out.site.b1Code.scarDist} m off the line`);
+{ const q = out.site.b1; console.log(`site: B1 (sites/layout.js bm-01 at ${q.layout.x}, ${q.layout.z}; the Holds' blockout ${r2(q.holds.x)}, ${r2(q.holds.z)}: ${q.agree ? 'agree' : 'DISAGREE'}, ${q.bible ? 'at' : 'NOT at'} the bible's E 12, N -282) ${q.toCentre} m from the centre, ${q.toNearestWall} m from the nearest wall, ${q.scarDist} m off the Scar's line; Ninewalls' ground moves it ${q.groundMoved} m`); }
 console.log(`NW3 (data): ${out.nw3.colliders} colliders, ${out.nw3.occluderPieces} occluder pieces over ${out.nw3.occluderWalls} walls; worst gaps ${Math.max(...nw3.map((w) => w.worstColliderGap))} / ${Math.max(...nw3.map((w) => w.worstOccluderGap))} m: ${yes(out.nw3.pass)}`);
 console.log(`NW0: ${yes(out.nw0.pass)}`);
