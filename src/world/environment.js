@@ -22,6 +22,11 @@ import { AERIAL_B, AERIAL_B_LIFT } from './island/aerial.js';
  *                                    clear -> trade, rain/storm -> squall, overcast stays
  *                                    a hidden legacy state for the kind-block's beam row
  *   environment.weatherStates        ['trade', 'calima', 'fogbank', 'squall']
+ *   environment.askWeather(s, {from, to, fade, by}) -> id   a quest's ask (M2 seam): the state holds
+ *                                    while the clock is in [from, to), then the sky is given back
+ *   environment.clearAsk(id) / .asks  withdraw an ask / the asks and which is in force
+ *   environment.sunAltitudeDeg       the sun's altitude now (EN4)
+ *   environment.perfSwitches()       [{ id: 'cloud-shadow', on, off }] for tools/perf/attrib.mjs --toggles
  *   environment.states               name -> the weather record (read-only use)
  *   environment.weatherParams        the resolved, cross-faded weather record
  *   environment.perceptionScale      Instrument sight multiplier: 1.0 / 0.5 / 0.5 / 0.8,
@@ -50,7 +55,8 @@ import { AERIAL_B, AERIAL_B_LIFT } from './island/aerial.js';
  *   Environment.direction(h, out)    static sun direction for an hour
  *   Environment.HOURS                { newGame: 7, title: 17.75, shot: 17.75 }
  *
- * EVENTS (ctx.events): `time-phase`, `weather-changed`, `rest-start`, `rest-end`, `thunder`.
+ * EVENTS (ctx.events): `time-phase`, `weather-changed` and `weather` {state} (the quest seam's name), `rest-start`,
+ * `rest-end`, `thunder`.
  * ---------------------------------------------------------------------------
  *
  * WHY THE SHADER CHUNKS ARE PATCHED GLOBALLY (see `patchShaderChunks`): three's
@@ -174,6 +180,14 @@ const CALIMA_VIS = 150;
 const CALIMA_DENS = Math.log(20) / CALIMA_VIS;
 const CALIMA_OPACITY = 0.997;
 const CALIMA_LOBE = 0.06;
+/**
+ * M2 wave 4 (EN3, calima at noon over the Holds): the dust is a deep layer (the Saharan air comes in a kilometre or more
+ * thick), so in calima the main layer's height falloff is CALIMA_FALLOFF, not the trade air's 1/140 m. With the trade
+ * falloff the dust thinned with height: a level ray at the Malpais edge (ground 100-112 m) kept 5 % contrast at about
+ * 310 m, twice the band; with this one the same ray reads 157-161 m and the Pans' 150 m is unchanged (tools/world/
+ * calima-rows.mjs, the CPU mirror).
+ */
+const CALIMA_FALLOFF = 1 / 1600;
 
 /**
  * Weather states (bible §2.3). Multipliers/targets applied on top of the hour key,
@@ -187,6 +201,26 @@ const CALIMA_LOBE = 0.06;
  *   shadowK         shadow strength      seaCloud         cloud-sea ×
  *   ev              exposure offset      bloomK           bloom strength ×
  */
+/**
+ * M2 wave 4 (EN5): THE CLOUD SHADOWS ARE ONE SCROLLING COVERAGE TEXTURE, the sky's own baked tiling noise (CAL.skyNoise,
+ * channel r), one fetch per lit fragment where the M1 term evaluated two octaves of sin-hash value noise (eight hashes).
+ * CLOUD_TILE_M: one tile of the texture on the ground; its coarsest octave (8 cells a tile) is the old 190 m cell.
+ * CLOUD_MAP_A/B: the old noise's value mapped onto the texture's by mean and spread (old 0.502 +- 0.157, texture 0.466 +-
+ * 0.121), so the same threshold and softness give the same cover: mean shadow 0.167 against 0.171 in trade, 0.387 against
+ * 0.404 in a squall (tools/world/calima-rows.mjs). CLOUD_SPEED_MPH: the shadows scroll downwind with the CLOCK, so a frame
+ * staged at an hour always has the same shadows (a frame was the drift since boot before): 375 m a game hour is 5 m/s at
+ * the plain clock's 75 s a game hour.
+ */
+const CLOUD_TILE_M = 1520;
+const CLOUD_MAP_A = 0.0793;
+const CLOUD_MAP_B = 0.7717;
+const CLOUD_SPEED_MPH = 375;
+/** The sky's numbers the Node rows read (tools/world/calima-rows.mjs); the shader and _applyFull use the same constants. */
+export const SKY_MODEL = Object.freeze({
+  CALIMA_VIS, CALIMA_DENS, CALIMA_OPACITY, CALIMA_FALLOFF, CLOUD_TILE_M, CLOUD_MAP_A, CLOUD_MAP_B, CLOUD_SPEED_MPH,
+  get FOG_HEIGHT_FALLOFF() { return FOG_HEIGHT_FALLOFF; }, get FOG_HEIGHT_REF() { return FOG_HEIGHT_REF; },
+  get EXT_CALIMA() { return EXT_CALIMA; },
+});
 const W_TRADE = { sunMul: 1.00, hemiMul: 1.00, cloud: 0.30, cloudDark: 0.30, densMul: 1.00, mist: 1.0, rain: 0.00, wet: 0.00, wind: 0.85, gust: 0.35, windMS: 5.5, shaft: 1.00, desat: 0.00, cloudShadow: 0.26, lightning: 0, calima: 0, fogbank: 0, perception: 1.0, shadowK: 1.00, seaCloud: 1.0, ev: 0.00, bloomK: 1.00 };
 const WEATHER = {
   trade: W_TRADE,
@@ -338,6 +372,8 @@ function patchShaderChunks() {
   // scale (1/m), coverage, strength, softness
   uniform vec4 calCloudA;
   uniform vec2 calCloudDrift;
+  uniform sampler2D calCloudTex;
+  uniform vec2 calCloudOff;
   // wetness, gust, windX, windZ — world-ground's surface + foliage contract
   uniform vec4 calWeather;
 
@@ -350,8 +386,8 @@ function patchShaderChunks() {
   }
   float calCloudShadow() {
     if ( calCloudA.z <= 0.001 ) return 1.0;
-    vec2 uv = vFogWorldPos.xz * calCloudA.x + calCloudDrift;
-    float n = calNoise2( uv ) * 0.64 + calNoise2( uv * 2.17 + 13.7 ) * 0.36;
+    // EN5: one fetch of the scrolling coverage texture (calCloudA.x = 1 / CLOUD_TILE_M)
+    float n = texture2D( calCloudTex, vFogWorldPos.xz * calCloudA.x + calCloudOff ).r;
     float m = smoothstep( calCloudA.y, calCloudA.y + calCloudA.w, n );
     return 1.0 - m * calCloudA.z;
   }
@@ -462,7 +498,7 @@ function patchLightChunks(C) {
  * shaded under every pixel it covered. Mipmapped, so the plane-projected clouds stop
  * aliasing toward the horizon.
  */
-function makeSkyNoise(N = 256) {
+export function skyNoiseData(N = 256) {
   const data = new Uint8Array(N * N * 4);
   const acc = new Float32Array(N * N);
   const hash = (x, y, s) => {
@@ -495,7 +531,11 @@ function makeSkyNoise(N = 256) {
     }
     for (let i = 0; i < N * N; i++) data[i * 4 + ch] = Math.max(0, Math.min(255, Math.round((acc[i] / 0.96875) * 255)));
   }
-  const tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+  return data;
+}
+
+function makeSkyNoise(N = 256) {
+  const tex = new THREE.DataTexture(skyNoiseData(N), N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -595,6 +635,12 @@ export class Environment {
     this._wK = 1;
     this._wRate = 1;
     this.w = { ...WEATHER.trade };   // resolved, per frame
+    /** M2 wave 4: quests' weather asks (askWeather) */
+    this._asks = [];
+    this._askN = 0;
+    this._askHeld = false;
+    this._askBase = null;
+    this._cloudShadowOff = false;
     this.wetness = 0;
     this.wind = { x: -Math.SQRT1_2, z: Math.SQRT1_2, strength: 0.85, gust: 0 };
     this._windMS = 5.5;
@@ -659,6 +705,9 @@ export class Environment {
       calCamPos: { value: new THREE.Vector3() },
       calCloudA: { value: new THREE.Vector4(1 / 190, 0.52, 0.26, 0.30) },
       calCloudDrift: { value: new THREE.Vector2() },
+      /** EN5: the cloud shadows' coverage texture (CAL.skyNoise, set when it is built) and its offset (uv, by the clock) */
+      calCloudTex: { value: null },
+      calCloudOff: { value: new THREE.Vector2() },
       calWeather: { value: new THREE.Vector4(0, 0, -Math.SQRT1_2, Math.SQRT1_2) },
       /** the direct sun (or moon) as the cascades light it: linear colour × intensity */
       calSunCol: { value: new THREE.Color() },
@@ -760,6 +809,7 @@ export class Environment {
 
     /* ------------------------------ sky -------------------------------- */
     this._noise = makeSkyNoise(256);
+    this.u.calCloudTex.value = this._noise;
     this._discLin = new THREE.Color(1, 0.5, 0.3);
     this._discFor = { exposure: -1, mix: -1 };
     this.sky = this._buildSky();
@@ -852,6 +902,8 @@ export class Environment {
       clock: this.clock,
       phase: this._phase,
       weather: this.weather,
+      asks: this.asks,
+      sunAltitudeDeg: Math.round(this.sunAltitudeDeg * 10) / 10,
       perceptionScale: this._perception,
       wetness: this.wetness,
       wind: { ...this.wind, ms: this._windMS },
@@ -926,7 +978,68 @@ export class Environment {
       this._wRate = 1 / Math.max(0.05, fadeSeconds);
     }
     this.ctx.events?.emit?.('weather-changed', { weather: id, fadeSeconds });
+    // the quest stages seam's name for it (src/game/quest/scar-plan.js EVENTS: `weather {state}`, sky-look)
+    this.ctx.events?.emit?.('weather', { state: id, fadeSeconds });
     return id;
+  }
+
+  /**
+   * M2 wave 4, THE WEATHER SEAM's ask (M2 briefs §3.2: "a quest may ask for calima at an hour"; systems asks and never
+   * sets the sky itself). An ask holds a state while the clock is inside its window and gives the sky back when it ends:
+   *   const id = env.askWeather('calima', { from: 11.5, to: 14, fade: 8, by: 'true-ground' })
+   *   env.askWeather('calima')                    now, until cleared
+   *   env.clearAsk(id)                            the weather goes back to what it was before the ask
+   *   env.asks                                    [{ id, state, from, to, by, active }]
+   * `from`/`to` are game hours (a window may wrap midnight); `fade` the cross-fade in real seconds (default 6). The
+   * newest active ask wins. A rest that lands inside a window brings the state in over the fade, from the first frame
+   * after the rest (the dialog that pre-selects noon, then the dust rolls in).
+   */
+  askWeather(state, { from = null, to = null, fade = 6, by = null } = {}) {
+    const id = ALIAS[state] || state;
+    if (!WEATHER[id]) return null;
+    const ask = { id: `ask-${++this._askN}`, state: id, from: Number.isFinite(from) ? wrap24(from) : null, to: Number.isFinite(to) ? wrap24(to) : null, fade, by, active: false };
+    this._asks.push(ask);
+    this._tickAsks();
+    return ask.id;
+  }
+
+  clearAsk(id) {
+    const i = this._asks.findIndex((a) => a.id === id);
+    if (i < 0) return false;
+    this._asks.splice(i, 1);
+    this._tickAsks();
+    return true;
+  }
+
+  get asks() { return this._asks.map((a) => ({ ...a })); }
+
+  _inWindow(a, h = this._time) {
+    if (a.from == null || a.to == null) return true;
+    return a.from <= a.to ? (h >= a.from && h < a.to) : (h >= a.from || h < a.to);
+  }
+
+  /** Per frame (cheap): which ask is in force, and the cross-fade when that changes. */
+  _tickAsks() {
+    if (!this._asks.length && !this._askHeld) return;
+    let win = null;
+    for (const a of this._asks) { a.active = false; if (this._inWindow(a)) win = a; }
+    if (win) win.active = true;
+    const want = win ? win.state : (this._askHeld ? this._askBase : null);
+    if (win && !this._askHeld) { this._askHeld = true; this._askBase = this.weather; }
+    if (want && want !== this.weather) this.setWeather(want, win ? win.fade : 6);
+    if (!win && this._askHeld) { this._askHeld = false; this._askBase = null; }
+  }
+
+  /** The sun's altitude above the horizon, degrees (EN4: the Transit's far form is shown only under a high sun). */
+  get sunAltitudeDeg() { return Math.asin(Math.max(-1, Math.min(1, this.sunDir.y))) / DEG; }
+
+  /** Runtime A/B switches for tools/perf/attrib.mjs --toggles (EN5: the cloud shadows' cost, paired on - off). */
+  perfSwitches() {
+    return [{
+      id: 'cloud-shadow',
+      on: () => { this._cloudShadowOff = false; this._lightDirty = true; this._applyTime(0, true); },
+      off: () => { this._cloudShadowOff = true; this.u.calCloudA.value.z = 0; this._lightDirty = true; this._applyTime(0, true); },
+    }];
   }
 
   get weatherStates() { return BIBLE_STATES.slice(); }
@@ -1137,7 +1250,8 @@ export class Environment {
       this._time = wrap24(this._time + dt * this.clockRate());
     }
 
-    /* ---- weather cross-fade ---- */
+    /* ---- quests' weather asks, then the cross-fade ---- */
+    if (this._asks.length || this._askHeld) this._tickAsks();
     if (this._wK < 1) {
       this._wK = Math.min(1, this._wK + dt * this._wRate);
       const k = this._wK * this._wK * (3 - 2 * this._wK);
@@ -1207,6 +1321,9 @@ export class Environment {
     }
 
     /* ---- cloud + mist drift (downwind) ---- */
+    // EN5: the cloud shadows scroll downwind with the clock, every frame (the hour wraps at midnight, when they are off)
+    const cs = this._time * CLOUD_SPEED_MPH / CLOUD_TILE_M;
+    this.u.calCloudOff.value.set(-this.wind.x * cs, -this.wind.z * cs);
     const cd = this.u.calCloudDrift.value;
     cd.x -= dt * this.wind.x * this.wind.strength * 0.0016;
     cd.y -= dt * this.wind.z * this.wind.strength * 0.0016;
@@ -1410,7 +1527,7 @@ export class Environment {
     const densT = k.dens * w.densMul * this._biomeDens;
     const dens = densT + (CALIMA_DENS - densT) * cal;
     const fa = this.u.calFogA.value;
-    fa.x = dens; fa.y = FOG_HEIGHT_FALLOFF; fa.z = FOG_HEIGHT_REF; fa.w = 0;
+    fa.x = dens; fa.y = FOG_HEIGHT_FALLOFF + (CALIMA_FALLOFF - FOG_HEIGHT_FALLOFF) * cal; fa.z = FOG_HEIGHT_REF; fa.w = 0;
     const fc = this.u.calFogC.value;
     fc.x = k.mist * w.mist * Math.min(this._biomeDens, 1.6);
     fc.y = MIST_FALLOFF; fc.z = MIST_FLOOR; fc.w = 0.45;
@@ -1457,10 +1574,10 @@ export class Environment {
 
     /* ---- cloud shadows ---- */
     const ca = this.u.calCloudA.value;
-    ca.x = 1 / 190;
-    ca.y = 0.58 - w.cloud * 0.20;
-    ca.z = w.cloudShadow * (1 - k.night) * (this.sunAboveHorizon ? 1 : 0);
-    ca.w = 0.30;
+    ca.x = 1 / CLOUD_TILE_M;
+    ca.y = CLOUD_MAP_A + CLOUD_MAP_B * (0.58 - w.cloud * 0.20);
+    ca.z = this._cloudShadowOff ? 0 : w.cloudShadow * (1 - k.night) * (this.sunAboveHorizon ? 1 : 0);
+    ca.w = CLOUD_MAP_B * 0.30;
 
     /* ---- wind: the hour's lull (the gusts are per frame, _applyFrame) ---- */
     const lull = 0.35 + 0.65 * smooth(7.2, 10.5, h) * (1 - smooth(17.5, 19.3, h));

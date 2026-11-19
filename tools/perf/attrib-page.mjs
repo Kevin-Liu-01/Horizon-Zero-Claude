@@ -640,12 +640,12 @@ export async function standIns(E, scene, ctx, spec = {}, { n = 16, pairs = 3 } =
 }
 
 /**
- * M2 wave 3: the world's runtime switches (terrain.perfSwitches, vegetation.perfSwitches) by id, each a paired toggle
+ * M2 wave 3: the world's runtime switches (terrain.perfSwitches, vegetation.perfSwitches; M2 wave 4 environment.perfSwitches) by id, each a paired toggle
  * (ABBA, `pairs` pairs): `ms` = on - off. Each switch is flipped off and on once, with two frames drawn, before its
  * pairs, so a switch that compiles a program (a define) links it outside the timing.
  */
 export async function switchToggles(E, ctx, ids, { n = 16, pairs = 3 } = {}) {
-  const all = [...(ctx.terrain?.perfSwitches?.() || []), ...(ctx.vegetation?.perfSwitches?.() || [])];
+  const all = [...(ctx.terrain?.perfSwitches?.() || []), ...(ctx.vegetation?.perfSwitches?.() || []), ...(ctx.environment?.perfSwitches?.() || [])];
   // 'hide:<name>': the top-level scene children of that name hidden (off) and shown (on), from the view and the maps
   const hide = (id) => {
     const name = id.slice(5), objs = ctx.scene.children.filter((c) => c.name === name && c.visible);
