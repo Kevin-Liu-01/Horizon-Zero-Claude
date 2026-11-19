@@ -10,7 +10,8 @@ import { prepareEntry, installHull } from '../lib/hull.js';
 import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup, levelGlass, levelGlassTick } from '../lib/kindkit.js';
 import { installHerdRipple, fileStep, fileHold, rippleTick } from './tiller-herd.js';
 import { hullShapes, hullShapesInto } from '../lib/blockout.js';
-import { setOccluder, clearOccluders } from '../lib/sight.js';
+import { setOccluder, clearOccluders, sightBlocked } from '../lib/sight.js';
+import { HOT } from '../lib/hot.js';
 
 /**
  * TILLER — bible §7.4 #3 (medium; the herd, role `herd`). A glazed boat-hull on
@@ -62,6 +63,8 @@ const LOOK_YAW = 0.5;
 /** The sight occluders' form (src/instruments/lib/blockout.js): the built hull and its skirt. */
 const OCC_FORM = 'built';
 let _occSerial = 0;
+/** The herd-lee report: how often the leader asks (s of sim time) and how near a hull she must be (m). */
+const LEE_DT = 0.2, LEE_NEAR = 6;
 
 const HEX_WALK = { stride: 0.95, duty: 0.6, lift: 0.15,
   offsets: { LF: 0, RM: 0, LH: 0, RF: 0.5, LM: 0.5, RH: 0.5 } };       // alternating tripod
@@ -142,7 +145,7 @@ export class Tiller extends ExpansionMachine {
   update(dt, t) {
     const r = super.update(dt, t);
     const h = this.herd, f = h ? h.file : null;
-    if (f !== null && f !== undefined && f.leader === this && this.alive) f.record(this.position.x, this.position.z);
+    if (f !== null && f !== undefined && f.leader === this && this.alive) { f.record(this.position.x, this.position.z); this._leeTick(h, dt); }
     if (this._rippleAt >= 0) rippleTick(this);
     levelGlassTick(this, this._glass, dt);
     this._publishOccluders();
@@ -166,6 +169,44 @@ export class Tiller extends ExpansionMachine {
     if (Math.abs(o[0] - p.x) < 0.05 && Math.abs(o[1] - p.z) < 0.05 && Math.abs(o[2] - h) < 0.01 && Math.abs(o[3] - p.y) < 0.05) return;
     hullShapesInto('tiller', p.x, p.z, h, OCC_FORM, p.y, this._occShapes);
     o[0] = p.x; o[1] = p.z; o[2] = h; o[3] = p.y;
+  }
+
+  /**
+   * THE HERD AS COVER, REPORTED (scar-plan.js 'herd-lee' { inShadow, plumb }; the first hour's `herd` beat). The
+   * herd's leader asks, LEE_DT s of sim time apart: is she beside one of its hulls (LEE_NEAR m) with a Plumb in sight
+   * range whose rays to her chest and her hip are both blocked (the same two rays perception.js hasLOS tests)? The event
+   * goes out when the answer changes, so a beat waiting for `inShadow: true` hears it once. Allocation-free but for the
+   * event's payload on a change.
+   */
+  _leeTick(h, dt) {
+    this._leeT = (this._leeT ?? 0) - dt;
+    if (this._leeT > 0) return;
+    this._leeT = LEE_DT;
+    const P = HOT.pOk === 1 ? HOT.ppos : null, M = this.manager?.list;
+    if (!P || !M) return;
+    let near = false;
+    const mem = h.members;
+    for (let i = 0; i < mem.length; i++) {
+      const m = mem[i];
+      if (m && m.alive && Math.hypot(m.position.x - P.x, m.position.z - P.z) <= LEE_NEAR) { near = true; break; }
+    }
+    let plumb = null;
+    if (near) {
+      const crouch = HOT.pCrouch === 1, yc = P.y + (crouch ? 0.75 : 1.2), yh = P.y + (crouch ? 0.5 : 0.95);
+      for (let i = 0; i < M.length; i++) {
+        const q = M[i];
+        if (!q || q.kind !== 'plumb' || !q.alive || q._disposed) continue;
+        const qp = q.position, d = Math.hypot(qp.x - P.x, qp.z - P.z);
+        if (d > (q.sightRange || 48)) continue;
+        const ey = qp.y + (q.eyeHeight || 2.5);
+        if (sightBlocked(qp.x, ey, qp.z, P.x, yc, P.z) !== null && sightBlocked(qp.x, ey, qp.z, P.x, yh, P.z) !== null) { plumb = q; break; }
+      }
+    }
+    const inShadow = plumb !== null;
+    if (inShadow !== !!h._lee) {
+      h._lee = inShadow;
+      this.emit('herd-lee', { inShadow, plumb, herd: h });
+    }
   }
 
   _dropOccluders() {

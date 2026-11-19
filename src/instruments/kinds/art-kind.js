@@ -7,7 +7,7 @@ import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.j
 import { prepareEntry, installHull } from '../lib/hull.js';
 import { levelGlass, levelGlassTick } from '../lib/kindkit.js';
 import { setOccluder, clearOccluders } from '../lib/sight.js';
-import { hullShapes } from '../lib/blockout.js';
+import { hullShapes, hullShapesInto } from '../lib/blockout.js';
 
 /**
  * A FINISHED KIND THAT STANDS (M2 wave 2 "the look"; area C). A helper module (no default export: the registry
@@ -57,6 +57,7 @@ export function artKind({ id, kind, url, sizeClass, plannedRole, displayName, ga
       this._deathSink = 0.03;
       this._occSlot = `${id}:${++_serial}:`;
       this._occAt = null;
+      this._occShapes = null;
     }
 
     weightAudit() { return weightAudit(this); }
@@ -70,13 +71,21 @@ export function artKind({ id, kind, url, sizeClass, plannedRole, displayName, ga
       levelGlassTick(this, this._glass, dt);
       if (this.alive && this.state !== 'patrol' && this.state !== 'dead') this.setState('patrol');
       if (this.sc) this.sc.suspicion = 0;
+      this._publishShapes();
+      return r;
+    }
+
+    /** The occluding parts follow the hull: rewritten only when it has been moved or turned; gone with the machine. */
+    _publishShapes() {
       const p = this.position, h = this.heading, o = this._occAt;
       if (this.alive && (!o || Math.abs(o[0] - p.x) > 0.05 || Math.abs(o[1] - p.z) > 0.05 || Math.abs(o[2] - h) > 0.01)) {
-        const shapes = hullShapes(kind, p.x, p.z, h, null, p.y);
-        for (let i = 0; i < shapes.length; i++) setOccluder(this._occSlot + i, shapes[i]);
-        this._occAt = [p.x, p.z, h];
-      } else if (!this.alive && o) { clearOccluders(this._occSlot); this._occAt = null; }
-      return r;
+        // made once and moved in place (blockout.js hullShapesInto: nothing allocated on a frame it walks)
+        if (!o || !this._occShapes) {
+          this._occShapes = hullShapes(kind, p.x, p.z, h, null, p.y);
+          for (let i = 0; i < this._occShapes.length; i++) setOccluder(this._occSlot + i, this._occShapes[i]);
+        } else hullShapesInto(kind, p.x, p.z, h, null, p.y, this._occShapes);
+        if (o) { o[0] = p.x; o[1] = p.z; o[2] = h; } else this._occAt = [p.x, p.z, h];
+      } else if (!this.alive && o) { clearOccluders(this._occSlot); this._occAt = null; this._occShapes = null; }
     }
 
     _statePatrol() {}
@@ -94,8 +103,8 @@ export function artKind({ id, kind, url, sizeClass, plannedRole, displayName, ga
     }
 
     /** `ai/sites.js` dispose ends here; a staged machine (tools/frames/page.mjs) is undone through `dispose`. */
-    disposeFx(keepBeacon = false) { if (this._disposed) { clearOccluders(this._occSlot); this._occAt = null; } return super.disposeFx(keepBeacon); }
-    dispose() { clearOccluders(this._occSlot); this._occAt = null; super.dispose(); }
+    disposeFx(keepBeacon = false) { if (this._disposed) { clearOccluders(this._occSlot); this._occAt = null; this._occShapes = null; } return super.disposeFx(keepBeacon); }
+    dispose() { clearOccluders(this._occSlot); this._occAt = null; this._occShapes = null; super.dispose(); }
   }
   return {
     id,

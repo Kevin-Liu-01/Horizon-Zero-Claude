@@ -185,3 +185,102 @@ export class ScreedBrain {
     this.x += dx; this.z += dz;
   }
 }
+
+/**
+ * THE FIGHT AROUND THE BRAIN (M2 wave 3, area C; the live Screed in `./screed.js` runs exactly this). It reads where she
+ * is, decides when the fight starts and when to charge, and reports what happened as events; the kind file only writes
+ * the brain's position back onto the machine and emits the events. So the page's fight and its Node twin
+ * (tools/instruments/screed-fight.test.mjs) are the same code.
+ *   wait   stands (calm) until she is within `engageM` of it or it is struck
+ *   come   walks on `centre` (the village), cutting walls (IN7); charges her when she is `chargeM` ahead within
+ *          `chargeCone` of its heading and `chargeCd` has run since its last charge ended; the blade strikes her once a
+ *          charge if she is inside `bladeBox` in front of it. After a stall it backs off the wall (`backS` at
+ *          `backSpeed`, the blade still planted low) before it walks on, so the wall it stalled on is cut only if it
+ *          walks into it again un-stalled
+ *   done   fail-soft (the third cut) or the blade dropped (both seals off): it walks the `away` points in turn (back out
+ *          the way it came, then down the Scar), cutting nothing and charging no more
+ * Events (type, then the payload): 'screed-engage', 'screed-charge' {at}, 'blade-hit', 'screed-stalled' {wall, by, at}
+ * (on a wall), 'screed-stalled-rock' {by, at}, 'screed-cut' {id, cuts}, 'seal-off' {seal: 'ram-1' | 'ram-2', part},
+ * 'screed-seized' {part}, 'screed-done' {failSoft, cuts, sealsOff}.
+ */
+export const FIGHT = Object.freeze({
+  engageM: 45, chargeM: Object.freeze([7, 24]), chargeCone: 0.6, chargeCd: 4.5,
+  bladeDmg: 32, bladeBox: Object.freeze({ back: 1.2, front: 1.4, half: SCREED_RULES.bladeHalfW + 0.35 }),
+  backS: 2.0, backSpeed: 1.2,
+});
+
+export class ScreedFight {
+  constructor(brain, { centre, away }) {
+    this.b = brain; this.centre = centre; this.away = Array.isArray(away) ? away : [away]; this.awayI = 0;
+    this.mode = 'wait'; this.cd = 0; this.struck = false; this.bladeHit = false;
+    this.lastPhase = brain.phase; this.nStalls = 0; this.nCuts = 0; this.backT = 0;
+    this.events = [];
+  }
+
+  _ev(type, payload) { this.events.push(payload ? { type, ...payload } : { type }); }
+
+  /** One step: she is at (px, pz) (or null). The events of this step are in `this.events` (cleared each step). */
+  step(dt, px, pz) {
+    const b = this.b, F = FIGHT;
+    this.events.length = 0;
+    const has = px != null && pz != null;
+    const dx = has ? px - b.x : 1e9, dz = has ? pz - b.z : 1e9, d = Math.hypot(dx, dz);
+    if (this.mode === 'wait' && (d < F.engageM || this.struck)) {
+      this.mode = 'come'; b.target = { x: this.centre.x, z: this.centre.z }; this._ev('screed-engage');
+    }
+    if (this.mode === 'come' && (b.failSoft || bladeDropped(b.parts))) {
+      this.mode = 'done'; this.awayI = 0; b.target = { x: this.away[0].x, z: this.away[0].z };
+      this._ev('screed-done', { failSoft: b.failSoft, cuts: b.cuts.length, sealsOff: bladeDropped(b.parts) });
+    }
+    if (this.cd > 0 && b.phase === 'walk') this.cd -= dt;
+    if (this.mode === 'come' && b.phase === 'walk' && this.cd <= 0 && has && d >= F.chargeM[0] && d <= F.chargeM[1]) {
+      let a = Math.atan2(dx, dz) - b.heading;
+      a -= Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
+      if (Math.abs(a) <= F.chargeCone && b.charge(px, pz)) { this.bladeHit = false; this._ev('screed-charge', { at: [px, pz] }); }
+    }
+    // a walk in 'done' never cuts: the brain only strikes walls in its 'walk' phase, so a finished fight walks in 'done'
+    if (this.mode === 'done' && b.phase === 'walk') b.phase = 'done';
+    if (this.mode === 'done' && b.target && this.awayI < this.away.length - 1 && Math.hypot(b.target.x - b.x, b.target.z - b.z) < 3) {
+      this.awayI++; b.target = { x: this.away[this.awayI].x, z: this.away[this.awayI].z };
+    }
+    if (this.backT > 0) {
+      // backing off the wall it stalled on: straight back along its heading, the blade low
+      this.backT -= dt;
+      b.x -= Math.sin(b.heading) * F.backSpeed * dt; b.z -= Math.cos(b.heading) * F.backSpeed * dt;
+    } else b.step(dt);
+    if (b.phase === 'charge' && !this.bladeHit && has) {
+      const s = Math.sin(b.heading), c = Math.cos(b.heading);
+      const ex = px - b.x, ez = pz - b.z, fwd = ex * s + ez * c - SCREED_RULES.bladeFront, lat = ex * c - ez * s;
+      if (fwd >= -F.bladeBox.back && fwd <= F.bladeBox.front && Math.abs(lat) <= F.bladeBox.half) { this.bladeHit = true; this._ev('blade-hit'); }
+    }
+    if (b.phase !== this.lastPhase) {
+      if (this.lastPhase === 'charge' || this.lastPhase === 'stall') this.cd = F.chargeCd;
+      if (this.lastPhase === 'stall') this.backT = F.backS;
+      this.lastPhase = b.phase;
+    }
+    if (b.stalls.length !== this.nStalls) {
+      this.nStalls = b.stalls.length;
+      const st = b.stalls[b.stalls.length - 1];
+      if (st.wall) this._ev('screed-stalled', { wall: st.by, by: st.by, at: st.at });
+      else this._ev('screed-stalled-rock', { by: st.by, at: st.at });
+    }
+    if (b.cuts.length !== this.nCuts) { this.nCuts = b.cuts.length; this._ev('screed-cut', { id: b.cuts[b.cuts.length - 1], cuts: b.cuts.length }); }
+    return this.events;
+  }
+
+  /** A blow on a part ('sealL' | 'sealR' | 'lamp'; kind as `hitPart`). Returns the new state; events in `this.events`. */
+  blow(id, kind) {
+    const S = this.b.parts, before = S[id]?.state;
+    this.events.length = 0;
+    const st = hitPart(S, id, kind);
+    if (st !== before) {
+      this.struck = true;
+      if (id !== 'lamp') {
+        const off = (S.sealL.state === 'off') + (S.sealR.state === 'off');
+        if (st === 'off') this._ev('seal-off', { seal: `ram-${off}`, part: id, off });
+        else if (st === 'seized') this._ev('screed-seized', { part: id });
+      }
+    }
+    return st;
+  }
+}
