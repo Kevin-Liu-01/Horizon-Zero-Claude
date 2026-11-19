@@ -13,7 +13,6 @@ import { BENCHMARKS, site as layoutSite } from '../world/sites/layout.js';
 import { PLUMB_TERRACE, HERD_SLOPE } from '../world/holds/blockout.js';
 import * as NW from '../world/settlements/ninewalls-layout.js';
 import { vec3 } from '../world/settlements/brazier.js';
-import { buildTransitStandIn } from './quest/transit-far.js';
 import { TRANSIT_CARD } from './quest/scar-plan.js';
 import { Certifications } from './certs/live.js';
 import { Counter } from './trade/counter.js';
@@ -546,14 +545,9 @@ export class FirstHour {
     if (ctx.transitFar?.head) return ctx.transitFar;
     const m = this._live(ctx.machines?.list).find((q) => q.kind === 'transit');
     if (m) { const h = m.position.clone(); h.y += (m.height ?? 15) * 0.9; return { head: h, machine: m, show() {} }; }
-    if (!this._standIn) {
-      const E = this._malpaisEdge();
-      if (!E) return null;
-      const C = NW.CENTRE;
-      this._standIn = buildTransitStandIn({ x: E.transit.x, z: E.transit.z, ground: (x, z) => ctx.terrain?.getHeight?.(x, z) ?? 0, facing: Math.atan2(C.x - E.transit.x, C.z - E.transit.z) });
-      ctx.scene?.add(this._standIn.group);
-    }
-    return this._standIn;
+    // no far form published (area C's ctx.transitFar is built by src/instruments/registry.js at boot): the beat cannot be
+    // read and fails by name. The systems stand-in that used to be built here imported three into src/game/ (Tier 0).
+    return null;
   }
 
   _noonStep(dt) {
