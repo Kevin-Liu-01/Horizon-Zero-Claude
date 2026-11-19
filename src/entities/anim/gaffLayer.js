@@ -307,7 +307,7 @@ export class GaffLayer {
       }
       // the grip event: the end of C
       eT = phaseEnd(T, 'C');
-      if (G.owner !== 'handR' && G.t >= eT) { G.owner = 'handR'; G.gripAt = G.simT; K?.setHeld?.(1); }
+      if (G.owner !== 'handR' && G.t >= eT) { G.owner = 'handR'; G.gripAt = G.simT; K?.setHeld?.((K.held & ~1) | 1); }
     } else {
       // the stow: D back past the hip onto its line over the frog, S seat, C open, A back down her side
       if (name === 'D') {
@@ -332,7 +332,7 @@ export class GaffLayer {
       }
       eT = phaseEnd(T, 'S');
       if (G.owner === 'handR' && G.t >= eT) {
-        G.owner = 'carry'; G.releaseAt = G.simT; K?.setHeld?.(0);
+        G.owner = 'carry'; G.releaseAt = G.simT; K?.setHeld?.(K.held & ~1);
         // a swap to the lance: its draw starts now (the left hand takes it; the right opens and comes down meanwhile)
         if (gaff.after === 'lance') { gaff.after = null; this.ctx.combat?.melee?.drawLance?.(); }
       }

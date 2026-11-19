@@ -90,8 +90,9 @@ export class HeroRig {
   async grantOroKit(own = { gaff: true, windwall: true, pots: 3 }) {
     if (!this.oro) return null;
     const { ensureGaff } = await import('../combat/gaff.js');
-    const gaff = ensureGaff(this.ctx);
-    await Promise.all([this.oro.grant(own), own.gaff ? gaff.grant() : null]);
+    const { ensureWindwall } = await import('../combat/windwall.js');
+    const gaff = ensureGaff(this.ctx), ww = ensureWindwall(this.ctx);
+    await Promise.all([this.oro.grant(own), own.gaff ? gaff.grant() : null, own.windwall ? ww.grant(this.ctx) : null]);
     return this.oro;
   }
 

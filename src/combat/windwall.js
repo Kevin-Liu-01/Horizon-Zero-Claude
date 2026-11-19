@@ -24,7 +24,8 @@ export const WINDWALL_FAN = Object.freeze({ slats: 9, spreadDeg: 150, closed: 0.
 export function installFan(material) {
   if (material.userData.wwOpen) return material.userData.wwOpen;
   const u = { value: 0 };
-  const k = (WINDWALL_FAN.spreadDeg * Math.PI / 180) / (WINDWALL_FAN.slats - 1);
+  // (M2 wave 3: clockwise about +Z, the recipe's SWEEP = -1: on her forearm the fan opens from the elbow down)
+  const k = -(WINDWALL_FAN.spreadDeg * Math.PI / 180) / (WINDWALL_FAN.slats - 1);
   material.userData.wwOpen = u;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uOpen = u;
@@ -154,6 +155,13 @@ export class WindwallState {
     this._bashHit = false;
   }
 
+  /** The hand-over: she owns it from now (the held mesh loads now, once). */
+  grant(ctx) {
+    this.owned = true;
+    if (!this.prop) this.prop = new HeldWindwall(ctx);
+    return this.prop.ready;
+  }
+
   /** Is the fan up and covering her (guard, or the bash's drive)? */
   get guarding() { return this.phase === 'guard' || this.phase === 'bash'; }
   get onArm() { return this.phase !== 'planting' && this.phase !== 'planted'; }
@@ -210,7 +218,8 @@ export class WindwallState {
         break;
       case 'opening': {
         const k = Math.min(1, this.t / W.openS);
-        this.open = WINDWALL_FAN.closed + (1 - WINDWALL_FAN.closed) * k;
+        // (front-loaded: the slats past her elbow swing down and out of the way while the arm is still coming up)
+        this.open = WINDWALL_FAN.closed + (1 - WINDWALL_FAN.closed) * (1 - (1 - k) * (1 - k));
         if (!this.want) { this.phase = 'closing'; this.t = (1 - k) * W.closeS; }
         else if (k >= 1) { this.phase = 'guard'; this.t = 0; this.guardUpAt = this.simT; ev = 'up'; }
         break;
@@ -237,7 +246,8 @@ export class WindwallState {
         break;
       case 'closing': {
         const k = Math.min(1, this.t / W.closeS);
-        this.open = 1 - (1 - WINDWALL_FAN.closed) * k;
+        // (it closes late, once the arm is down)
+        this.open = 1 - (1 - WINDWALL_FAN.closed) * k * k;
         if (this.want && this.owned) { this.phase = 'opening'; this.t = (1 - k) * W.openS; }
         else if (k >= 1) { this.phase = 'stowed'; this.t = 0; this.open = WINDWALL_FAN.closed; ev = 'closed'; }
         break;
@@ -245,4 +255,11 @@ export class WindwallState {
     }
     return ev;
   }
+}
+
+/** The one Windwall state of this game, as ctx.combat.windwall (or on ctx when there is no combat yet). */
+export function ensureWindwall(ctx) {
+  const host = ctx.combat || ctx;
+  if (!host.windwall) host.windwall = new WindwallState();
+  return host.windwall;
 }

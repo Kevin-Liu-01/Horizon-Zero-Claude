@@ -161,7 +161,11 @@ export const WINDWALL = {
 /** How far a CLOSED Windwall's slats stay fanned (a share of the spread): a closed fan shows its slats' edges. */
 export const CLOSED_OPEN = 0.07;
 /** The open fan's angle (rad) for a slat index (fractional for the lacing). */
-export const slatAngle = (s, open = 1) => (s / (WINDWALL.slats - 1)) * WINDWALL.spread * Math.PI / 180 * open;
+/** (M2 wave 3: the fan opens toward -X's opposite, so on her forearm (its back turned out) it opens from the elbow DOWN
+ *  and round under the forearm: the guard's crescent hangs in front of her body below the forearm, never over her
+ *  shoulders (KT1). Negative: slat s turns clockwise about +Z.) */
+export const SWEEP = -1;
+export const slatAngle = (s, open = 1) => SWEEP * (s / (WINDWALL.slats - 1)) * WINDWALL.spread * Math.PI / 180 * open;
 
 /** A slat's half-width at `r` from the rivet (m): narrow round the rivet, flaring to the tip, the tip rounded off. */
 const slatHW = (r) => {
