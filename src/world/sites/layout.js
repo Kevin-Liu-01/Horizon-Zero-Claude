@@ -132,10 +132,15 @@ export const CRATER = { id: 'red-crater', centre: { e: -388, n: -160 }, rx: 108,
  * Twelve benchmarks, two per biome, each a region the re-survey makes true
  * ground (`ctx.datum.setTrue(region)`, progression W3). `x, z` is where to look;
  * the runtime sets the pad on the flattest ground within `r` of it. bm-01 is the
- * first hour's Benchmark 1, on the Scar's line below Ninewalls (bible §8.9).
+ * first hour's Benchmark 1, on the Scar's line below Ninewalls (bible §3.4 B1).
+ * Only bm-01 is reconciled to the bible's table so far (M2 wave 1); the other
+ * eleven keep their W1 places until their areas are built.
  */
 export const BENCHMARKS = [
-  { id: 'bm-01', name: 'Benchmark 1 (Ninewalls)', region: 'ninewalls', biome: 'holds', x: 19, z: 243, r: 14 },
+  // M2 wave 1 (area A, HG0): at bible §3.4's (E 12, N -282), on the Scar's line 0.5 m off its centreline and 73 m
+  // south of Ninewalls' centre (it stood at x 19, z 243, 22 m off the line); r 0.6 keeps the pad's search on the
+  // Scar's planed floor (HG1: B1 within 1 m of the centreline)
+  { id: 'bm-01', name: 'Benchmark 1 (Ninewalls)', region: 'ninewalls', biome: 'holds', x: 12, z: 282, r: 0.6 },
   { id: 'bm-02', name: 'Jameo benchmark', region: 'jameo', biome: 'holds', x: 87, z: 147, r: 14 },
   { id: 'bm-03', name: 'Beach benchmark', region: 'black-sand-beach', biome: 'pans', x: -211, z: 397, r: 5 },
   { id: 'bm-04', name: 'Glass benchmark', region: 'the-glass', biome: 'pans', x: -365, z: 140, r: 5 },

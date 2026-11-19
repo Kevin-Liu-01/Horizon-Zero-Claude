@@ -22,6 +22,7 @@
  */
 import { ISLAND_SCALE as S } from './extent.js';
 import { SITES, TRIG, TRIG_TOP, SIGHT_PAIRS, SALT_FIELD as SF, CISTERN } from './sites.js';
+import { buildHoldsProfile, holdsHeight, scarWeight } from '../holds/blockout.js';
 
 export const BIOMES = Object.freeze(['pans', 'holds', 'malpais', 'cloudline', 'flank', 'caldera']);
 export const SEA_LEVEL = 0;
@@ -269,6 +270,7 @@ export function ensureMacro(shared = null) {
   if (shared) {
     M.h = shared.h; M.c = shared.c; M.quiet = shared.quiet; M.b = shared.b;
     M.ready = true;
+    buildHoldsProfile(heightAuthored);
     return M;
   }
   const cells = GN * GN;
@@ -400,6 +402,10 @@ export function ensureMacro(shared = null) {
       }
     }
   }
+  /* (M2 wave 1, area A) the Holds' blockout (src/world/holds/blockout.js: the Scar, the Plumb's bench, the barranco)
+   * reads its reference heights off the finished grids once, here and on every worker (the shared branch above), and
+   * is applied in heightAt only: no pass above sees it, so nothing outside its footprint moves */
+  buildHoldsProfile(heightAuthored);
   return M;
 }
 
@@ -1068,7 +1074,8 @@ function heightAuthored(e, n) {
 /** Full-detail island height at an engine point. Baked once onto the render grid. */
 export function heightAt(x, z) {
   if (!M.ready) ensureMacro();
-  return heightAuthored(x / S, -z / S);
+  const e = x / S, n = -z / S;
+  return holdsHeight(e, n, heightAuthored(e, n));
 }
 
 /** Biome weights at an engine point into `out` [pans, holds, malpais, cloudline, flank, caldera]. */
@@ -1103,6 +1110,8 @@ export const authored = Object.freeze({
   fieldK: (x, z) => fieldK(x / S, -z / S),
   glass: (x, z) => glassD(x / S, -z / S),
   ringGrass: (x, z) => ringGrass(x / S, -z / S),
+  /** 0..1 on the Screed Scar's planed floor (M2 wave 1 blockout tint) */
+  scar: (x, z) => scarWeight(x / S, -z / S),
 });
 
 /** The cistern in the field's frame, for the check script. */

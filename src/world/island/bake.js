@@ -64,6 +64,8 @@ const TINT = [
 /** The tuff ring's beds, bottom to top, repeating (bible: Rust Red #8E3B23 and its kin). */
 const CRATER_BEDS = [hex(0x8e3b23), hex(0x5e2a1c), hex(0xa8562e), hex(0x3a2622), hex(0x96452a), hex(0x6e3a26), hex(0xb0703e), hex(0x4a2c22)];
 const CRATER_TALUS = hex(0xa98f70), CRATER_CAP = hex(0x2a2220);
+/** The Scar's floor at blockout (M2 wave 1): graded lapilli, paler and greyer than the ground it was cut from. */
+const SCAR_TINT = hex(0x5a5550);
 
 const _w = new Float64Array(6);
 
@@ -115,6 +117,10 @@ export function bakeShade(H, r0, r1) {
         r += (cR - r) * t; g += (cG - g) * t; b += (cB - b) * t;
         k = Math.max(k, t * 0.95);
       }
+      // (M2 wave 1, area A) the Screed Scar's planed floor at blockout: a paler packed grey than the lapilli round it,
+      // so its 25 m line reads from T1 and the Rise before the Holds' ground has its look (wave 2)
+      const sw = authored.scar(x, z);
+      if (sw > 0.01) { r += (SCAR_TINT[0] - r) * sw; g += (SCAR_TINT[1] - g) * sw; b += (SCAR_TINT[2] - b) * sw; k = Math.max(k, sw); }
       tint[o] = r; tint[o + 1] = g; tint[o + 2] = b; tint[o + 3] = Math.min(255, k * 255);
     }
   }
