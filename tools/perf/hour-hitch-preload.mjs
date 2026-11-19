@@ -16,7 +16,7 @@
  * Writes <HH_OUT>/hour-hitch.json (rewritten on every long frame and at each browser close). Run it inside
  * tools/perf/clean-measure.sh so its numbers are a commit's.
  *
- * HH_PROFILE=1 (C5): V8's sampling profiler runs on every page in 12 s chunks (HH_PROFILE_US, default 250 us a sample);
+ * HH_PROFILE=1 (C5): V8's sampling profiler runs on every page in HH_PROFILE_S chunks (default 12 s; HH_PROFILE_US, default 250 us a sample; each stop and start holds the page ~0.2 s);
  * each long frame then also carries `cpu`: the functions that held the main thread inside its interval (self ms and
  * inclusive ms by name, file and line), read off the chunk that holds it. The chunk's clock is put on the page's
  * performance.now() by the readings taken either side of Profiler.start (their spread is kept as `clockMs`).
@@ -29,6 +29,7 @@ const OUT = process.env.HH_OUT;
 const OVER = Number(process.env.HH_OVER || 25);
 const PROFILE = process.env.HH_PROFILE === '1';
 const PROFILE_US = Number(process.env.HH_PROFILE_US || 250);
+const PROFILE_S = Number(process.env.HH_PROFILE_S || 12);
 const run = { tool: 'tools/perf/hour-hitch-preload.mjs', commit: process.env.CLEAN_COMMIT || null, over: OVER, argv: process.argv.slice(1), startedAt: new Date().toISOString(), launches: [] };
 const save = () => { if (OUT) { try { writeFileSync(path.join(OUT, 'hour-hitch.json'), JSON.stringify(run, null, 1)); } catch { /* */ } } };
 if (OUT) mkdirSync(OUT, { recursive: true });
@@ -214,7 +215,7 @@ async function profilePage(page, L) {
   let clock;
   try { clock = await begin(); } catch { return; }
   for (;;) {
-    await new Promise((r) => setTimeout(r, 12000));
+    await new Promise((r) => setTimeout(r, PROFILE_S * 1000));
     let prof, next;
     try { prof = (await cdp.send('Profiler.stop')).profile; next = await begin(); } catch { return; }
     // the chunk's start (prof.startTime, us) lies between the two readings: take their middle
