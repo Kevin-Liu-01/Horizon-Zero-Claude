@@ -13,6 +13,8 @@
  *   ground     the game's terrain under its feet against where its feet are (m)
  *   heights    (F36 only) the game's terrain.getHeight over the village on a 1 m grid (x0, z0, n, values in cm) for the lens
  *              planning in Node: the island bake in Node reads up to a metre off it round the cistern
+ *   sweep      (F36 only, after everything above) each person's work clips sampled at 24 points: the head's, the pelvis's and
+ *              the lower hand's height over the feet (m), to choose the point each is held at (the frame is not re-shot)
  * `atWork` counts the people in a work clip with areaPx >= MIN_PX (a figure a viewer can read at 1600 x 900; a person at
  * 20 m covers about 1,000 px standing). Bar (NW5): 5. Nothing is changed that is not put back.
  */
@@ -95,7 +97,33 @@ export async function probe(frame) {
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) v[j * n + i] = Math.round(C.terrain.getHeight(x0 + i, z0 + j) * 100);
     heights = { x0, z0, n, step: 1, cm: v };
   }
+  let sweep = null;
+  if (frame.id === 'F36') {
+    sweep = {};
+    const CLIPS = ['Fixing_Kneeling', 'Farm_Harvest', 'Farm_PlantSeed', 'Farm_Watering', 'PickUp_Table', 'Interact', 'Chest_Open', 'Push_Loop', 'TreeChopping_Loop'];
+    const W3 = new THREE.Vector3();
+    for (const q of staged) {
+      const cur = q.current, name0 = cur?.getClip?.()?.name?.split('|').pop(), t0 = cur?.time ?? 0;
+      const B = q.bones || {}, y0 = q.group.position.y, out = {};
+      const yOf = (b) => (b ? (b.getWorldPosition(W3), Math.round((W3.y - y0) * 100) / 100) : null);
+      for (const c of CLIPS) {
+        const d = q.play(c, { fade: 0, offset: 0, ts: 0 });
+        if (!d || !q.pose.current) continue;
+        const rows = [];
+        for (let k = 0; k < 24; k++) {
+          q.pose.current.time = (k / 24) * d; q.pose.fade = 0; q.pose.step = 0; q.pose.update();
+          q.group.updateMatrixWorld(true);
+          const hl = yOf(B.hand_l), hr = yOf(B.hand_r);
+          rows.push([+(k / 24).toFixed(3), yOf(B.head), yOf(B.pelvis), Math.min(hl ?? 9, hr ?? 9)]);
+        }
+        out[c] = { dur: Math.round(d * 100) / 100, at: rows };
+      }
+      if (name0) { q.play(name0, { fade: 0, offset: 0, ts: 0 }); q.pose.current.time = t0; q.pose.fade = 0; q.pose.step = 0; q.pose.update(); }
+      sweep[q.archetype || q.id] = out;
+    }
+  }
   return {
+    sweep,
     heights,
     frame: { W, H: Hh, css: [cw, ch] }, minPx: MIN_PX, staged: staged.length, atWork, bar: 5, rows,
     held: people.every((r) => r.clipTs === 0),
