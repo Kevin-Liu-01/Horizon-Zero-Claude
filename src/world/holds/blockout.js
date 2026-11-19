@@ -82,6 +82,26 @@ export const BREACHES = Object.freeze(['T2'].map((id) => {
 }));
 
 
+/**
+ * The Jameo (bible §3.4: E 112, N -160, the collapsed skylight of the Ninewalls lava tube) stands 15.3 m off the Scar's
+ * centreline, inside the south-east berm's band. The orchestrator's ruling after the blockout (M2 wave 1, ruling 3):
+ * the Jameo keeps its height, and the berm and apron are broken so its skylight pit clears them by at least 3 m. So no
+ * berm or apron stands within `r + CLEAR` of its centre (`ease` beyond that the spoil comes back): there the floor's plane
+ * is handed back to the natural ground over `EDGE` m past the floor's edge, and the ground round the pit is the
+ * ground the Scar was cut beside. `r` is the pit's rim (a 5 m skylight: the floor's edge is 2.8 m from its centre, so
+ * a wider rim would be cut by the floor itself); the pit and its pool are the site's art, not carved here.
+ */
+export const JAMEO = (() => {
+  const e = 112, n = -160, f = scarFrame(e, n);
+  return Object.freeze({ e, n, r: 2.5, CLEAR: 3, ease: 3, EDGE: 1.5, side: Math.sign(f.v), u: f.u, v: f.v });
+})();
+
+/** 0..1: how far the Jameo's breach has taken the berm and apron away at (e, n) (1 within r + CLEAR of its centre). */
+export function jameoBreach(e, n) {
+  const d = Math.hypot(e - JAMEO.e, n - JAMEO.n), r0 = JAMEO.r + JAMEO.CLEAR;
+  return d >= r0 + JAMEO.ease ? 0 : 1 - ss(r0, r0 + JAMEO.ease, d);
+}
+
 /* ------------------------------------------------------------ other pieces ---- */
 /** The Plumb's bench above Ninewalls: centre, the level disc's radius and its ease-out (authored frame), and its lamp
  * over its feet (plumb.js eyeHeight). 122 m NNW of Ninewalls' centre and 12 m above it, on the open face of the slope:
@@ -205,6 +225,26 @@ export function scarWeight(e, n) {
   return wA * (1 - ss(SCAR_LINE.half - 0.6, SCAR_LINE.half + 0.4, av));
 }
 
+/**
+ * 0..1: the spoil's footprint at (e, n): how much of the Scar's berm and apron stand there (the band outside the floor's
+ * inner berm toe, less the breaches). For the rows (the Jameo's clearance) and the ground's look (spoil, not floor).
+ */
+export function bermFoot(e, n) {
+  if (!P.ready) return 0;
+  const de = e - A.e, dn = n - A.n, u = de * DE + dn * DN, v = de * PE + dn * PN, av = Math.abs(v), Q = SCAR_LINE;
+  const v0 = Q.half - Q.BERM_IN, v1 = Q.half + Q.BERM_IN + Q.BERM_OUT, v2 = v1 + Q.APRON;
+  if (av <= v0 || av >= v2 || u <= -Q.END || u >= LEN + Q.END) return 0;
+  const wA = u < 0 ? 1 - ss(0, Q.END, -u) : u > LEN ? 1 - ss(0, Q.END, u - LEN) : 1;
+  let k = wA * (av > v1 ? 1 - ss(v1, v2, av) : 1);
+  if (Math.sign(v) === JAMEO.side) k *= 1 - jameoBreach(e, n);
+  for (const br of BREACHES) {
+    if (Math.sign(v) !== br.side) continue;
+    const du = br.u1 - br.u0, dv = br.v1 - br.v0, tt = Math.min(1, Math.max(0, ((u - br.u0) * du + (v - br.v0) * dv) / (du * du + dv * dv)));
+    k *= ss(br.half, br.half + br.ease, Math.hypot(u - br.u0 - du * tt, v - br.v0 - dv * tt));
+  }
+  return k;
+}
+
 /** A cheap hash noise in 0..1 (the berms' height varies along their length). */
 function vn(x) { const i = Math.floor(x), f = x - i, a = Math.sin(i * 127.1) * 43758.5453, b = Math.sin((i + 1) * 127.1) * 43758.5453;
   const ha = a - Math.floor(a), hb = b - Math.floor(b), w = f * f * (3 - 2 * f); return ha + (hb - ha) * w; }
@@ -231,6 +271,11 @@ export function holdsHeight(e, n, h) {
       target += hb * (av < vc ? ss(v0, vc, av) : 1 - ss(vc, v1, av));
       if (av > v1) target += (h - target) * ss(v1, v2, av);
       // a breach: no berm, and the floor's plane handed straight back to the ground at the edge
+      // the Jameo's breach (ruling 3): no spoil within r + CLEAR of the pit; the floor's plane meets the ground at its edge
+      if (Math.sign(v) === JAMEO.side) {
+        const kj = jameoBreach(e, n);
+        if (kj > 0) target += (plane + (h - plane) * ss(Q.half, Q.half + JAMEO.EDGE, av) - target) * kj;
+      }
       for (let i = 0; i < BREACHES.length; i++) {
         const br = BREACHES[i];
         if (Math.sign(v) !== br.side) continue;

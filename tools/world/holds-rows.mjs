@@ -19,7 +19,7 @@ import { ensureMacro, heightAt, biomesAt, BIOMES } from '../../src/world/island/
 import { SITES, TRIG, REST, siteById } from '../../src/world/island/sites.js';
 import { GRID } from '../../src/world/island/bake.js';
 import { BENCHMARKS } from '../../src/world/sites/layout.js';
-import { SCAR_LINE, PLUMB_TERRACE, HERD_SLOPE, BARRANCO, FOOTPRINT, BREACHES, scarFrame, scarPoint, scarFloor } from '../../src/world/holds/blockout.js';
+import { SCAR_LINE, PLUMB_TERRACE, HERD_SLOPE, BARRANCO, FOOTPRINT, BREACHES, JAMEO, scarFrame, scarPoint, scarFloor, bermFoot } from '../../src/world/holds/blockout.js';
 
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -107,7 +107,7 @@ for (let i = 0; i < 10; i++) {
 say(`  Scar cross-fall at 10 stations (deg): ${cutRows.map((r) => r.crossFallDeg).join(' ')}`);
 say(`  a floor level across would cut/fill at its edges (m): ${cutRows.map((r) => r.levelCut).join(' ')} (worst ${r2(worstCut)}): the blockout planes it with the cross-fall instead: RULING`);
 const jam = siteById('jameo'), fJ = scarFrame(jam.e, jam.n);
-say(`  the Jameo stands ${r1(Math.abs(fJ.v))} m off the Scar's centreline (${r1(fJ.u)} m along): inside its berm band (${SCAR_LINE.half - SCAR_LINE.BERM_IN}-${SCAR_LINE.half + SCAR_LINE.BERM_IN + SCAR_LINE.BERM_OUT} m); h ${r2(H(jam.e, jam.n))} (stated ${jam.h}): RULING`);
+say(`  the Jameo stands ${r1(Math.abs(fJ.v))} m off the Scar's centreline (${r1(fJ.u)} m along): inside its berm band (${SCAR_LINE.half - SCAR_LINE.BERM_IN}-${SCAR_LINE.half + SCAR_LINE.BERM_IN + SCAR_LINE.BERM_OUT} m); h ${r2(H(jam.e, jam.n))} (stated ${jam.h}): ruled (3, after the blockout): the berm and apron are broken round it (HG1-jameo)`);
 const shelfEnd = scarFrame(-110, -380);
 say(`  the Scar's south-west end runs into the Organ Shelf's east foot: organ-9 (E -110, N -380) is ${r1(Math.abs(shelfEnd.v))} m off the line, ${r1(shelfEnd.u - SCAR_LINE.len)} m past its end`);
 rec.rows.scarGround = { stations: cutRows, worstLevelCut: r2(worstCut), jameo: { off: r1(Math.abs(fJ.v)), along: r1(fJ.u), h: r2(H(jam.e, jam.n)) } };
@@ -278,6 +278,7 @@ function section(u, hf) {
  * stand at it: a breach is the design, and the row names where each one is. */
 function inBreach(u) {
   const crest = SCAR_LINE.half + SCAR_LINE.BERM_IN;
+  if (Math.hypot(u - JAMEO.u, JAMEO.side * crest - JAMEO.v) < JAMEO.r + JAMEO.CLEAR + JAMEO.ease + 1) return { to: 'the Jameo' };
   for (const br of BREACHES) {
     const du = br.u1 - br.u0, dv = br.v1 - br.v0, v = br.side * crest;
     const t = Math.min(1, Math.max(0, ((u - br.u0) * du + (v - br.v0) * dv) / (du * du + dv * dv)));
@@ -290,7 +291,7 @@ function scarRows(label, hf) {
   for (let i = 0; i < 10; i++) {
     let u = SCAR_LINE.len * (i + 0.5) / 10;
     const u0 = u, br = inBreach(u);
-    if (br) { while (inBreach(u) && u < u0 + 40) u += 0.5; moved.push(`${r1(u0)} -> ${r1(u)} (the breach on B1's bearing to ${br.to})`); }
+    if (br) { while (inBreach(u) && u < u0 + 40) u += 0.5; moved.push(`${r1(u0)} -> ${r1(u)} (the breach ${br.to === 'the Jameo' ? 'round the Jameo' : `on B1's bearing to ${br.to}`})`); }
     st.push({ u: r1(u), ...section(u, hf) });
   }
   if (moved.length) say(`  [${label}] stations moved out of a breach: ${moved.join('; ')}`);
@@ -311,6 +312,23 @@ function scarRows(label, hf) {
 }
 rec.rows.hg1 = { recipe: scarRows('recipe', H), bake: scarRows('bake', bake), b1OffLine: r2(Math.abs(fB1.v)), b1Ok: Math.abs(fB1.v) <= 1 };
 say(`  B1 ${r2(Math.abs(fB1.v))} m off the centreline: ${verdict(Math.abs(fB1.v) <= 1)}`);
+
+/* ======================================================================== HG1-jameo (ruling 3 after the blockout) */
+{
+  /* the pit's rim to the nearest spoil: every point within 30 m of the Jameo where the berm or apron stands (bermFoot over
+   * 1 %), on a 0.25 m polar grid; and the ground's relief over the clear ring (recipe and bake), against the Jameo's height */
+  let near = Infinity, at = null;
+  for (let r = 0; r <= 30; r += 0.25) for (let a = 0; a < 360; a += 1) {
+    const e = JAMEO.e + Math.cos(a * Math.PI / 180) * r, n = JAMEO.n + Math.sin(a * Math.PI / 180) * r;
+    if (bermFoot(e, n) > 0.01 && r - JAMEO.r < near) { near = r - JAMEO.r; at = { e: r1(e), n: r1(n) }; }
+  }
+  const hJ = H(JAMEO.e, JAMEO.n), hB = bake(JAMEO.e, JAMEO.n), stated = siteById('jameo').h;
+  let rimLo = Infinity, rimHi = -Infinity;
+  for (let a = 0; a < 360; a += 5) { const h = bake(JAMEO.e + Math.cos(a * Math.PI / 180) * (JAMEO.r + JAMEO.CLEAR), JAMEO.n + Math.sin(a * Math.PI / 180) * (JAMEO.r + JAMEO.CLEAR)); rimLo = Math.min(rimLo, h); rimHi = Math.max(rimHi, h); }
+  const ok = near >= JAMEO.CLEAR && Math.abs(hJ - stated) <= 0.05;
+  say(`HG1-jameo  the Jameo (E ${JAMEO.e}, N ${JAMEO.n}) ${r1(Math.abs(JAMEO.v))} m off the centreline, pit rim r ${JAMEO.r} m: the nearest berm or apron ${r2(near)} m from the rim (bar >= ${JAMEO.CLEAR}), at (${at?.e}, ${at?.n}); its ground ${r2(hJ)} m (bake ${r2(hB)}; stated ${stated}, keeps its height); the ground ${JAMEO.r + JAMEO.CLEAR} m out ${r1(rimLo)}-${r1(rimHi)} m: ${verdict(ok)}`);
+  rec.rows.jameo = { e: JAMEO.e, n: JAMEO.n, offLine: r1(Math.abs(JAMEO.v)), rimR: JAMEO.r, nearestSpoilFromRim: r2(near), at, h: r2(hJ), bakeH: r2(hB), stated, ringLo: r1(rimLo), ringHi: r1(rimHi), ok };
+}
 
 /* ======================================================================== the change against a base tree */
 const BASE = flag('--base');
