@@ -339,10 +339,11 @@ const HOLDS_TERM = /* glsl */ `
       } else {
         // spoil: the black cinder the blade pushed up, with clods of the pale subsoil in it. (M2 wave 3, HG4: at 69544b6
         // a third of it was clods at 0.9 of the floor's tone over cinder lifted 1.25 x, and the berms that fill F33's
-        // lower third read L* 24.3, the lapilli beside them 18.7: speckled grey.) About an eighth now, a darker turned
-        // subsoil, and the cinder its own tone
-        float clod = smoothstep(0.6, 0.7, gNoiseT(xz * 0.37 + 0.13).a * 0.6 + gNoiseT(xz * 0.11 + 0.71).b * 0.4);
-        hc = mix(hc, mix(hc * 1.05, sub * 0.62, clod), -scS);
+        // lower third read L* 24.3, the lapilli beside them 18.7: speckled grey; with an eighth of them at 0.62 the
+        // berms were lost against the lapilli in F33-scar.) About a fifth, at 0.72 of the subsoil, and only along the
+        // berm's crest (its feet the cinder), the turned cinder a little darker than the lapilli round it
+        float clod = smoothstep(0.56, 0.68, gNoiseT(xz * 0.37 + 0.13).a * 0.6 + gNoiseT(xz * 0.11 + 0.71).b * 0.4) * smoothstep(0.3, 0.9, -scS);
+        hc = mix(hc, mix(hc * 0.92, sub * 0.72, clod), -scS);
         hp *= 1.0 + 0.6 * clod * -scS;
       }
     }
