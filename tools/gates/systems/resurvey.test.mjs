@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ResurveyHold, angleToMark, bearingTo, chooseLookers } from '../../../src/game/resurvey/rules.js';
-import { liveMarks } from '../../../src/game/resurvey/live.js';
+import { liveMarks, ResurveyLive, TURNS } from '../../../src/game/resurvey/live.js';
 import { RESURVEY } from '../../../src/game/quest/scar-plan.js';
 import { heightAt } from '../../../src/world/island/recipe.js';
 import { TRIG, TRIG_TOP } from '../../../src/world/island/sites.js';
@@ -135,4 +135,42 @@ test('Instruments come to look: the nearest live non-correcting ones within 70 m
   // within 20 m at about 0.9 + 7 / 0.875 = 8.9 s, inside the 12 s; the page row times the real ones
   const tArrive = 0.9 + (27 - RESURVEY.nearM) / (1.25 * 0.7);
   assert.ok(tArrive < RESURVEY.arriveS, `${tArrive.toFixed(1)} s`);
+});
+
+// (M2 fix wave, HR8: tense, not lethal) the lookers take TURNS while the re-survey is armed: three engaged Pegs, asked
+// every step as machine.js asks (engaged and off cooldown), never two strike in one step; each gets the turn; nobody
+// strikes in the rests; after the arc closes they choose as their table does
+test('the lookers strike one at a time while armed (TURNS), each in its turn, and freely after', () => {
+  const ctx = { machines: { list: [] }, events: { on() {} }, input: null, player: { position: { x: EYE.x, z: EYE.z }, health: 72 }, camera: null };
+  const L = new ResurveyLive(ctx, { at: { x: B1.x, z: B1.z }, marks: MARKS });
+  const pegs = [0, 1, 2].map((i) => {
+    const m = { id: i, kind: 'peg', alive: true, state: 'attack', position: { x: B1.x + 5 + i, z: B1.z + 3 }, cd: 0, blows: 0 };
+    m.ai = { chooseAttack: () => (m.cd <= 0 ? { kind: 'mallet' } : null) };
+    return m;
+  });
+  L.arm(true);
+  L.watch(pegs);
+  let both = 0, inRest = 0;
+  const sim = (s, armed = true) => {
+    for (let i = 0; i < Math.round(s / DT); i++) {
+      L.simT += DT;
+      if (armed) L._turnStep();
+      let now = 0;
+      for (const m of pegs) { m.cd -= DT; const a = m.ai.chooseAttack(4); if (a) { m.blows++; m.cd = 2.4; now++; if (L._turn.rest) inRest++; } }
+      if (now > 1) both++;
+    }
+  };
+  sim(30);
+  assert.equal(both, 0, 'two lookers struck in one step');
+  assert.equal(inRest, 0, 'a looker struck in a rest');
+  for (const m of pegs) assert.ok(m.blows >= 2, `looker ${m.id} struck ${m.blows} times in 30 s`);
+  const total = pegs.reduce((a, m) => a + m.blows, 0);
+  // unheld, three Pegs off a 2.4 s cooldown strike 3 x 12.5 = 37 times in 30 s; in turns about a third of that
+  assert.ok(total <= 14, `${total} blows in 30 s`);
+  console.log(`# turns: ${total} blows in 30 s (unheld: ${pegs.length * Math.floor(30 / 2.4)})`);
+  L.R.done = true;
+  for (const m of pegs) m.blows = 0;
+  sim(10, false);
+  assert.ok(pegs.every((m) => m.blows >= 3), 'after the arc closes they choose freely');
+  assert.ok(TURNS.strikeS > 0 && TURNS.restS > 0);
 });

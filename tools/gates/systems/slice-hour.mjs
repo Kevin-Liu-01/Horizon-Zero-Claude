@@ -687,13 +687,16 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         // M1b: the lee ditch's own stands first (the rush line the stalk came down, every 3 m past the stage's stand
         // toward the station): where a player who came down the ditch would stand to shoot. The ring round the Plumb
         // (12-30 m, every 15 deg) only when none of them sees the glass
-        const ditchPts = await page.evaluate(() => {
+        const ditchPts = await page.evaluate((ti) => {
+          // (M2 fix wave) a caller's own stands (first-hour's terrace Plumb: off the herd's bearing and clear of its hulls),
+          // asked each time a stand is chosen; the slice sets none
+          if (typeof window.__standPts === 'function') return window.__standPts(ti);
           const A = window.__CTX__.systemsGame.A, H = A.ditchHead, D = A.ditch;
           if (!H || !D) return null;
           const L = Math.hypot(D.x - H.x, D.z - H.z) || 1, ux = (D.x - H.x) / L, uz = (D.z - H.z) / L, out = [];
           for (let s = -6; s <= L + 24; s += 3) out.push({ x: H.x + ux * s, z: H.z + uz * s, tag: +(s - L).toFixed(0) });
           return out;
-        });
+        }, t.i);
         let sc = null;
         // M1b exit fix: THE STAND IT KNOWS HITS first: where a vial arrow last struck from, while the Plumb is still 10 m
         // to VIAL_MAX_D from it and the flight from there still reaches the glass (a player goes back to where it worked)
@@ -708,7 +711,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
           const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= VIAL_MAX_D; }));
           if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
         }
-        if (!sc) sc = await page.evaluate(scanStands, t.i, tried, VIAL_RING);
+        if (!sc && !(await page.evaluate(() => !!window.__standOnly))) sc = await page.evaluate(scanStands, t.i, tried, VIAL_RING);
         scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) }, ...(sc.known ? { known: true } : {}) });
         const best = sc?.stands?.[0];
         if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };

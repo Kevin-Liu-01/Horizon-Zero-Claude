@@ -25,6 +25,13 @@ export const REST_ORDER = Object.freeze(['dawn', 'golden', 'dusk', 'night']);
  */
 export const NOON = 'noon';
 export const NOON_HOUR = 12.0;
+/**
+ * (M2 fix wave, HR6) The hour the noon rest wakes her: the first of the beat's window (12:00 +- 0:30, BUILD M2.9). At
+ * fa45e47 she woke at 12:00 and the walk from this Brazier to the Malpais edge (about 210 m and 75 m of climb) took 64 s
+ * of play, 0.78 game hours on the clock: she stood at the edge at 12:51, after the window closed, and the Transit was not
+ * drawn. Woken at 11:30 the calima is asked for at once and she reads the far form near noon.
+ */
+export const NOON_WAKE = 11.5;
 
 /** The Braziers of the slice. `home` is Brea's cistern (a New Game counts as a rest there; BIBLE 17). */
 export const BRAZIERS = Object.freeze([
@@ -76,7 +83,7 @@ export function dialogFor(T, brazier, state) {
   if (by) return { mode: 'refused', prompt: T.brazier.promptLit, line: six.refused, rows: [], by };
   const rows = REST_ORDER.map((k) => ({ id: k, label: six[k], hour: REST_HOURS[k], forecast: forecastLine(T, REST_HOURS[k], state.weather) }));
   // the one rest that offers noon (state.noon: the runtime asks the quest), pre-selected: first, so it is the selection
-  if (state.noon && T.brazier.noon) rows.unshift({ id: NOON, label: T.brazier.noon, hour: NOON_HOUR, forecast: forecastLine(T, NOON_HOUR, state.weather), preselected: true });
+  if (state.noon && T.brazier.noon) rows.unshift({ id: NOON, label: T.brazier.noon, hour: NOON_WAKE, forecast: forecastLine(T, NOON_WAKE, state.weather), preselected: true });
   return { mode: 'rest', prompt: T.brazier.promptLit, rows, ...(state.noon ? { preselect: NOON } : {}) };
 }
 

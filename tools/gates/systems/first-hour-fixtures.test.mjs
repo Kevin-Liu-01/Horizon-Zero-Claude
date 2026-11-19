@@ -45,3 +45,15 @@ test('leg 3 starts after the fight: Oro\'s kit owned exactly, the line on four w
   assert.equal(r.areas.quests['true-ground'].started, true);
   assert.equal(r.areas.quests['true-ground'].idx, 0);
 });
+
+test('(fix wave) the mid-leg record at plumb-2: "The Scar" walked through walk and herd, waiting at plumb-2, in the Holds', () => {
+  const r = fixture(2, { from: 'plumb-2' });
+  assert.equal(classify(JSON.stringify(r)), 'ok');
+  const st = new SaveStore(new MemoryStorage());
+  assert.equal(st.write(r).ok, true);
+  assert.deepEqual(st.read(1, r.kind), r);
+  const q = r.areas.quests['the-scar'];
+  assert.deepEqual(q.order.map((o) => o.id), ['walk', 'herd']);
+  assert.equal(q.done, false);
+  assert.equal(map.regionAt(r.position.x, r.position.z), 'holds');
+});

@@ -47,6 +47,20 @@ const LEE_STEP_S = 0.25;
 const LEE_HOLD_S = 0.5;
 const HERD_N = 5;
 const LOOKER_STATIONS = Object.freeze([{ b: 110, r: 27 }, { b: 180, r: 27 }, { b: 250, r: 27 }]);
+/**
+ * THE TERRACE PLUMB'S READING (M2 fix wave, area E, HR1/HR8: the terrace beat survivable for a careful player). At
+ * fa45e47 leg 2 died at 'plumb-2' in all three exit runs, 97-106 hp taken (Plumb 42-75, Tiller 64, Peg 22). The terrace's
+ * Plumb is a surveyor on a bench, not a fighter: when it turns on her it READS her first (readS of its drum on her, the
+ * chime and the lamp up, no blow), and between its blows it stands for gapS more than its table asks. A careful player
+ * gets the second vial arrow away in the reading, or backs out of reach. While "The Scar" runs 'herd' or 'plumb-2' only.
+ */
+const TERRACE = Object.freeze({ readS: 1.8, gapS: 1.2 });
+/**
+ * The stages that stand something up again when a record is continued in them (afterRestore and the 3 s re-spawn tick):
+ * a stage's own `spawn`, and what an earlier stage stood up that this one still fights. At fa45e47 a record continued at
+ * 'plumb-2' (every stage is a checkpoint) had no terrace Plumb to topple, and one at 'seal-1' or 'seal-2' no Screed.
+ */
+const STANDS_FOR = Object.freeze({ 'plumb-2': 'herd', 'seal-1': 'screed', 'seal-2': 'screed' });
 const D2R = Math.PI / 180;
 /**
  * WAVE 4, the last of "True Ground" (bible 11.2 0:50-0:55; HR5, HR6):
@@ -165,8 +179,8 @@ export class FirstHour {
     if (this.scar.done && !this.tg.started) this.startTrueGround();
     // what a running stage stood up is the quest's, not a site's: stand it up again
     for (const sp of this.spines) {
-      const cur = sp.current();
-      if (cur?.spawn) this._spawn(cur.spawn, true);
+      const what = this._standsFor(sp.current());
+      if (what) this._spawn(what, true);
     }
     // Oro's kit is hers once he has handed it over
     if (this.scar.st.oro?.state === 'done') this._grantKit(true);
@@ -311,6 +325,9 @@ export class FirstHour {
 
   _live(list) { return (list || []).filter((m) => m && m.alive !== false && !m._disposed); }
 
+  /** What a running stage stands up (its own spawn, or what an earlier stage stood up that it still fights). */
+  _standsFor(stage) { return stage ? (stage.spawn ?? STANDS_FOR[stage.id] ?? null) : null; }
+
   _near(kind, at, r) {
     return this._live(this.ctx.machines?.list).filter((m) => m.kind === kind && Math.hypot(m.position.x - at.x, m.position.z - at.z) <= r);
   }
@@ -320,9 +337,11 @@ export class FirstHour {
     const can = (k) => { try { return !!(M?.canSpawn?.(k) ?? M?.instrumentKinds?.[k]); } catch { return false; } };
     if (what === 'herd') {
       const A = this.sys.A;
-      if (can('plumb') && !this._near('plumb', A.terrace, 30).length) {
+      // (fix wave) ours alive anywhere is enough: at fa45e47 the 3 s tick asked only within 30 m of the terrace, and a
+      // terrace Plumb that chased her off it would have been stood up a second time
+      if (can('plumb') && !this._live(this.spawned.plumb2).length && !this._near('plumb', A.terrace, 30).length) {
         const m = M.spawn('plumb', A.terrace.x, A.terrace.z, {});
-        if (m) { this.sys.siteRefill?.own(m, SCAR_ID); this._keepForTopple(m); this.spawned.plumb2.push(m); }
+        if (m) { this.sys.siteRefill?.own(m, SCAR_ID); this._keepForTopple(m); this._terraceReads(m); this.spawned.plumb2.push(m); }
       }
       const [a, b] = this.herdLine;
       if (can('tiller') && !this._near('tiller', { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }, 150).length) {
@@ -379,6 +398,31 @@ export class FirstHour {
     };
   }
 
+  /**
+   * The terrace Plumb reads her before it strikes (TERRACE): its attack choice (machine.js asks `ai.chooseAttack` every
+   * frame it is engaged and off its cooldown) answers nothing for readS from the first such ask of an alert episode, nor
+   * for gapS after each blow it starts. Only while 'herd' or 'plumb-2' runs.
+   */
+  _terraceReads(m) {
+    const ai = m.ai, pick = ai?.chooseAttack?.bind(ai), scar = this.scar, E = this.ctx.engine;
+    if (!pick) return;
+    let since = -1, inEp = false, blowAt = -1;
+    const R = (this.terraceRule = { reads: 0, held: 0, blows: 0 });
+    ai.chooseAttack = (dist) => {
+      const st = scar.current()?.id;
+      if (!(st === 'herd' || st === 'plumb-2')) return pick(dist);
+      const t = E?.simTime ?? performance.now() / 1000;
+      // an engagement is machine.js's alert episode (set going alert or attack, cleared back on patrol or return): the
+      // reading starts the first time it could strike in one
+      if (!m._alertEpisode) inEp = false;
+      else if (!inEp) { inEp = true; since = t; R.reads++; }
+      if (t - since < TERRACE.readS || (blowAt >= 0 && t - blowAt < TERRACE.gapS)) { R.held++; return null; }
+      const a = pick(dist);
+      if (a) { blowAt = t; R.blows++; }
+      return a;
+    };
+  }
+
   /** Oro at the tube mouth: the one the people lane stood there, or one stood here; and his TALK prompt. */
   _standOro() {
     const ctx = this.ctx, A = this.sys.A;
@@ -409,7 +453,7 @@ export class FirstHour {
     this._spawnT = (this._spawnT ?? 0) + dt;
     if (this._spawnT > 3) {
       this._spawnT = 0;
-      for (const sp of this.spines) { const c = sp.current(); if (c?.spawn) this._spawn(c.spawn, true); }
+      for (const sp of this.spines) { const what = this._standsFor(sp.current()); if (what) this._spawn(what, true); }
     }
     const cur = this.scar.current()?.id;
     // the Oro prompt is live while the hand-over waits; he stays standing after
@@ -463,6 +507,8 @@ export class FirstHour {
     if (want && !this.resurvey) this._buildResurvey();
     if (!this.resurvey) return;
     this.resurvey.arm(want);
+    // (fix wave) the quest's lookers take turns from the moment they stand (resurvey/live.js TURNS)
+    if (want && this.spawned.lookers.length) this.resurvey.watch(this._live(this.spawned.lookers));
     if (want) this.resurvey.update(dt);
   }
 
@@ -509,8 +555,16 @@ export class FirstHour {
     }
     // (wave 4) the Instruments that came to look have seen the mark taken: they go back to their stations, calm (at
     // aba90a3 the three Pegs followed her off the pad, 72 -> 43 hp through 'fade', and stood wary within the Brazier's 60 m)
+    // (fix wave) and they STAND DOWN: their own loop, docile (machine.js: a docile machine never leaves patrol). At fa45e47
+    // run 2 the runner had to put their lamps out before she could sit at the Brazier (31 -> 4 hp): set to 'return' they
+    // took her up again on the way
     for (const m of this._live(this.spawned.lookers)) {
-      try { if (m.sc) m.sc.suspicion = 0; else m.suspicion = 0; m.setState?.('return'); } catch { /* its own state machine */ }
+      try {
+        if (m.sc) m.sc.suspicion = 0; else m.suspicion = 0;
+        m._attack = null;
+        m.setState?.('patrol');
+        m.docile = true;
+      } catch { /* its own state machine */ }
     }
   }
 

@@ -1,5 +1,5 @@
 import { buildBrazier, makeFireLight } from '../../world/settlements/brazier.js';
-import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS, NOON, NOON_HOUR } from './rules.js';
+import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS, NOON, NOON_WAKE } from './rules.js';
 import { REST } from '../../world/island/sites.js';
 import { HOME_BRAZIER, BRAZIER_YAW, T1_SPOTS, clearOfFrames } from '../../world/settlements/brazier-spots.js';
 import { lampStateFor } from '../../instruments/lamps.js';
@@ -220,7 +220,7 @@ export class Braziers {
     if (!b || !d) return { ok: false };
     if (d.mode === 'refused') { this.stats.refused++; return { ok: false, refused: true }; }
     if (d.mode !== 'rest' || !(choice in REST_HOURS || choice === NOON) || !d.rows.some((r) => r.id === choice)) return { ok: false };
-    const toHour = choice === NOON ? NOON_HOUR : REST_HOURS[choice];
+    const toHour = choice === NOON ? NOON_WAKE : REST_HOURS[choice];
     const env = this.ctx.environment;
     this.resting = true;
     this.ctx.events?.emit?.('brazier-rest-start', { id, choice, toHour });

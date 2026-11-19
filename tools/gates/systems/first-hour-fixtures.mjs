@@ -71,6 +71,30 @@ export function scarDone() {
   return { [SCAR_ID]: scar.serialize(), [TRUE_GROUND_ID]: tg.serialize() };
 }
 
+/**
+ * (M2 fix wave) "The Scar" walked through `through` (stage ids, in order) on its own events and waiting at the stage after:
+ * a mid-leg record, as the checkpoint at that stage's start writes it (every stage of the Scar is a checkpoint). Only the
+ * walk and the herd for now: fixture(2, { from: 'plumb-2' }).
+ */
+export function scarThrough(through) {
+  const scar = new QuestSpine({ strings: questStrings(SCAR_ID), id: SCAR_ID, stages: SCAR_STAGES, reward: SCAR_REWARD, triangles: {}, closingCard: null, failSoft: FAIL_SOFT }).start();
+  const probe = { near: () => false, aim: () => false, bearing: () => 0 };
+  const EV = { walk: ['region-enter', { region: 'holds' }], herd: ['herd-lee', { inShadow: true }] };
+  for (const id of through) {
+    const ev = EV[id];
+    if (!ev) throw new Error(`fixture: no event to walk '${id}'`);
+    scar.notify(ev[0], ev[1]);
+    scar.update(0.1, probe);
+  }
+  const at = scar.current()?.id;
+  if (at !== SCAR_STAGES[through.length]?.id) throw new Error(`fixture: "The Scar" is at ${at}, not ${SCAR_STAGES[through.length]?.id}`);
+  const tg = new QuestSpine({ strings: questStrings(TRUE_GROUND_ID), id: TRUE_GROUND_ID, stages: TRUE_GROUND_STAGES, reward: TRUE_GROUND_REWARD, triangles: {}, closingCard: null });
+  return { [SCAR_ID]: scar.serialize(), [TRUE_GROUND_ID]: tg.serialize() };
+}
+
+/** Where a mid-leg record stands: at 'plumb-2', where the herd beat leaves her (exit run 2 at fa45e47: x -69.0, z 155.0). */
+const MID = Object.freeze({ 'plumb-2': Object.freeze({ through: ['walk', 'herd'], x: -69.0, z: 155.0, hour: 10.2 }) });
+
 /** The nine walls as the walls seam saves them (ninewalls-layout.js wallsSave: { [id]: { state, painted } }). */
 const WALLS_LINE_ON_1_4 = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`wall-${i + 1}`, { state: 'whole', painted: i < 4 }]));
 
@@ -91,7 +115,17 @@ function sliceEnd() {
   };
 }
 
-export function fixture(leg, { savedAt = 1_700_000_000_000 } = {}) {
+export function fixture(leg, { savedAt = 1_700_000_000_000, from = null } = {}) {
+  if (leg === 2 && from) {
+    const m = MID[from];
+    if (!m) throw new Error(`no mid-leg fixture from '${from}' (have: ${Object.keys(MID).join(', ')})`);
+    const s = sliceEnd();
+    return makeRecord({
+      ...s, hour: m.hour, place: 'NINEWALLS',
+      position: { x: m.x, y: heightAt(m.x, m.z) + 0.05, z: m.z, yaw: 0, pitch: 0, heading: 0 },
+      areas: { quests: scarThrough(m.through) },
+    }, { kind: 'checkpoint', reason: `the-scar:stage:${from}`, slot: 1, savedAt });
+  }
   if (leg === 2) return makeRecord(sliceEnd(), { kind: 'named', reason: 'fixture-leg2', slot: 1, savedAt });
   if (leg === 3) {
     const nw = siteById('ninewalls');

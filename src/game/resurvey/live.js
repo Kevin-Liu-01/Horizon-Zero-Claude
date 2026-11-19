@@ -18,6 +18,16 @@ import { RESURVEY } from '../quest/scar-plan.js';
  * Input: V raises the Alidade (src/ui/sighting.js); T takes a bearing (Sighting's own T Flags an Instrument in the hairs,
  * this one takes the mark's bearing; both may answer one press). Nothing here moves her, the camera or a hand.
  */
+/**
+ * (M2 fix wave) THEY COME TO LOOK, AND STRIKE ONE AT A TIME (HR3, HR8: tense, not lethal). At fa45e47 the three Pegs that
+ * come to look killed her in 1 of 3 runs (hp 0 at 3.03 s of the arc) and took 34-50 hp in the others: three at once
+ * strike about 6 hp a second. While the re-survey is armed and not done, the lookers take TURNS: one holds the turn for
+ * strikeS (its own table and cooldowns: mallet, Peg Shot, rush), the others close, circle and watch (their attack choice
+ * answers nothing), then restS with no one striking, then the next looker in her reach. The arc still pauses on any hit
+ * over 10 (none of a Peg's blows is), and a looker she strikes is not spared its turn.
+ */
+export const TURNS = Object.freeze({ strikeS: 2.6, restS: 2.4 });
+
 export class ResurveyLive {
   constructor(ctx, { at, marks, hooks = {}, rules = RESURVEY } = {}) {
     this.ctx = ctx;
@@ -31,6 +41,7 @@ export class ResurveyLive {
     this.simT = 0;
     this.lookers = [];       // [{ m, id, kind, from {x,z}, to {x,z}, leaveT, arriveT, d0 }]
     this._relureT = 0;
+    this._turn = { who: -1, until: 0, rest: false, n: 0, held: 0 };
     this._hp = null;
     this._lastWhy = null;
     this._buildDom();
@@ -87,6 +98,7 @@ export class ResurveyLive {
   update(dt) {
     if (!this.armed || this.R.done) { if (this.R.done) this._show(false); return; }
     this.simT += dt;
+    if (this.lookers.length) this._turnStep();
     const v = this._view();
     if (!v) return;
     if (!this.running) {
@@ -113,6 +125,7 @@ export class ResurveyLive {
     this._finished = true;
     this._show(false);
     for (const L of this.lookers) if (L.m?.ai) L.m.ai.lureT = 0;
+    this._untakeTurns();
     this._say('done', this.report());
   }
 
@@ -129,8 +142,61 @@ export class ResurveyLive {
       const m = list[p.id];
       return { m, id: m.id ?? p.id, kind: m.kind, from: { x: m.position.x, z: m.position.z }, to: { x: p.x, z: p.z }, d0: p.d, leaveT: -1, arriveT: -1, dMin: p.d };
     });
+    for (const L of this.lookers) this._takeTurns(L);
     if (lure) this._lure();
     this._say('lookers', this.lookers.map((L) => ({ kind: L.kind, d0: L.d0 })));
+  }
+
+  /**
+   * The quest's own lookers from the moment they stand at their stations (src/game/hour.js, every step of 'survey'): they
+   * take turns while she walks onto the pad too, before the hold has chosen who comes (it chooses again then).
+   */
+  watch(list) {
+    for (const m of list || []) {
+      if (!m || m.alive === false || m._disposed || !m.position || m.ai?.__turns) continue;
+      if (!this.lookers.some((L) => L.m === m)) {
+        const d = Math.hypot(m.position.x - this.at.x, m.position.z - this.at.z);
+        this.lookers.push({ m, id: m.id ?? this.lookers.length, kind: m.kind, from: { x: m.position.x, z: m.position.z }, to: { x: m.position.x, z: m.position.z }, d0: d, leaveT: -1, arriveT: -1, dMin: d, watched: true });
+      }
+      this._takeTurns({ m });
+    }
+  }
+
+  /** A looker's attack choice answers only while it holds the turn (TURNS), while the re-survey is armed and not done. */
+  _takeTurns(L) {
+    const m = L.m, ai = m?.ai;
+    if (!ai || ai.__turns || typeof ai.chooseAttack !== 'function') return;
+    const pick = ai.chooseAttack;
+    const self = this;
+    ai.__turns = pick;
+    ai.chooseAttack = function (dist) {
+      if (!self.armed || self.R.done) return pick.call(ai, dist);
+      if (self.lookers[self._turn.who]?.m !== m || self._turn.rest) { self._turn.held++; return null; }
+      return pick.call(ai, dist);
+    };
+  }
+
+  _untakeTurns() {
+    for (const L of this.lookers || []) {
+      const ai = L.m?.ai;
+      if (ai?.__turns) { ai.chooseAttack = ai.__turns; ai.__turns = null; }
+    }
+  }
+
+  /** The turn passes: strikeS to one engaged looker, restS to none, then the next (round the list from the last). */
+  _turnStep() {
+    const T = this._turn, now = this.simT;
+    if (now < T.until) return;
+    if (!T.rest && T.who >= 0) { T.rest = true; T.until = now + TURNS.restS; return; }
+    const n = this.lookers.length;
+    for (let k = 1; k <= n; k++) {
+      const i = (T.who + k + n) % n, m = this.lookers[i]?.m;
+      if (!m || m.alive === false || m._disposed) continue;
+      if (m.state !== 'attack' && m.state !== 'alert') continue;
+      T.who = i; T.rest = false; T.until = now + TURNS.strikeS; T.n++;
+      return;
+    }
+    T.rest = false; T.until = now + 0.25;   // none engaged: ask again shortly
   }
 
   _lure() {
@@ -167,7 +233,7 @@ export class ResurveyLive {
     const left = looks.filter((L) => L.leaveT >= 0 && L.leaveT <= C.leaveS).length;
     const came = looks.filter((L) => L.arriveT >= 0 && L.arriveT <= C.arriveS).length;
     return { ...this.R.report(), running: this.running, startT: this.startT, simT: +this.simT.toFixed(3), lookers: looks, lookersLeft: left, lookersCame: came,
-      comeToLook: left >= C.lookers && came >= C.lookers };
+      comeToLook: left >= C.lookers && came >= C.lookers, turns: { given: this._turn.n, held: this._turn.held } };
   }
 
   /* ------------------------------------------------------------ the overlay */
@@ -231,7 +297,7 @@ export class ResurveyLive {
     }
   }
 
-  dispose() { this.el?.remove(); }
+  dispose() { this._untakeTurns(); this.el?.remove(); }
 }
 
 /** The three marks as upright segments from the live ground: T1, T2 (foot to plate) and the Sounding Ring. */

@@ -62,6 +62,9 @@ const LEG_BUDGET_S = Number(flag('--leg-budget', 720));
 // slice run's newest record, which slice-hour.mjs writes into its report), CONTINUE pressed on it: the save carried
 // across the hour, a launch a leg. Without it a leg run alone starts from its fixture.
 const CHAIN = args.includes('--chain');
+// (M2 fix wave) --from <beat>: leg 2 alone from a mid-leg record (first-hour-fixtures.mjs fixture(2, { from }): 'plumb-2'),
+// as the checkpoint at that stage's start writes it; the beats before it are not run (a lane's probe, never the row)
+const FROM = flag('--from');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[first-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -81,7 +84,7 @@ const PLACES = {
 };
 
 const report = {
-  row: 'A-first-hour', chain: CHAIN, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(), legs: [], beats: null,
+  row: 'A-first-hour', chain: CHAIN, from: FROM, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(), legs: [], beats: null,
   newBeats: NEW_BEATS.length, places: PLACES,
 };
 
@@ -377,19 +380,10 @@ async function driveResurvey(page) {
   // at 13.7 s of the arc, run 20261119T175642Z-350540a-systems-w4-leg3c); she drinks again under 40 during it
   const K = SH.keys(page);
   const drinks = [];
-  // the Pegs that come to look close to 0.1-0.7 m and take 56 hp through the hold (beed0f0, run
-  // 20261119T184531Z-beed0f0-systems-w4-legs32, held short of alert or not): she puts their lamps out first, from the pad
-  let lookers = null;
-  const nL = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).length);
-  if (nL) {
-    await page.evaluate(() => { window.__probeQuest = 'true-ground'; });
-    try {
-      const f = await SH.fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 90, all: true, near: pad, nearR: 70 });
-      lookers = { n: nL, ok: f.ok, why: f.why ?? null, fired: f.fired, hp: (await page.evaluate(where)).hp };
-    } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
-    await walkTo(page, pad, 1.0, 20, { sprint: false });
-    await sleep(400);
-  }
+  // (M2 fix wave) she does not fight them first: the hold is the beat, the lookers come and take turns at her
+  // (src/game/resurvey/live.js TURNS). At fa45e47 putting their lamps out from the pad first cost 21 hp before the hold
+  // began (72 -> 51) and they hammered her blind through it (51 -> 34)
+  const lookers = null;
   const d0 = await SH.drink(page, K, 98); if (d0) drinks.push(d0);
   const lowDrink = async () => { const h = (await page.evaluate(where)).hp; if (h < 40) { const d = await SH.drink(page, K, 85, 3000); if (d) drinks.push(d); if (!(await page.evaluate(() => !!window.__CTX__.sighting?.on))) { await page.keyboard.press('KeyV'); await sleep(700); } } };
   const on = await page.evaluate(() => !!window.__CTX__.sighting?.on);
@@ -437,22 +431,83 @@ async function driveResurvey(page) {
 const scarNow = () => window.__CTX__.quests?.['the-scar']?.current?.()?.id ?? (window.__CTX__.quests?.['the-scar']?.done ? 'done' : null);
 const tgNow = () => window.__CTX__.quests?.['true-ground']?.current?.()?.id ?? (window.__CTX__.quests?.['true-ground']?.done ? 'done' : null);
 
-/** THE SECOND PLUMB: toppled as the slice's topple is (slice-hour.mjs fight(): the vial, Reed arrows, the stands it scans). */
+/**
+ * THE SECOND PLUMB, AS A CAREFUL PLAYER TOPPLES IT (M2 fix wave). At fa45e47 leg 2 died at 'plumb-2' in all three exit
+ * runs (97-106 hp: Plumb 42-75, Tiller 64, Peg 22) and fired 0-1 arrows: from the herd's lee she walked round the terrace
+ * to its far side (75 deg, 26 m), in the open 20 m from the Plumb and across the herd's file, and was felled on the way.
+ * Now: out of the herd's way first (12 m from every hull, off every hull's bearing: tiller-herd.js BEARING), then the
+ * slice's own topple (the vial from 10-15 m, a drink under 55, out to 14 m when it closes) from stands that are off the
+ * herd's bearing and 12 m from its hulls, walked to on a line that keeps 8 m from them (window.__standPts, the stands
+ * slice-hour.mjs fight() takes when a caller gives them). The terrace Plumb reads her before it strikes (src/game/hour.js
+ * TERRACE).
+ */
+const herdSafeSrc = () => {
+  // in-page: is (x, z) clear of the herd? 12 m from every hull and off each hull's bearing strip (lat 4 m, -6 .. 40 m ahead)
+  window.__herdSafe = (x, z, near = 12, lat = 4) => {
+    const C = window.__CTX__;
+    for (const m of C.machines?.list || []) {
+      if (!m || m.kind !== 'tiller' || m.alive === false || m._disposed) continue;
+      const dx = x - m.position.x, dz = z - m.position.z;
+      if (Math.hypot(dx, dz) < near) return false;
+      const h = m.sc?.heading ?? m.heading ?? 0, fx = Math.sin(h), fz = Math.cos(h);
+      const along = dx * fx + dz * fz, side = Math.abs(dx * fz - dz * fx);
+      if (along > -6 && along < 40 && side < lat) return false;
+    }
+    return true;
+  };
+  window.__herdSafeLine = (ax, az, bx, bz) => {
+    for (let k = 0; k <= 10; k++) { const u = k / 10; if (!window.__herdSafe(ax + (bx - ax) * u, az + (bz - az) * u, 8, 3)) return false; }
+    return true;
+  };
+  window.__standPts = (ti) => {
+    const C = window.__CTX__, P = C.player.position, t = C.machines.list[ti];
+    if (!t) return [];
+    const out = [];
+    for (let deg = 0; deg < 360; deg += 10) for (const d of [10.5, 12, 13.5, 15]) {
+      const a = deg * Math.PI / 180, x = t.position.x + Math.sin(a) * d, z = t.position.z + Math.cos(a) * d;
+      if (window.__herdSafe(x, z) && window.__herdSafeLine(P.x, P.z, x, z)) out.push({ x, z, tag: deg });
+    }
+    window.__standLog = (window.__standLog || []).concat([{ n: out.length, from: { x: +P.x.toFixed(1), z: +P.z.toFixed(1) } }]).slice(-8);
+    return out;
+  };
+  window.__standOnly = true;
+};
+
 async function driveTopple(page, K) {
   await page.evaluate(() => { window.__probeQuest = 'the-scar'; });
+  await page.evaluate(herdSafeSrc);
+  const out = { steps: [] };
   try {
-    // no run-in first (350540a: sprinting at the terrace through the herd she went 100 -> 0 hp in 20 s, gourd unused, run
-    // 20261119T180340Z-350540a-systems-w4-leg2b): a full staff, then the slice's own topple, which scans its stands round
-    // the Plumb, walks to them, drinks under 55 between shots and backs out when it closes
-    // the herd's Tillers felled her at every stand on their side (beed0f0: 110 hp from Tillers in the topple, run
-    // 20261119T184531Z-beed0f0-systems-w4-legs32): she goes round to the terrace's far side from the herd's slope first
-    // (bearing 75 deg from the Plumb, 26 m), so the stands the topple scans are on that side
-    const far = await page.evaluate(() => { const A = window.__CTX__.systemsGame.A, T = A.terrace, b = 75 * Math.PI / 180; return { x: T.x + Math.sin(b) * 26, z: T.z - Math.cos(b) * 26 }; });
-    const round = await walkPath(page, far, 3, 70);
-    const d = await SH.drink(page, K, 98);
-    const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 28, maxS: 150, tolDeg: 0.08, reach: 220 });
-    return { round: { ok: round.ok, why: round.why ?? null }, drink: d, ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, cause: (await page.evaluate(where)).cause };
-  } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
+    // out of the herd's way: the nearest point (rings of 14-30 m round her) clear of every hull and its bearing
+    const away = await page.evaluate(() => {
+      const C = window.__CTX__, P = C.player.position;
+      if (window.__herdSafe(P.x, P.z)) return null;
+      let best = null;
+      for (const r of [6, 10, 14, 20, 26]) for (let deg = 0; deg < 360; deg += 20) {
+        const a = deg * Math.PI / 180, x = P.x + Math.sin(a) * r, z = P.z + Math.cos(a) * r;
+        if (C.nav?.blockedAt?.(x, z)) continue;
+        if (!window.__herdSafe(x, z) || !window.__herdSafeLine(P.x, P.z, x, z)) continue;
+        if (!best || r < best.r) best = { x, z, r };
+      }
+      return best;
+    });
+    if (away) { const w = await walkTo(page, away, 2, 12, { sprint: false }); out.steps.push({ away: { r: away.r, ok: w.ok, why: w.why ?? null } }); }
+    out.drink = await SH.drink(page, K, 98);
+    for (let i = 0; i < 3; i++) {
+      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: 150, tolDeg: 0.08, reach: 220 });
+      out.steps.push({ ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length });
+      if (f.ok || f.why === 'died') break;
+      // no stand clear of the herd just now: it walks on; wait a little where she is
+      await sleep(2500);
+    }
+    const last = out.steps.at(-1) || {};
+    out.ok = !!last.ok; out.why = last.why ?? null;
+    out.fired = out.steps.reduce((a, q) => a + (q.fired || 0), 0);
+    out.cause = (await page.evaluate(where)).cause;
+    out.stands = await page.evaluate(() => window.__standLog || null);
+    out.rule = await page.evaluate(() => window.__CTX__.systemsGame?.hour?.terraceRule ?? null);
+    return out;
+  } finally { await page.evaluate(() => { window.__probeQuest = null; window.__standPts = undefined; window.__standOnly = false; }); }
 }
 
 /** BARBED ARROWS: the bow in hand, X until the Barbed arrow is on the string, R held (the quick-make), as a player makes them. */
@@ -581,18 +636,9 @@ async function driveRest(page, K) {
   const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('ninewalls'); return b ? { x: b.obj.position.x, z: b.obj.position.z, seat: b.obj.seat ? { x: b.obj.seat.x, z: b.obj.seat.z } : null } : null; });
   if (!A) return { ok: false, why: 'no Ninewalls Brazier' };
   const out = {};
-  // the Pegs that came to look are still on her after the re-survey (d5018f4 leg 3: SPOTTED at the Brazier, 67 -> 35 hp,
-  // the kindle's hold broken): a player puts their lamps out before she sits, as the slice's Peg line is played
-  const lookers = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).length);
-  if (lookers) {
-    await page.evaluate(() => { window.__probeQuest = 'true-ground'; });
-    try {
-      const B = await page.evaluate(() => window.__CTX__.systemsGame.A.b1);
-      const f = await SH.fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 100, all: true, near: B, nearR: 110 });
-      out.lookers = { n: lookers, ok: f.ok, why: f.why ?? null, fired: f.fired, hp: (await page.evaluate(where)).hp };
-    } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
-    await SH.drink(page, K, 90);
-  }
+  // (M2 fix wave) the Instruments that came to look stand down when the mark is taken (src/game/hour.js: docile, back
+  // on their loop): she does not fight them on the way. At fa45e47 run 2 putting their lamps out cost 31 -> 4 hp here
+  out.lookers = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).map((m) => ({ state: m.state, docile: !!m.docile })));
   // to the bowl itself (its prompt's radius is 2.6 m; f2a7b10 stopped by the seat 3 m off with no prompt up)
   const w = await walkPath(page, A, 1.3, 60);
   out.walk = { ok: w.ok, why: w.why ?? null };
@@ -623,7 +669,9 @@ async function driveRest(page, K) {
   await sleep(800);
   out.hour1 = await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3));
   out.saves1 = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); const r = n ? S.latest(n) : null; return r ? { kind: r.kind, reason: r.reason, savedAt: r.savedAt, hour: r.hour } : null; });
-  out.namedSave = !!out.saves1 && out.saves1.kind === 'named' && out.saves1.reason === 'brazier' && out.saves1.savedAt !== out.saves0?.savedAt;
+  // the rest writes the NAMED record; the stage after it writes its checkpoint at once, so the newest is that checkpoint
+  out.named1 = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); const r = n ? S.read(n, 'named') : null; return r ? { kind: r.kind, reason: r.reason, savedAt: r.savedAt, hour: r.hour } : null; });
+  out.namedSave = !!out.named1 && out.named1.reason === 'brazier' && out.named1.savedAt > (out.saves0?.savedAt ?? 0);
   // she stands up from the seat
   await K.tap('KeyW'); await sleep(300);
   return out;
@@ -633,7 +681,9 @@ async function driveRest(page, K) {
 async function driveCross(page) {
   const out = {};
   const t0 = Date.now();
-  for (let i = 0; i < 40; i++) { const w = await page.evaluate(() => ({ asked: window.__CTX__.systemsGame?.hour?._calimaAsked ?? null, weather: window.__CTX__.environment.weather, calimaW: +(window.__CTX__.environment.weatherParams?.calima ?? 0).toFixed(2) })); out.weather = w; if (w.weather === 'calima') break; await sleep(500); }
+  // (M2 fix wave) she sets off at once (the calima is asked for the first frame of the window and comes on as she walks):
+  // at fa45e47 the walk to the edge was 64 s of play, 0.78 game hours, and the window is one hour
+  for (let i = 0; i < 4; i++) { const w = await page.evaluate(() => ({ asked: window.__CTX__.systemsGame?.hour?._calimaAsked ?? null, weather: window.__CTX__.environment.weather, calimaW: +(window.__CTX__.environment.weatherParams?.calima ?? 0).toFixed(2), hour: +window.__CTX__.environment.time.toFixed(3) })); out.weather = w; if (w.asked) break; await sleep(500); }
   out.askedAfterS = +((Date.now() - t0) / 1000).toFixed(1);
   const at = await page.evaluate(() => { const H = window.__CTX__.systemsGame?.hour; H?._malpaisEdge?.(); return window.__CTX__.systemsGame.A['malpais-edge'] ?? null; });
   if (!at) return { ...out, ok: false, why: 'no Malpais edge anchor' };
@@ -669,7 +719,7 @@ async function boot(page, leg, startRec = null) {
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__CTX__?.state === 'title' && !!window.__CTX__?.progression?.saves?.store, { timeout: 180000, polling: 200 });
   // the fixture, written as a save on disk is: into the store, then the game opened again (the title reads it at boot)
-  const rec = startRec ? { ...startRec, savedAt: Date.now() } : { ...fixture(leg), savedAt: Date.now() };
+  const rec = startRec ? { ...startRec, savedAt: Date.now() } : { ...fixture(leg, leg === 2 && FROM ? { from: FROM } : {}), savedAt: Date.now() };
   const wrote = await page.evaluate((r) => { const st = window.__CTX__.progression.saves.store; st.setActive(1); return st.write(r); }, rec);
   if (!wrote?.ok) throw new Error(`fixture ${leg} not written: ${JSON.stringify(wrote)}`);
   await page.goto('about:blank', { waitUntil: 'load', timeout: 30000 });
@@ -727,7 +777,7 @@ async function runLeg(leg, startRec = null) {
     const T = () => +((Date.now() - tPlay) / 1000).toFixed(1);
     // the crossings the regions seam fires from here on
     // what hurt her, and when (each 'player-damage' with its source's kind): a beat's numbers carry its share
-    await page.evaluate(() => { const C = window.__CTX__; window.__dmg = []; C.events.on('player-damage', (e) => window.__dmg.push({ t: +(performance.now() / 1000).toFixed(1), kind: e?.from?.kind ?? e?.source ?? e?.type ?? '?', n: Math.round(e?.amount ?? 0) })); });
+    await page.evaluate(() => { const C = window.__CTX__; window.__dmg = []; C.events.on('player-damage', (e) => { const f = e?.from, P = C.player?.position; window.__dmg.push({ t: +(performance.now() / 1000).toFixed(1), kind: f?.kind ?? e?.source ?? e?.type ?? '?', n: Math.round(e?.amount ?? 0), atk: f?._attack?.kind ?? null, st: f?.state ?? null, d: f?.position && P ? +Math.hypot(f.position.x - P.x, f.position.z - P.z).toFixed(1) : null }); }); });
     await page.evaluate(() => { window.__regionEv = []; const C = window.__CTX__; for (const k of ['enter', 'leave', 'approach', 'depart']) C.events.on(`region-${k}`, (e) => window.__regionEv.push({ k, region: e.region, t: +(performance.now() / 1000).toFixed(2), depth: e.depth })); window.__t0 = performance.now() / 1000; });
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), fixtureAt: rec.position, shot: await shot(page, `l${leg}-00-continued`) };
     L.rows.continued = { pass: Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z) < 0.5 && Math.abs(L.start.hour - rec.hour) < 0.05,
@@ -735,7 +785,9 @@ async function runLeg(leg, startRec = null) {
     const stages = beatsOf(leg);
     const qid = leg === 2 ? SCAR_ID : TRUE_GROUND_ID;
     let k = 0, driveOn = true;
+    const skipTo = leg === 2 && FROM && !startRec ? stages.findIndex((q) => q.id === FROM) : -1;
     for (const st of stages) {
+      if (skipTo > 0 && stages.indexOf(st) < skipTo) { L.beats.push({ leg, beat: st.id, ok: false, skipped: true, why: `not run: --from ${FROM}` }); continue; }
       if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: st.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const bt0 = T();
       const played = {};
@@ -781,7 +833,7 @@ async function runLeg(leg, startRec = null) {
           try { const W = await import('/src/world/settlements/ninewalls-layout.js'); window.__wallsPainted = (W.WALLS || []).filter((w) => W.wallState?.(w.id)?.painted).length; } catch { window.__wallsPainted = null; }
         });
       }
-      played.hurt = await page.evaluate(() => { const D = window.__dmg.splice(0); const by = {}; for (const d of D) by[d.kind] = (by[d.kind] || 0) + d.n; return { by, n: D.length, last: D.slice(-4) }; });
+      played.hurt = await page.evaluate(() => { const D = window.__dmg.splice(0); const by = {}, atk = {}; for (const d of D) { by[d.kind] = (by[d.kind] || 0) + d.n; const k = `${d.kind}:${d.atk}`; atk[k] = (atk[k] || 0) + d.n; } return { by, atk, n: D.length, all: D.slice(-30) }; });
       const pr = await page.evaluate(beatProbe, st.id, qid, PLACES, TRANSIT_CARD);
       const b = { leg, beat: st.id, ok: pr.ok, why: pr.why, hp: pr.hp, t: T(), seconds: +(T() - bt0).toFixed(1), hour: pr.hour, at: pr.at, region: pr.region, numbers: { ...pr.numbers, ...played } };
       b.shot = await shot(page, `l${leg}-${String(++k).padStart(2, '0')}-${st.id}`);
@@ -808,7 +860,7 @@ async function runLeg(leg, startRec = null) {
     if (slotTaken) releaseMachineSlot(log);
   }
   const done = L.beats.filter((b) => b.ok).length;
-  L.passed = `${done}/${beatsOf(leg).length}`;
+  L.passed = `${done}/${beatsOf(leg).length}${L.beats.some((b) => b.skipped) ? ` (from ${FROM})` : ''}`;
   return L;
 }
 const beatsOf = (leg) => (leg === 2 ? SCAR_STAGES : TRUE_GROUND_STAGES);
