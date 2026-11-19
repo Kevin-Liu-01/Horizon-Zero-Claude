@@ -88,14 +88,14 @@ FRAMES.push(
  * M2 WAVE 4, THE HOUR: F45-transit, the Transit's far form from the last beat's anchor (area C's check of its far form
  * for area F's F45). Brea where "True Ground"'s read puts her (src/game/hour.js `_malpaisEdge`: the Malpais edge nearest
  * Ninewalls and 22 m inside it, engine (133.2, 83.2)), at 12:00 in calima snapped in, looking at the far form
- * (src/instruments/far/transit.js STATION, 104 m off on a bearing of 40 deg and 40-45 m above her on the shelf). The
+ * (src/instruments/far/transit.js STATION, 86 m off on a bearing of 36 deg and about 40 m above her on the shelf). The
  * staging asks for it (`ctx.transitFar.show(true)`, as the beat does) and waits for its GLB. A wall-clock frame: nothing
  * moves but the dust, the wind and the cloth.
  */
 FRAMES.push({
   id: 'F45-transit', subject: 'the Transit\'s far form in calima at noon, from the last beat\'s anchor at the Malpais edge', in: 'M2', hour: 12, weather: 'calima',
-  at: { en: [133.2, -83.2] }, bearing: 40,
-  camera: { mode: 'orbit', yawRel: 180, dist: 4.5, height: 1.9, target: { fwd: 104, side: 0, up: 45 }, fov: 65 },
+  at: { en: [133.2, -83.2] }, bearing: 36,
+  camera: { mode: 'orbit', yawRel: 180, dist: 4.5, height: 1.9, target: { fwd: 86, side: 0, up: 40 }, fov: 60 },
   state: { pose: 'idle', hud: false },
   ref: { crops: ['board-calima'], written: 'three pale staff legs and the drum in amber haze, never against a low sun (sun >= 45 deg, 11:30-12:30); the far form is the read, not its detail' },
   note: 'M2 wave 4: the far form (one mesh, no behaviour) as the read-transit beat shows it; F45 (area F) is the dust and the sun, this is the far form in it.',
