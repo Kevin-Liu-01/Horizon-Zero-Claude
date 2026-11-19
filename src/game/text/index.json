@@ -19,7 +19,8 @@
   "speakers": {
     "brea": { "name": "BREA", "sub": "Salt-pan Reckoner" },
     "ansel": { "name": "ANSEL", "sub": "Guild Matron" },
-    "mise": { "name": "MISE", "sub": "Lantern-Keeper" }
+    "mise": { "name": "MISE", "sub": "Lantern-Keeper" },
+    "oro": { "name": "ORO", "sub": "Tube Smith" }
   },
   "placeholders": {
     "about": "Filled by the game at show time. Bearings are three digits, as on the compass strip.",
@@ -47,5 +48,65 @@
       { "line": "the kite line streams to 225; peg-heads every three paces", "source": "bible 3.1 (wind from 045 streams SW); the peg spacing is W1's own number" },
       { "line": "thirty salt and the Guild Whites", "source": "bible 11.2 reward: rung 2, salt x30" }
     ]
+  },
+  "w2": {
+    "set": "W2",
+    "about": "Writing for the rest of the first hour: 'The Scar' and 'True Ground', Oro, the Holds barks, Field Books 5-10, the Ninewalls Guild Notices, the Transit's Sighting card and the cards that teach the herd, the wall, the re-survey and true ground. The same rules as W1 (rules above); checked by tools/gates/systems/writing-w2.mjs.",
+    "files": {
+      "quests": [
+        "quests/the-scar.json",
+        "quests/true-ground.json"
+      ],
+      "barks": "barks/holds.json",
+      "tutorial": "cards/tutorial-w2.json",
+      "sighting": "cards/sighting-w2.json",
+      "books": "books/field-books-w2.json",
+      "notices": "notices/ninewalls.json"
+    },
+    "worldFacts": {
+      "about": "Fixed numbers in the W2 lines that the world must agree with, and where each comes from.",
+      "items": [
+        {
+          "line": "Saltrow to Ninewalls: 256 metres of road and sixty of climb",
+          "source": "bible 11.2 0:21 (the walk); HR0 at f6d3567 measures 275 m straight and 70 m of climb"
+        },
+        {
+          "line": "nine walls; the line on four of them",
+          "source": "ninewalls-layout.js: nine crescent walls, the Datum Line on walls 1-4"
+        },
+        {
+          "line": "Tillers, five in file; four and a half metres of hull",
+          "source": "bible 7.4 Tiller: herds of 3-6, 4.5 m long; the quest stands up five"
+        },
+        {
+          "line": "a Screed, three point eight metres; twenty-five metres of charge; three seconds stalled",
+          "source": "bible 7.4 Screed 3.8 m; screed-rules.js chargeLen 25 m, stallS 3.0 s"
+        },
+        {
+          "line": "the third wall; three walls down to the line",
+          "source": "bible 11.2 fail-soft: the third wall; screed-rules.js failSoftCuts 3"
+        },
+        {
+          "line": "Benchmark 1, seventy metres south of Ninewalls",
+          "source": "bible 3.4 B1 (12, -282): 70 m south; HR0 at f6d3567: 72.7 m from the centre"
+        },
+        {
+          "line": "fifteen seconds and three bearings: T1, T2 and the Ring",
+          "source": "bible 11.2 0:45; HR0: T1 249, T2 77, the Ring 264 deg from B1, tops clear"
+        },
+        {
+          "line": "the Scar: 25 m wide, straight for 480",
+          "source": "bible 2.2 the Screed Scar: 25 m wide, dead straight, 480 m"
+        },
+        {
+          "line": "the Jameo at 103 m; the tube about 140 m",
+          "source": "HG1-jameo: the Jameo at 103 m; sites.js: Ninewalls to the Jameo 134 m"
+        },
+        {
+          "line": "Two Brine and one Cinder; nine slats",
+          "source": "bible 11.2 0:35 and 9.1 the Windwall (nine slats)"
+        }
+      ]
+    }
   }
 }

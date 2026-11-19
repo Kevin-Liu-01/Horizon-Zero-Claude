@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "set": "W2",
+  "id": "the-scar",
+  "title": "THE SCAR",
+  "giver": "oro",
+  "place": "Ninewalls",
+  "logSummary": "A second Plumb over Ninewalls, a herd for cover, and a Screed walking on the crescent walls.",
+  "kicker": "FIELD NOTE",
+
+  "stages": [
+    { "id": "walk",    "at": "0:21", "type": "event",  "note": "Take the road up into the Crescent Holds", "log": "Walked the switchback up from the Pans into the Holds." },
+    { "id": "herd",    "at": "0:28", "type": "event",  "note": "Reach the Plumb above Ninewalls in the herd's lee", "log": "Walked up the slope in the Tillers' lee." },
+    { "id": "plumb-2", "at": "0:28", "type": "kill",   "note": "Topple the Plumb on the terrace", "log": "Toppled the Plumb on the terrace." },
+    { "id": "barbed",  "at": "0:31", "type": "gather", "note": "Make Barbed arrows from the Peg pins", "log": "Made Barbed arrows from the Peg pins." },
+    { "id": "oro",     "at": "0:35", "type": "talk",   "note": "Find Oro at the tube mouth", "log": "Oro gave the gaff, the Windwall and three pots." },
+    { "id": "stall",   "at": "0:35", "type": "event",  "note": "Lure the Screed's charge into a wall", "log": "The Screed ran its blade into a wall and stood.", "logBranch": "The Screed cut the third wall down to the line." },
+    { "id": "seal-1",  "at": "0:35", "type": "event",  "note": "Break a ram seal: Brine it, then rip it", "log": "One ram seal off." },
+    { "id": "seal-2",  "at": "0:35", "type": "event",  "note": "Break the second ram seal", "log": "Both ram seals off. The blade is down." }
+  ],
+
+  "closing": {
+    "note": "The Ninewalls counter is open",
+    "reward": ["SALT ×60", "ORO'S KIT · YOURS TO KEEP"],
+    "logEnd": "The Screed stood down. The line is still on four walls.",
+    "logEndBranch": "The third wall is cut to the line. Ninewalls is poorer, and standing."
+  },
+
+  "scenes": [
+    {
+      "id": "hand-over",
+      "at": "0:35",
+      "where": "the tube mouth, the forge banked",
+      "cards": [
+        { "who": "oro", "lines": ["Saltrow's Reckoner. I watched you", "put the painter on its back", "from the forge door."] },
+        { "who": "brea", "measure": true, "lines": ["Two hits on the vial and four", "seconds down. It'll be up by now."] },
+        { "who": "oro", "lines": ["It's not the one I'd watch.", "Look at the outer walls."] },
+        { "who": "brea", "measure": true, "lines": ["A Screed. Three point eight metres", "of it, cutting down to the line.", "How long before it's at the houses?"] },
+        { "who": "oro", "lines": ["The third wall by noon, at that pace.", "You won't stop it with a bow", "and a shepherd's stick."] },
+        { "who": "oro", "lines": ["Boat gaff. Pine Windwall, nine slats.", "Two Brine and one Cinder.", "Brine goes on the rams."] },
+        { "who": "brea", "measure": true, "lines": ["Brine seizes the seal, the gaff", "rips it off. Two seals, two rips."] },
+        { "who": "oro", "lines": ["And it can't turn once it's running.", "Stand in front of a wall", "and step out of its way."] },
+        { "who": "brea", "lines": ["Let the stone take the blade.", "The walls were built for something."] }
+      ]
+    },
+    {
+      "id": "stood-down",
+      "at": "0:44",
+      "where": "under the third wall, after the fight",
+      "cards": [
+        { "who": "oro", "lines": ["Down, and both rams dry.", "My grandfather built that wall."] },
+        { "who": "oro", "lines": ["It will send another.", "It is not angry.", "The wall is not on its map."] },
+        { "who": "brea", "measure": true, "lines": ["Then its map is out by nine walls.", "Benchmark 1 is seventy metres", "down the Scar."] },
+        { "who": "oro", "lines": ["The old bronze stud? The cutters", "ran straight over it."] },
+        { "who": "brea", "measure": true, "lines": ["Fifteen seconds on the Alidade", "and three bearings, and Ninewalls", "is true ground."] },
+        { "who": "oro", "lines": ["Then go and make it true.", "I'll keep the forge lit."] }
+      ]
+    }
+  ],
+
+  "breaAlone": {
+    "about": "Brea's own turns in the field on 'The Scar': one card each, shown as a subtitle when its trigger first happens. Each trigger shows once.",
+    "cards": [
+      { "on": "walk-out", "measure": true, "lines": ["Saltrow to Ninewalls: 256 metres", "of road and sixty of climb."] },
+      { "on": "holds-seen", "measure": true, "lines": ["The Holds. Black ash to the ridge,", "and Ninewalls under it. Nine walls."] },
+      { "on": "herd-seen", "measure": true, "lines": ["Tillers, five in file, coring", "up the slope on one bearing.", "The Plumb is on the terrace above."] },
+      { "on": "herd-bearing", "measure": true, "lines": ["Four and a half metres of hull each,", "and none of them turns.", "Walk where they walk."] },
+      { "on": "in-the-lee", "measure": true, "lines": ["In the lee. The Plumb can't see", "through two metres of enamel."] },
+      { "on": "plumb-2-down", "measure": true, "lines": ["Down for four seconds.", "Long enough to see what it painted."] },
+      { "on": "barbed-made", "measure": true, "lines": ["Six Barbed, off Peg pins.", "They'll bite in a seal."] },
+      { "on": "find-oro", "lines": ["Something big is on the outer walls.", "The smith will know what."] },
+      { "on": "wall-trick", "measure": true, "lines": ["Twenty-five metres of charge,", "and it can't turn once it's going.", "Put a wall behind me."] },
+      { "on": "stalled", "measure": true, "lines": ["Into the stone. Three seconds", "before it backs off."] },
+      { "on": "one-seal", "measure": true, "lines": ["One seal off. One left."] },
+      { "on": "wall-cut", "measure": true, "lines": ["Three walls down to the line.", "Not the houses. Not yet."] }
+    ]
+  }
+}

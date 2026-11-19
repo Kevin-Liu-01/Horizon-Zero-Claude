@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "set": "W2",
+  "id": "true-ground",
+  "title": "TRUE GROUND",
+  "giver": "oro",
+  "place": "Ninewalls",
+  "logSummary": "Benchmark 1 re-surveyed under the Instruments' eyes, the line off Ninewalls' walls, and calima at noon.",
+  "kicker": "FIELD NOTE",
+
+  "stages": [
+    { "id": "scar",         "at": "0:45", "type": "goto",  "note": "Follow the Scar's line to Benchmark 1", "log": "Walked the Scar's line to Benchmark 1." },
+    { "id": "survey",       "at": "0:45", "type": "hold",  "note": "Re-survey Benchmark 1: hold the Alidade, take bearings  {n} / {of}", "log": "Re-surveyed Benchmark 1. Three bearings, closed." },
+    { "id": "fade",         "at": "0:47", "type": "event", "note": "Watch the line leave Ninewalls' walls", "log": "The line faded off Ninewalls' walls." },
+    { "id": "rest-noon",    "at": "0:50", "type": "rest",  "note": "Kindle the Brazier at the Ninewalls cistern and rest", "log": "Rested at the Ninewalls cistern until noon." },
+    { "id": "calima-cross", "at": "0:55", "type": "event", "note": "Cross to the Malpaís edge under the calima", "log": "Crossed to the Malpaís edge in the calima." },
+    { "id": "read-transit", "at": "0:55", "type": "read",  "note": "Read what walks on the rim", "log": "Read the Transit: baseline, station 1 of 9." }
+  ],
+
+  "closing": {
+    "note": "Benchmark 1 is a travel node",
+    "reward": ["WALK THE LINE TO BENCHMARK 1"],
+    "logEnd": "Ninewalls is true ground. The Transit is walking its baseline."
+  },
+
+  "scenes": [],
+
+  "resurvey": {
+    "about": "The re-survey's overlay: the three marks' pips under the arc, by mark id (src/game/quest/scar-plan.js RESURVEY.marks).",
+    "marks": { "T1": "T1", "T2": "T2", "sounding-ring": "RING" }
+  },
+
+  "breaAlone": {
+    "about": "Brea's own turns in the field on 'True Ground': one card each, shown as a subtitle when its trigger first happens. Each trigger shows once. The bearing turns are filled with the bearing she took.",
+    "cards": [
+      { "on": "scar-line", "measure": true, "lines": ["Twenty-five metres wide and dead", "straight for 480. Hard to lose."] },
+      { "on": "on-the-mark", "measure": true, "lines": ["Benchmark 1. Bronze, flush, arrow up,", "seventy metres south of Ninewalls."] },
+      { "on": "resurvey-start", "measure": true, "lines": ["T1, T2 and the Ring.", "Fifteen seconds on the glass."] },
+      { "on": "bearing-T1", "measure": true, "lines": ["T1, on the Organ Shelf.", "Bearing {bearing}."] },
+      { "on": "bearing-T2", "measure": true, "lines": ["T2, on Ninewalls Rise.", "Bearing {bearing}."] },
+      { "on": "bearing-sounding-ring", "measure": true, "lines": ["The Sounding Ring.", "Bearing {bearing}."] },
+      { "on": "lookers", "measure": true, "lines": ["Two of them, coming to look.", "Keep the glass on the mark."] },
+      { "on": "arc-paused", "measure": true, "lines": ["Hit. The arc holds where it was.", "Three bearings stay three bearings."] },
+      { "on": "off-mark", "lines": ["Off the mark. Back on it."] },
+      { "on": "true", "measure": true, "lines": ["Three bearings, and they close.", "Ninewalls is where it says it is."] },
+      { "on": "line-gone", "measure": true, "lines": ["Nine walls, and not a mark", "of vermilion on one of them."] }
+    ]
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "set": "W2",
+  "place": "Ninewalls and the Crescent Holds",
+  "about": "Holds barks: one short line each, said as Brea passes within a few metres, never a conversation. Eight sets, as W1's Saltrow sets. A set is chosen by who is speaking and by 'when'; a line is not repeated until its set is used up. Nobody here is named: the speaker label is the calling.",
+  "sets": [
+    {
+      "id": "pit-farmers",
+      "who": "PIT FARMER",
+      "when": "before the Screed (0:21 to 0:35)",
+      "lines": [
+        ["Mind the pits, Reckoner. Every one", "of them is a summer's digging."],
+        ["The wall keeps the wind off the vine.", "The ash keeps the rain in."],
+        ["Three buckets to a pit, at dusk.", "Never at noon."],
+        ["You're from the Pans. You walk", "like the ground is flat."],
+        ["The Tillers dig, we plant.", "Nobody asked them. Nobody asks us."],
+        ["Vermilion on the outer wall again.", "My father scrubbed it off twice."]
+      ]
+    },
+    {
+      "id": "followers",
+      "who": "TILLER-FOLLOWER",
+      "when": "on the slope with the herd",
+      "lines": [
+        ["Stay in the lee. They never look back."],
+        ["One seed to a core. Two if the", "Tiller went deep."],
+        ["They don't mind us. They don't", "mind anything."],
+        ["My bag's half empty and they've", "got the whole slope to go."],
+        ["Don't run. The Plumb sees running."],
+        ["Five of them this year. Last year four."]
+      ]
+    },
+    {
+      "id": "pickers",
+      "who": "COCHINEAL PICKER",
+      "when": "at the prickly-pear terraces",
+      "lines": [
+        ["Gloves on. The pads bite."],
+        ["The white on the pads is the dye.", "Crush it and it's carmine."],
+        ["A basket of bugs for a bolt of red.", "Don't laugh. It's a good trade."],
+        ["The Screed cut a terrace last spring.", "We picked the pads off the spoil."],
+        ["Red hands till midsummer.", "Nobody minds in Ninewalls."]
+      ]
+    },
+    {
+      "id": "the-line",
+      "who": "PIT FARMER",
+      "when": "while the line is on the walls",
+      "lines": [
+        ["That paint sits at the height", "the ground used to be."],
+        ["Four walls painted. It wants", "them cut to the stripe."],
+        ["The Plumb painted it in the night.", "Nobody heard a thing."],
+        ["Scrub it and it comes back.", "We stopped scrubbing."],
+        ["My grandmother says the walls were", "here before the Plumbs. She's wrong."]
+      ]
+    },
+    {
+      "id": "screed-on-walls",
+      "who": "HOLDS VOICE",
+      "when": "while the Screed is on the walls (0:35)",
+      "lines": [
+        ["Off the wall! It's turning!"],
+        ["Get the children in the tube!"],
+        ["Second wall's going! Go round!"],
+        ["It can't turn when it runs.", "Make it run!"],
+        ["The seals, Reckoner! On the rams!"],
+        ["Oro! Oro, it's at the third!"]
+      ]
+    },
+    {
+      "id": "after-the-fight",
+      "who": "PIT FARMER",
+      "when": "after the Screed stands down",
+      "lines": [
+        ["It's just standing there.", "Is it dead? Can they die?"],
+        ["Three walls' worth of stone", "to stack again. We know how."],
+        ["Oro says another one will come."],
+        ["You put it on its knees with a gaff.", "I saw it."],
+        ["The vines behind the second wall", "are fine. The vines are fine."]
+      ]
+    },
+    {
+      "id": "true-ground",
+      "who": "HOLDS VOICE",
+      "when": "after the re-survey (0:47 on)",
+      "lines": [
+        ["The paint's gone. All nine walls.", "I watched it go."],
+        ["What did you do down at the stud?"],
+        ["My mother would have cried.", "I might yet."],
+        ["The Plumb on the terrace walked off.", "Just walked off."],
+        ["True ground. I didn't know", "we could be."],
+        ["Stack the third wall. It stays."]
+      ]
+    },
+    {
+      "id": "tube-mouth",
+      "who": "TUBE HAND",
+      "when": "at the tube mouth and the counter",
+      "lines": [
+        ["Cool in here. The tube runs", "all the way to the Jameo."],
+        ["Bronze bars for salt, salt for bars.", "Oro sets the weights."],
+        ["Don't touch the anvil. It's hot", "longer than it looks."],
+        ["The crabs in the Jameo are white.", "They've never seen the sun."],
+        ["Oro made that gaff for the boats.", "Boats! In the Holds!"]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "set": "W2",
+  "about": "Tutorial cards for 'The Scar' and 'True Ground', in W1's shape: one at a time, 8 s, glass, top-left under the field note. HEAD in Chakra Petch caps, body in Plex Mono. Every card is kept in the Field Manual (Extras).",
+  "cards": [
+    {
+      "id": "herd",
+      "at": "0:28",
+      "head": "HERD",
+      "body": "a Tiller's hull blocks a Plumb's sight. Walk in its lee and the herd walks you in."
+    },
+    {
+      "id": "wall",
+      "at": "0:35",
+      "head": "WALL",
+      "body": "a Screed cannot turn once it charges. Stand before a wall, step aside, and it stalls 3 s."
+    },
+    {
+      "id": "resurvey",
+      "at": "0:45",
+      "head": "RE-SURVEY",
+      "body": "on the benchmark, raise the Alidade ({key:alidade}) and hold it on a mark for 15 s. {key:bearing} takes each of three bearings."
+    },
+    {
+      "id": "true-ground",
+      "at": "0:47",
+      "head": "TRUE GROUND",
+      "body": "a re-surveyed region keeps its walls. Screeds stop choosing it, and the line comes off."
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "set": "W2",
+  "about": "Sighting cards for the first hour after the slice, in W1's shape: 'line' is the header exactly as printed (KIND · WORK · VALUE); the rows are LAMP, WEAK and CARRIES and no others; 'read' is one plain sentence under the rows.",
+  "cards": [
+    {
+      "id": "transit",
+      "at": "0:55",
+      "line": "TRANSIT · BASELINE · STATION 1 OF 9",
+      "kind": "TRANSIT",
+      "work": "OBSERVER",
+      "lamp": {
+        "calm": "CALM · sighting the next station",
+        "wary": "WARY · it has turned its glass",
+        "hostile": "HOSTILE · it is reading you",
+        "dark": "DARK"
+      },
+      "weak": [
+        "TOO FAR TO TELL"
+      ],
+      "carries": [
+        "THE GREAT GLASS"
+      ],
+      "read": "The island's own theodolite, walking its baseline once a year. This is the first of nine stations."
+    }
+  ]
+}

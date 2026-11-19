@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "set": "W2",
+  "board": "Ninewalls",
+  "about": "Guild Notices on the Ninewalls board by the tube-mouth counter: untimed bounties. Card head GUILD NOTICE, one verb TAKE, the word 'untimed' printed on every card. Body at most three lines.",
+  "head": "GUILD NOTICE",
+  "verb": "TAKE",
+  "notices": [
+    {
+      "id": "sickle-blade",
+      "title": "BRING BACK AN UNBROKEN SICKLE BLADE",
+      "from": "Tube Smith Oro",
+      "body": [
+        "Whole, edge and tang. A cracked blade",
+        "is scrap and I have scrap.",
+        "A whole one keeps an edge for a lifetime."
+      ],
+      "ask": "Sickle blade ×1",
+      "pays": "SALT ×40 · BRONZE ×2",
+      "term": "untimed",
+      "done": "Not a nick on it. Oro hung it over the forge."
+    },
+    {
+      "id": "walk-the-scar",
+      "title": "WALK THE SCAR END TO END UNSEEN",
+      "from": "the pit farmers of the lower terraces",
+      "body": [
+        "Four hundred and eighty metres of it,",
+        "and every Instrument on the Holds can see it.",
+        "Show us it can be walked."
+      ],
+      "ask": "The Scar, end to end, never Flagged",
+      "pays": "SALT ×30 · CORD ×2",
+      "term": "untimed",
+      "done": "End to end. The farmers have stopped walking round it."
+    },
+    {
+      "id": "scutes",
+      "title": "NINE SCUTES FOR A FAN",
+      "from": "Tube Smith Oro",
+      "body": [
+        "A Tiller sheds its scutes like a pine",
+        "sheds bark. Nine of them, flat ones,",
+        "and I can make a Windwall that turns a blade."
+      ],
+      "ask": "Tiller scute ×9",
+      "pays": "SALT ×35",
+      "term": "untimed",
+      "done": "Nine scutes on the bench. Oro has started the rivets."
+    },
+    {
+      "id": "pumice",
+      "title": "PUMICE FOR THE DUST POTS",
+      "from": "the tube hands",
+      "body": [
+        "Light stone, the kind that floats.",
+        "The rim above the Jameo is full of it.",
+        "Three makes a pot. We need a dozen."
+      ],
+      "ask": "Pumice ×12",
+      "pays": "SALT ×20 · CLAY ×4",
+      "term": "untimed",
+      "done": "Twelve pumice. The tube hands are grinding it already."
+    }
+  ]
+}
