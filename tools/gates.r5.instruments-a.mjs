@@ -971,6 +971,139 @@ function FILM_SETUP(kind, o = {}) {
 })()`;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* A-moving-cover (M2 wave 3, IN3 on the page)                         */
+/* ------------------------------------------------------------------ */
+/**
+ * The page half of IN3 (its Node twin: tools/instruments/moving-cover.mjs, ten walks on simulation time). A Tiller file
+ * of three walks its bearing in file on open ground; a Plumb stands parked 25 m off the file's line, broadside, facing
+ * it; every other machine is frozen. Brea, crouched, is carried with the middle hull at its walk: four lee walks (the
+ * hull between her and the Plumb, 0.6-1.0 m off its far flank, along it -0.6..+0.6 m), then the same four out of its
+ * shadow (3 m off the near flank). 8 s of sim time each; her suspicion is zeroed between walks. Bars: 0 perception ticks
+ * see her in the lee walks; every open walk is seen within 4 s.
+ */
+const A_MOVING_COVER = `(async () => {
+  ${KIND_PRELUDE({ kind: 'tiller' })}
+  if (!KIND || !__M.canSpawn('tiller') || !__M.canSpawn('plumb')) return { pass: null, detail: 'SKIP: no tiller or plumb kind' };
+  ${IA}
+  const V3 = p.position.constructor;
+  const spot = flatSpot(40, 90);
+  const herd = { center: new V3(spot.x, 0, spot.z), vector: new V3(0, 0, 1), alarmed: false, rearguard: null, members: [] };
+  __M.squads.registerHerd(herd);
+  const hd = Math.atan2(1, 0.2), fx = Math.sin(hd), fz = Math.cos(hd), rx = fz, rz = -fx;
+  const A = new V3(spot.x - fx * 30, 0, spot.z - fz * 30), B = new V3(spot.x + fx * 40, 0, spot.z + fz * 40);
+  const ms = [];
+  for (let i = 0; i < 3; i++) {
+    const m = __M.spawn('tiller', A.x - fx * i * 9.5, A.z - fz * i * 9.5, { herd, route: [B, A], heading: hd });
+    if (!m) continue;
+    __M.squads.join(m, herd, 'herd');
+    ms.push(m);
+  }
+  if (ms.length < 3) return { pass: null, detail: 'SKIP: could not stage a herd of three' };
+  const pl = __M.spawn('plumb', spot.x + rx * 25, spot.z + rz * 25);
+  if (!pl) return { pass: null, detail: 'SKIP: could not stand a Plumb' };
+  park(pl, Math.atan2(-rx, -rz));
+  freezeAll([...ms, pl]);
+  p.setCrouch?.(true);
+  const leeEvents = [];
+  const offLee = ev.on?.('herd-lee', (e) => leeEvents.push({ inShadow: !!e?.inShadow, t: +simNow().toFixed(2) }));
+  const mid = ms[1], HW = 0.68;
+  const walks = [];
+  const one = async (along, off, label) => {
+    pl.suspicion = 0; if (pl.sc) pl.sc.suspicion = 0; pl._unseenT = 99; if (pl.state !== 'patrol') pl.setState('patrol');
+    const per = pl.ai?.perception;
+    let ticks = 0, seen = 0, firstSeen = null, maxSus = 0;
+    const t0 = simNow();
+    let lastAcc = per ? per.acc : 0;
+    await simSleep(8, (t) => {
+      heal();
+      const h = mid.heading, ux = Math.sin(h), uz = Math.cos(h), vx = Math.cos(h), vz = -Math.sin(h);
+      // the Plumb's side of the hull: the sign of its offset along the hull's right
+      const side = Math.sign((pl.position.x - mid.position.x) * vx + (pl.position.z - mid.position.z) * vz) || 1;
+      const o = off > 0 ? side * (HW + off) : -side * (HW - off);
+      const x = mid.position.x + ux * along + vx * o, z = mid.position.z + uz * along + vz * o;
+      p.position.set(x, hy(x, z), z); if (p.velocity?.set) p.velocity.set(0, 0, 0);
+      if (per && per.acc < lastAcc) { ticks++; if (per.visible) { seen++; if (firstSeen === null) firstSeen = +t.toFixed(2); } }
+      if (per) lastAcc = per.acc;
+      maxSus = Math.max(maxSus, pl.sc ? pl.sc.suspicion : pl.suspicion || 0);
+    });
+    walks.push({ label, along, off, ticks, seen, firstSeen, maxSuspicion: +maxSus.toFixed(3), plumbDist: +Math.hypot(pl.position.x - p.position.x, pl.position.z - p.position.z).toFixed(1) });
+  };
+  for (const [along, s] of [[-0.6, -0.6], [0, -0.8], [0.6, -1.0], [0.3, -0.7]]) await one(along, s, 'lee');
+  for (const along of [-0.6, 0, 0.6, 0.3]) await one(along, 3, 'open');
+  offLee?.();
+  p.setCrouch?.(false);
+  const lee = walks.filter((w) => w.label === 'lee'), open = walks.filter((w) => w.label === 'open');
+  const leeSeen = lee.filter((w) => w.seen > 0).length, openSeen4 = open.filter((w) => w.firstSeen !== null && w.firstSeen <= 4).length;
+  const ticked = walks.every((w) => w.ticks >= 40);
+  const pass = ticked && leeSeen === 0 && openSeen4 === open.length;
+  return { pass, detail: { bar: 'IN3 on the page: 4 crouched lee walks beside a moving Tiller hull: 0 perception ticks see her; the same 4 walks 3 m off the near flank: seen within 4 s in 4 of 4 (the Node twin, tools/instruments/moving-cover.mjs, runs 10)',
+    leeSeen, openSeen4, ticked, walks, herdLee: leeEvents.slice(0, 12), herdLeeHeard: leeEvents.some((e) => e.inShadow) } };
+})()`;
+
+/* ------------------------------------------------------------------ */
+/* A-screed-fight (M2 wave 3, IN5-IN7 on the page; candidate A-screed-commit) */
+/* ------------------------------------------------------------------ */
+/**
+ * The page half of the Screed fight (its Node twin: tools/instruments/screed-fight.test.mjs; the same ScreedFight).
+ * The Screed is stood up where the first hour stands it (src/game/hour.js: bearing 45 deg from Ninewalls' centre,
+ * OUTER_R + 14 m, facing the village), every other machine frozen, the walls reset. Brea stands 9.5 m in front of it;
+ * 0.5 s into its wind-up she steps 4 m to its right. Then, in the stall, Brine and a Pry on the left seal (kitBlow, the
+ * combat seam) and two arrows' hits on the right seal's weak point (takeDamage at its world position). Bars: one charge;
+ * the committed heading within 3 deg until the stall; the stall on 'wall-1' ('screed-stalled'), 3.0 s +-0.2 of sim time;
+ * no blade blow on her; 'seal-off' ram-1 then ram-2; 'screed-done' with the seals off; 0 walls cut; the blade dropped.
+ */
+const A_SCREED_FIGHT = `(async () => {
+  ${KIND_PRELUDE({ kind: 'screed' })}
+  if (!__M.canSpawn('screed')) return { pass: null, detail: 'SKIP: no screed kind' };
+  ${IA}
+  const NW = await import('/src/world/settlements/ninewalls-layout.js');
+  NW.resetWalls();
+  const C0 = NW.CENTRE, D2R = Math.PI / 180, r = NW.OUTER_R + 14, b = 45 * D2R;
+  const at = { x: C0.x + Math.sin(b) * r, z: C0.z - Math.cos(b) * r };
+  const h0 = Math.atan2(C0.x - at.x, C0.z - at.z), fx = Math.sin(h0), fz = Math.cos(h0), rx = fz, rz = -fx;
+  // she first stands well clear (60 m behind it), so the fight starts only when she steps in front
+  standAt(at.x - fx * 60, at.z - fz * 60, at.x, at.z);
+  const m = __M.spawn('screed', at.x, at.z, { heading: h0 });
+  if (!m || !m.fightRules) return { pass: null, detail: 'SKIP: the Screed did not stand up (or is not the live kind)' };
+  freezeAll([m]);
+  const log = [];
+  const names = ['screed-engage', 'screed-charge', 'screed-stalled', 'screed-stalled-rock', 'seal-off', 'screed-seized', 'screed-cut', 'screed-done', 'player-damage'];
+  const offs = names.map((n) => ev.on?.(n, (e) => { if (n === 'player-damage' && e?.from !== m) return; log.push({ n, t: +simNow().toFixed(3), wall: e?.wall ?? null, seal: e?.seal ?? null, part: e?.part ?? null, failSoft: e?.failSoft ?? null, sealsOff: e?.sealsOff ?? null }); }));
+  await simSleep(1.0, heal);
+  const stand = { x: at.x + fx * 9.5, z: at.z + fz * 9.5 };
+  standAt(stand.x, stand.z, at.x, at.z);
+  let chargeT = null, stepped = false, stallT0 = null, stallS = null, maxDev = 0, worked = false;
+  await simSleep(14, (t) => {
+    heal();
+    const B = m.brain;
+    if (chargeT === null && log.some((e) => e.n === 'screed-charge')) chargeT = t;
+    if (chargeT !== null && !stepped && t > chargeT + 0.5) { stepped = true; standAt(stand.x + rx * 4, stand.z + rz * 4, at.x, at.z); }
+    if (B.phase === 'charge' && B.lockedHeading != null) {
+      let d = B.heading - B.lockedHeading; d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; maxDev = Math.max(maxDev, Math.abs(d) / D2R);
+    }
+    if (B.phase === 'stall' && stallT0 === null) stallT0 = simNow();
+    if (stallT0 !== null && stallS === null && B.phase !== 'stall') stallS = +(simNow() - stallT0).toFixed(3);
+    if (B.phase === 'stall' && !worked) {
+      worked = true;
+      m.kitBlow('sealL', 'brine'); m.kitBlow('sealL', 'pry');
+      const w = m.weakPoints.find((x) => x.name === 'sealR');
+      for (let k = 0; k < 2 && w; k++) { const q = w.obj.getWorldPosition(new V()); m.takeDamage({ point: q, impact: 12, tear: 0, type: 'arrow', dir: new V(0, 0, 1) }); }
+    }
+  });
+  for (const o of offs) o?.();
+  const rep = m.fight();
+  const has = (n) => log.filter((e) => e.n === n);
+  const stalled = has('screed-stalled')[0] || null;
+  const seals = has('seal-off').map((e) => e.seal);
+  const done = has('screed-done')[0] || null;
+  const pass = has('screed-charge').length === 1 && !!stalled && stalled.wall === 'wall-1' && stallS !== null && Math.abs(stallS - 3.0) <= 0.2
+    && maxDev < 3 && has('player-damage').length === 0 && seals.join() === 'ram-1,ram-2' && !!done && done.sealsOff === true && rep.cuts.length === 0 && rep.bladeDropped;
+  return { pass, detail: { bar: 'one charge; heading within 3 deg once committed; stall on wall-1 3.0 s +-0.2 (sim); no blade blow; seal-off ram-1, ram-2; done with the seals off; 0 walls cut; blade dropped',
+    charges: has('screed-charge').length, maxHeadingDevDeg: +maxDev.toFixed(3), stalled, stallS, bladeBlows: has('player-damage').length, seals, done, report: rep, log: log.slice(0, 30) } };
+})()`;
+
 const GATES = [
   ...kindBlock({ kind: 'tiller', lane: LANE, class: 'medium' }),
   ...kindBlock({ kind: 'plumb', lane: LANE, class: 'small' }),
@@ -985,6 +1118,10 @@ const GATES = [
     title: 'A Peg swarm lays a line: pegs are 1 instanced draw; crossing within 20 m of a Plumb raises it to wary <= 1 s; site dispose removes the pegs (geometries baseline)', assert: A_TRANSECT },
   { id: 'A-herd-ripple', kind: 'action', lane: LANE, timeout: 150000, settle: 400,
     title: 'A Plumb chimes near a herd: lamps flash in sequence down the herd within 1.5 s; the herd never flees (IN1): no member above its walk, bearing within 2 deg over 12 s, every file gap 3.5-4.5 m at 4 s', assert: A_HERD_RIPPLE },
+  { id: 'A-moving-cover', kind: 'action', lane: LANE, timeout: 240000, settle: 400,
+    title: 'IN3 on the page (M2 wave 3): 4 crouched lee walks beside a moving Tiller hull, a parked Plumb 25 m broadside: 0 ticks see her; the same walks 3 m off the near flank: seen within 4 s in 4 of 4', assert: A_MOVING_COVER },
+  { id: 'A-screed-fight', kind: 'action', lane: LANE, timeout: 180000, settle: 400,
+    title: 'The Screed on Ninewalls (M2 wave 3, IN5-IN7 on the page): a sidestep in the wind-up; the charge holds its heading (< 3 deg), misses her, stalls 3.0 s +-0.2 on wall-1; Brine + Pry and two arrows in the stall take both seals off; done, 0 walls cut, blade dropped', assert: A_SCREED_FIGHT },
   { id: 'A-instr-shadow-lod', kind: 'action', lane: LANE, timeout: 120000, settle: 400,
     title: 'I-04 (Tiller): LOD1 <= 40 % of LOD0; the shadow pass draws LOD1 only; shadow-mask IoU LOD0:LOD1 >= 0.90 at 12 m', assert: A_INSTR_SHADOW_LOD },
   { id: 'A-lock-pop', kind: 'action', lane: LANE, timeout: 150000, settle: 400,
