@@ -183,8 +183,10 @@ function holdsLoops(P) {
 export const AT_WORK = Object.freeze([
   // (the first film at c5e75eb: four of five in the lens, all four upright, so the street read as people standing about; Oro at
   // the anvil is behind the slope from this lens) each now in a clip that bends to its work, at the clip's deepest point
-  { id: 'pit-farmer-3', place: 'cisternE', face: 'cistern', clip: 'PickUp_Table', offset: 0.5 },
-  { id: 'cochineal-picker', place: 'treeSW', face: 'tree', clip: 'Farm_Harvest', offset: 0.45 },
+  // (and at a0e4d06 the two nearest still stood upright in PickUp_Table at 0.5 and Farm_Harvest at 0.45, the two farther ones
+  // in Farm_PlantSeed and Fixing_Kneeling bent to their work: the near two take those clips)
+  { id: 'pit-farmer-3', place: 'cisternE', face: 'cistern', clip: 'Fixing_Kneeling', offset: 0.55 },
+  { id: 'cochineal-picker', place: 'treeSW', face: 'tree', clip: 'Farm_PlantSeed', offset: 0.35 },
   { id: 'tiller-follower-2', place: 'door:d2', face: 'house:d2', clip: 'Farm_PlantSeed', offset: 0.5 },
   { id: 'cochineal-picker-2', place: 'door:d1', face: 'house:d1', clip: 'Fixing_Kneeling', offset: 0.4 },
   { id: 'pit-farmer-2', place: 'door:d5', face: 'house:d5', clip: 'Farm_Harvest', offset: 0.55 },
