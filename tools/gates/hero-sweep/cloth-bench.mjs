@@ -259,6 +259,13 @@ if (ROWS.includes('C4')) {
   const tr = [];
   for (let i = 0; i < 150; i++) { still(R); step(R); tr.push(frameRead(R, PR));
     if (args.includes('--c4-log') && i % 10 === 9) { const F = tr[tr.length - 1], C = rig(R); console.log('c4', i + 1, pieceNames.map((k) => `${k} a${deg(F.pieces[k].ang).toFixed(0)} f${deg(F.pieces[k].fwd).toFixed(0)} l${deg(F.pieces[k].lat).toFixed(0)}`).join(' | '), C ? C.pieces.map((p) => (p.asleep ? 'Z' : '.')).join('') : ''); } }
+  /* (M2 wave 0, reported beside the graded read, not graded: the POSE'S OWN rest. After a sprint stop she stands in
+   *  another stance than before it (the stop's feet and weight), and the cloth's deterministic reset at the window's end
+   *  pose hangs the hems 1-2.4 cm off the rest read before the sprint (Node, 76653a6): the settle is also read against
+   *  that rest, the reset at the end pose followed by 0.5 s of the idle, its last 0.5 s's mean. Taken after the window,
+   *  so the window is the graded one's) */
+  const poseRest = {}, asleepEnd = rig(R)?.pieces.map((p) => p.asleep) ?? null;
+  { clothReset(R); const acc = Object.fromEntries(pieceNames.map((k) => [k, 0])); for (let i = 0; i < 60; i++) { still(R); step(R); if (i >= 30) { const F = frameRead(R, PR); for (const k of pieceNames) acc[k] += F.pieces[k].H.clone().sub(F.pieces[k].T).dot(F.f) / 30; } } Object.assign(poseRest, acc); }
   const res = {};
   // the pelvis under 0.3 m/s
   let tStop = null;
@@ -279,12 +286,14 @@ if (ROWS.includes('C4')) {
     // (round 5: settleAfterStopS, the same settle read from the stop (the pelvis under 0.3 m/s), as the row's peak is: the
     //  brief's 0.5-1.1 s band follows "after the pelvis is under 0.3 m/s"; settleS, from the release, kept beside it)
     const L = tr[tr.length - 1];
-    res[k] = { overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), settleAfterStopS: settle != null && tStop != null ? rnd(settle - (tStop - tr[0].t)) : null, crossings: cross,
+    let settleP = null;
+    for (let i = f.length - 1; i > 0; i--) { const d = Math.abs(f[i] - poseRest[k]), v = Math.abs(f[i] - f[i - 1]) * 60; if (d > 0.01 || v > 0.02) { settleP = tr[i].t - tr[0].t + 1 / 60; break; } }
+    res[k] = { poseRestOffM: rnd(poseRest[k] - restF[k]), settleAfterStopPoseRestS: settleP != null && tStop != null ? rnd(settleP - (tStop - tr[0].t)) : null, overshootM: rnd(peak), peakAfterStopS: peakT != null && tStop != null ? rnd(peakT - tStop) : null, settleS: rnd(settle), settleAfterStopS: settle != null && tStop != null ? rnd(settle - (tStop - tr[0].t)) : null, crossings: cross,
       endOffRestM: rnd(finEnd - restF[k]), endAngDeg: rnd(deg(L.pieces[k].ang), 1), restAngDeg: rnd(restAng[k], 1) };
     if (TRACE) TRACE.push({ g: 'C4', k, f: f.map((x) => rnd(x - fin, 4)) });
   }
   res.stopS = tStop != null ? rnd(tStop - tr[0].t) : null;
-  { const C = rig(R); if (C) res.asleepAtEnd = C.pieces.map((p) => p.asleep); }
+  if (asleepEnd) res.asleepAtEnd = asleepEnd;
   out.rows.C4 = res;
   unstage(R);
 }
