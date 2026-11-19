@@ -335,13 +335,29 @@ async function driveLee(page, maxS) {
       const T = H?.sys?.A?.terrace;
       const plumb = live('plumb').filter((m) => T && Math.hypot(m.position.x - T.x, m.position.z - T.z) < 40)[0];
       if (!plumb) return { why: 'no terrace Plumb' };
-      const tl = live('tiller').sort((a, b) => Math.hypot(a.position.x - P.x, a.position.z - P.z) - Math.hypot(b.position.x - P.x, b.position.z - P.z))[0];
-      if (!tl) return { why: 'no Tiller' };
-      const dx = tl.position.x - plumb.position.x, dz = tl.position.z - plumb.position.z, L = Math.hypot(dx, dz) || 1;
-      return { x: tl.position.x + dx / L * 3.2, z: tl.position.z + dz / L * 3.2, d: +Math.hypot(tl.position.x - P.x, tl.position.z - P.z).toFixed(1), lee: H.lastLee };
+      // (wave 4) a lee point OFF ITS LINE: at f2a7b10 she stood 3.2 m behind the nearest hull on the Plumb's ray, in the
+      // Tiller's own path, and it felled her (run 20261119T175300Z-f2a7b10-systems-w4-leg2, the card: "Stand off its line").
+      // Each hull's lee point is scored by its walk from her plus a heavy cost when the point lies ahead of that hull
+      // within 3 m of its heading line; the point is 3.6 m behind the hull's centre on the ray from the lamp
+      let best = null;
+      for (const tl of live('tiller')) {
+        const dx = tl.position.x - plumb.position.x, dz = tl.position.z - plumb.position.z, L = Math.hypot(dx, dz) || 1;
+        const x = tl.position.x + dx / L * 3.6, z = tl.position.z + dz / L * 3.6;
+        const h = tl.sc?.heading ?? tl.heading ?? tl.rotation?.y ?? 0, fx = Math.sin(h), fz = Math.cos(h);
+        const ahead = (x - tl.position.x) * fx + (z - tl.position.z) * fz, lat = Math.abs((x - tl.position.x) * fz - (z - tl.position.z) * fx);
+        const inLine = ahead > -1 && lat < 3.0;
+        const score = Math.hypot(x - P.x, z - P.z) + (inLine ? 200 : 0);
+        if (!best || score < best.score) best = { x, z, score, inLine, d: +Math.hypot(tl.position.x - P.x, tl.position.z - P.z).toFixed(1) };
+      }
+      if (!best) return { why: 'no Tiller' };
+      return { x: best.x, z: best.z, d: best.d, inLine: best.inLine, lee: H.lastLee };
     });
     tries.push(pt);
     if (!pt.x) { await sleep(500); continue; }
+    const st = await page.evaluate(where);
+    if (st.dead) return { ok: false, why: 'died', s: +((Date.now() - t0) / 1000).toFixed(1), tries: tries.length, last: pt };
+    if (st.hp < 50) await SH.drink(page, SH.keys(page), 90);
+    if (pt.inLine) { await sleep(400); continue; }   // every hull's lee lies in its own path now: wait for one to turn
     if (Math.hypot(pt.x - (await page.evaluate(where)).x, pt.z - (await page.evaluate(where)).z) > 25) await walkPath(page, pt, 4, 30);
     else await walkTo(page, pt, 1.2, 4, { sprint: false });
     await sleep(300);
@@ -549,11 +565,19 @@ async function driveRest(page, K) {
     } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
     await SH.drink(page, K, 90);
   }
-  const w = await walkPath(page, A.seat ?? A, 1.6, 60);
+  // to the bowl itself (its prompt's radius is 2.6 m; f2a7b10 stopped by the seat 3 m off with no prompt up)
+  const w = await walkPath(page, A, 1.3, 60);
   out.walk = { ok: w.ok, why: w.why ?? null };
+  await sleep(300);
+  const prompt = () => page.evaluate(() => window.__CTX__.interactables?.current?.label ?? null);
+  out.prompt0 = await prompt();
   const mode = () => page.evaluate(() => window.__CTX__.braziers.dialog('ninewalls')?.mode ?? null);
   out.mode0 = await mode();
-  if (out.mode0 === 'kindle') { await SH.holdE(page, K, 2400); await sleep(400); out.kindled = await page.evaluate(() => window.__CTX__.braziers.lit.has('ninewalls')); }
+  if (out.mode0 === 'kindle') {
+    for (let i = 0; i < 3 && !(await page.evaluate(() => window.__CTX__.braziers.lit.has('ninewalls'))); i++) { await SH.holdE(page, K, 2600); await sleep(400); }
+    out.kindled = await page.evaluate(() => window.__CTX__.braziers.lit.has('ninewalls'));
+    out.prompt1 = await prompt();
+  }
   out.mode1 = await mode();
   if (out.mode1 === 'refused') {
     out.refusedBy = await page.evaluate(() => window.__CTX__.braziers.dialog('ninewalls')?.by ?? null);
