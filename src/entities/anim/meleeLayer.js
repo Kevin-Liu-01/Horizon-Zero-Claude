@@ -61,6 +61,7 @@ const _grip = new THREE.Vector3();
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _q3 = new THREE.Quaternion();
+const _q4 = new THREE.Quaternion();
 const _qCR = new THREE.Quaternion();
 const _frQ = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];   // (M1a debt: `_foreRoll`'s undo)   // (M1a debt: `_blendCarry` on the carried line)
 const _m4 = new THREE.Matrix4();
@@ -157,6 +158,7 @@ const _ahG = new THREE.Vector3();
 const _ahQi = new THREE.Quaternion();
 /** the left hand's late seat (fix round 1): palm goal, haft butt / tip, knuckle centre */
 const _slG = new THREE.Vector3();
+const _slW = new THREE.Vector3(), _slC = new THREE.Vector3(), _slA = new THREE.Vector3(), _slV = new THREE.Vector3(), _slN = new THREE.Vector3();
 const _rohP = new THREE.Vector3(), _rohA = new THREE.Vector3(), _rohD = new THREE.Vector3();   // (`_rightOnHaft`)
 const _rohQ = new THREE.Quaternion();
 const _lohD = new THREE.Vector3(), _qRO = new THREE.Quaternion();
@@ -462,6 +464,10 @@ const UC_SEAT_TOL = 0.025;
 const UC_SEAT_MAX = 0.12;
 /** M1a weapons fix round 1: the guard's seat on the move acts on a smaller miss than the Undercut's (m) */
 const GUARD_SEAT_TOL = 0.003;
+/** M2 wave 0 (W1 lance fore): `_seatLeft` runs on past its third pass while the palm misses its goal by more than this (m) */
+const LH_SEAT_EPS = 0.0008;
+/** ...where the wrist goal is past this share of the arm's length, the clavicle brings the shoulder toward it, at most LH_CLAV_MAX (m) */
+const LH_REACH_K = 0.955, LH_CLAV_MAX = 0.035;
 /** ...and the drive arm's elbow kept this far under its shoulder joint there (m; W6) */
 const GUARD_ELBOW_DROP = 0.02;
 const GUARD_ELBOW_OUT = 0.04;
@@ -1082,6 +1088,7 @@ export class MeleeLayer {
     this._pullNow = 0;
     this._pullTH = 0.5;   // (M1a weapons step 2: the hips' clock on the draw's pull)
     this._curlR = 0.85; this._curlL = 0.12;   // (M1a weapons step 2: the fingers' curls, rate-limited)
+    this._wFL = 0;                            // (M2 wave 0: the left fingers' wrap weight, full while the left owns the haft)
     this._drawSettleT = DRAW_SETTLE_T; this._drawOut = null;   // (M1a weapons step 2: the draw's settle)
     /* how far the animator moved her drive SHOULDER after this layer last
      * frame — the stance's pelvis offset through the ground conform's clamp
@@ -2054,9 +2061,15 @@ export class MeleeLayer {
     if (bowR) { /* (the bow's regrip has the right fingers) */ }
     else if (this.gripR) an._wrapFingers('r', this.gripR, this._curlR / 0.85, this._curlR * 0.88 * w, w);
     else an._curlFingers(an._fingerR, this._curlR * w, this._curlR * 0.88 * w);
+    /* (M2 wave 0, D2 W1: the left fist that OWNS the haft wraps it at full weight. The layer's own weight fades in over the
+     *  draw's first reach and out over the holster's last 14 %, while the left fist still holds the butt: the wrap slerped
+     *  back toward the clip's open fingers there, a fingertip 0.0152-0.0193 m off the haft through the stow's seat at
+     *  1d2de89. After the release it goes back to the layer's weight over 5 steps) */
+    this._wFL = this.lanceOwner() === 'handL' ? 1 : Math.max(w, this._wFL - 12 * dt);
+    const wFL = Math.max(w, this._wFL);
     if (bowL) { /* (the bow's fingers) */ }
-    else if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * w, w);
-    else an._curlFingers(an._fingerL, this._curlL * w, (this._curlL * 0.91) * w);
+    else if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * wFL, wFL);
+    else an._curlFingers(an._fingerL, this._curlL * wFL, (this._curlL * 0.91) * wFL);
 
     this._measure();
     this._settleLance(stance, st);
@@ -4666,7 +4679,7 @@ export class MeleeLayer {
    * 0-0.04. `slide` moves the goal along the haft (m, + toward the tip): the
    * forearm-off-the-belly fallback below and the hull pass use it.
    */
-  _seatLeft(on, w, sWant, slide) {
+  _seatLeft(on, w, sWant, slide, finish = true) {
     const an = this.an, b = an.b, D = this._dbg;
     _pole.set(0.82, -0.54, 0.16).normalize();
     this._gripChar(_grip);
@@ -4714,6 +4727,44 @@ export class MeleeLayer {
     an._liveW(b.handL.bone, _q1);
     _b.copy(this.haftOffLL).applyQuaternion(_q1).add(_c);
     D.lhPalmErr = _b.distanceTo(_slG);
+    /* (M2 wave 0, D2 W1 lance fore: the passes above leave the palm 2-8 mm off its goal on the steps the late seat moved
+     *  the haft (the last pass's turn moves the palm the IK had set; more passes of the same loop do not converge): the
+     *  palm normal 10-15 deg off the socket frame and finger joints in the haft in the guard on the move at 1d2de89. On
+     *  the late seat's last call (`finish`), with the hand fully on the haft, the wrist goes once more by the palm's miss
+     *  with the fist's turn kept as it is, so the palm lands where the wrist lands) */
+    if (finish && on >= 0.999 && D.lhPalmErr > LH_SEAT_EPS && D.lhPalmErr < 0.05) {
+      _q3.copy(_q1);
+      _slW.copy(_c).sub(_b).add(_slG);
+      /* (...and where that wrist goal is past the arm's reach (the guard at a jog: 0.470-0.478 m from the shoulder for a
+       *  0.4745 m arm), the left shoulder comes toward it on the clavicle by what is missing, at most LH_CLAV_MAX) */
+      if (b.clavL && D.stance === 'ready') {
+        an._charOf(b.upArmL.bone, _eS);
+        const lack = _slW.distanceTo(_eS) - LH_REACH_K * (an._lenUpL + an._lenLoL);
+        if (lack > 0) {
+          // (level: the shoulder goes toward the goal in plan only, never down (W6 reads the hand against the shoulder joint))
+          an._charOf(b.clavL.bone, _slC);
+          _slV.subVectors(_slW, _eS); _slV.y = 0;
+          const cl = _slA.subVectors(_eS, _slC).length();
+          if (cl > 0.03 && _slV.lengthSq() > 1e-8) {
+            _slV.normalize().multiplyScalar(Math.min(lack, LH_CLAV_MAX)).add(_eS).sub(_slC);
+            _slN.crossVectors(_slA, _slV);
+            if (_slN.lengthSq() > 1e-10) {
+              const a = _slA.angleTo(_slV);
+              _slN.normalize();
+              an._liveW(b.clavL.bone, _q2);
+              _q2.premultiply(_q4.setFromAxisAngle(_slN, a));
+              an.space.setCharQ(b.clavL, _q2);
+            }
+          }
+        }
+      }
+      an._ikArm('l', _slW, _pole, w, null);
+      an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _slW, _pole, w);
+      an.space.setCharQ(b.handL, _q3);
+      an._charOf(b.handL.bone, _c);
+      _b.copy(this.haftOffLL).applyQuaternion(_q3).add(_c);
+      D.lhPalmErr = _b.distanceTo(_slG);
+    }
     return D.lhPalmErr;
   }
 
@@ -4729,27 +4780,24 @@ export class MeleeLayer {
     D.ucSeatLate = 0;
     // (M1a weapons round 3: ...and the guard on the move, as on the pose pass)
     const guardMove = D.stance === 'ready' && !this.active && (an._moveW || 0) > 0.2;
+    /* (M2 wave 0, W6: the draw and the stow while the right fist has the haft keep the guard's elbow bar on the move too:
+     *  the stow's first step out of a jogging guard took the right elbow 0.021 m over its shoulder joint (swap21Jog), the
+     *  holster path's own pole solving the guard's fist. The fist goes out along its arm until the elbow is under it; the
+     *  left fist, if it is on the haft, is seated again on it) */
+    if (!guardMove && (D.stance === 'draw' || D.stance === 'holster') && this._held && !this.active && (an._moveW || 0) > 0.2) {
+      D.guardFistOut = 0;
+      this._guardElbowDown(an, 3);
+      if (D.guardFistOut && this._lhOnW > 0.5) this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
+      return;
+    }
     if ((!guardMove && (D.stance !== 'swing' || D.beat !== 'undercut')) || !(this._lhOnW > 0.5)) return;
     /* (M1a weapons fix round 1, FIX LIST 9 (W6, heldLanceRun: the right ELBOW 0.010-0.025 m over its shoulder joint on 16
      *  steps of the jog, the fist 0.15 m under it): in the guard on the move the drive arm's elbow is kept GUARD_ELBOW_DROP
      *  under its shoulder. A roll about shoulder -> wrist cannot do it (the folded arm's axis stands near plumb, the elbow's
      *  circle near level: a 28 deg roll lowered it 0.002 m), so the fist goes out along shoulder -> wrist, at most
      *  GUARD_ELBOW_OUT a pass, three passes, the haft with it; the seat below then brings the haft to the left palm) */
-    if (guardMove && b.upArmR && b.loArmR) {
-      D.guardFistOut = 0;
-      for (let i = 0; i < 3; i++) {
-        an._charOf(b.upArmR.bone, _ucC); an._charOf(b.loArmR.bone, _ucP);
-        const over = _ucP.y - (_ucC.y - GUARD_ELBOW_DROP);
-        if (!(over > 0.002)) break;
-        an._charOf(b.handR.bone, _ahG);
-        _ucV.subVectors(_ahG, _ucC).normalize();
-        _ahG.addScaledVector(_ucV, Math.min(GUARD_ELBOW_OUT, 1.5 * over));
-        _ucP.copy(GUARD_MOVE_POLE);
-        an._ikArm('r', _ahG, _ucP, 1, null);
-        this._alignHaft(1);
-        D.guardFistOut = i + 1;
-      }
-    }
+    D.guardFistOut = 0;
+    if (guardMove) this._guardElbowDown(an, 3);
     for (let i = 0; i < UC_SEAT_LATE_N; i++) {
       this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
       an._charOf(b.handL.bone, _ucC);
@@ -4770,7 +4818,30 @@ export class MeleeLayer {
       this._alignHaft(1);
       D.ucSeatLate = i + 1;
     }
+    /* (M2 wave 0: the seat's passes bring the right fist in toward the left palm, and a fist nearer its shoulder lifts the
+     *  elbow: at the head the elbow stood 0.019-0.021 m over its shoulder joint on the step after them (W6, clickSprint
+     *  and swap21Jog, once each). The elbow goes down again after them, the left seated on the haft where it ends) */
+    if (guardMove && D.ucSeatLate > 0) this._guardElbowDown(an, 3);
     this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
+  }
+
+  /** The guard on the move (M1a weapons fix round 1, FIX LIST 9): the drive arm's elbow kept GUARD_ELBOW_DROP under its
+   *  shoulder, the fist out along shoulder -> wrist at most GUARD_ELBOW_OUT a pass, `n` passes, the haft with it. */
+  _guardElbowDown(an, n) {
+    const D = this._dbg, b = an.b;
+    if (!b.upArmR || !b.loArmR) return;
+    for (let i = 0; i < n; i++) {
+      an._charOf(b.upArmR.bone, _ucC); an._charOf(b.loArmR.bone, _ucP);
+      const over = _ucP.y - (_ucC.y - GUARD_ELBOW_DROP);
+      if (!(over > 0.002)) break;
+      an._charOf(b.handR.bone, _ahG);
+      _ucV.subVectors(_ahG, _ucC).normalize();
+      _ahG.addScaledVector(_ucV, Math.min(GUARD_ELBOW_OUT, 1.5 * over));
+      _ucP.copy(GUARD_MOVE_POLE);
+      an._ikArm('r', _ahG, _ucP, 1, null);
+      this._alignHaft(1);
+      D.guardFistOut = (D.guardFistOut || 0) + 1;
+    }
   }
 
   /** The left forearm's distance to her pelvis->neck axis, on the live bones (char). */

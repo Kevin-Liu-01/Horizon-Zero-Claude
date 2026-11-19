@@ -250,6 +250,7 @@ function wristAngles(s) {
   const n2 = n.clone().addScaledVector(f, -n.dot(f)).normalize(), g2 = f.clone().cross(n2);
   return [Math.atan2(h.dot(n2), h.dot(f)) * D, Math.atan2(h.dot(g2), h.dot(f)) * D];
 }
+const DBG = process.env.HB_DBG ? new Function('an', 'ml', 'mel', 'B', 'H', `return (${process.env.HB_DBG});`) : null;
 function record(t) {
   model.updateMatrixWorld(true);
   _inv.copy(model.matrixWorld).invert();
@@ -386,6 +387,8 @@ function record(t) {
   r.curlGeoL = cg(r.fingL, r.wristL); r.curlGeoR = cg(r.fingR, r.wristR);
   r.footL = b.footL ? ch(b.footL.bone) : null; r.footR = b.footR ? ch(b.footR.bone) : null;
   r.reachYaw = H && typeof H.bow.yaw === 'number' ? +(H.bow.yaw * D).toFixed(3) : 0;
+  // (a debugging probe: HB_DBG names an expression over an, ml, mel, B (carryStow's sequence), H; its value is kept as r.dbg)
+  if (DBG) { try { r.dbg = DBG(an, ml, mel, an._bp, H); } catch (e) { r.dbg = String(e); } }
   return r;
 }
 
