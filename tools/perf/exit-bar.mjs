@@ -37,6 +37,7 @@ import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '..
 import { takeMachineSlot, releaseMachineSlot } from '../chrome-slot.mjs';
 import { stageFrame, unstageFrame } from '../frames/page.mjs';
 import { loadFrameSet } from '../frames/frameset.mjs';
+import { loadLanes, mergeFrames, installStagings } from '../frames/stagings/index.mjs';
 import { assertOutsideRepo } from '../frames/paths.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -136,7 +137,11 @@ const slot = await takeMachineSlot({ who: `exit-bar ${PORT}`, waitS: Number(flag
 if (!slot.ok) { run.error = slot.why; save(); console.error(slot.why); process.exit(3); }
 installProfileCleanup();
 const tStart = Date.now();
-const set = loadFrameSet();
+// M2 exit: the lane frames (F33, F39, ...) are staged as film.mjs and attrib.mjs stage them
+const LANES = await loadLanes();
+if (LANES.errors.length) { for (const e of LANES.errors) console.error('stagings:', e); process.exit(1); }
+const set = mergeFrames(loadFrameSet(), LANES, { only: new Set(FRAMES) });
+const laneHooks = async (page) => { if (Object.keys(LANES.hooks).length) await installStagings(page, LANES); };
 try {
   /* ---------------- 1. LOAD on the built game ---------------- */
   if (!NO_LOAD) {
@@ -240,6 +245,7 @@ try {
       await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
       await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
       await sleep(8000);
+      await laneHooks(page);
       run.chrome = await C.browser.version();
       run.gpuRenderer = await page.evaluate(() => { try { const gl = window.__CTX__.engine.renderer.getContext(); const d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; } catch { return null; } });
       run.textures = await page.evaluate(() => { const i = window.__CTX__.engine.renderer.info; return { textures: i.memory.textures, geometries: i.memory.geometries, programs: i.programs?.length }; });
@@ -277,6 +283,7 @@ try {
       await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
       await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
       await sleep(8000);
+      await laneHooks(page);
       for (const id of FRAMES) {
         const f = set.frames.find((x) => x.id === id);
         if (!f) continue;
