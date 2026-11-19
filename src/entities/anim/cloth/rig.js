@@ -89,6 +89,12 @@ export const BACKSTOP = { front: 0.0 };
 /** (fix round 1) The most a free column's chord may stand off plumb (deg) for its piece to sleep (solver.js _plumb). */
 export const SLEEP_PLUMB = { panel: 10, tail: 20 };
 export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
+/** (cloth round 6) a panel's own free swing (m/s; solver.js, the material's `vSwing` where 0). The short front-right
+ *  panel at the lined linen's 1.0 came back from a sprint at that speed and passed its rest by 2.7 cm (C4, band 4-15 cm);
+ *  at 1.3 by 5.4 cm. Node sweep, each clip frame a fail: the front-left at 2.0 passes its rest by 9.7 cm but goes 6 mm
+ *  into her belly in the crouch (at 1.6 it does not pass at all), the front-right at 1.6 goes 1 cm into her shin in the
+ *  climb; the back panel swings back onto her legs and passes its rest by 3.6 cm at any cap from 1.0 to 2.0 */
+export const PANEL_SWING = { panelL: 0, panelR: 1.3, panelB: 0 };
 /** The tongues' minimum distance, over their bind distance (round 3: 0.78, was 0.7 of a bind distance the oversized
  *  lengths made 10 % wider: at the body's own scale 0.7 let the tongues cross in 46-48 of 1440 run and sprint frames) */
 /** The tail's stand-off off every collider and its hard margin over the grader's inner surfaces (m), and `tongueMin` */
@@ -107,6 +113,8 @@ export const VPASS = { on: true, iters: 6, margin: 0.004, maxStep: 0.1, reach: 0
  *  this narrow twists to the flow: at 0 a wind from her side met it edge-on and lifted it 2-6 deg at 5.5 m/s), the air's
  *  acceleration held under `aMax` 20 m/s2 (at 9 m/s its turbulence peaks stood it at 83-90 deg from plumb, C6 cap 80) */
 export const TAILC = { off: 0.028, hard: 0.052, tongueMin: 0.78, air: 0.4, yaw: 0.35, cd: 0.4, edge: 0.8, aMax: 20 };
+/** (cloth round 6) a panel vertex with less weight than this on its chain only marks the panel's top (rung1.mjs hangPanel) */
+const MARK = 0.05;
 /** hangPanel's cylinder centre (bind space z) */
 const PANEL_CZ = -0.02;
 
@@ -431,7 +439,10 @@ export class BreaCloth {
       const th = thLo(y) + (thHi(y) - thLo(y)) * s;
       let ws = 0, rs = 0;
       const ss = 0.6 / (C - 1), tt = 0.6 / (R - 1);
+      // (cloth round 6: a vertex whose weight on the chain is under MARK (the belt row's 2 %, rung1.mjs hangPanel) marks
+      //  the panel's top and takes no part in the radius: at 8 columns only the side rims' corner rings carried it)
       for (let k = 0; k < mp.length; k++) {
+        if (main[k].w < MARK) continue;
         const e = ((sts[k].s - s) / ss) ** 2 + ((sts[k].t - t) / tt) ** 2;
         if (e > 9) continue;
         const w = Math.exp(-0.5 * e); ws += w; rs += w * mp[k].rad;
@@ -472,6 +483,7 @@ export class BreaCloth {
     // (round 4: the fronts never slip between her legs to the back: solver.js ClothPiece.backstop)
     if (stem !== 'dyn_panelB') P.backstop = BACKSTOP.front;
     P.air = PANEL_AIR[name] ?? -1;
+    P.vSwing = PANEL_SWING[name] ?? 0;
     P.pinMask = (bits.thighL || 0) | (bits.thighR || 0);
     // (the hard pass's margin: a cell's chord sag on the inner thigh, 0.12 m along a row over a 0.078 m radius, 0.028 m
     //  (a sit, a crouch: the columns lie across the thigh), + 2 mm; under the trousers' own surface, 0.096-0.105 m)

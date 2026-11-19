@@ -110,6 +110,8 @@ export class ClothPiece {
     /** per particle, the deepest the rendered mesh lies INSIDE the grid's surface near it at bind (m: the mesh's own folds,
      *  their valleys): the colliders hold the particle that much further off, so the valley, not the grid, meets the body */
     this.pIn = new Float64Array(n); this.cells = false; this.teth = null;
+    /** (cloth round 6) this piece's free swing cap (m/s), 0: its material's `vSwing` */
+    this.vSwing = 0;
     /** (round 5) the drawing's own offset per particle (rig.js _vertexPass): the bones stand there, the particle does not */
     this.ro = new Float64Array(n * 3);
     /** the BACKSTOP (round 4): a front panel never passes behind the plane through its root square to the root's
@@ -697,7 +699,7 @@ export class ClothSystem {
         if ((hr < this.hardRounds - 1 || this.endStrain) && this.strainPost > 0) this._strain(p, this.strain, this.strainPost);
       }
       // ---- velocity
-      const ih = 1 / h, vRel0 = mat.vRel || 0, vFall0 = mat.vFall || vRel0, vSw = mat.vSwing || 0, ct = p.ct, ctN = mat.kickHold || 0;
+      const ih = 1 / h, vRel0 = mat.vRel || 0, vFall0 = mat.vFall || vRel0, vSw = (p.vSwing > 0 ? p.vSwing : mat.vSwing) || 0, ct = p.ct, ctN = mat.kickHold || 0;
       for (let i = 0; i < N; i++) {
         const q = i * 3;
         if (p.pinch[i]) { v[q] = rfx; v[q + 1] = 0; v[q + 2] = rfz; continue; }

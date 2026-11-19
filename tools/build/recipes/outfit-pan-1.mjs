@@ -48,7 +48,7 @@ import { compassBoss, cordInto, cuff, limbRadius, woundWrap } from './armor/lib/
 import { sashKnotTied, sashTail } from './armor/lib/sash.mjs';
 import { bakeVertexAO } from './armor/lib/vertexao.mjs';
 import { decimateParts } from './armor/lib/decimate.mjs';
-import { backFaces, backUVs, bodyShell, faceOut, fillHoles, caseTube, gloveShell, hangPanel, pouchOn, rimTubes, rivetAt, scarfCowl, scarfRoll, slungBelt, squarePlate } from './armor/lib/rung1.mjs';
+import { backFaces, backUVs, bodyShell, faceOut, fillHoles, caseTube, gloveShell, hangPanel, sashFold, pouchOn, rimTubes, rivetAt, scarfCowl, scarfRoll, slungBelt, squarePlate } from './armor/lib/rung1.mjs';
 
 export const LANE = 'armory';
 export const OUTPUTS = ['public/models/hero/outfit-pan-1.glb'];
@@ -586,10 +586,14 @@ export const PAN_PAINTERS = {
     // valleys a third darker, and the crests' sun fade over a wider band (from f 0.5, not 0.6) and stronger (0.3 -> 0.44)
     cloth(t, o, COL.panel, { slub: 0.08, mottle: 0.18, seed: 51 + P.seed, thread: 0.06 });
     // folds (the mesh's own, rung1.mjs hangPanel): shade in the valleys, fade on the crests
-    const f = fold01(noise3(u * 9 + P.seed * 3.3, t.Y * 1.6, 4.4 + P.seed));
-    o.ao *= 1 - 0.38 * sstep(0.35, 0.05, f) * sstep(0.02, 0.2, v);
+    // (cloth round 6: a panel built with `folds` shades the mesh's own flutes, rung1.mjs sashFold)
+    const f = P.folds > 0 ? sashFold(P, clamp(u / w, -1, 1), t.Y, tt).f : fold01(noise3(u * 9 + P.seed * 3.3, t.Y * 1.6, 4.4 + P.seed));
+    // (cloth round 6: on a panel built with modelled folds the valleys a little deeper in shade and the relief in the normal
+    //  map twice the old, so the shallow front folds the cloth can carry (9 and 7 mm, rung1.mjs sashFold) still read)
+    const fk = P.folds > 0 ? 1 : 0;
+    o.ao *= 1 - (0.38 + 0.12 * fk) * sstep(0.35, 0.05, f) * sstep(0.02, 0.2, v);
     over(o, [170, 128, 168], 0.44 * sstep(0.5, 0.95, f) * sstep(0.05, 0.3, v));
-    o.h += 0.003 * (f - 0.5);
+    o.h += (0.003 + 0.003 * fk) * (f - 0.5);
     // the embroidery: couched gold-ochre thread, a little proud, dulled where it is worn
     // (M1a round 2, the judge: "the embroidery reads pale pink at 2.5 m": its lines were 1.6-2.2 mm wide on a sheet of 2.6 mm
     // texels, so each was a fraction of a texel of gold mixed into the violet. Every line is now 5 mm or more (two texels),
@@ -1551,12 +1555,15 @@ export async function panBase(opt = {}) {
   // binds as brea.glb's, as dyn_sashEnd), so the legs push them and the trade wind streams them
   const panelChain = (k) => { const c = CHAINS[k], j = addChain(doc, c.names, c.points, c.parent); return { joints: j.slice(0, -1), ys: c.points.map((p) => p[1]) }; };
   const chainL = panelChain('panelL'), chainR = panelChain('panelR'), chainB = panelChain('panelB');
-  hangPanel(panels, hipField, J, { thC: Math.PI / 2 - 0.42, halfW: 0.085, yTop: 1.082, yHem: 0.4, side: 'l', thighW: 0.75, seed: 1, rag: 0.045, off: 0.011, chain: chainL });
+  // (cloth round 6: heavy lined linen, not a flat sheet: each panel in broad hanging folds (sashFold), shallow at the belt and
+  //  deepest at the weighted hem, on twice the columns (the torn hem keeps its teeth: `teeth` the old column count), and the
+  //  hem's roll heavier than the side edges' (rimTubes `rAt`))
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 - 0.42, halfW: 0.085, yTop: 1.082, yHem: 0.4, side: 'l', thighW: 0.75, seed: 1, rag: 0.045, off: 0.011, chain: chainL, cols: 16, teeth: 8, folds: 2, foldDepth: 0.009 });
   // (M1a round 3 fix: the short panel's hem 2 cm higher, 0.58 (was 0.56). Rebuilt against the Brea of 7be8f81 or later, the Starter as it
   // stood put this panel's tip 17 mm into her right shin on one climb frame of the hero-sweep bench (tools/gates/hero-sweep/bench.mjs,
   // every clip run in order); with the hem at 0.58 the bench reads 0 clipping frames in all 17 clips)
-  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.58, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 6, rows: 9, chain: chainR });
-  hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016, chain: chainB });
+  hangPanel(panels, hipField, J, { thC: Math.PI / 2 + 0.62, halfW: 0.058, yTop: 1.082, yHem: 0.58, side: 'r', thighW: 0.7, seed: 2, rag: 0.035, off: 0.011, cols: 12, teeth: 6, rows: 9, chain: chainR, folds: 1.5, foldDepth: 0.007 });
+  hangPanel(panels, hipField, J, { thC: -Math.PI / 2 + 0.12, halfW: 0.1, yTop: 1.082, yHem: 0.42, side: 'c', thighW: 0.42, seed: 3, rag: 0.05, off: 0.016, chain: chainB, cols: 16, teeth: 8, folds: 2.5, foldDepth: 0.016 });
   panels.density = 0.8;
   recomputeNormals(panels);
   // their other faces (the game culls back faces: a hanging panel seen from behind needs its own), and the scarf's inside
@@ -1567,7 +1574,7 @@ export async function panBase(opt = {}) {
   // (M1.2d fix round 1, the judge: "seen edge-on, the front panel becomes a thin stick ahead of the leg", "a paper-thin strip" in F09):
   // the panels are heavy cloth, their two faces 2.4 mm apart (1.1 before) and their edges a rolled hem 5.2 mm round on six sides
   // (M1a round 2, M1.2g: four sides, not six: a 5 mm roll reads round at 2.5 m either way, and the hems were 1.9 k triangles)
-  rimTubes(hems, panels, { r: 0.0026, sides: 4, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06 });
+  rimTubes(hems, panels, { r: 0.0026, sides: 4, rect: trim.rect('bind'), skip: (p) => p[1] > 1.06, rAt: (q) => 1 + 0.75 * (panels.hemK?.[q.i] || 0) });
   // fingerless gloves: dark leather from 3 cm up the wrist to half way along the first finger bones, edges rolled
   const glove = mk('glove', { trim: true });
   for (const s of ['l', 'r']) gloveShell(glove, fitBody, jp, { side: s, rect: trim.rect('strapB') });

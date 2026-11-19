@@ -110,14 +110,17 @@ export function bodyShell(part, body, inside, { off = 0.002, rect, span = [0.2, 
  * A rolled hem round every open edge of `sheet` (loops of 4 or more points), into `into` (a trim part): a tube of
  * radius `r` centred on the edge, so the edge reads `2 r` thick. Skin from the sheet itself.
  */
-export function rimTubes(into, sheet, { r = 0.0016, rect, sides = 4, minLen = 4, tile = 0.12, skip = null, inset = 0 } = {}) {
+export function rimTubes(into, sheet, { r = 0.0016, rect, sides = 4, minLen = 4, tile = 0.12, skip = null, inset = 0, rAt = null } = {}) {
   const skin = new Field([sheet], 0.03);
   for (const run of openEdges(sheet)) {
     if (run.length < minLen) continue;
     const pts = run.map((q) => (inset ? V.sub(q.p, V.mul(V.norm(q.n), inset)) : q.p.slice()));
     if (skip && pts.every((p) => skip(p))) continue;
     const closed = V.len(V.sub(run[0].p, run[run.length - 1].p)) < 0.02 && run.length > 6;
-    tubeInto(into, pts, r, { sides, closed, rect, skin, tile });
+    // (cloth round 6: `rAt(q)`, a radius multiplier per edge vertex, eased along the run: the sash panels' weighted hem)
+    let radiusAt = null;
+    if (rAt) { const k = run.map((q) => rAt(q)), m = run.length - 1 + (closed ? 1 : 0); radiusAt = (f) => k[Math.round(f * m) % run.length]; }
+    tubeInto(into, pts, r, { sides, closed, rect, skin, tile, radiusAt });
   }
   return into;
 }
@@ -278,30 +281,63 @@ export function scarfRoll(part, field, J, { cols = 36, sides = 7, cz = -0.035, s
  * deep. Skin: the pelvis at the top, the thigh it hangs over taking `thighW` of it at the hem (`side`: 'l', 'r', or
  * 'c' shared by x). A sheet part: u across in metres, v down from its top.
  */
-export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yTop = 1.075, yHem = 0.42, floorY = 0.82, off = 0.012, flare = 0.05, rows = 12, cols = 8, rag = 0.04, seed = 0, side = 'c', thighW = 0.6, rRef = 0.17, chain = null } = {}) {
+/**
+ * (cloth round 6) The sash panel's hanging folds: `folds` broad flutes across the panel, standing out from its sheet
+ * (outward only, so the sheet never comes nearer the legs than it was built), shallow under the belt where the cloth is
+ * gathered and deepest at the weighted hem, each wandering a little down its length. `s` across the panel (-1 to 1 at
+ * its edges), `y` the bind height, `t` down the panel (0 belt, 1 hem). Returns the crest value (0 a valley, 1 a crest)
+ * and the depth (m) the crest stands out. The texture painter (outfit-pan-1.mjs `panel`) shades the same folds.
+ */
+export function sashFold({ folds = 2, seed = 0, depth = 0.016 } = {}, s, y, t) {
+  const ph = Math.PI * folds * (s + 1) + 0.55 * Math.sin(y * 5.3 + seed * 1.7) + 0.9 * (noise3(seed * 2.1, y * 2.4, 7.3) - 0.5);
+  const f = 0.5 + 0.5 * Math.cos(ph);
+  return { f, d: depth * (0.18 + 0.82 * sstep(0.0, 0.85, t)) };
+}
+
+export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yTop = 1.075, yHem = 0.42, floorY = 0.82, off = 0.012, flare = 0.05, rows = 12, cols = 8, rag = 0.04, seed = 0, side = 'c', thighW = 0.6, rRef = 0.17, chain = null, folds = 0, foldDepth = 0.016, teeth = 0 } = {}) {
   const cz = -0.02;
   const jP = J('pelvis'), jL = J('thigh_l'), jR = J('thigh_r');
-  const hem = (c) => {
-    const u = c / cols;
+  // (cloth round 6: `teeth`, the sheet's own column count when it is laid at more columns than that: the torn hem's
+  //  teeth and the sheet's surface are read at `teeth` and the finer columns lie between them, so its edge and its
+  //  surface stay the coarser sheet's)
+  const tooth0 = (c) => {
+    const tc = teeth || cols, u = c / tc;
     // torn: a long tooth here and there, a short one beside it; the outer corners worn shorter
     const n1 = noise3(c * 1.37 + seed * 5.1, 0.7, 2.3), n2 = noise3(c * 0.41 + seed, 4.1, 8.8);
     const tooth = (c % 2 ? -0.55 : 0.25) * rag + (n1 - 0.5) * 1.3 * rag + (n2 > 0.66 ? -0.9 * rag : 0);
     return yHem + tooth + 0.6 * rag * (2 * Math.abs(u - 0.5)) ** 3;
   };
-  const prev = new Float64Array(cols + 1);
-  const rowsR = [];
+  // the sheet as it was laid at `teeth` columns (or `cols`): its radius per column, the shallow noise folds, the flare
+  const C0 = teeth || cols;
+  const prev = new Float64Array(C0 + 1);
+  const rows0 = [];
   for (let r = 0; r <= rows; r++) {
     const t = r / rows;
     const row = [];
-    for (let c = 0; c <= cols; c++) {
-      const y = r === rows ? hem(c) : mix(yTop, yHem, t);
+    for (let c = 0; c <= C0; c++) {
+      const y = r === rows ? tooth0(c) : mix(yTop, yHem, t);
       const w = halfW * (1 - narrow * t);
-      const th = thC + ((c / cols) * 2 - 1) * w / rRef;
+      const th = thC + ((c / C0) * 2 - 1) * w / rRef;
       let rad = (field.radial(Math.max(y, floorY), th, 0, cz, 0.02, 0.1) || rRef) + off;
       if (r > 0) rad = Math.max(rad, prev[c] + flare * (yTop - yHem) / rows);
       // modelled folds, hanging straight; outward only, deeper low down
-      rad += 0.007 * fold01(noise3(((c / cols) * 2 - 1) * w * 9 + seed * 3.3, y * 1.6, 4.4 + seed)) * sstep(0.05, 0.6, t);
+      rad += 0.007 * fold01(noise3(((c / C0) * 2 - 1) * w * 9 + seed * 3.3, y * 1.6, 4.4 + seed)) * sstep(0.05, 0.6, t);
       prev[c] = rad;
+      row.push({ th, y, rad });
+    }
+    rows0.push(row);
+  }
+  // (cloth round 6) at `cols` columns: the same sheet, each finer column on the straight run between two of its own
+  //  (bearing, height and radius interpolated, so its surface and the grid cloth built from it are the 8-column sheet's),
+  //  and over it the broad hanging folds of `sashFold`, about that surface (half out, half in: their mean is the sheet)
+  const rowsR = [];
+  for (let r = 0; r <= rows; r++) {
+    const t = r / rows, row = [];
+    for (let c = 0; c <= cols; c++) {
+      const q = c * C0 / cols, q0 = Math.min(C0 - 1, Math.floor(q)), f = q - q0, A = rows0[r][q0], B = rows0[r][q0 + 1];
+      const th = mix(A.th, B.th, f), y = mix(A.y, B.y, f);
+      let rad = mix(A.rad, B.rad, f);
+      if (folds > 0) { const F = sashFold({ folds, seed, depth: foldDepth }, (c / cols) * 2 - 1, y, t); rad += F.d * (F.f - 0.5); }
       row.push({ th, y, rad });
     }
     rowsR.push(row);
@@ -318,6 +354,11 @@ export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yT
       // the chain's joints rides the upper one, blended over a quarter span either side of each joint; the belt row
       // stays on the pelvis. The legs push the chain (the animator's thigh and shin colliders), not the skin
       const [j4, w4] = chainSkin(chain, y, jP);
+      // (cloth round 6: the belt row keeps 2 % on the chain's root. The grid cloth (src/entities/anim/cloth/rig.js) finds a
+      //  panel's top as its highest vertex with any weight on the chain; at 8 columns the side rims' blended skin gave the
+      //  belt row's corners 2 % and the top sat on the belt, at 16 nothing did and the grid's pinned row fell 6 cm, to the
+      //  second row. Said here, it no longer hangs on how the rims blend)
+      if (r === 0 && folds > 0 && w4[1] === 0) { j4[1] = chain.joints[0]; w4[0] = 0.98; w4[1] = 0.02; }
       part.jnt.push(...j4); part.wgt.push(...w4);
     } else if (side === 'c') {
       const s = sstep(-0.04, 0.04, p[0]);
@@ -333,7 +374,11 @@ export function hangPanel(part, field, J, { thC, halfW = 0.09, narrow = 0.15, yT
     const a = base + r * cc + c, b = a + 1, d = a + cc, e = d + 1;
     part.idx.push(a, b, d, b, e, d);
   }
-  (part.panels ||= []).push({ thC, rRef, yTop, yHem, halfW, seed });
+  // (cloth round 6: each vertex's share of the weighted hem, 1 on the torn edge, for the heavier hem roll: rimTubes `rAt`)
+  if (!part.hemK) part.hemK = [];
+  while (part.hemK.length < base) part.hemK.push(0);
+  for (let r = 0; r <= rows; r++) for (let c = 0; c <= cols; c++) part.hemK.push(r === rows ? 1 : 0);
+  (part.panels ||= []).push({ thC, rRef, yTop, yHem, halfW, seed, folds, foldDepth });
   return part;
 }
 
