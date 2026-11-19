@@ -17,7 +17,7 @@ import { saveFieldsOf } from '../../game/save/fields.js';
  *
  * A wall's state change (cut, or the line painted or cleared) rebuilds the wall mesh and that wall's colliders and
  * occluders on the next update. The walls' state rides the save as the 'walls' field (src/game/save/fields.js).
- * Built at boot for the blockout (about 6 k triangles, 2 draws); it moves behind region-enter('holds') with the kit.
+ * Built at boot for the blockout (about 11 k triangles, 2 draws); it moves behind region-enter('holds') with the kit.
  */
 
 const GREY_WALL = new THREE.Color(0x8f8a82), GREY_TOP = new THREE.Color(0xa29d94), LINE = new THREE.Color(0xc8401e);
@@ -49,13 +49,14 @@ function paint(g, color) {
 }
 
 /**
- * One wall as a ribbon along its stations: each face in rows foot | line foot | line top | top (the line rows carry
- * the vermilion when painted), the top, and the two ends. Non-indexed, flat colours per row.
+ * One wall as a ribbon along its stations: each face in rows foot | line foot | line top | top on a painted wall (the
+ * middle row the vermilion), one row foot | top on an unpainted one; the top, and the two ends. Non-indexed, flat colours per row.
  */
 function wallGeometry(w, ground, state, painted) {
   const st = L.stations(w, 1.25), top = L.topOf(w, state), pos = [], col = [];
   const lo = w.lineH - w.lineW / 2, hi = w.lineH + w.lineW / 2;
-  const rows = [[-0.35, lo, GREY_WALL], [lo, hi, painted ? LINE : GREY_WALL], [hi, top, GREY_WALL]].filter(([a, b]) => b > a + 1e-3);
+  // a painted wall carries the line's two rows; an unpainted one is one row foot to top
+  const rows = (painted ? [[-0.35, lo, GREY_WALL], [lo, hi, LINE], [hi, top, GREY_WALL]] : [[-0.35, top, GREY_WALL]]).filter(([a, b]) => b > a + 1e-3);
   const pt = (s, side) => { const d = L.dirOf(s.b), o = side * w.t / 2; return { x: s.x + d.x * o, z: s.z + d.z * o }; };
   const foot = st.map((s) => ground(s.x, s.z));
   const quad = (a, b, c, d, color) => {
