@@ -803,13 +803,48 @@ export class WalkGrid {
     for (const d of this.discs) this._disc(d.x, d.z, d.r + pad, 4);
     this.stats.colliders = nCol;
     this.stats.builds++;
-    this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
     this.dirty = false;
+    this._compStale = true;
+    this._components();
+    this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
     return this;
+  }
+
+  /**
+   * M2 fix wave (engine, EN1: the first hour's hitches): the open cells' connected parts, labelled once per build (a
+   * 4-neighbour flood: path()'s diagonal step needs both of its sides open, so two cells are joined by a path exactly when
+   * they are joined 4-wise). path() asks it before the search: a goal in another part has no path, and the search found
+   * that only after expanding every cell of the start's part (94,682 open cells at Ninewalls: 18-20 ms in Node per miss;
+   * the trailing youths' re-routes to a mark on the herd's slope cost the first-hour leg 2 frames of 34-44 ms, run
+   * hh-266e6b9). The answer is the same; only the cost changes. Cleared by any cell shut after the build.
+   */
+  _components() {
+    if (this._comp && !this._compStale) return this._comp;
+    const n = this.open.length, nx = this.nx, open = this.open;
+    const comp = (this._comp && this._comp.length === n) ? this._comp : new Int32Array(n);
+    comp.fill(-1);
+    const stack = this._compStack && this._compStack.length >= n ? this._compStack : (this._compStack = new Int32Array(n));
+    let label = 0;
+    for (let s0 = 0; s0 < n; s0++) {
+      if (!open[s0] || comp[s0] >= 0) continue;
+      let sp = 0; stack[sp++] = s0; comp[s0] = label;
+      while (sp > 0) {
+        const i = stack[--sp], x = i % nx;
+        if (x > 0 && open[i - 1] && comp[i - 1] < 0) { comp[i - 1] = label; stack[sp++] = i - 1; }
+        if (x < nx - 1 && open[i + 1] && comp[i + 1] < 0) { comp[i + 1] = label; stack[sp++] = i + 1; }
+        if (i >= nx && open[i - nx] && comp[i - nx] < 0) { comp[i - nx] = label; stack[sp++] = i - nx; }
+        if (i + nx < n && open[i + nx] && comp[i + nx] < 0) { comp[i + nx] = label; stack[sp++] = i + nx; }
+      }
+      label++;
+    }
+    this._comp = comp; this._compStale = false;
+    this.stats.parts = label;
+    return comp;
   }
 
   _shut(i, w) {
     if (this.open[i] === 0) return;
+    this._compStale = true;
     this.open[i] = 0; this.why[i] = w;
     if (w === 3) this.stats.shut.collider++; else if (w === 4) this.stats.shut.disc++;
   }
@@ -910,6 +945,7 @@ export class WalkGrid {
     const P0 = startOpen ? { x: from.x, z: from.z } : { x: this.wx(start), z: this.wz(start) };
     const goalPt = this.index(to.x, to.z) === goal || this.lineOpen(this.wx(goal), this.wz(goal), to.x, to.z) ? { x: to.x, z: to.z } : { x: this.wx(goal), z: this.wz(goal) };
     if (this.lineOpen(P0.x, P0.z, goalPt.x, goalPt.z)) { out.push(P0, goalPt); return out; }
+    { const comp = this._components(); if (comp[start] !== comp[goal]) { this.stats.misses++; this.stats.partMisses = (this.stats.partMisses || 0) + 1; return null; } }
     const visit = ++this._visit, g = this._g, fr = this._from, seen = this._seen, closed = this._closed, heap = this._heap;
     heap.clear();
     const gx = goal % nx, gz = (goal / nx) | 0;
