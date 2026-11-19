@@ -9,6 +9,7 @@ import { liftExtras, seedAuthoredWeights, weightAudit } from '../lib/generated.j
 import { prepareEntry, installHull, hullOf } from '../lib/hull.js';
 import { prepareTools, detachTool, mountTool, glintAnchor, telegraphOnWindup, seatFeet } from '../lib/kindkit.js';
 import { scaleRig } from '../lib/scale.js';
+import { flinchEnvelope } from '../../combat/hitfeel.js';
 
 /**
  * PLUMB — BIBLE §7.4 #2 (small; the sentry, role `sentry`); BUILD M1.4c.
@@ -94,6 +95,20 @@ const _wp = new THREE.Vector3();
 const _wa = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _xAxis = new THREE.Vector3(1, 0, 0);
+/**
+ * M2 wave 0 (hit feel, D5): THE STRUCK BOB SWINGS AWAY. A hit within `r` (m, x scale) of the bob or its cable swings the
+ * pendulum `rad` about its top, away from the blow, on hit feel's flinch envelope (real clock: held through the freeze,
+ * then under 1 % by 400 ms; combat/hitfeel.js FLINCH). At edd1c95 the cable was the pendulum's alone (the gait's flinch
+ * is undone on it), so a lance hit at the bob moved it less in 80 ms than its own idle sway (0.107 m against 0.123 m:
+ * the kit's hit-feel-lance row).
+ */
+const BOB_KICK = Object.freeze({ rad: 0.22, r: 0.5 });
+const _bk0 = new THREE.Vector3();
+const _bk1 = new THREE.Vector3();
+const _bkQ = new THREE.Quaternion();
+const _bkP = new THREE.Quaternion();
+const _bkPi = new THREE.Quaternion();
+const _bkUp = new THREE.Vector3(0, 1, 0);
 
 export class Plumb extends ExpansionMachine {
   constructor(ctx, manager, opts = {}) {
@@ -324,11 +339,48 @@ export class Plumb extends ExpansionMachine {
     // longer stops in the air short of the glass; one stopped on a part outside that sphere is not a vial hit (the 0.45 m
     // priority reach of fix 1 counted those)
     const r = super.takeDamage(hit);
+    if (pt && this.alive && this._toppleT < 0) this._kickBob(pt, hit.dir);
     if (vial && this.alive && this._toppleT < 0) {
       this._vialHits++;
       if (this._vialHits >= TOPPLE.hits) this._topple(pt);
     }
     return r;
+  }
+
+  /** The bob's middle in the world (its mesh's origin is the top it hangs from), into `out`. */
+  _bobMid(out) {
+    const mesh = this._bob?.mesh;
+    if (!mesh) return null;
+    if (!this._bobMidL) {
+      let g = null;
+      mesh.traverse((o) => { if (!g && o.isMesh && o.geometry) g = o; });
+      if (!g) return mesh.getWorldPosition(out);
+      if (!g.geometry.boundingSphere) g.geometry.computeBoundingSphere();
+      this._bobMidO = g;
+      this._bobMidL = g.geometry.boundingSphere.center.clone();
+    }
+    return out.copy(this._bobMidL).applyMatrix4(this._bobMidO.matrixWorld);
+  }
+
+  /** A hit near the bob or its cable swings it away from the blow (BOB_KICK); read in `animate`. */
+  _kickBob(pt, dir) {
+    if (!this._bob || this._bob.attached === false || !dir) return;
+    const top = this.rig?.tail?.[0];
+    if (!top || !this._bobMid(_bk1)) return;
+    top.getWorldPosition(_bk0);
+    // the point's distance to the cable's line from its top to the bob's middle
+    const ax = _bk1.x - _bk0.x, ay = _bk1.y - _bk0.y, az = _bk1.z - _bk0.z, L2 = ax * ax + ay * ay + az * az;
+    let u = L2 > 1e-9 ? ((pt.x - _bk0.x) * ax + (pt.y - _bk0.y) * ay + (pt.z - _bk0.z) * az) / L2 : 0;
+    u = u < 0 ? 0 : u > 1 ? 1 : u;
+    const qx = _bk0.x + ax * u - pt.x, qy = _bk0.y + ay * u - pt.y, qz = _bk0.z + az * u - pt.z;
+    const lim = BOB_KICK.r * (this._scale || 1);
+    if (qx * qx + qy * qy + qz * qz > lim * lim) return;
+    // the swing's axis: (the blow, level) x up, so the bob (below its top) moves along the blow
+    const hx = dir.x, hz = dir.z, h = Math.hypot(hx, hz);
+    if (h < 1e-4) return;
+    if (!this._bobKickAx) this._bobKickAx = new THREE.Vector3();
+    this._bobKickAx.set(hx / h, 0, hz / h).cross(_bkUp).normalize();
+    this._bobKickT0 = performance.now() / 1000;
   }
 
   /**
@@ -457,6 +509,17 @@ export class Plumb extends ExpansionMachine {
     gait.rotX(t1, ax);
     gait.rotZ(t1, az);
     if (ax2 !== 0) gait.rotX(t2, ax2);
+    // a struck bob swings away (BOB_KICK): the world swing, carried into the cable top's parent frame
+    if (this._bobKickT0 != null) {
+      const env = flinchEnvelope(performance.now() / 1000 - this._bobKickT0);
+      if (env < 0.002 || !t1.parent) this._bobKickT0 = null;
+      else {
+        t1.parent.getWorldQuaternion(_bkP);
+        _bkQ.setFromAxisAngle(this._bobKickAx, BOB_KICK.rad * env);
+        _bkQ.premultiply(_bkPi.copy(_bkP).invert()).multiply(_bkP);
+        t1.quaternion.premultiply(_bkQ);
+      }
+    }
   }
 }
 

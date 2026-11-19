@@ -615,7 +615,9 @@ export async function runKit(page, { sleep, log = () => {}, only = null, skip = 
   await run('hit-feel-lance', async () => {
     const st0 = await page.evaluate(ev(`${HF}
       window.__HFL = null;
-      const b = base(); const m = spawn('plumb', b.x + 6, b.z + 16); await frames(30); K.m = m; calm(m);
+      // M2 wave 0 (instruments, the smallest change): the Plumb stands STILL (spawn's still, as hit-feel and plumb-arrows):
+      // at 804543d it walked its patrol through the row's 50 frames and the swing struck nothing (staged at 2.338 m)
+      const b = base(); const m = spawn('plumb', b.x + 6, b.z + 16, true); await frames(30); K.m = m; calm(m);
       const c = wpos(m.body || m.root), dx = P.position.x - c.x, dz = P.position.z - c.z, L = Math.hypot(dx, dz) || 1;
       place(c.x + dx / L * 2.3, c.z + dz / L * 2.3, c.x, c.z); P.camPitch = 0.1; C.input.enabled = true;
       await frames(20);
