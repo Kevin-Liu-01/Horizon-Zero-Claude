@@ -31,4 +31,20 @@ export const GATES = [
       return { pass: s.people.length > 0 && worst <= 0.02 && all <= 0.30, detail: { ...s, worstPersonMs: +worst.toFixed(4), allClothMs: +all.toFixed(4) } };
     })()`,
   },
+  // (cloth round 6) the Holds people (F36's street at work) and Oro (F37) on the same bars, from the cHolds and cOro clips
+  ...[['C-holds-cost', '__holdsStats', 'cHolds', 'the Holds people at work in view (F36 staging)'], ['C-oro-apron', '__oroStats', 'cOro', "Oro beside her (F37 staging), his apron on the solver"]].map(([id, key, clip, what]) => ({
+    id, kind: 'action', lane: 'cloth', timeout: 20000,
+    title: `Cloth cost with ${what}: a near person <= 0.02 ms mean, all cloth <= 0.30 ms` + (id === 'C-oro-apron' ? '; his apron chains on the shared solver' : ''),
+    setup: '',
+    assert: `(() => {
+      const s = window.${key};
+      if (!s) return { pass: false, detail: { reason: 'no ${clip} clip ran before this row (session --clips-first --clips ${clip})' } };
+      const per = s.people.map((q) => q.timing?.mean || 0), worst = per.length ? Math.max(...per) : 0;
+      const all = (s.brea?.mean || 0) + s.peopleMeanSum;
+      const oro = (s.cast || []).find((q) => /oro/.test(q.arch || q.id || ''));
+      const apron = !!(oro && Array.isArray(oro.strands) && oro.strands.some((n) => /apron/.test(n)));
+      const ok = s.people.length > 0 && worst <= 0.02 && all <= 0.30 && (${id === 'C-oro-apron'} ? apron : true);
+      return { pass: ok, detail: { ...s, worstPersonMs: +worst.toFixed(4), allClothMs: +all.toFixed(4), oroApronOnSolver: apron } };
+    })()`,
+  })),
 ];
