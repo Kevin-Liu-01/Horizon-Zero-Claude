@@ -536,8 +536,21 @@ async function driveScreed(page, K, stage, maxS = 120) {
 async function driveRest(page, K) {
   const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('ninewalls'); return b ? { x: b.obj.position.x, z: b.obj.position.z, seat: b.obj.seat ? { x: b.obj.seat.x, z: b.obj.seat.z } : null } : null; });
   if (!A) return { ok: false, why: 'no Ninewalls Brazier' };
+  const out = {};
+  // the Pegs that came to look are still on her after the re-survey (d5018f4 leg 3: SPOTTED at the Brazier, 67 -> 35 hp,
+  // the kindle's hold broken): a player puts their lamps out before she sits, as the slice's Peg line is played
+  const lookers = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).length);
+  if (lookers) {
+    await page.evaluate(() => { window.__probeQuest = 'true-ground'; });
+    try {
+      const B = await page.evaluate(() => window.__CTX__.systemsGame.A.b1);
+      const f = await SH.fight(page, K, 'peg', 'lamp', null, { stand: 18, maxS: 100, all: true, near: B, nearR: 110 });
+      out.lookers = { n: lookers, ok: f.ok, why: f.why ?? null, fired: f.fired, hp: (await page.evaluate(where)).hp };
+    } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
+    await SH.drink(page, K, 90);
+  }
   const w = await walkPath(page, A.seat ?? A, 1.6, 60);
-  const out = { walk: { ok: w.ok, why: w.why ?? null } };
+  out.walk = { ok: w.ok, why: w.why ?? null };
   const mode = () => page.evaluate(() => window.__CTX__.braziers.dialog('ninewalls')?.mode ?? null);
   out.mode0 = await mode();
   if (out.mode0 === 'kindle') { await SH.holdE(page, K, 2400); await sleep(400); out.kindled = await page.evaluate(() => window.__CTX__.braziers.lit.has('ninewalls')); }
