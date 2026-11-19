@@ -1922,7 +1922,7 @@ poses as at the wave 2 review, **0 fail**.
 - **The lane frames:**
   - F38, F39, F40, F40-front, F41, F42, F42-light and F43 are new.
   - F40-open is further: the fan opens downward now and is cut off at the frame's foot.
-  - F42's Sickle is lost in the tall grass.
+  - F42's Sickle is lost in the high meadow.
   - F36 shows one person at work, against a target of 5.
   - F44 has its stand-ins: no planted Windwall.
 
