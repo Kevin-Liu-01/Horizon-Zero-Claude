@@ -656,7 +656,12 @@ export async function stageFrame(f, o = {}) {
   const SIM_POSES = ['run', 'lanceHeavy', 'draw', 'crouchAim'];
   // (M2 wave 0, D10, engine) F14's idle on simulation time too (M2 brief rule 2: a re-anchored frame is staged on sim
   // time): the slate's 1.5 s of idle from its constructor clocks (the fidget timer at 6 s, so no break starts), frozen
-  const SIM_IDLE = ['F14'];
+  // (M2 fix wave 2, hero-anim, the smallest change in the frames' file: ruling 1, F08, F11 and F13 back to their anchors.
+  //  Their idle is not touched by the lance's head-on-her-line change (meleeLayer returns before the head at weight 0);
+  //  on the wall clock the idle's breaks and the look layer's damping land her head anywhere from frontal to well
+  //  turned: the F11 films at aba90a3, 1130696 and a9c481d differ by more than fa45e47 and 02f7125 with no idle code
+  //  between them. On simulation time from the constructor clocks no break starts and the head repeats)
+  const SIM_IDLE = ['F14', 'F08', 'F11', 'F13'];
   const onSim = SIM_POSES.includes(pose) || (pose === 'idle' && SIM_IDLE.includes(f.id));
   const sim = onSim && o.wallClock !== true ? simClock() : null;
   if (onSim && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
