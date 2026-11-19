@@ -32,6 +32,7 @@ import { takeMachineSlot, releaseMachineSlot, machineMemory } from '../chrome-sl
 import { assertOutsideRepo } from '../frames/paths.mjs';
 import { stageFrame, unstageFrame } from '../frames/page.mjs';
 import { loadFrameSet } from '../frames/frameset.mjs';
+import { loadLanes, mergeFrames, installStagings } from '../frames/stagings/index.mjs';
 
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -49,6 +50,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return null; } };
 const load1 = () => Math.round(os.loadavg()[0] * 100) / 100;
 mkdirSync(OUT, { recursive: true });
+const LANES = await loadLanes();
+if (LANES.errors.length) { for (const e of LANES.errors) console.error('stagings:', e); process.exit(1); }
 
 const run = { tool: 'tools/perf/attrib.mjs', commit: git('rev-parse', '--short', 'HEAD'), dirty: (git('status', '--porcelain', '--untracked-files=no') || '').split('\n').filter(Boolean),
   tree: REPO, port: PORT, vsync: VSYNC, probe: PROBE, standIns: [...STANDINS], load1: { start: load1() }, viewport: { width: 1600, height: 900, dpr: 1.25 }, startedAt: new Date().toISOString(), frames: [], console: [] };
@@ -101,6 +104,7 @@ async function boot() {
   await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });
   await sleep(6000);
+  if (Object.keys(LANES.hooks).length) await installStagings(page, LANES);   // M2: lane frames (F33...) as film.mjs stages them
   run.launches.push({ at: new Date().toISOString(), bootS: Math.round((Date.now() - t0) / 1000), memory: machineMemory(), swapFreeMB: swapFreeMB() });
 }
 /** Swap free (MB): the mem-guard also kills gate Chromes on a near-full swap (free < 500 MB with pressure 2 or free < 45 %). */
@@ -108,7 +112,7 @@ const swapFreeMB = () => { try { const m = /free = ([\d.]+)M/.exec(execFileSync(
 const calm = () => machineMemory().ok && (swapFreeMB() ?? 1e9) >= 600;
 const alive = () => !!(browser && browser.connected !== false && page && !page.isClosed());
 try {
-  const set = loadFrameSet();
+  const set = mergeFrames(loadFrameSet(), LANES, { only: new Set(FRAMES) });
   const queue = FRAMES.slice();
   const tries = new Map();
   let relaunches = 0, died = false;
