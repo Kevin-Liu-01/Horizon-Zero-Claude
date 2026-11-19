@@ -89,6 +89,8 @@ export class Tools {
     ctx.input.onDown('KeyF', () => {
       // F belongs to dismount while riding — machine-ai owns that binding
       if (ctx.machines?.mounted || ctx.player?.mounted) return;
+      // (M2 area D, the smallest change: once Oro's pots are hers F casts a pot, src/combat/kitverbs.js)
+      if (ctx.combat?.pots?.owned) return;
       if (live()) this.use();
     });
     ctx.input.onDown('BracketRight', () => { if (live()) this.cycle(1); });
