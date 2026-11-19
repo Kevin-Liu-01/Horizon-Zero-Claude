@@ -48,6 +48,123 @@ export const FRAMES = [
 ];
 
 /**
+ * M2 WAVE 3, BEHAVIOUR: F38 (the lee walk) and F39 (the Screed fight). Both stand their machines up in `world` with the
+ * game's own kinds and then HOLD them (update off, as page.mjs holds a line-up actor after its settle), so nothing in
+ * frame moves but the wind and the cloth: a wall-clock staging that two repeats can grade (M2 rule 2), not yet the
+ * sim-time walk itself (that is the A-moving-cover and A-screed-fight rows').
+ *   F38  the herd's slope below the Plumb's terrace (src/world/holds/blockout.js HERD_SLOPE, PLUMB_TERRACE): three
+ *        Tillers in file at 9.5 m on the slope's bearing, the middle one 90 % of the way up; the Plumb on its terrace
+ *        45 m off, calm; Brea crouched 0.7 m off the middle hull's far flank (the lee), facing up the file. No seed-bag
+ *        youth (the Holds people are area B's): a stand-in.
+ *   F39  the Screed stalled on the outer wall at compass 45 deg from Ninewalls' centre (its blade at wall-1's face),
+ *        its brain set to the stall (blade planted at its working height); three Sickles circling her at 9-14 m
+ *        (sickle-rules.js circlePos at 1 s); Brea 9 m off its right side, facing it. No people, no dust: stand-ins.
+ */
+const HERD = (() => {
+  const a = { e: -140, n: -205 }, b = { e: -65, n: -145 }, de = b.e - a.e, dn = b.n - a.n, L = Math.hypot(de, dn), ue = de / L, un = dn / L;
+  const mid = { e: a.e + de * 0.9, n: a.n + dn * 0.9 };
+  return { ue, un, mid, brea: { e: mid.e + un * 1.4, n: mid.n - ue * 1.4 }, bearing: Math.atan2(ue, un) * 180 / Math.PI };
+})();
+FRAMES.push(
+  {
+    id: 'F38', subject: 'the lee walk: Brea crouched beside a Tiller hull, the Plumb on the terrace beyond', in: 'M2', hour: 16.5, weather: 'trade',
+    at: { en: [+HERD.brea.e.toFixed(2), +HERD.brea.n.toFixed(2)] }, bearing: +HERD.bearing.toFixed(1),
+    camera: { mode: 'orbit', yawRel: 218, dist: 4.6, height: 1.5, target: { fwd: 3.5, side: 2.0, up: 1.3 }, fov: 60 },
+    state: { pose: 'crouch', hud: false },
+    ref: { written: 'her whole figure inside the hull\'s shadow from the Plumb\'s lamp; >= 3 hulls in file; a seed-bag youth behind; the Plumb\'s lamp bone-gold' },
+    note: 'M2 wave 3: three Tillers in file on the herd\'s slope, the Plumb on its terrace 45 m off (calm, bone-gold), Brea crouched in the middle hull\'s lee; the machines are held for the frame. The youth is a stand-in (no Holds people yet).',
+  },
+  {
+    id: 'F39', subject: 'the Screed fight: the Screed stalled on Ninewalls\' outer wall, three Sickles, Brea', in: 'M2', hour: 16.5, weather: 'trade',
+    at: { en: [44.83, -169.9] }, bearing: 321,
+    camera: { mode: 'orbit', yawRel: 160, dist: 7.5, height: 2.6, target: { fwd: 7, side: 0.5, up: 1.8 }, fov: 60 },
+    state: { pose: 'idle', hud: false },
+    ref: { written: 'scale and dust only, against the masked fight panel (no crop cut yet; the red eye and the animal body masked)' },
+    note: 'M2 wave 3: the Screed (3.8 m) stalled with its blade on wall-1, three Sickles circling her, Brea 9 m off its right side. No dust yet (the cut order keeps the Screed\'s size and look); no people: stand-ins.',
+  },
+);
+
+const holdF38 = {
+  async world(f, api) {
+    const C = api.C, M = C.machines;
+    const t0 = performance.now();
+    while (!M?.expansionReady && performance.now() - t0 < 60000) await api.sleep(200);
+    const V = C.player.position.constructor, hy = (x, z) => C.terrain.getHeight(x, z);
+    const made = [];
+    const gone = (m) => { try { if (M.sites?.dispose) M.sites.dispose(m); else m.dispose?.(); } catch { try { m.dispose?.(); } catch { /* */ } } };
+    api.undo(() => { for (const m of made) gone(m); });
+    // world x = e, z = -n (ISLAND_SCALE 1); the file's heading in the game's convention atan2(dx, dz)
+    const ue = 0.7809, un = 0.6247;
+    const mid = { x: -72.5, z: 151 }, hd = Math.atan2(ue, -un);
+    const herd = { center: new V(mid.x, 0, mid.z), vector: new V(ue, 0, -un), alarmed: false, rearguard: null, members: [] };
+    M.squads?.registerHerd?.(herd);
+    for (let i = -1; i <= 1; i++) {
+      const x = mid.x + ue * 9.5 * i, z = mid.z - un * 9.5 * i;
+      const m = M.spawn('tiller', x, z, { herd, heading: hd, route: [new V(x, 0, z)] });
+      if (!m) { api.standIn('a Tiller did not stand up'); continue; }
+      M.squads?.join?.(m, herd, 'herd');
+      m.heading = hd; m.root.position.set(x, hy(x, z), z); m.root.rotation.y = hd;
+      made.push(m);
+    }
+    const pl = M.spawn('plumb', -70, 107);
+    if (pl) {
+      const ph = Math.atan2(C.player.position.x + 70, C.player.position.z - 107);
+      pl.heading = ph; pl.root.position.set(-70, hy(-70, 107), 107); pl.root.rotation.y = ph; made.push(pl);
+    } else api.standIn('the terrace Plumb did not stand up');
+    await api.sleep(600);
+    for (const m of made) {
+      try { m.seatFeet?.(); } catch { /* */ }
+      m.suspicion = 0; if (m.sc) m.sc.suspicion = 0; m._unseenT = 99; if (m.state !== 'patrol') m.setState?.('patrol');
+      const u0 = m.update; m.update = function () {}; api.undo(() => { m.update = u0; });
+    }
+    api.standIn('no seed-bag youth (no Holds people in this build): area B');
+    window.__f38 = { tillers: made.filter((m) => m.kind === 'tiller').length, plumb: !!pl, plumbDist: pl ? +Math.hypot(pl.position.x - C.player.position.x, pl.position.z - C.player.position.z).toFixed(1) : null };
+  },
+};
+
+const holdF39 = {
+  async world(f, api) {
+    const C = api.C, M = C.machines;
+    const t0 = performance.now();
+    while (!M?.expansionReady && performance.now() - t0 < 60000) await api.sleep(200);
+    const V = C.player.position.constructor, hy = (x, z) => C.terrain.getHeight(x, z);
+    const made = [];
+    const gone = (m) => { try { if (M.sites?.dispose) M.sites.dispose(m); else m.dispose?.(); } catch { try { m.dispose?.(); } catch { /* */ } } };
+    api.undo(() => { for (const m of made) gone(m); });
+    const NW = await import('/src/world/settlements/ninewalls-layout.js');
+    NW.resetWalls(); api.undo(() => NW.resetWalls());
+    const S = await import('/src/instruments/kinds/sickle-rules.js');
+    const at = { x: 39.17, z: 162.83 }, hd = -0.7854;
+    const sc = M.spawn('screed', at.x, at.z, { heading: hd });
+    if (sc && sc.brain) {
+      made.push(sc);
+      const B = sc.brain;
+      B.x = at.x; B.z = at.z; B.heading = hd; B.phase = 'stall'; B.phaseT = 0.8; B.bladeY = 0.85;
+      sc.heading = hd; sc.root.position.set(at.x, hy(at.x, at.z), at.z); sc.root.rotation.y = hd;
+      sc.setState?.('alert');
+    } else api.standIn('the Screed did not stand up as the live kind');
+    const P = C.player.position;
+    for (let i = 0; i < 3; i++) {
+      const q = S.circlePos(i, 3, 1.0, P.x, P.z);
+      const h = Math.atan2(P.x - q.x, P.z - q.z);
+      const m = M.spawn('sickle', q.x, q.z, { heading: h });
+      if (!m) { api.standIn('a Sickle did not stand up'); continue; }
+      m.heading = h; m.root.position.set(q.x, hy(q.x, q.z), q.z); m.root.rotation.y = h;
+      made.push(m);
+    }
+    // a few frames of the machine stack (the gait seats the legs, the lamps take the state), then held
+    await api.sleep(500);
+    for (const m of made) {
+      try { m.seatFeet?.(); } catch { /* */ }
+      if (m.kind === 'sickle') { m.setState?.('alert'); }
+      const u0 = m.update; m.update = function () {}; api.undo(() => { m.update = u0; });
+    }
+    api.standIn('no people at the fight and no dust (the cut order keeps the Screed\'s size and look)');
+    window.__f39 = { screed: !!sc, sickles: made.filter((m) => m.kind === 'sickle').length, screedToHer: sc ? +Math.hypot(sc.position.x - P.x, sc.position.z - P.z).toFixed(1) : null };
+  },
+};
+
+/**
  * Before the freeze (page.mjs step 9): an orbit lens replaces the play camera's own update (page.mjs `ownLens`), so
  * the hero's occlusion fade is never computed again for the frame and stays at whatever the last play-camera frame
  * left (wave 1: Brea screen-door dithered in F23-tiller, both repeats). The line-up frames record that value and set
@@ -68,7 +185,7 @@ const unfade = {
 };
 
 /** @type {Record<string, { world?: Function, beforeFreeze?: Function }>} in-page hooks per frame id */
-export const STAGINGS = { 'F23-tiller': unfade, 'F23-sickle': unfade, 'F23-screed': unfade };
+export const STAGINGS = { 'F23-tiller': unfade, 'F23-sickle': unfade, 'F23-screed': unfade, F38: holdF38, F39: holdF39 };
 
 /** @type {Record<string, 'sim' | 'wall'>} */
-export const STAGED = { 'F23-tiller': 'wall', 'F23-sickle': 'wall', 'F23-screed': 'wall' };   // a standing blockout: nothing moves
+export const STAGED = { 'F23-tiller': 'wall', 'F23-sickle': 'wall', 'F23-screed': 'wall', F38: 'wall', F39: 'wall' };   // held machines: nothing moves but the wind and the cloth
