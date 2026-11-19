@@ -123,31 +123,80 @@ const pageNow = async (cdp) => {
 };
 const shortUrl = (u) => (u || '').replace(/^.*\/(src|node_modules|tools)\//, '$1/').replace(/\?.*$/, '');
 
-/** Attribute one profile chunk's samples to the long frames inside it (cpu: self and inclusive ms per function). */
-function attribute(L, prof, offMs, spread) {
+/**
+ * Attribute one profile chunk's samples to the long frames inside it. The chunk's clock is put on the page's by the
+ * game's own frames: each run of samples under main.js `_frame` is one frame's callback (a SEGMENT); the offset that
+ * lines the most long frames up with a segment ending just before their rAF (within 6 ms) wins, searched around the
+ * readings' estimate (Profiler.start itself takes ~100 ms, so the readings alone are too loose). Each long frame then
+ * gets `cpu` from the segment that ends inside its interval: self and inclusive ms per function. `segments` keeps the
+ * chunk's longest segments whether or not a long frame was matched to them.
+ */
+function attribute(L, prof, offGuess, spread) {
   const nodes = new Map(); for (const n of prof.nodes) nodes.set(n.id, n);
   const parent = new Map(); for (const n of prof.nodes) for (const c of n.children || []) parent.set(c, n.id);
   const label = (n) => { const f = n.callFrame; return `${f.functionName || '(anon)'} ${shortUrl(f.url)}:${f.lineNumber + 1}`; };
-  const t0 = prof.startTime / 1000 - offMs;   // the chunk's start on the page's clock
+  const inFrame = new Map();
+  const isFrame = (id) => {
+    if (inFrame.has(id)) return inFrame.get(id);
+    const n = nodes.get(id); const f = n.callFrame;
+    const v = (f.functionName === '_frame' && /src\/main\.js/.test(f.url)) || (parent.has(id) ? isFrame(parent.get(id)) : false);
+    inFrame.set(id, v); return v;
+  };
   let ts = prof.startTime;
-  const times = prof.samples.map((_, i) => (ts += prof.timeDeltas[i]) / 1000 - offMs);
-  const tEnd = prof.endTime / 1000 - offMs;
-  for (const f of L.long) {
-    if (f.cpu || f.t < t0 || f.t - f.d > tEnd) continue;
-    const a = f.t - f.d - 2, b = f.t + 2, self = {}, incl = {};
-    let n = 0, idle = 0;
-    for (let i = 0; i < prof.samples.length; i++) {
-      const tt = times[i]; if (tt < a || tt > b) continue;
+  const times = prof.samples.map((_, i) => (ts += prof.timeDeltas[i]) / 1000);   // profile clock, ms
+  // the segments: runs of _frame samples, gaps under 2.5 ms
+  const segs = []; let cur = null;
+  for (let i = 0; i < prof.samples.length; i++) {
+    if (!isFrame(prof.samples[i])) continue;
+    const t = times[i];
+    if (cur && t - cur.b <= 2.5) { cur.b = t; cur.i1 = i; } else { cur = { a: t, b: t, i0: i, i1: i }; segs.push(cur); }
+  }
+  const long = L.long.filter((f) => f.d > 28 && f.d < 300);
+  // the offset: page = profile - off. Candidates from every (long frame, segment) pair near the guess
+  let best = { off: offGuess, hits: -1 };
+  const bigSegs = segs.filter((g) => g.b - g.a > 12);
+  for (const f of long) for (const g of bigSegs) {
+    const off = g.b - (f.t - 1);
+    if (Math.abs(off - offGuess) > spread / 2 + 40) continue;
+    let hits = 0;
+    for (const f2 of long) if (bigSegs.some((g2) => { const e = g2.b - off; return e <= f2.t + 2 && e >= f2.t - 8; })) hits++;
+    if (hits > best.hits) best = { off, hits };
+  }
+  const off = best.off;
+  const summarize = (i0, i1) => {
+    const self = {}, incl = {};
+    let ms = 0;
+    for (let i = i0; i <= i1; i++) {
       const dt = (prof.timeDeltas[i + 1] ?? PROFILE_US) / 1000;
-      let node = nodes.get(prof.samples[i]); n++;
+      const node = nodes.get(prof.samples[i]);
       const fn = node.callFrame.functionName;
-      if (fn === '(idle)' || fn === '(program)') { idle += dt; if (fn === '(idle)') continue; }
+      if (fn === '(idle)') continue;
+      ms += dt;
       const k = label(node); self[k] = (self[k] || 0) + dt;
       const seen = new Set();
-      for (let id = node.id; id != null; id = parent.get(id)) { const nn = nodes.get(id); const kk = label(nn); if (seen.has(kk)) continue; seen.add(kk); incl[kk] = (incl[kk] || 0) + dt; }
+      for (let id = node.id; id != null; id = parent.get(id)) { const kk = label(nodes.get(id)); if (seen.has(kk)) continue; seen.add(kk); incl[kk] = (incl[kk] || 0) + dt; }
     }
     const top = (o, k) => Object.entries(o).filter(([key]) => !/^\(root\)/.test(key)).sort((x, y) => y[1] - x[1]).slice(0, k).map(([key, v]) => [key, Math.round(v * 10) / 10]);
-    f.cpu = { samples: n, idleMs: Math.round(idle * 10) / 10, clockMs: Math.round(spread * 10) / 10, self: top(self, 14), incl: top(incl, 30) };
+    return { busyMs: Math.round(ms * 10) / 10, self: top(self, 14), incl: top(incl, 40) };
+  };
+  const t0 = prof.startTime / 1000 - off, tEnd = prof.endTime / 1000 - off;
+  for (const f of L.long) {
+    if (f.cpu || f.t < t0 || f.t - f.d > tEnd) continue;
+    // the segment that ends inside this frame's interval (the callback that held it), else the samples of the interval
+    const g = segs.filter((x) => x.b - off <= f.t + 2 && x.b - off >= f.t - f.d - 2).sort((x, y) => (y.b - y.a) - (x.b - x.a))[0];
+    let i0, i1;
+    if (g) { i0 = g.i0; i1 = g.i1; } else {
+      i0 = times.findIndex((t) => t - off >= f.t - f.d - 2); i1 = i0;
+      while (i1 + 1 < times.length && times[i1 + 1] - off <= f.t + 2) i1++;
+      if (i0 < 0) continue;
+    }
+    f.cpu = { segMs: g ? Math.round((g.b - g.a) * 10) / 10 : null, matched: best.hits, clockMs: Math.round(spread * 10) / 10, ...summarize(i0, i1) };
+  }
+  // the chunk's longest frames by the profile alone
+  L.segments = L.segments || [];
+  for (const g of segs.filter((x) => x.b - x.a > 22).sort((x, y) => (y.b - y.a) - (x.b - x.a)).slice(0, 6)) {
+    const s = summarize(g.i0, g.i1);
+    L.segments.push({ t: Math.round(g.b - off), segMs: Math.round((g.b - g.a) * 10) / 10, busyMs: s.busyMs, self: s.self.slice(0, 8), incl: s.incl.slice(0, 30) });
   }
 }
 
@@ -175,6 +224,11 @@ async function profilePage(page, L) {
     // a long frame is sent to Node up to ~1 s after it ends: wait for the stragglers before attributing
     await new Promise((r) => setTimeout(r, 1200));
     try { attribute(L, prof, off, after - before); } catch (e) { L.profileError = String(e?.message || e); }
+    // HH_PROFILE_SAVE=1: a chunk that holds a frame over 33 ms is kept whole (<HH_OUT>/cpu-<n>.cpuprofile, DevTools opens it)
+    if (process.env.HH_PROFILE_SAVE === '1' && OUT && L.long.some((f) => f.d > 33.4 && f.d < 300 && f.cpu && !f.cpuFile && f.t >= prof.startTime / 1000 - off - 1)) {
+      const file = `cpu-${run.launches.indexOf(L)}-${L.profileChunks}.cpuprofile`;
+      try { writeFileSync(path.join(OUT, file), JSON.stringify(prof)); for (const f of L.long) if (f.cpu && !f.cpuFile && f.d > 33.4) f.cpuFile = file; } catch { /* */ }
+    }
     L.profileChunks++;
     save();
   }
