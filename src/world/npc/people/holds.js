@@ -177,19 +177,29 @@ function holdsLoops(P) {
 }
 
 /**
- * F36's street at work (the lens 15 m south-south-west of the tree, looking on bearing 20): five of the cast at work in that
- * lens, from 8.5 m (the cistern) to 21 m (the door of d5 past the tree).
+ * F36's street at work (tools/frames/stagings/settlements.mjs F36): five of the cast at work along the cistern's lane, each
+ * held in its work clip at the clip's working point (time scale 0, so the settle and the freeze do not walk it back upright).
+ * The lens stands 4.3 m south-west of the cistern's centre (2 m off its kerb) at eye height, looking up the lane on bearing 45
+ * (the tube mouth at the top of the frame, 34 m off): from left to right a picker kneeling at d4's door (17 m), a farmer watering the
+ * tree's foot and a picker gathering on its south side (11 m, either side of the trunk), a farmer kneeling at the cistern's
+ * far kerb (5 m) and a youth at d2's door with the seed bag (11 m). Node's lens check (the ground and the village's
+ * colliders) puts every one of them whole in the frame and clear of each other, 80-285 px tall at 1600 x 900.
+ * (wave 3 to the M2 exit: from a lens 3 m further down the slope looking on bearing 20, the farmer at the cistern and the
+ * picker at the tree stood on one line of sight, d5's door was behind the trunk and d1's and d2's 17-22 m off, so the frame
+ * showed about three; and the clips ran on through the settle, so who was bent at the staging stood upright at the freeze.)
+ * `face` is where each turns (a place or a point): the two at the tree face down the lane, the rest their work.
  */
+const ROUND = (c, b, d) => ({ x: c.x + Math.sin(b * Math.PI / 180) * d, z: c.z - Math.cos(b * Math.PI / 180) * d });
+export const AT_WORK_PLACES = Object.freeze({
+  cisternFar: ROUND(PLACES.cistern, 105, PLACES.cistern.r + 0.75),
+  treeW: ROUND(PLACES.tree, 250, 1.8),
+});
 export const AT_WORK = Object.freeze([
-  // (the first film at c5e75eb: four of five in the lens, all four upright, so the street read as people standing about; Oro at
-  // the anvil is behind the slope from this lens) each now in a clip that bends to its work, at the clip's deepest point
-  // (and at a0e4d06 the two nearest still stood upright in PickUp_Table at 0.5 and Farm_Harvest at 0.45, the two farther ones
-  // in Farm_PlantSeed and Fixing_Kneeling bent to their work: the near two take those clips)
-  { id: 'pit-farmer-3', place: 'cisternE', face: 'cistern', clip: 'Fixing_Kneeling', offset: 0.55 },
-  { id: 'cochineal-picker', place: 'treeSW', face: 'tree', clip: 'Farm_PlantSeed', offset: 0.35 },
+  { id: 'cochineal-picker-2', place: 'door:d4', face: 'house:d4', clip: 'Fixing_Kneeling', offset: 0.4 },
+  { id: 'pit-farmer', place: AT_WORK_PLACES.treeW, face: PLACES.tree, clip: 'Farm_Watering', offset: 0.45 },
+  { id: 'cochineal-picker', place: 'treeS', face: 'cistern', clip: 'Farm_PlantSeed', offset: 0.35 },
+  { id: 'pit-farmer-3', place: AT_WORK_PLACES.cisternFar, face: 'cistern', clip: 'Fixing_Kneeling', offset: 0.55 },
   { id: 'tiller-follower-2', place: 'door:d2', face: 'house:d2', clip: 'Farm_PlantSeed', offset: 0.5 },
-  { id: 'cochineal-picker-2', place: 'door:d1', face: 'house:d1', clip: 'Fixing_Kneeling', offset: 0.4 },
-  { id: 'pit-farmer-2', place: 'door:d5', face: 'house:d5', clip: 'Farm_Harvest', offset: 0.55 },
 ].map((w) => Object.freeze(w)));
 
 /** Shelter spots: every dwelling's door and the tube mouth's throat (the village keeps indoors while a Screed is on the walls). */
@@ -514,16 +524,22 @@ export class HoldsPeople {
   }
 
   /**
-   * A frame's people at work (tools/frames/stagings/settlements.mjs F36: "5 people at work"): each `{ id, place, face, clip }`
-   * spawned at its loop's place, turned to its work and posed in its work clip, nothing driving them (a ?shot film). Resolves
-   * to the people; `unstage()` takes them away.
+   * A frame's people at work (tools/frames/stagings/settlements.mjs F36: "5 people at work"): each `{ id, place, face, clip,
+   * offset }` spawned at its place, turned to its work and HELD in its work clip at `offset` of it (time scale 0: the pose
+   * stands still, the cloth still hangs and moves in the wind), nothing driving them (a ?shot film), the head on the clip (no
+   * look at the lens). Resolves to the people; `unstage()` takes them away.
    */
   async stageAtWork(list = AT_WORK) {
     const P = holdsPlaces(), out = [];
     this._staged = this._staged || [];
+    const where = (v) => {
+      if (typeof v !== 'string') return v || null;
+      if (v.startsWith('door:')) return P.doors[v.slice(5)];
+      if (v.startsWith('house:')) return P.doors[v.slice(6)].house;
+      return P[v] || null;
+    };
     for (const w of list) {
-      const at = typeof w.place === 'string' ? (w.place.startsWith('door:') ? P.doors[w.place.slice(5)] : P[w.place]) : w.place;
-      const face = typeof w.face === 'string' ? (w.face.startsWith('house:') ? P.doors[w.face.slice(6)].house : P[w.face]) : w.face;
+      const at = where(w.place), face = where(w.face);
       const p = await this.sys.spawn(w.id, { x: at.x, z: at.z, yaw: 0, seed: 401 + HOLDS_CAST.indexOf(w.id) * 31, id: `${w.id}#frame` });
       p.setPosition(at.x, at.z);
       if (face) { const y = Math.atan2(face.x - at.x, face.z - at.z); p.yaw = y; p.group.rotation.y = y; }
@@ -531,13 +547,35 @@ export class HoldsPeople {
       // the people system's idle beats stay off (spawn() starts one, and after 6 s it played the archetype's idle over the
       // work clip: the films at c5e75eb and d3edb33 showed the two nearest upright)
       p._beatT = 0; p._beatEnd = Infinity;
-      p.play(w.clip, { fade: 0, offset: w.offset ?? 0.35 });
+      p.play(w.clip, { fade: 0, offset: w.offset ?? 0.35, ts: w.hold === false ? 1 : 0 });
       p.showProps(this.sys._propsFor(p, w.clip));
+      p.look = false;
+      p.lookYaw = 0;
+      // the chains start from the turned pose's rest (page.mjs re-seats every person's before its freeze as well)
+      try { for (const c of p.chains?.chains || []) { c.links.forEach((l, i) => l.quaternion.copy(c.bindQ[i])); c.seeded = false; } } catch { /* */ }
       p._frame = true;
       this._staged.push(p);
       out.push(p);
     }
     return out;
+  }
+
+  /**
+   * IN11's cost case (tools/frames/stagings/settlements.mjs F39-people): `n` of the cast where the village shelters while a
+   * Screed is on the walls (NW9): each at a different shelter spot (the doors and the tube mouth's throat), the spots farthest
+   * from every Screed's threat lines within ALARM_R taken first (threatDistance: its charge line on its heading and, with her
+   * in its reach, the line to her), standing in the shelter clip (Idle_FoldArms_Loop) held. Resolves to
+   * `{ people, spots: [{ id, x, z, threat }] }`; `unstage()` takes them away.
+   */
+  async stageSheltered(n = 5, cast = ['pit-farmer', 'pit-farmer-2', 'pit-farmer-3', 'cochineal-picker', 'tiller-follower-2']) {
+    const P = holdsPlaces(), spots = shelterSpots(P), pl = this.ctx.player?.position || null;
+    const L = this.ctx.machines?.list || [];
+    const sc = L.filter((m) => m && m.kind === 'screed' && !m._disposed && m.position && Math.hypot(m.position.x - CENTRE.x, m.position.z - CENTRE.z) <= ALARM_R);
+    const threat = (s) => (sc.length ? Math.min(...sc.map((m) => threatDistance(s.x, s.z, m, pl))) : Infinity);
+    const ranked = spots.map((s) => ({ s, t: threat(s) })).sort((a, b) => b.t - a.t).slice(0, Math.min(n, cast.length));
+    const list = ranked.map((r, i) => ({ id: cast[i], place: { x: r.s.x, z: r.s.z }, face: r.s.face, clip: 'Idle_FoldArms_Loop', offset: 0.3 + 0.13 * i }));
+    const people = await this.stageAtWork(list);
+    return { people, screeds: sc.length, spots: ranked.map((r, i) => ({ id: cast[i], x: +r.s.x.toFixed(2), z: +r.s.z.toFixed(2), threat: Number.isFinite(r.t) ? +r.t.toFixed(1) : null })) };
   }
 
   unstage() { for (const p of this._staged || []) this.sys.despawn(p); this._staged = []; }

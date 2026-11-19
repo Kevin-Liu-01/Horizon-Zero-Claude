@@ -11,10 +11,16 @@
  *        dragon tree's canopy under 9 m, the line on >= 3 walls
  *   F35  the same lens after "True Ground" (state `after`): the line on 0 walls (the staging clears it; a cut wall
  *        stays cut)
- *   F36  a street at work: the lens 15 m south-south-west of the tree (bible E -16.13, N -227.10) looking on bearing 20
- *        across the slope, the cistern (bearing 359 from it), the tree (20) and the tube mouth (45) in frame; written: 5
- *        people at work (none at blockout: wave 3's cast). At 48311d0 a lens up the south-west lane on bearing 60 saw
- *        only the hillside (the ground under the village climbs 26 deg there)
+ *   F36  a street at work: the lens on the cistern's lane, 4.3 m south-west of the cistern's centre (bible E -17.25,
+ *        N -223.83), looking up the lane on bearing 45, 7 deg up, fov 50: the cistern's kerb in the lower left, the tree,
+ *        the tube mouth at the top (34 m); written: 5 people at work, each held in its work clip (src/world/npc/people/
+ *        holds.js AT_WORK). At 48311d0 a lens up the south-west lane on bearing 60 saw only the hillside (the ground under
+ *        the village climbs 26 deg there); from wave 3 to the M2 exit the lens 15 m south-south-west of the tree (E -16.13,
+ *        N -227.10, bearing 20, fov 55) put two of the five on one line of sight and one behind the trunk: about three
+ *        read
+ *   F39-people  IN11's cost case: F39 (tools/frames/stagings/instruments.mjs: the Screed stalled on wall-1, three
+ *        Sickles, Brea) with five of the Holds cast where the village shelters from it (holds.js stageSheltered: the
+ *        shelter spots farthest from its threat lines, NW9); F39's own staging runs first, unchanged
  *   F37  Oro beside Brea at 3 m: the PEOPLE crop, staged as F20 stages Ansel (golden 17:30, the orbit lens 4 m in
  *        front of her, Oro 3 m to her left facing the lens), in the tube mouth's forecourt (bible E 4.04, N -207.53,
  *        facing 250: the lens looks up the north-east lane, the tube mouth and the terraces behind them). At wave 1 it
@@ -42,9 +48,10 @@ export const FRAMES = [
   },
   {
     id: 'F36', subject: 'a Ninewalls street at work', in: 'M2', hour: 16.5, weather: 'trade',
-    at: { en: [-16.13, -227.1] }, bearing: 20, camera: { mode: 'eye', eye: 1.7, pitch: 8, fov: 55 },
+    at: { en: [-17.25, -223.83] }, bearing: 45, camera: { mode: 'eye', eye: 1.7, pitch: 7, fov: 50 },
     state: { pose: 'idle', hud: false },
     ref: { written: '5 people at work in ash-grey and carmine, each with a violet accent; the tube mouth and the cistern in frame.' },
+    note: 'M2 fix wave: restaged up the cistern\'s lane; the five are held in their work clips (tools/build/settlements/at-work-probe-page.mjs counts them in the frozen frame).',
   },
   {
     id: 'F37', subject: 'Oro beside Brea at 3 m', in: 'M2', hour: 17.5, weather: 'trade',
@@ -56,8 +63,18 @@ export const FRAMES = [
   },
 ];
 
+/** IN11's cost case: F39's lens and staging, plus five of the cast sheltering (a lane frame of its own; F39 stays instruments'). */
+FRAMES.push({
+  id: 'F39-people', subject: 'IN11\'s cost case: the Screed fight with five of the Holds sheltering', in: 'M2', hour: 16.5, weather: 'trade',
+  at: { en: [44.83, -169.9] }, bearing: 321,
+  camera: { mode: 'orbit', yawRel: 160, dist: 7.5, height: 2.6, target: { fwd: 7, side: 0.5, up: 1.8 }, fov: 60 },
+  state: { pose: 'idle', hud: false },
+  ref: { written: 'IN11: F39\'s staging (Screed + 3 Sickles + Brea) with 5 people: p95 interval <= 16.7 ms, median GPU <= 14 ms' },
+  note: 'A cost frame, not a look frame: the people shelter at the doors 50-70 m behind the lens, as NW9 sends them.',
+});
+
 /** F34-F36 are fixed lenses on a still village (wall clock is honest; --repeat 2 grades them). F37 is a slate. */
-export const STAGED = { F34: 'wall', F35: 'wall', F36: 'wall', F37: 'wall' };
+export const STAGED = { F34: 'wall', F35: 'wall', F36: 'wall', F37: 'wall', 'F39-people': 'wall' };
 
 export const STAGINGS = {
   F34: {
@@ -80,8 +97,9 @@ export const STAGINGS = {
     },
   },
   F36: {
-    // M2 wave 3: five of the Holds cast at work (src/world/npc/people/holds.js AT_WORK: a farmer drawing water at the cistern,
-    // a picker at the tree's foot, a youth sowing by a door, a picker kneeling to sort at the next, a farmer at the third)
+    // five of the Holds cast at work, held in their work clips (src/world/npc/people/holds.js AT_WORK: a picker sorting at
+    // d4's door, a farmer watering the tree's foot, a picker gathering under it, a farmer at the cistern's far kerb, a youth
+    // with the seed bag at d2's door)
     async world(f, api) {
       if (!api.C.settlements?.ninewalls) api.standIn('no Ninewalls in this build');
       const H = api.C.people?.holds;
@@ -90,6 +108,21 @@ export const STAGINGS = {
       const ps = await H.stageAtWork();
       if (ps.length < 5) api.standIn(`${ps.length} of 5 people at work`);
       // let the mixers pose them in their work clips before the settle
+      await api.frames(3);
+    },
+  },
+  'F39-people': {
+    async world(f, api) {
+      const base = window.__laneStagings?.F39;
+      if (!base?.world) { api.standIn('no F39 staging in this film (tools/frames/stagings/instruments.mjs)'); return; }
+      await base.world(f, api);
+      const H = api.C.people?.holds;
+      if (!H?.stageSheltered) { api.standIn('no Holds people in this build: nobody shelters'); return; }
+      api.undo(() => H.unstage());
+      const r = await H.stageSheltered(5);
+      if (r.people.length < 5) api.standIn(`${r.people.length} of 5 people sheltering`);
+      if (!r.screeds) api.standIn('no Screed within the alarm radius: the shelter spots are not ranked by its threat lines');
+      window.__f39people = r.spots;
       await api.frames(3);
     },
   },
