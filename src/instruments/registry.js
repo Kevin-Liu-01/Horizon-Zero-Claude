@@ -3,6 +3,7 @@ import { registerDoctrine } from '../entities/machines/ai/doctrine.js';
 import { registerRig } from '../entities/machines/autorig.js';
 import { loadKindModels } from '../entities/machines/variety-assets.js';
 import { ROLE_IDS, buildRoles } from './roles.js';
+import { CLASS_CAPS, ENCOUNTER, buildSizeClasses, encounterVerdict, encounterAllows } from './lib/sizeclass.js';
 
 /**
  * INSTRUMENT KIND AUTO-REGISTRATION (instruments-core, Round 5; contract
@@ -23,6 +24,8 @@ import { ROLE_IDS, buildRoles } from './roles.js';
  *               (e.g. `lib/generated.js` `liftExtras`)
  *   style?      `styleMachine` row (donor models only; generated kinds omit it)
  *   role?       one of ROLE_IDS (roles.js)
+ *   sizeClass   'small' | 'medium' | 'large' | 'colossal' (lib/sizeclass.js; bible §7.4). Required: a kind
+ *               that declares none is warned about and is classed null (never guessed)
  *   fixture?    true for a W0 staging fixture (R28)
  *   tables?     `registerKindTables` rows { perception, engage, attacks,
  *               attackMode, react, elem, alarm, escort, scavenger }
@@ -38,6 +41,8 @@ import { ROLE_IDS, buildRoles } from './roles.js';
  *   machines.roles / roleNotes / roleIds / roleOf(kind)      (roles.js)
  *   machines.kindAudio         { [id]: audio row }
  *   machines.isLegacyKind(kind) -> boolean   (true for every kind NOT here)
+ *   machines.sizeClassOf(kind) / sizeClasses / classCaps / encounterRule / encounterAudit() / encounterAllows(kind, x, z)
+ *                              (lib/sizeclass.js)
  *
  *   installInstruments(machines) -> { kinds, roles, ready: Promise<{ loaded, failed }> }
  */
@@ -82,6 +87,27 @@ export function installInstruments(machines) {
   machines.roleOf = (kind) => ROLE_IDS.find((r) => machines.roles[r] === kind) ?? null;
   machines.kindAudio = Object.freeze(Object.fromEntries(descriptors.map((d) => [d.id, d.audio || null])));
   machines.isLegacyKind = (kind) => !kinds[kind];
+  /**
+   * Size classes (lib/sizeclass.js): the declared class of each kind, the per-class caps and the encounter rule.
+   * The class also rides the kind's class (`Cls.sizeClass`), so a live machine's is `m.constructor.sizeClass`.
+   */
+  const sized = buildSizeClasses(descriptors);
+  if (sized.undeclared.length) console.warn(`[instruments] no sizeClass declared by: ${sized.undeclared.join(', ')} (lib/sizeclass.js)`);
+  for (const d of descriptors) if (sized.classes[d.id]) d.Cls.sizeClass = sized.classes[d.id];
+  machines.sizeClasses = sized.classes;
+  machines.sizeClassOf = (kind) => sized.classes[kind] ?? null;
+  machines.classCaps = CLASS_CAPS;
+  machines.encounterRule = ENCOUNTER;
+  /** The living Instruments as encounter members ({ kind, x, z }); legacy kinds are never counted. Cold path. */
+  const members = () => (machines.list || []).filter((m) => m && m.alive !== false && !m._disposed && kinds[m.kind])
+    .map((m) => ({ kind: m.kind, x: m.position.x, z: m.position.z }));
+  /** The living roster graded against the encounter rule (one large + four medium or small in 60 m). */
+  machines.encounterAudit = () => encounterVerdict(members(), machines.sizeClassOf, machines.roleOf);
+  /**
+   * May the world spawn one more `kind` at (x, z)? The spawners (ai/doctrine.js spawnExpansion, ai/sites.js respawns)
+   * ask before they spawn; a gate's or the frame stager's own `machines.spawn` is never held back.
+   */
+  machines.encounterAllows = (kind, x, z) => encounterAllows(members(), kind, x, z, machines.sizeClassOf, machines.roleOf);
   /** P-03 (instruments-a W1): an Instrument kind's height (m, scale 1), or null; a live machine's own is `m.height`. */
   machines.heightOf = (kind) => (kinds[kind] && Number.isFinite(kinds[kind].height) ? kinds[kind].height : null);
 

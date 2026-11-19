@@ -463,6 +463,8 @@ export class Plumb extends ExpansionMachine {
 export default {
   id: 'plumb',
   role: 'sentry',
+  /** Size class (lib/sizeclass.js; bible §7.4): footfall weight, the per-class caps and the encounter rule read it. */
+  sizeClass: 'small',
   Cls: Plumb,
   /** P-03: the registry height (m) at scale 1 (`machines.heightOf`); a scaled Plumb's is `machine.height`. */
   height: HEIGHT,

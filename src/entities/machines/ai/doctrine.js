@@ -232,6 +232,13 @@ export function spawnExpansion(machines) {
     for (let i = 0; i < plan.n; i++) {
       const a = (i / Math.max(1, plan.n)) * Math.PI * 2 + 0.6;
       const rr = plan.n > 1 ? 7 + (i % 2) * 5 : 0;
+      /**
+       * The encounter rule (instruments/lib/sizeclass.js; bible §7.4: one large plus four medium or small within
+       * 60 m, or the colossus plus three sentries): a plan row that would break it at a large or colossal hull is
+       * not spawned, and the audit names it. A roster with no large kind is never held back here.
+       */
+      const fit = machines.encounterAllows?.(plan.kind, at.x + Math.sin(a) * rr, at.z + Math.cos(a) * rr);
+      if (fit && !fit.ok) { audit.skipped.push(`${plan.kind} (encounter rule: ${fit.why.join('; ')})`); continue; }
       const m = machines.spawn(plan.kind, at.x + Math.sin(a) * rr, at.z + Math.cos(a) * rr, {
         herd,
         route: machines._route(at.x, at.z, plan.route, plan.routePoints ?? 4, i * 1.9),

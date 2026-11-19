@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createHeldLance } from './lanceStow.js';
 import { decimalFields } from '../entities/anim/meleeLayer.js';
 import { MELEE } from './weapons.js';
-import { LANCE_PRY, pryablePart, isDown, SMALL_KINDS } from './kit.js';
+import { LANCE_PRY, pryablePart, isDown, isSmallKind } from './kit.js';
 
 /**
  * THE LANCE (melee W1, on Brea; the state machine is Round 4's, kept).
@@ -2636,7 +2636,7 @@ export class Melee {
     const roles = this.ctx.machines?.roles;
     // M1.6j: the bible's small classes (the Peg, the Plumb) die outright too, whatever kind the role map gave the role
     // (the first live row: an Undercut on a calm Plumb took 0.55 of its health, roles.sentry was not the Plumb)
-    const instant = cfg.instant.includes(m.kind) || UNDERCUT_KILLS.some((r) => roles?.[r] === m.kind) || SMALL_KINDS.includes(m.kind);
+    const instant = cfg.instant.includes(m.kind) || UNDERCUT_KILLS.some((r) => roles?.[r] === m.kind) || isSmallKind(m);
     const dmg = instant
       ? (m.health ?? 1) * 4 + 1000
       : (m.maxHealth ?? 100) * cfg.heavyFrac;

@@ -145,8 +145,12 @@ export function tearFor(word, m, part, baseTear) {
   return baseTear;
 }
 
-/** The bible's small classes in the slice (§7.4 roster): an Undercut kills them outright. */
-export const SMALL_KINDS = Object.freeze(['peg', 'plumb']);
+/**
+ * The bible's small class (§7.4 roster): an Undercut kills it outright. Read from the kind's DECLARED size class
+ * (src/instruments/lib/sizeclass.js, on the kind's class), not from a list kept here: at 1d2de89 this was the
+ * literal ['peg', 'plumb'], which a new small kind would have had to be added to by hand.
+ */
+export const isSmallKind = (m) => (m?.sizeClass ?? m?.constructor?.sizeClass ?? null) === 'small';
 
 /** The lance's Pry (E on a down Instrument's tool): one hit takes the tool, and a little body damage. */
 export const LANCE_PRY = Object.freeze({ reach: 3.2, hold: 0.3, impact: 12, label: 'PRY' });

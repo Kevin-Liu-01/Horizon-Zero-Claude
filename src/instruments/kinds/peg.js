@@ -187,6 +187,8 @@ export class Peg extends ExpansionMachine {
 export default {
   id: 'peg',
   role: 'swarm',
+  /** Size class (lib/sizeclass.js; bible §7.4): footfall weight, the per-class caps and the encounter rule read it. */
+  sizeClass: 'small',
   Cls: Peg,
   /** P-03: the registry height (m) (`machines.heightOf`). */
   height: HEIGHT,

@@ -174,6 +174,8 @@ export class Tiller extends ExpansionMachine {
 export default {
   id: 'tiller',
   role: 'herd',
+  /** Size class (lib/sizeclass.js; bible §7.4): footfall weight, the per-class caps and the encounter rule read it. */
+  sizeClass: 'medium',
   Cls: Tiller,
   /** P-03: the registry height (m) hero-body's big-fight framing reads (`machines.heightOf`). */
   height: HEIGHT,

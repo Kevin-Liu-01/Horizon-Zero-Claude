@@ -443,6 +443,8 @@ export class Gauge extends ExpansionMachine {
 export default {
   id: 'gauge',
   role: 'keeper',
+  /** Size class (lib/sizeclass.js; bible §7.4): footfall weight, the per-class caps and the encounter rule read it. */
+  sizeClass: 'medium',
   Cls: Gauge,
   /** P-03: the registry height (m) (`machines.heightOf`). */
   height: HEIGHT,

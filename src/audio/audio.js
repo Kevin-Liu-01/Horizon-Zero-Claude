@@ -1327,7 +1327,13 @@ export class GameAudio {
     return `inst/${phase === 'windup' ? 'windup' : 'strike'}`;
   }
 
-  _weightOf(machine) { return WEIGHT[roleOf(this.ctx, machine)] || 'medium'; }
+  /** The footfall weight class: from the kind's DECLARED size class (instruments/lib/sizeclass.js: small -> light,
+   *  medium -> medium, large and colossal -> heavy); a kind that declares none falls back to its role's row. */
+  _weightOf(machine) {
+    const cls = this.ctx.machines?.sizeClassOf?.(machine?.kind) ?? null;
+    if (cls) return cls === 'small' ? 'light' : cls === 'medium' ? 'medium' : 'heavy';
+    return WEIGHT[roleOf(this.ctx, machine)] || 'medium';
+  }
 
   /**
    * Play a species voice at a machine. Heavy machines get priority, a longer

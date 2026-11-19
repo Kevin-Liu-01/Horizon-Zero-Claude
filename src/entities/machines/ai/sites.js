@@ -234,6 +234,10 @@ export class SiteManager {
         const dx = p.position.x - s.x, dz = p.position.z - s.z;
         if (dx * dx + dz * dz < SITE.respawnMinDist * SITE.respawnMinDist) continue;
       }
+      // the encounter rule (instruments/lib/sizeclass.js): a respawn that would put a fifth medium or small hull within
+      // 60 m of a large one (or a second large) waits, as a model that is not ready does
+      const fit = this.machines.encounterAllows?.(s.kind, s.x, s.z);
+      if (fit && !fit.ok) { s.respawnAt = this.clock + 30; continue; }
       const m = this.machines.spawn(s.kind, s.x, s.z, { ...s.opts, _site: s });
       if (m) {
         s.machine = m;
