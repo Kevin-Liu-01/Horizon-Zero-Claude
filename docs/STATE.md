@@ -1945,3 +1945,252 @@ poses as at the wave 2 review, **0 fail**.
 - The crater's bedding now draws on the crater alone (11f4adb); the grey flank above the Holds lost bands that read as wood grain. That is closer to the references by design: F03, F15, F16 and F19 are re-anchored once (Brea unchanged), and F25 and F32 take it inside their masks.
 - main stays where it is: the Windwall's closed fan rises above her shoulders and behind her head plane in 2-7 steps of the raise, which breaks the owner's bar (never an arm or a held thing behind the head), and the herd-as-cover page row fails 2 of 4. Both are fixed before the next merge.
 
+
+## Milestone 2 wave 4 and the exit run (Nov 19 2026)
+
+## Milestone 2 wave 4 and the exit run (Nov 19 2026)
+
+Wave 4 ("the hour") had three lanes in one tree on `r5/int`: areas A+F (world, sky-look), C (instruments) and E
+(systems, writing), with polish lanes for cloth, hero-anim, people and settlements beside them. No commit was pushed.
+
+- **Areas A+F.**
+  - Calima at noon over the Holds: in calima the dust is a deep layer (fog height falloff 1/1600 m).
+  - The cloud shadows read one scrolling texture, fetched once a fragment, in a phase that keeps every accepted lens in sun.
+  - The weather seam's ask: `askWeather`, `clearAsk`, `asks`; `setWeather` emits `weather`; `sunAltitudeDeg`.
+  - The Malpais as two cold lavas (aa and pahoehoe), with cinder bands and lichen crust.
+  - The Kiln Yards' far form: two tower stubs, four stacks, three pipe racks, three wellheads.
+  - F45 and F45-trade staged; the regions seam walked along the hour's walks in Node.
+- **Area C.**
+  - IN2: a calm herd ignores her unless she stands on its line.
+  - The Transit's far form, published as `ctx.transitFar`: one mesh, no behaviour, drawn only from 11:30 to 12:30 with the sun at least 45 deg up.
+  - The live Screed levels the reed under its blade. F45-transit staged.
+- **Area E.**
+  - The Ninewalls Brazier, with REST UNTIL NOON pre-selected for that one rest. Calima asked for at noon. The Malpais edge from the regions map. The Transit read through the Alidade.
+  - The first certification award, the Ninewalls counter and the TRADE screen, the Guild Notice board, save fields `certs` and `counter`.
+  - The runner drives every beat by input; `--chain` carries the save leg to leg.
+
+Then the exit run measured `r5/int` at **fa45e47** (8dcab5a's game and one tool commit: `tools/perf/exit-bar.mjs` stages
+the lane frames) from one clean detached worktree (0 tracked files changed) on port 5270, one Chrome at a time.
+Other lanes were still filming during it; it waited for the slot when they held it. It committed one fix (b66f3dd).
+
+**Verdict: Milestone 2 does not exit.**
+
+| # | exit condition | result at fa45e47 |
+|---|---|---|
+| 1 | `A-first-hour` plays its 28 beats in order, input-driven, no death, three runs | **FAIL**: 16/28 chained, 21/28 and 17/28 with each leg from its fixture |
+| 2 | the M2 frames accepted; the accepted frames not regressed | awaiting the owner; no accepted frame regressed; F44 and F36 fail their written targets |
+| 3 | resident textures <= 175 MB with two peoples and two biomes | PASS: 137.33 MB (the ledger, every shipped texture) |
+| 4 | `public/` <= 165 MB | PASS: 55.19 MB |
+| 5 | the frame bar in the fight frame | PASS in the headless form (F39: GPU 11.4 ms, 1799 frames in 30 s, 0 over 33 ms) |
+
+**Tier 0 at fa45e47: FAIL, 9 of 10.**
+- The import graph found `src/game/quest/transit-far.js` importing three. The rule is that `src/game/` never imports three.
+- The file was the systems stand-in for the Transit's far form. It was never built, because the registry always publishes `ctx.transitFar`.
+- b66f3dd removes it. `src/game/hour.js` now returns no far form when none is published, and the beat fails by name.
+- **Tier 0 at b66f3dd: PASS, 10 of 10.**
+  - `vite build` OK, 4.27 MB of code. Name lint 0 hits in 923 files.
+  - Licences: 243 files against 34 rows. Asset budgets: 54 GLBs, 0 over a cap.
+  - 274 Node tests pass in 57 files. Boot 4.2 s, 0 errors.
+  - Texture ledger 137.33 MB of 175. Shipped 59.45 MB (`public/` 55.19 MB).
+
+**The frame bar (TECH §9.1)** at 1600 x 900 CSS px, DPR 1.25, quality `high`, headless Chrome 151 on ANGLE Metal.
+Tool: `tools/perf/exit-bar.mjs`. The 1-minute load average was 2.4-3.5.
+
+| line | F02 | F25 | F33 | F39 | bar | result |
+|---|---|---|---|---|---|---|
+| median GPU, back-to-back readback (7 x 60 frames) | 9.9 | 13.1 | 11.9 | 11.4 | <= 14 ms | PASS |
+| frames presented in 30 s; over 33 ms | 1798; 0 | 1797; 0 | 1800; 0 | 1799; 0 | >= 1782; 0 | PASS |
+| p95 presented interval (headless) | 17.6 | 17.4 | 17.5 | 17.4 | <= 16.7 ms headed | not measurable headless (an empty page reads 18.0) |
+| main-thread JS per frame, p95 | 4.0 | 4.3 | 4.0 | 3.8 | <= 8.0 ms | PASS |
+| draws; triangles | 102; 1.62 M | 145; 1.47 M | 118; 1.22 M | 116; 1.06 M | <= 350; <= 6.5 M | PASS |
+
+- F39's staging is the Screed, one Sickle and Brea. IN11's cost case (three Sickles and five people) was not measured.
+- **Load (the built game):**
+  - Title interactive 4.53 s cold, 4.32 and 4.17 s warm (bar 5 s).
+  - New Game to control 0.36 s cold, 0.20 s warm.
+  - First load 49.73 MB in 254 requests (bar 60 MB).
+- **Hitches in the first hour: FAIL.** No run reached 10 minutes of play.
+  - Run 1, 7.7 minutes: 21 frames over 33 ms and 1 over 50 ms (75.0 ms, on the walk into the Holds).
+  - Run 2, 8.5 minutes: 19 over 33 ms and 6 over 50 ms (worst 115.8 ms; 2 in leg 2, 4 in leg 3).
+  - The slice alone: 0 and 0 in 105 s.
+
+**Kept-stack rows at fa45e47** (two sessions): 80 rows. **71 action rows pass**, the **8 visual rows** show the same
+poses as at the wave 3 review (the sash's new folds aside), **0 fail**.
+- **1 pending: A9-perf-budget, on the quiet-box rule.**
+  - Load at the row: 4.24. Measured: 59.9 fps median, 133 draws, scene GPU 19.24 ms.
+  - A re-run alone got no Chrome: another lane held the slot.
+
+**The slice at fa45e47:** 14 of 14, stopped at the reward.
+- Cross 38.5 s, hp 100 -> 97. Topple 12.2 s. Lowest hp 85.
+- 0 frames over 33 or 50 ms in 105 s and 12,543 frames.
+- Save rows and the site clock: PASS.
+- Leg 1 of each first-hour run was also 14/14.
+
+**The first hour at fa45e47** (`first-hour.mjs`, three runs):
+
+| leg | run 1 (chained) | run 2 (fixtures) | run 3 (fixtures, screencast) |
+|---|---|---|---|
+| 1 | 14/14 | 14/14 | 14/14 |
+| 2 | 2/8: dies at plumb-2 (Plumb 75, Peg 22 hp) | 2/8: dies at plumb-2 (Tiller 64, Plumb 42 hp) | 2/8: dies at plumb-2 |
+| 3 | 0/6: started from leg 2's death; the walk to B1 timed out 62.9 m short | 5/6: only read-transit fails | 1/6: Pegs kill her at 3.03 s of the re-survey's arc |
+
+- **Leg 2: walk and herd pass in every run.**
+  - Ninewalls is reached 3.5 m off, entering the Holds at 31 s.
+  - Barbed, oro, stall, seal-1 and seal-2 were never reached by input.
+- **Leg 3, run 2.**
+  - The re-survey closed: a 15.0 s arc. Bearings T1 249.2 (0.033 deg off), T2 76.6 (0.34), the Sounding Ring 263.8 (0.155). hp 72 -> 38.
+  - The line left the walls 1.2 s later. REST UNTIL NOON was pre-selected. Calima was asked for at 12:00 and arrived.
+  - **read-transit failed.** She reached the edge at 12:51, after the beat's window closed at 12:30, so the far form was not drawn and no card showed.
+  - The Alidade was 0.41 deg off at 109 m.
+- **The rest dialog prints "CALIMA BY NOON" on the DAWN row.** The NOON row reads TRADE.
+
+**Lane rows at fa45e47:**
+- A-herd-ripple PASS: the flashes run nearest-first in 0.548 s; gaps 3.95 and 4.01 m at 4 s; 0 deg of bearing change.
+- **A-moving-cover PASS**, in one run: 0 of 4 lee walks seen, 4 of 4 open walks seen within 4 s.
+- A-screed-fight PASS: one charge, 0 deg of deviation, a 2.996 s stall on wall-1, both seals off, 0 walls cut.
+
+**Node benches at b66f3dd:**
+- moving-cover: lee 0/10 seen, open 10/10.
+- herd-bearing: beside the bearing 0/10 react, on it 10/10; the bearing held within 0 deg over 120 m.
+- pot-bench 7/7.
+- **gaff-bench 16/19.** W3 fails in 3 cases: the right wrist moves 0.097-0.141 m in one step.
+- **windwall-bench 3/8.** In 5 cases the closed fan rises 0.023-0.067 m above her shoulders and behind her head plane, for 2-7 point-steps. This is unchanged since the wave 3 review.
+- **The handling bench:**
+  - Bow and lance: 111 failing clauses in 25 of 26 cases.
+  - The gaff in the loop: 21 failing clauses in 6 of 6 cases.
+- A107: 18 cycles, 0 fail.
+- People cloth: worst person 0.012 ms (bar 0.02).
+- W2 writing: every row passes.
+- calima-rows: EN3 visibility 155-169 m PASS; **EN4's sun 47.6-49.8 deg in the window FAIL** (the brief asks over 60 deg).
+
+**Frames at fa45e47** (the Frame Set and the lane frames, `--lanes`, 62 of 62 filmed, 0 console errors):
+- **Every accepted frame matches the wave 3 review film** within the wind, the grass and the cloth (sixteen frames).
+- **The lane frames:**
+  - F44 has the three pips and the arc. The Alidade is not up at her face, and no planted Windwall can be read.
+  - F36 shows about three people at work, against a target of five.
+  - F42's Sickle is still lost in the high meadow.
+  - In calima, the Kiln Yards' far form reads as flat pale shapes, brighter than the dust (F45, F45-transit).
+  - No sun disc reads in F45.
+
+**Chrome used:** about 81 minutes over 13 launches, one at a time.
+- Tier 0 0.4 min, the Frame Set 5.3, the exit bar 5.3.
+- Kept session 1 9.7, kept session 2 15.3.
+- The slice 4.9; the first-hour runs 13.2, 12.5 and 10.5.
+- The lane rows 1.8, clips 2.0, Tier 0 at b66f3dd 0.3.
+
+---
+
+**Rulings this run asks for:**
+1. **EN4, the sun at the Transit.** The built sky never stands above 50 deg, and the far form is gated at 45 deg. Either the bar becomes 45 deg, or the sky changes, which moves every accepted frame.
+2. **The beat's window.** The walk from the Ninewalls Brazier to the Malpais edge costs about 0.85 game hours. Either the noon rest wakes her near 11:30, or the window widens.
+3. **The Windwall fan.** It still rises above her shoulders and behind her head plane, which breaks the owner's bar. main stays held until the windwall bench passes.
+
+## Polish run 1: people, Ninewalls, weapons, cloth (Nov 19 2026)
+
+## The polish run beside M2 wave 4 (Nov 19 2026)
+
+Four polish lanes worked in the one tree on `r5/int` beside wave 4: people, settlements, hero-anim (weapon handling)
+and cloth. No commit was pushed.
+
+- **People (550d7d2, 0ff1202, 447a27c).**
+  - Oro and the other seven Holds people each have a 1024² outfit texture of their own instead of the shared Holds atlas. The build unwraps, packs and paints each piece: wool, leather and iron, fray, stitching, burns, soot, ash dust, the gold-ochre tick line and the crescents.
+  - Oro has one painter per garment, and the other seven are painted by dye.
+  - Oro's head set matches Brea's and Ansel's density. His outfit is at 0.856 of Brea's linear texel density (median; bar 0.60). He has 4 cloth layers on a ray into the chest, bib straps with buckles, the apron, tongs, and a pocket holding a chisel and a file.
+  - The other seven's outfit normal and ORM maps are at 256² (Oro's stay at 512²).
+  - Open: at close range the other seven's dyed wool still reads as flat blocks.
+- **Settlements (fa37ef4, 2723593).** The settlements change touched one file, `src/world/settlements/ninewalls-kit.js`.
+  - The drystone is coursed: wavy beds 0.24 m apart, and stones of varied length with leaning end joints and chipped edges.
+  - The joints are mortarless and open into dark voids, with one parallax step up close. Past a few pixels per stone the wall is drawn flat at its mean tone.
+  - The houses have dressed quoins and lime door surrounds; five of the 16 houses are plastered.
+  - The forge and the counter are rebuilt.
+  - The kit is still one material in 2 draws, at about 42.5k triangles (budget 110k).
+  - Open: no frame films the forge or the counter close, and the village's cost inside the Holds' budget is not yet separated from the load noise.
+- **Hero-anim, weapon handling round 4 (e584aeb, 5f8087a, 80a2b76, 0b60522).**
+  - The lance's pull takes the right fist round her front, which removes a 0.28 m one-step wrist jump.
+  - The gaff and the bow are never in her hands together. A bow stow that ends in a lance draw no longer pops 0.466 m.
+  - In the bow unstow's last two phases the bow wrist is kept inside 27° of deviation and 55° of flexion.
+  - New close clips `hPull` and `hGaffBow`.
+  - The handling bench is at 111 failing clauses in 25 of 26 cases (114 at aba90a3). The gaff-against-bow cases fail 21 clauses in 6 of 6.
+- **Cloth round 6 (edb2d93, 95a1ed0).**
+  - Each sash panel is laid at twice the columns and hangs in broad folds: 9, 7 and 16 mm deep (front-left, front-right, back).
+  - The hem roll is thicker, and the painted valleys match the folds.
+  - The front-right panel swings free at 1.3 m/s.
+  - New `people-cloth-bench.mjs` (the Holds people's cloth in Node), clips `cHolds` and `cOro`, and rows `C-holds-cost` and `C-oro-apron`.
+  - Open: C4, C5, the landing and C10 still fail.
+
+Then the check lane measured `r5/int` at **2723593** from one clean detached worktree (0 tracked files changed). It
+used port 5278: wave 4's runs held 5270 throughout. One Chrome ran at a time. It changed no repo file.
+
+**Verdict: CLEAN on the merge bar.** Tier 0 passes 10 of 10. `vite build` is green at all 32 commits since aba90a3.
+Every kept row run passes. No accepted frame changed outside the cloth. The slice plays 14 of 14.
+Two cloth regressions and two lane rows that failed before this run stay open (below).
+
+**Tier 0 at 2723593: PASS, 10 of 10** (the Node checks with the build, then the boot).
+- `vite build` OK (4.27 MB of code), and green at all 32 commits from 1130696 to 2723593.
+- Name lint 0 hits in 923 files. Licences: 243 files against 34 rows. Asset budgets: 54 GLBs, 0 over a cap.
+- Import graph 239 modules, 0 broken. 274 Node tests pass in 57 files. Boot 4.2 s, 0 errors. Rendered-page name lint 0.
+- **Resident textures 137.33 MB** of 175 (119.33 at aba90a3). People alone are 109 MB, against a plan line of 39.
+- **Shipped 59.45 MB, against the 60 MB first-load cap: 0.55 MB of headroom.** People's models and clips are 27.69 MB (plan line 14).
+
+**Kept-stack rows at 2723593** (one session; `--kept-stack --only` with the touched rows):
+- **All pass:** A1, A16, A17, A32, A107, A90-memory-stability, A90-rig-reclaim and A90b. V49 shows the same poses as at the wave 3 review.
+- A16: knuckle to the jaw anchor 0.014 m, hook to nock 0.0083 m.
+- A17: hand to quiver 0.040 m, loose 0.090 m behind.
+- A32: ramp nock-to-hand at most 0.024 m, 0 wrap or behind-head steps.
+- A107: in the behind-the-head band 0.059 m at a jog and 0.070 m at a sprint (bar 0.10).
+- A90: 30 cycles, heap +1.5 %, geometries -1, textures -1. A90-rig-reclaim and A90b: 0 growth, 0 offenders.
+- V49: in all 12 tiles both elbows stay under the top of her head. Only the sash panels differ.
+
+**The lane page rows at 2723593:**
+- **Pass:** A102, A104, A105 and A106.
+- **A100 FAIL, as before.** In the dodge the stowed lance tilts 34.8-86.9° and its blade runs -0.49 to 0.81 m over the shoulder.
+- **A103 FAIL, as before.** On the first swing the blade stops 0.522 m short of the hull. All 12 real-input swings across the four kinds land.
+- **A101 FAIL.** The ready guard's tip stands 0.564 and 0.552 m high in two runs (canon 0.35-0.55). At aba90a3 it is 0.584 m and at 95a1ed0 0.558 m, so it failed before this run.
+- **A-sweep-wind: 2 of 3 runs pass.** The failing run read the F15 front-right panel's bend at 4.8° (bar 5: "a board"). The row also fails at aba90a3 (0.8°) and at 95a1ed0 (4.2°), one run each. This is the flake the backlog already names, not a new failure.
+- **The sweep in the page:** crouch, sit, mantle, slide, unstowBow, stowBow and blendLanceToBow pass.
+  - **A-sweep-roll fails:** in 2 frames the front-right panel is 5.2 cm into the torso. The cloth lane read 0 frames at 8a0d72d and 1 at 95a1ed0.
+  - **A-sweep-climb fails:** in 1 frame the front-right panel is 1.0 cm into the draw forearm.
+- **The sweep in Node:** 22 clips, 0 behind-head steps, 0 head-plane steps, 0 clipping frames.
+
+**Node benches at 2723593:**
+- Handling bench: 111 failing clauses in 25 of 26 cases, and the gaff in the loop 21 in 6 of 6 (the lane's numbers confirmed).
+- People's cloth: the worst person costs 0.0164 ms a step (Lantern Keeper; bar 0.02), and Oro 0.0143 ms: PASS.
+
+**The slice at 2723593** (`slice-hour.mjs --run-only`): **14 of 14**, stopped at the reward.
+
+| | run |
+|---|---|
+| Peg cross | 44.3 s |
+| ditch | 49.1 s |
+| topple | 12.4 s |
+| lowest hp | 80; two drinks |
+| reward | the Scout with Shrug |
+| save rows, site clock | PASS |
+| frames over 33 / 50 ms in play | 0 / 0 in 81 s and 9,466 frames (worst 25.1 ms) |
+
+**Frames at 2723593** (F08-F10, F15, F19 and F34-F37 in one film, 0 console errors):
+- **F08, F09, F10:** her pose matches the anchors. The sash panels now hang in folds; the back panel in F10 reads as draped cloth. Closer than the 2026-11-14 refilm (as the anchors are). In F08 the front-right panel shows a dark notch at mid-height.
+- **F15:** the same stride as the anchor and as aba90a3 (1.07 % of pixels differ, almost all in her panels). The front-right panel stands a little proud of the thigh.
+- **F19:** the same as aba90a3 (0.68 %), and 0.01 % from the wave 4 exit film.
+- **F34 and F35:** the Line is on the walls before True Ground and gone after it. At this range the walls take the new flat far path at their mean tone. The haze differs with wave 4's calima.
+- **F36 (closer):** the cistern and the walls read as coursed stones with depth, not crazy paving. About 4 people are at work in frame (target 5; one at the wave 3 review).
+  - Frame cost: 16.7 ms median, 18.6 ms p95.
+  - 121 draws and 0.87 M triangles.
+- **F37 (closer):** Oro's apron, bib straps and sash carry texture and wear. Behind them the drystone and a plastered house have dressed quoins.
+  - His lower right leg and foot read pale against the dark wool of the left.
+  - The forge's coal bed reads as a flat orange slab at this range.
+
+**Chrome used:** about 29 minutes over 6 launches.
+- Tier 0's boot 0.3 min, the frames 1.0, the kept and lane rows 16.5, the sweep rows 2.5.
+- The A101 and A-sweep-wind runs at three commits 3.7, the slice 4.6.
+
+---
+
+**Open after this check:**
+1. The sash panel's clipping in the roll (2 frames, 5.2 cm into the torso) and the climb (1 frame). Both are on the front-right panel that now swings free.
+2. The shipped size has 0.55 MB of headroom under the 60 MB first-load cap. Resident textures are 137 MB, with people at 109 MB against a plan line of 39 MB.
+3. A101's ready-guard tip height sits on the 0.55 m edge (0.552-0.584 m over three commits).
+4. A100 and A103 (the dodge's holster, the blade short of the hull) fail as before.
+5. A-sweep-wind's F15 front-right bend is a flake (2 of 3 at 2723593, failing once each at aba90a3 and 95a1ed0).
+
+**Rulings (the orchestrator):** EN4's sun-altitude bar is the built sky's noon peak (>= 45 deg); the sky is not raised. main is held until the Windwall raise keeps the fan in front of her and below the top of her head (the owner's bar).
