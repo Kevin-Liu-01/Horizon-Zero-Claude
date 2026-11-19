@@ -5,7 +5,8 @@
  * The herd's own code (HerdFile, fileStep, fileHold, HerdRipple, rippleTick, and machine.js's moveTowardS) drives
  * kinematic members on simulation time (1/60 s steps). The leader walks its bearing at walk speed, as the base patrol
  * does on a straight coring route; followers walk the file. Ten chimes at 5-45 m from the nearest member, herds of 3-6.
- * Bars: 0 members change bearing by more than 2 deg; every file gap 3.5-4.5 m* within 4 s of the chime; the lamp ripple
+ * Bars: 0 members change bearing by more than 2 deg; every file gap (the clear space stern to bow, centre spacing minus
+ * FILE.hullL) 3.5-4.5 m* within 4 s of the chime; the lamp ripple
  * runs nearest-first; no member's speed above its walk (from the chime to 12 s after it).
  */
 import test from 'node:test';
@@ -76,7 +77,7 @@ test('IN1: ten chimes at 5-45 m, herds of 3-6: no flight, the file closes at wal
         maxTurnDeg = Math.max(maxTurnDeg, angDiff(m.sc.heading, bearing) / D2R);
       }
       if (gapsAt4 === null && H.engine.simTime - t0 >= 4) {
-        gapsAt4 = ms.slice(1).map((m, i) => Math.hypot(m.position.x - ms[i].position.x, m.position.z - ms[i].position.z));
+        gapsAt4 = ms.slice(1).map((m, i) => Math.hypot(m.position.x - ms[i].position.x, m.position.z - ms[i].position.z) - FILE.hullL);
       }
     }
     const order = H.flashes.map((e) => Math.hypot(e.m.position.x - cx, e.m.position.z - cz));

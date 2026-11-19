@@ -334,7 +334,7 @@ const A_HERD_RIPPLE = `(async () => {
   const A = new V3(spot.x - dir.x * 30, 0, spot.z - dir.z * 30), B = new V3(spot.x + dir.x * 30, 0, spot.z + dir.z * 30);
   const ms = [];
   for (let i = 0; i < 3; i++) {
-    const m = __M.spawn(KIND, A.x - dir.x * i * 5.2, A.z - dir.z * i * 5.2, { herd, route: [B, A], heading: hd });
+    const m = __M.spawn(KIND, A.x - dir.x * i * 9.5, A.z - dir.z * i * 9.5, { herd, route: [B, A], heading: hd });   // the open file (tiller-herd.js FILE.gap)
     if (!m) continue;
     __M.squads.join(m, herd, 'herd');
     ms.push(m);
@@ -369,7 +369,8 @@ const A_HERD_RIPPLE = `(async () => {
       if (v - walk[i] > maxOverWalk) maxOverWalk = v - walk[i];
       const a = ang(m.heading, bearing0[i]); if (a > maxTurnDeg) maxTurnDeg = a;
     });
-    if (gapsAt4 === null && t >= 4 && f) gapsAt4 = f.order.slice(1).map((m, k) => +Math.hypot(m.position.x - f.order[k].position.x, m.position.z - f.order[k].position.z).toFixed(2));
+    // the gap is the clear space stern to bow: centre spacing minus the 4.5 m hull (tiller-herd.js FILE.hullL)
+    if (gapsAt4 === null && t >= 4 && f) gapsAt4 = f.order.slice(1).map((m, k) => +(Math.hypot(m.position.x - f.order[k].position.x, m.position.z - f.order[k].position.z) - 4.5).toFixed(2));
   }
   const order = flashes.map((t, i) => ({ i, t })).filter(x => x.t !== null).sort((a, b) => a.t - b.t);
   const span = order.length ? order[order.length - 1].t - order[0].t : null;
@@ -386,7 +387,7 @@ const A_HERD_RIPPLE = `(async () => {
   const diag = { rippleHook: !!__M._herdRipple, ripples: __M._herdRipple ? __M._herdRipple.ripples : null, file: !!f, fileOrder: f ? f.order.length : 0, sentryState: s ? s.state : null, herds: __M.squads.herds.length, alarmedAtEnd: herd.alarmed, leader: lead ? ms.indexOf(lead) : null };
   return { pass: Object.values(checks).every(Boolean), detail: { checks, diag, flashesS: flashes, flashSpanS: span && +span.toFixed(3), alarmS: alarmT,
     maxSpeedOverWalk: +maxOverWalk.toFixed(3), maxBearingChangeDeg: +maxTurnDeg.toFixed(2), gapsAt4sM: gapsAt4, sentry: sentryKind,
-    bar: 'IN1 (M2 wave 1; was: the herd flees in file): a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd never flees: no alarm, no member above its walk, no member\'s bearing changes by more than 2 deg over 12 s, and every file gap 3.5-4.5 m 4 s after the chime' } };
+    bar: 'IN1 (M2 wave 1; was: the herd flees in file): a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd never flees: no alarm, no member above its walk, no member\'s bearing changes by more than 2 deg over 12 s, and every file gap (clear, stern to bow) 3.5-4.5 m 4 s after the chime' } };
 })()`;
 
 /* ------------------------------------------------------------------ */

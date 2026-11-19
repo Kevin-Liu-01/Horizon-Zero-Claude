@@ -33,10 +33,18 @@ import { HOT } from '../lib/hot.js';
  * steering scratch). Per herd: one HerdFile; per manager: one listener, never
  * re-registered.
  */
+/**
+ * The file's spacing is centre to centre; the GAP a row grades is the clear space between one hull's stern and the
+ * next one's bow (IN1, IN0: "the herd's gap"), so centre spacing = HULL_L + gap. M2 wave 1: the M1 file was 5.2 m
+ * centre to centre, 0.7 m of clear space behind a 4.5 m hull (nose to tail, nothing for a chime to close); the open
+ * file is now a 5.0 m gap and a chime closes it to 4.0 m (IN1's band 3.5-4.5 m*), which a rank-5 follower can walk in
+ * the 4 s the band allows (1 m per rank at 1.5 m/s).
+ */
+const HULL_L = 4.5;
 export const FILE = Object.freeze({
-  gap: 5.2, crumbM: 0.8, cap: 384, rippleR: 45, stepS: 0.28, flashS: 0.24,
-  /** IN1: the closed file's gap (band 3.5-4.5 m*), the leader's coring halt that lets the file close at walk, and how long it stays closed */
-  closeGap: 4.1, closeS: 4.0, closedS: 30,
+  hullL: HULL_L, gap: HULL_L + 5.0, crumbM: 0.8, cap: 384, rippleR: 45, stepS: 0.28, flashS: 0.24,
+  /** IN1: the closed file's spacing (a 4.0 m gap), the leader's coring halt that lets it close at walk, and how long it stays closed */
+  closeGap: HULL_L + 4.0, closeS: 4.0, closedS: 30,
   /** crumbs ahead of the slot a follower steers at (3 x 0.8 m) */
   look: 3,
 });
