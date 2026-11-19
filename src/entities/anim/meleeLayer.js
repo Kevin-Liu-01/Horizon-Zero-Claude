@@ -476,6 +476,8 @@ const GUARD_ELBOW_OUT = 0.04;
 const GUARD_MOVE_POLE = new THREE.Vector3(-0.45, -0.89, -0.10).normalize();
 /** ...and on the drawn matrices, this many passes. */
 const UC_SEAT_LATE_N = 4;
+/** M2 wave 0 (W6): the share of a stow's clock through which the guard's elbow bar still holds on the move */
+const HOLSTER_ELBOW_K = 0.06;
 const _ucC = new THREE.Vector3(), _ucV = new THREE.Vector3(), _ucP = new THREE.Vector3(), _ucQ = new THREE.Quaternion();
 /** M1a regressions: the drive arm's elbow pole in a full crouch (character space: out to her right and down, a little forward, not back),
  *  and how much of the crouch weight blends toward it (see `_solveRight`). */
@@ -4780,13 +4782,12 @@ export class MeleeLayer {
     D.ucSeatLate = 0;
     // (M1a weapons round 3: ...and the guard on the move, as on the pose pass)
     const guardMove = D.stance === 'ready' && !this.active && (an._moveW || 0) > 0.2;
-    /* (M2 wave 0, W6: the draw and the stow while the right fist has the haft keep the guard's elbow bar on the move too:
-     *  the stow's first step out of a jogging guard took the right elbow 0.021 m over its shoulder joint (swap21Jog), the
-     *  holster path's own pole solving the guard's fist. The fist goes out along its arm until the elbow is under it; the
-     *  left fist, if it is on the haft, is seated again on it) */
-    if (!guardMove && (D.stance === 'draw' || D.stance === 'holster') && this._held && !this.active && (an._moveW || 0) > 0.2) {
+    /* (M2 wave 0, W6: the stow's first steps out of a guard on the move keep the guard's elbow bar: its first step took
+     *  the right elbow 0.021 m over its shoulder joint (swap21Jog), the holster path's own pole solving the guard's fist.
+     *  Only there: through the rest of the stow the same push put the elbow behind her head (A107's bench, a jog: 0.109 m)) */
+    if (!guardMove && D.stance === 'holster' && this._held && !this.active && (an._moveW || 0) > 0.2 && (this._stDrawK ?? 1) < HOLSTER_ELBOW_K) {
       D.guardFistOut = 0;
-      this._guardElbowDown(an, 3);
+      this._guardElbowDown(an, 2);
       if (D.guardFistOut && this._lhOnW > 0.5) this._seatLeft(this._lhOnW, this._lhArmW, this._lhOnWant, 0);
       return;
     }

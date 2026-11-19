@@ -1117,7 +1117,9 @@ export class CarryStow {
        * for the bow, and goes on to the regrip with it; the nock's clock runs from the request (`bowNockHold`), and the
        * aim's own quiver beat is not run again once the bow is up (`bowQuickNocked`). At 1d2de89 the beat and the nock
        * waited for the whole unstow and the regrip: RMB to loosable 1.40 s against W0's 0.867 */
-      B.quick = !inHand && !!this.ctx.player?.aiming && !this.ctx.combat?.activeWeapon?.heavy;
+      // (only with the lance on her back: from the guard the right fist has the haft, and the stow ahead of the bow has it)
+      const lanceOut = (this.melee?.lanceOwner && this.melee.lanceOwner() !== 'carry') || (this.ctx.combat?.melee?.stance ?? 'holstered') !== 'holstered';
+      B.quick = !inHand && !lanceOut && !!this.ctx.player?.aiming && !this.ctx.combat?.activeWeapon?.heavy;
       B.qDone = inHand; B.qN = 0; B.qAt = -1;
     } else {
       B.quick = false;
