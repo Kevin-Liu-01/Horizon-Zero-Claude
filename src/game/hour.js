@@ -418,6 +418,8 @@ export class FirstHour {
   /* ------------------------------------------------------------ the re-survey */
 
   _resurveyStep(dt) {
+    // a frame's staging holds the re-survey where it set it (stageResurvey): the quest's own arming stands aside
+    if (this._staged) return;
     const want = this.tg.current()?.id === 'survey';
     if (want && !this.resurvey) this._buildResurvey();
     if (!this.resurvey) return;
@@ -477,6 +479,7 @@ export class FirstHour {
   stageResurvey({ atS = 10, slewS = 1.2, taken = 2 } = {}) {
     if (!this.resurvey) this._buildResurvey();
     const L = this.resurvey;
+    this._staged = true;
     L.arm(true);
     this._spawn('lookers');
     L.running = true; L.startT = L.simT;
@@ -502,6 +505,12 @@ export class FirstHour {
     L.R.on = true; L.R.mark = L.R.marks[Math.max(0, taken - 1)].id;
     L._shown = false; L._show(true); L._paint();
     return L.report();
+  }
+
+  /** The staging's undo: the quest's own arming takes the re-survey back. */
+  unstageResurvey() {
+    this._staged = false;
+    this.resurvey?.arm(false);
   }
 
   /* ------------------------------------------------------------ travel */

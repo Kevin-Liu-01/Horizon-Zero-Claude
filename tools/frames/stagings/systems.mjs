@@ -54,7 +54,7 @@ export const stagings = {
           const rep = H.stageResurvey({ atS: 10 });
           window.__f44 = rep;
           api.undo(() => {
-            H.resurvey?.arm(false);
+            if (H.unstageResurvey) H.unstageResurvey(); else H.resurvey?.arm(false);
             for (const m of (H.spawned?.lookers || [])) { try { C.machines?.sites?.dispose?.(m) ?? m.dispose?.(); } catch { /* */ } }
           });
           // the lookers hold where 10 s put them (the frame is the hold's tenth second, not what they do after it)
