@@ -664,12 +664,18 @@ export const PATCHED = [
  * their feet through gait.js and publish them through `debugFeet()` (the source A45 reads). Same primary bar:
  * a planted foot moves <= 0.12 m in any rendered frame and <= 3 m/s. The footlock-only "lock ramp <= 9 m/s"
  * clause has no gait equivalent and is not graded.
+ *
+ * RESTATED IN M2 WAVE 1 (the orchestrator's ruling after the M2 wave 0 check; docs/GATES.md §3 D): the 3 m/s clause
+ * divided one simulation step's slip by the WALL-CLOCK frame, so a short frame read fast (0.0489 m in a 13.8 ms frame
+ * = 3.5 m/s at 72296aa; the same slip read 2.6 m/s in a 16.6 ms frame). The row now grades the slip PER SIMULATION
+ * STEP: a planted pair's move divided by the sim steps the rendered frame ran (engine.steps, at least 1), <= 0.05 m,
+ * beside the unchanged per-frame 0.12 m bar. The m/s read stays on the record, not graded.
  */
 const A45C_ISLAND = `(async () => {
   { const __k = noKindsSkip(); if (__k) return __k; }
   const T = __CTX__.terrain, species = new Map();
   for (const _m of stagedPicks()) species.set(_m.kind, _m);
-  const out = {}; let measured = 0, worstFrameM = 0, worstMps = 0, worstAt = null;
+  const out = {}; let measured = 0, worstFrameM = 0, worstMps = 0, worstStepM = 0, worstAt = null;
   for (const [kind, m] of species) {
     if (!m.debugFeet || m.debugFeet().length < 2) { out[kind] = 'no feet'; continue; }
     {
@@ -682,7 +688,7 @@ const A45C_ISLAND = `(async () => {
     const prev = {};
     const startState = { state: m.state ?? null, speed: m._speed != null ? +(+m._speed).toFixed(2) : null, at: [+m.position.x.toFixed(1), +m.position.z.toFixed(1)],
       bootPeopleWait: __CTX__.engine?.bootPeopleWait ?? null };
-    let prevT = performance.now(), samples = 0, plantedPairs = 0, kFrame = 0, kMps = 0, moved = 0, slips = 0, kAt = null;
+    let prevT = performance.now(), samples = 0, plantedPairs = 0, kFrame = 0, kMps = 0, kStep = 0, moved = 0, slips = 0, kAt = null;
     let sx = m.position.x, sz = m.position.z;
     const t0 = performance.now();
     while (performance.now() - t0 < 5000) {
@@ -700,6 +706,10 @@ const A45C_ISLAND = `(async () => {
           plantedPairs++;
           if (step > 0.02) slips++;
           if (step > kFrame) kFrame = step;
+          // M2 wave 1 restatement: the slip per simulation step (the frame's sim steps, at least 1)
+          const nSim = Math.max(1, (__CTX__.engine?.steps | 0) || 1), perStep = step / nSim;
+          if (perStep > kStep) kStep = perStep;
+          if (perStep > worstStepM) worstStepM = perStep;
           if (step / dt > kMps) {
             kMps = step / dt;
             // (regfix 4, diagnosis only; not graded) what the worst planted pair stood in: the rendered frame's
@@ -721,15 +731,16 @@ const A45C_ISLAND = `(async () => {
       }
     }
     if (moved < 0.4 || plantedPairs < 20) { out[kind] = { skipped: 'idle', movedM: +moved.toFixed(2), plantedPairs }; continue; }
-    out[kind] = { worstPlantedFrameM: +kFrame.toFixed(4), worstPlantedMps: +kMps.toFixed(3), plantedPairs, frames: samples, movedM: +moved.toFixed(2),
+    out[kind] = { worstPlantedFrameM: +kFrame.toFixed(4), worstPlantedStepM: +kStep.toFixed(4), worstPlantedMps: +kMps.toFixed(3), plantedPairs, frames: samples, movedM: +moved.toFixed(2),
       slipsOver2cm: slips, worstPair: kAt, startState: startState };
     measured++;
   }
   const need = Math.min(2, species.size);
   if (measured < need) return { pass: null, detail: { note: 'SKIP: fewer than ' + need + ' staged kinds walked far enough to sample', out } };
-  const pass = worstFrameM <= 0.12 && worstMps <= 3;
+  const pass = worstFrameM <= 0.12 && worstStepM <= 0.05;
   return { pass, detail: { stage: 'island: one walking machine of each staged kind, read through debugFeet() (gait.js)',
-    barFrameM: 0.12, barMps: 3, worstPlantedFrameM: +worstFrameM.toFixed(4), worstPlantedMps: +worstMps.toFixed(3), worstAt,
+    barFrameM: 0.12, barStepM: 0.05, worstPlantedFrameM: +worstFrameM.toFixed(4), worstPlantedStepM: +worstStepM.toFixed(4),
+    worstPlantedMps: +worstMps.toFixed(3), mpsNotGraded: 'M2 wave 1 ruling: was <= 3 m/s against the wall-clock frame', worstAt,
     speciesMeasured: measured, out, notGraded: 'lock ramp <= 9 m/s (FootLock only; no live kind runs the handle rig)' } };
 })()`;
 
@@ -786,7 +797,7 @@ export const RESTAGED = [
   },
   {
     id: 'A45c-foot-continuity', kind: 'action', lane: 'kept-stack', stage: 'island',
-    title: '[island] a PLANTED Instrument foot does not move: <= 0.12 m in any rendered frame AND <= 3 m/s (debugFeet, every staged kind that walks)',
+    title: '[island] a PLANTED Instrument foot does not move: <= 0.12 m in any rendered frame AND <= 0.05 m per simulation step (debugFeet, every staged kind that walks; restated M2 wave 1: was <= 3 m/s on the wall-clock frame)',
     settle: 500, timeout: 180000,
     assert: staged([], A45C_ISLAND),
   },
@@ -1212,5 +1223,16 @@ export const RESTATED = [
       title: 'Steady (restated M1a): a hairline breath meter under the reticle drains while it is held and is released after; no veil element, no full-screen overlay, no desaturation',
       assert: A71D_STEADY,
     },
+  },
+  {
+    id: 'A76-footfalls',
+    why: "M2 wave 1 (the orchestrator's task: A76 reads three size classes): the routing reads EVERY registered Instrument kind that declares a size class (machines.sizeClasses), not only the role-staged ones, because the first large kind (the Screed) is a wave 1 blockout that claims no role until its behaviour wave; the weight class is the registry's declared class (sizeClassOf), as the audio reads it (audio.js _weightOf). A kind with its own slice step cue (src/audio/slice/director.js KIND_CUES: the Plumb's servo, the Gauge's stilt) passes routing on that cue and is listed by name (ownStep), as the audio plays it; every other kind must play its class's mstep set. The emitter, the surface sweep and every other clause are unchanged",
+    patches: [
+      ['const species = [...STAGED_KINDS].sort();', 'const species = Object.keys(__CTX__.machines?.sizeClasses || {}).filter((k) => !!__CTX__.machines.sizeClassOf(k)).sort();   // restated M2 wave 1: every classed kind'],
+      ['  for (const m of stagedPicks()) {\n    const cls = m.sizeClass ?? m.spec?.sizeClass ?? m.constructor?.sizeClass ?? null;', '  for (const k of species) {\n    const m = { kind: k }, cls = __CTX__.machines.sizeClassOf(k);   // restated M2 wave 1: the registry\'s declared class'],
+      ["          const played = mine.filter(e => e.r && e.id.indexOf('mstep/') === 0).map(e => e.id);", "          const __own = __CTX__.audio?.slice?.stepSet?.({ kind: s }) || null;   // restated M2 wave 1: a slice kind's own step\n          const played = mine.filter(e => e.r && (e.id.indexOf('mstep/') === 0 || (__own && e.id === __own))).map(e => e.id);\n          if (__own && played.indexOf(__own) >= 0) (routed.__ownStep = routed.__ownStep || {})[s] = __own;"],
+      ["          if (WANT[s] && played.indexOf(want) < 0) misrouted.push({ species: s, want, got: played });", "          if (WANT[s] && played.indexOf(want) < 0 && !(__own && played.indexOf(__own) >= 0)) misrouted.push({ species: s, want, got: played });"],
+      ["        for (const s of species) for (const id of routed[s]) classes[id] = (classes[id] || 0) + 1;", "        for (const s of species) for (const id of routed[s]) if (id.indexOf('mstep/') === 0) classes[id] = (classes[id] || 0) + 1;   // restated: the weight-class sets heard"],
+    ],
   },
 ];
