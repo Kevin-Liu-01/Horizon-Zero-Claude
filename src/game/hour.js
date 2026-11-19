@@ -482,8 +482,13 @@ export class FirstHour {
     this._staged = true;
     L.arm(true);
     this._spawn('lookers');
+    // the frame is the hold's tenth second, not what the lookers do after it: they are held from the step they stand
+    // (at e049ea2, held 0.3 s later, they had seen her and her own camera's combat framing dissolved her to 0.06)
+    this._held = [];
+    for (const m of this._live(this.spawned.lookers)) { this._held.push([m, m.update]); m.update = function () {}; }
     L.running = true; L.startT = L.simT;
-    L._sendLookers(this._live(this.spawned.lookers));
+    // placed, not lured: a lure turns them wary on the spot, and her camera answers a wary Instrument 19 m off
+    L._sendLookers(this._live(this.spawned.lookers), { lure: false });
     const walked = Math.max(0, atS - 0.9) * 1.25 * 0.7;
     const H = (x, z) => this.ctx.terrain?.getHeight?.(x, z) ?? 0;
     for (const lk of L.lookers) {
@@ -512,6 +517,8 @@ export class FirstHour {
 
   /** The staging's undo: the quest's own arming takes the re-survey back. */
   unstageResurvey() {
+    for (const [m, u] of (this._held || [])) m.update = u;
+    this._held = null;
     this._staged = false;
     this.resurvey?.arm(false);
   }

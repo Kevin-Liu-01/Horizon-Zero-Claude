@@ -119,7 +119,7 @@ export class ResurveyLive {
   /* ------------------------------------------------- come to look */
 
   /** `only`: the machines that may come (F44's staging hands its own three); else every live one near. */
-  _sendLookers(only = null) {
+  _sendLookers(only = null, { lure = true } = {}) {
     const M = this.ctx.machines;
     const list = (only || M?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.position);
     const refuse = (k) => this.hooks.refuses?.(k) ?? false;
@@ -129,7 +129,7 @@ export class ResurveyLive {
       const m = list[p.id];
       return { m, id: m.id ?? p.id, kind: m.kind, from: { x: m.position.x, z: m.position.z }, to: { x: p.x, z: p.z }, d0: p.d, leaveT: -1, arriveT: -1, dMin: p.d };
     });
-    this._lure();
+    if (lure) this._lure();
     this._say('lookers', this.lookers.map((L) => ({ kind: L.kind, d0: L.d0 })));
   }
 

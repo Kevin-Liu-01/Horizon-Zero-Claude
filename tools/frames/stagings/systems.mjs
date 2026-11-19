@@ -57,12 +57,8 @@ export const stagings = {
             if (H.unstageResurvey) H.unstageResurvey(); else H.resurvey?.arm(false);
             for (const m of (H.spawned?.lookers || [])) { try { C.machines?.sites?.dispose?.(m) ?? m.dispose?.(); } catch { /* */ } }
           });
-          // the lookers hold where 10 s put them (the frame is the hold's tenth second, not what they do after it)
+          // the lookers hold where 10 s put them (stageResurvey holds them from the step they stand)
           await api.sleep(300);
-          for (const m of (H.spawned?.lookers || [])) {
-            const u0 = m.update; m.update = function () {};
-            api.undo(() => { m.update = u0; });
-          }
           if (!rep.lookers.length) api.standIn('no Peg came to look (none could be stood up)');
           else api.standIn(`staged at 10 s: arc ${rep.arc} s, ${rep.taken} of 3 bearings, lookers ${JSON.stringify(rep.placed)}; her fade ${C.player?.fade ?? '?'}`);
         } catch (e) { api.standIn(`the re-survey staging threw: ${e?.message || e}`); }
