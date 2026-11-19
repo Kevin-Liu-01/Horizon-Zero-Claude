@@ -93,7 +93,7 @@ export function openTrade(ctx, counter, { present = null } = {}) {
       h('h3', null, head, W.head);
       h('span', 'tr-salt', head, fill(W.salt, { n: inv?.count?.('metal-shards') ?? 0 }));
       const cols = h('div', 'tr-cols', P);
-      const give = h('div', 'tr-col give', cols), take = h('div', 'tr-col take', cols);
+      const give = h('div', 'tr-col tr-give', cols), take = h('div', 'tr-col tr-take', cols);
       h('h4', null, give, W.give);
       h('h4', null, take, W.take);
       for (const s of counter.rules.takes(inv)) {
