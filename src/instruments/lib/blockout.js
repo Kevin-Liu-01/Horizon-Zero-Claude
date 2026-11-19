@@ -55,17 +55,17 @@ const TILLER_FORMS = {
   ] },
   /**
    * `built`: the Tiller that plays (M2 wave 2, tools/build/instruments/gen-tiller.mjs), in its BODY space (the GLB is
-   * recentred: body z = design z + 0.175). The crowned hull as a box to the 2.2 m shoulder and a crown box to 2.4 m;
+   * recentred: body z = design z + 0.1498 since M2 wave 3, when the longer thighs' knees moved the box; 0.175 at wave 2). The crowned hull as a box to the 2.2 m shoulder and a crown box to 2.4 m;
    * the dust skirt's flank plates (x +-0.665, 0.5 m amidships, the hem rising to 0.66 m at the ends: one box from 0.5 m)
    * and the bow and stern plates to 0.9 m. Its sight occluders follow the hull (kinds/tiller.js).
    */
   built: { L: 4.49, W: 1.36, parts: [
-    box('hull', 'pelvis', [0, 1.725, 0.145], [1.34, 0.95, 3.26], { occludes: true }),
-    box('dome', 'pelvis', [0, 2.30, 0.175], [0.9, 0.2, 2.4], { occludes: true }),
-    box('skirtL', 'pelvis', [-0.665, 0.96, 0.155], [0.03, 0.92, 3.28], { occludes: true }),
-    box('skirtR', 'pelvis', [0.665, 0.96, 0.155], [0.03, 0.92, 3.28], { occludes: true }),
-    box('skirtBow', 'chest', [0, 1.16, 1.795], [1.18, 0.52, 0.03], { occludes: true }),
-    box('skirtStern', 'pelvis', [0, 1.16, -1.485], [1.18, 0.52, 0.03], { occludes: true }),
+    box('hull', 'pelvis', [0, 1.725, 0.12], [1.34, 0.95, 3.26], { occludes: true }),
+    box('dome', 'pelvis', [0, 2.30, 0.15], [0.9, 0.2, 2.4], { occludes: true }),
+    box('skirtL', 'pelvis', [-0.665, 0.96, 0.13], [0.03, 0.92, 3.28], { occludes: true }),
+    box('skirtR', 'pelvis', [0.665, 0.96, 0.13], [0.03, 0.92, 3.28], { occludes: true }),
+    box('skirtBow', 'chest', [0, 1.16, 1.77], [1.18, 0.52, 0.03], { occludes: true }),
+    box('skirtStern', 'pelvis', [0, 1.16, -1.51], [1.18, 0.52, 0.03], { occludes: true }),
   ] },
   deep: { L: 3.6, W: 1.5, parts: [
     box('hull', 'pelvis', [0, 1.425, 0], [1.5, 1.45, 3.6], { occludes: true }),

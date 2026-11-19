@@ -6,6 +6,7 @@ import { aiRandom } from './rng.js';
 const DEG = Math.PI / 180;
 import { perceptionScale, weatherName } from '../../../instruments/lib/weather.js';
 import { HOT, mutableFromBirth } from '../../../instruments/lib/hot.js';
+import { sightBlocked } from '../../../instruments/lib/sight.js';
 
 /**
  * Perception — the honest senses of a machine.
@@ -164,6 +165,15 @@ export class Perception {
       this._losMX = m.position.x; this._losMZ = m.position.z; this._losPX = target.x; this._losPZ = target.z;
     }
     if (!this._losCached) return false;
+    /* MOVING COVER (M2 wave 3, IN3; the sight occluders seam, src/instruments/lib/sight.js): a Tiller's hull and
+     * skirt as it walks, the planted Windwall, Ninewalls' nine walls. Tested every call, never cached: the hulls move
+     * every frame. Her figure is hidden only when BOTH rays are blocked, the one to her chest and the one to her hip
+     * (crouched 0.75 and 0.5 m, standing targetEyeY and 0.95 m), so a hull that covers a point over her crouched
+     * head while her shoulders stand clear of it hides nothing. The machine's own hull (`_occSlot`) is skipped. */
+    const own = m._occSlot || undefined, crouchP = HOT.pCrouch === 1;
+    const yc = target.y + (crouchP ? 0.75 : this.cfg.targetEyeY), yh = target.y + (crouchP ? 0.5 : 0.95);
+    if (sightBlocked(_eye.x, y0, _eye.z, target.x, yc, target.z, own) !== null
+      && sightBlocked(_eye.x, y0, _eye.z, target.x, yh, target.z, own) !== null) return false;
     // a Dust cloud (a Dust Pot, W2) blinds the line as well (bible §5.8 Clouded)
     const H = m.manager?.perception;
     if (H && H.dustBetween(_eye, _tgt)) return false;
