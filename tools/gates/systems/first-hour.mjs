@@ -185,7 +185,7 @@ const beatProbe = (beat, questId, places, card) => {
 };
 
 const face = (x, z) => { const p = window.__CTX__.player; p.camYaw = Math.atan2(-(x - p.position.x), -(z - p.position.z)); };
-const where = () => { const C = window.__CTX__, p = C.player; return { state: C.state, x: p.position.x, y: p.position.y, z: p.position.z, hp: Math.round(p.health ?? 0), dead: !!document.querySelector('.mn-death.show') }; };
+const where = () => { const C = window.__CTX__, p = C.player, dc = document.querySelector('.mn-death.show'); return { state: C.state, x: p.position.x, y: p.position.y, z: p.position.z, hp: Math.round(p.health ?? 0), dead: !!dc, cause: dc ? ((dc.innerText || '').match(/felled by[^\n]*/i)?.[0] ?? 'died') : null }; };
 
 /* ------------------------------------------------------------------ driving */
 
@@ -373,6 +373,12 @@ async function driveResurvey(page) {
   if (!pad) return { ok: false, why: 'no pad' };
   const onPad = await walkTo(page, pad, 1.0, 20, { sprint: false });
   await sleep(600);
+  // (wave 4) a full staff before the hold: the three Pegs that come to look hit her through it (350540a leg 3: 72 -> 0 hp
+  // at 13.7 s of the arc, run 20261119T175642Z-350540a-systems-w4-leg3c); she drinks again under 40 during it
+  const K = SH.keys(page);
+  const drinks = [];
+  const d0 = await SH.drink(page, K, 98); if (d0) drinks.push(d0);
+  const lowDrink = async () => { const h = (await page.evaluate(where)).hp; if (h < 40) { const d = await SH.drink(page, K, 85, 3000); if (d) drinks.push(d); if (!(await page.evaluate(() => !!window.__CTX__.sighting?.on))) { await page.keyboard.press('KeyV'); await sleep(700); } } };
   const on = await page.evaluate(() => !!window.__CTX__.sighting?.on);
   if (!on) { await page.keyboard.press('KeyV'); await sleep(900); }
   const marks = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.resurvey?.R?.marks || []).map((m) => ({ id: m.id, x: m.x, y: m.y1 - 0.3, z: m.z })));
@@ -392,6 +398,7 @@ async function driveResurvey(page) {
       const r = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
       if (r.done) break;
       if (!r.bearings.find((b) => b.id === m.id)) { await page.keyboard.press('KeyT'); }
+      await lowDrink();
       await sleep(250);
     }
     const r = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
@@ -403,11 +410,12 @@ async function driveResurvey(page) {
   for (let k = 0; k < 40; k++) {
     const r = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
     if (r.done) break;
+    await lowDrink();
     await page.evaluate(aimPoint, last.x, last.y, last.z, 0.5);
     await sleep(250);
   }
   const rep = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
-  return { ok: !!rep.done, onPad, wallS: +((Date.now() - t0) / 1000).toFixed(1), log, report: rep };
+  return { ok: !!rep.done, onPad, wallS: +((Date.now() - t0) / 1000).toFixed(1), log, report: rep, drinks };
 }
 
 
@@ -420,10 +428,12 @@ const tgNow = () => window.__CTX__.quests?.['true-ground']?.current?.()?.id ?? (
 async function driveTopple(page, K) {
   await page.evaluate(() => { window.__probeQuest = 'the-scar'; });
   try {
-    const T = await page.evaluate(() => window.__CTX__.systemsGame.A.terrace);
-    const w = await walkPath(page, T, 34, 60);
+    // no run-in first (350540a: sprinting at the terrace through the herd she went 100 -> 0 hp in 20 s, gourd unused, run
+    // 20261119T180340Z-350540a-systems-w4-leg2b): a full staff, then the slice's own topple, which scans its stands round
+    // the Plumb, walks to them, drinks under 55 between shots and backs out when it closes
+    const d = await SH.drink(page, K, 98);
     const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 28, maxS: 150, tolDeg: 0.08, reach: 220 });
-    return { walk: { ok: w.ok, why: w.why ?? null }, ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length };
+    return { drink: d, ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, cause: (await page.evaluate(where)).cause };
   } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
 }
 
