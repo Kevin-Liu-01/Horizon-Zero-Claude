@@ -11,12 +11,15 @@ import { bankOf } from './ninewalls-ground.js';
  *
  * ONE MATERIAL, TWO DRAWS. Every piece is vertex-coloured on one MeshStandardMaterial whose fragment shader draws the
  * surface from three attributes: `aKind` (0 drystone, 1 pumice-and-lime render, 2 plain: timber, cloth, clay, voids,
- * 3 lava rock, 4 the dragon tree's bark, 5 its leaves, 6 still water), `aUV` (metres across the surface: along it and
- * up it) and `aPaint` (the Datum Line's flat vermilion ink over the stones). The drystone is drawn, not modelled:
- * wavy courses of basalt stones of their own length, each its own tone (black, grey, a rust one in six, a pale
- * vesicular one in seven), dark joints, a bulge and a bevel in the normal (screen-space derivative bump), lapilli dust
- * low down from the vertex colour. The walls are one mesh (rebuilt when a wall is cut or its line painted or
- * cleared); the houses, the tree and the places one more.
+ * 3 lava rock, 4 the dragon tree's bark, 5 its leaves, 6 still water, 7 dressed basalt: quoins, hearth and trough
+ * blocks), `aUV` (metres across the surface: along it and up it) and `aPaint` (> 0 the Datum Line's flat vermilion ink
+ * over the stones; < 0 a house's lime plaster over them, worn off low down and in patches). The drystone is drawn, not
+ * modelled: courses on wavy beds, in each course rounded basalt blocks of their own length with leaning end joints and
+ * chipped edges, each its own tone and its own tilt (so each takes the light its own way), set without mortar: the
+ * joints open into deep voids, black under the stone above, a pinning stone in the widest; up close one parallax step
+ * shifts the voids with the view; at range the stones go to the wall's mean and past a few pixels they are not drawn
+ * (a cheaper far path). Lapilli dust low down comes from the vertex colour. The walls are one mesh (rebuilt when a wall
+ * is cut or its line painted or cleared); the houses, the tree and the places one more.
  *
  *   wallsGeometry(ground, stateOf)   the nine walls on their terraces: two battered faces, a coping, the end caps and,
  *                                    on each riser's low side, the drystone skin over the ledge and the bank
@@ -32,7 +35,7 @@ const PAL = {
   stone: C(0xffffff), dust: C(0xd9c9b3), lime: C(0xd8d1c2), limeDirty: C(0xb9b0a1), line: C(0xc8401e),
   wood: C(0x6b5138), woodDark: C(0x4a3728), void: C(0x0d0b0a), clay: C(0x9a5e3f), clayDark: C(0x7a4630), straw: C(0xb49a62),
   bark: C(0x8f877b), barkDark: C(0x6c665d), leaf: C(0x5f7d57), leafPale: C(0x7d9368), leafDry: C(0x8a7455), water: C(0x1f2a26),
-  iron: C(0x34302d), bronze: C(0x8c6a3a), salt: C(0xe9e5da), paper: C(0xd9cfb6), carmine: C(0x8e2a35), rock: C(0xffffff), coal: C(0x3a1a0c),
+  iron: C(0x34302d), bronze: C(0x8c6a3a), quoinA: C(0x3d3a36), quoinB: C(0x5c5751), leather: C(0x5a3b27), ash: C(0x6e6a64), salt: C(0xe9e5da), paper: C(0xd9cfb6), carmine: C(0x8e2a35), rock: C(0xffffff), coal: C(0x3a1a0c),
 };
 export const KIT_PALETTE = PAL;
 const hash = (a, b = 0, c = 0) => { const h = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453; return h - Math.floor(h); };
@@ -91,13 +94,17 @@ class Soup {
     }
   }
   /** a lathe about +y at (cx, cy, cz): profile [[r, y], ...] bottom to top, `n` sides, outward faces */
-  lathe(cx, cy, cz, prof, n, o, { inward = false, jitter = 0, seed = 0 } = {}) {
+  lathe(cx, cy, cz, prof, n, o, { inward = false, jitter = 0, seed = 0, smooth = false } = {}) {
     const R = (i, k) => { const [r, y] = prof[i]; const a = (k / n) * Math.PI * 2, jr = jitter ? 1 + jitter * (hash(seed + i * 3.1, k % n) - 0.5) : 1; return [cx + Math.sin(a) * r * jr, cy + y, cz + Math.cos(a) * r * jr]; };
     for (let i = 0; i + 1 < prof.length; i++) for (let k = 0; k < n; k++) {
       const a = R(i, k), b = R(i, k + 1), c = R(i + 1, k + 1), d = R(i + 1, k);
       const u0 = (k / n) * Math.PI * 2 * prof[i][0], u1 = ((k + 1) / n) * Math.PI * 2 * prof[i][0];
       const uv = [[u0, prof[i][1]], [u1, prof[i][1]], [u1, prof[i + 1][1]], [u0, prof[i + 1][1]]];
-      if (inward) this.quad(b, a, d, c, { ...o, uv: [uv[1], uv[0], uv[3], uv[2]] }); else this.quad(a, b, c, d, { ...o, uv });
+      // smooth: each vertex's normal is its own bearing's, tilted by the profile's slope (no facets on a round wall)
+      const dr = prof[i + 1][0] - prof[i][0], dy = prof[i + 1][1] - prof[i][1], dl = Math.hypot(dr, dy) || 1, sg = inward ? -1 : 1;
+      const N = (kk) => { const an = (kk / n) * Math.PI * 2; return [Math.sin(an) * dy / dl * sg, -dr / dl * sg, Math.cos(an) * dy / dl * sg]; };
+      const nrm = smooth ? [N(k), N(k + 1), N(k + 1), N(k)] : null;
+      if (inward) this.quad(b, a, d, c, { ...o, uv: [uv[1], uv[0], uv[3], uv[2]], nrm: nrm && [nrm[1], nrm[0], nrm[3], nrm[2]] }); else this.quad(a, b, c, d, { ...o, uv, nrm });
     }
   }
   geometry() {
@@ -175,13 +182,15 @@ export function wallsGeometry(ground, stateOf, { step = 1.0 } = {}) {
           else S.quad(A, B, Cc, Dd, { col, kind: 0, uv, paint: ink });
         }
       }
-      // the coping: a low ridge from the outer edge to the inner, stones across
+      // the coping: a low ridge from the outer edge to the inner, its stones set on edge across the wall (the stones'
+      // plane squeezed along the wall and stretched across it: slabs about 0.23 m thick and 0.44 m across)
+      const CU = 2.0, CV = 0.55;
       const o0 = at(s0, 1, w.t / 2 - 0.03), o1 = at(s1, 1, w.t / 2 - 0.03), n0 = at(s0, -1, w.t / 2 - 0.03), n1 = at(s1, -1, w.t / 2 - 0.03);
       const m0 = [s0.x, tops[i] + 0.07, s0.z], m1 = [s1.x, tops[i + 1] + 0.07, s1.z];
       const ink = painted && cut ? 1 : 0;   // a cut wall's broken top is where its line was
       const cc = ink ? PAL.line : PAL.stone;
-      S.quad([o1.x, tops[i + 1], o1.z], [o0.x, tops[i], o0.z], m0, m1, { col: cc, kind: 0, uv: [[u1, 0], [u0, 0], [u0, w.t / 2], [u1, w.t / 2]], paint: ink * 0.6 });
-      S.quad([n0.x, tops[i], n0.z], [n1.x, tops[i + 1], n1.z], m1, m0, { col: cc, kind: 0, uv: [[u0, 0], [u1, 0], [u1, w.t / 2], [u0, w.t / 2]], paint: ink * 0.6 });
+      S.quad([o1.x, tops[i + 1], o1.z], [o0.x, tops[i], o0.z], m0, m1, { col: cc, kind: 0, uv: [[u1 * CU, 0], [u0 * CU, 0], [u0 * CU, w.t / 2 * CV], [u1 * CU, w.t / 2 * CV]], paint: ink * 0.6 });
+      S.quad([n0.x, tops[i], n0.z], [n1.x, tops[i + 1], n1.z], m1, m0, { col: cc, kind: 0, uv: [[u0 * CU, 0.5], [u1 * CU, 0.5], [u1 * CU, 0.5 + w.t / 2 * CV], [u0 * CU, 0.5 + w.t / 2 * CV]], paint: ink * 0.6 });
       // the skin on the riser's low side: from the face's foot over the ledge, down the bank, tucked into the low terrace
       const rise0 = q0.hi - q0.lo, rise1 = q1.hi - q1.lo;
       if (Math.max(rise0, rise1) > 0.12) {
@@ -236,6 +245,9 @@ function dwelling(S, d, ground) {
   const dq = W(doorX, 0, hd + 0.3), gDoor = Math.min(wallTop - 1.45, ground(dq[0], dq[2]));
   const doorTop = gDoor + 1.25;
   const batter = 0.05;
+  // two houses in five carry a lime plaster over their stones (worn off low down and in patches: the shader); the rest are
+  // bare drystone. Every house's corners are dressed basalt quoins and its door's reveal is limed
+  const cover = hash(seed, 31) < 0.4 ? 0.9 : 0, pz = -cover;
   // the walls, battered in toward the roof: each face from foot to the wall's top; the front around its door
   const corner = (sx, sz, y) => { const k = (y - foot) / (wallTop - foot); return W(sx * (hw - batter * k), y, sz * (hd - batter * k)); };
   const face = (a0, a1, sz, sx0, sx1, y0, y1, uOff = 0) => {
@@ -245,7 +257,7 @@ function dwelling(S, d, ground) {
     const A = P(a0, y0, k0), B = P(a1, y0, k0), Cc = P(a1, y1, k1), Dd = P(a0, y1, k1);
     const uv = [[a0 + uOff, y0 - g], [a1 + uOff, y0 - g], [a1 + uOff, y1 - g], [a0 + uOff, y1 - g]];
     const col = [dusty(y0, g), dusty(y0, g), dusty(y1, g), dusty(y1, g)];
-    if (sz > 0) S.quad(A, B, Cc, Dd, { col, kind: 0, uv }); else S.quad(B, A, Dd, Cc, { col, kind: 0, uv: [uv[1], uv[0], uv[3], uv[2]] });
+    if (sz > 0) S.quad(A, B, Cc, Dd, { col, kind: 0, uv, paint: pz }); else S.quad(B, A, Dd, Cc, { col, kind: 0, uv: [uv[1], uv[0], uv[3], uv[2]], paint: pz });
   };
   // front (+z): left of the door, right of it, over it
   face(-hw, doorX - doorW / 2, 1, 0, 0, foot, wallTop);
@@ -259,7 +271,7 @@ function dwelling(S, d, ground) {
     const strip = (z0, z1, y0, y1) => {
       const A = P(z0, y0), B = P(z1, y0), Cc = P(z1, y1), Dd = P(z0, y1);
       const uv = [[z0 + 9, y0 - g], [z1 + 9, y0 - g], [z1 + 9, y1 - g], [z0 + 9, y1 - g]], col = [dusty(y0, g), dusty(y0, g), dusty(y1, g), dusty(y1, g)];
-      if (sx > 0) S.quad(B, A, Dd, Cc, { col: [col[1], col[0], col[3], col[2]], kind: 0, uv: [uv[1], uv[0], uv[3], uv[2]] }); else S.quad(A, B, Cc, Dd, { col, kind: 0, uv });
+      if (sx > 0) S.quad(B, A, Dd, Cc, { col: [col[1], col[0], col[3], col[2]], kind: 0, uv: [uv[1], uv[0], uv[3], uv[2]], paint: pz }); else S.quad(A, B, Cc, Dd, { col, kind: 0, uv, paint: pz });
     };
     if (sx === winSide && d.d > 4.4 && wallTop - winY1 > 0.2) {
       strip(-hd, winZ - winW / 2, foot, wallTop); strip(winZ + winW / 2, hd, foot, wallTop);
@@ -272,6 +284,23 @@ function dwelling(S, d, ground) {
       S.box(sl[0], sl[1], sl[2], 0.08, 0.035, winW / 2 + 0.08, p.ry, { col: PAL.wood, kind: 2 });
     } else strip(-hd, hd, foot, wallTop);
   }
+  // the quoins: dressed basalt blocks up each corner, long and short in turn on the two faces, 3 cm proud of the stones
+  // and 1.4 cm apart (their own joints and shadows), each block its own tone; from just under the ground to the roof
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const q = W(sx * hw, 0, sz * hd);
+    let y = Math.max(foot, ground(q[0], q[2]) - 0.18), i = 0;
+    while (y < wallTop - 0.1) {
+      const h = Math.min(wallTop - 0.02 - y, 0.24 + 0.08 * hash(seed + sx, sz * 7 + i));
+      if (h < 0.1) break;
+      const k = (y + h / 2 - foot) / (wallTop - foot), hwk = hw - batter * k, hdk = hd - batter * k, e = 0.03;
+      const longX = (i + (sx * sz > 0 ? 0 : 1)) % 2 === 0;
+      const lx = longX ? 0.46 + 0.08 * hash(seed, i + 40) : 0.26, lz = longX ? 0.26 : 0.46 + 0.08 * hash(seed, i + 60);
+      const cq = W(sx * (hwk + e - lx / 2), y + h / 2, sz * (hdk + e - lz / 2));
+      const tone = PAL.quoinA.clone().lerp(PAL.quoinB, hash(seed + i * 1.7, sx + sz * 3));
+      S.box(cq[0], cq[1], cq[2], lx / 2, h / 2 - 0.007, lz / 2, p.ry, { col: tone, kind: 7 });
+      y += h; i++;
+    }
+  }
   // the door's reveal: two jambs and a head into the wall's thickness, a dark back (the sunk room); steps down
   {
     const z0 = hd - batter * 0.3, z1 = z0 - inset;
@@ -280,8 +309,12 @@ function dwelling(S, d, ground) {
     for (const sx of [-1, 1]) {
       const x = doorX + sx * doorW / 2;
       const A = jl(x, y0, z0), B = jl(x, y0, z1), Cc = jl(x, y1, z1), Dd = jl(x, y1, z0);
-      if (sx < 0) S.quad(A, B, Cc, Dd, { col: PAL.stone, kind: 0, uv: [[0, 0], [inset, 0], [inset, y1 - y0], [0, y1 - y0]] });
-      else S.quad(B, A, Dd, Cc, { col: PAL.stone, kind: 0, uv: [[inset, 0], [0, 0], [0, y1 - y0], [inset, y1 - y0]] });
+      if (sx < 0) S.quad(A, B, Cc, Dd, { col: PAL.limeDirty, kind: 1, uv: [[0, 0], [inset, 0], [inset, y1 - y0], [0, y1 - y0]] });
+      else S.quad(B, A, Dd, Cc, { col: PAL.limeDirty, kind: 1, uv: [[inset, 0], [0, 0], [0, y1 - y0], [inset, y1 - y0]] });
+      // the lime surround on the face: a band beside the door, proud of the stones, from the step to the lintel
+      const bx0 = doorX + sx * (doorW / 2), bx1 = doorX + sx * (doorW / 2 + 0.15), zf = hd - batter * 0.35 + 0.035;
+      const b0 = W(bx0, gDoor - 0.12, zf), b1 = W(bx1, gDoor - 0.12, zf), b2 = W(bx1, doorTop, zf), b3 = W(bx0, doorTop, zf);
+      if (sx > 0) S.quad(b0, b1, b2, b3, { col: PAL.lime, kind: 1 }); else S.quad(b1, b0, b3, b2, { col: PAL.lime, kind: 1 });
     }
     S.quad(jl(doorX - doorW / 2, y1, z0), jl(doorX - doorW / 2, y1, z1), jl(doorX + doorW / 2, y1, z1), jl(doorX + doorW / 2, y1, z0), { col: PAL.void, kind: 2 });
     // the back: a plank door on two houses in three, else the dark of the room
@@ -423,42 +456,134 @@ function tubeMouth(S, ground) {
   }
   S.quad(W(-hw, -0.05, -0.2), W(hw, -0.05, -0.2), W(hw, -0.05, depth + 6), W(-hw, -0.05, depth + 6), { col: PAL.barkDark.clone().multiplyScalar(0.5), kind: 2 });
   S.quad(W(-hw, -0.1, depth + 6), W(hw, -0.1, depth + 6), W(hw, h, depth + 6), W(-hw, h, depth + 6), { col: PAL.void, kind: 2 });
-  // the forge's hearth just inside the mouth, its coals a dull red-brown (no glow: daylight), the bellows' leather
-  const hc = W(-hw * 0.45, 0.35, 1.2);
-  S.lathe(hc[0], g - 0.05, hc[2], [[0.75, 0], [0.78, 0.5], [0.62, 0.62], [0.0, 0.6]], 10, { col: PAL.stone, kind: 0 }, { jitter: 0.12, seed: 9 });
-  S.lathe(hc[0], g + 0.58, hc[2], [[0.55, 0], [0.0, 0.08]], 10, { col: PAL.coal, kind: 3 });
-  // the anvil on its log, and the trough
+  // the forge's hearth just inside the mouth: a block-built hearth (two courses of dressed basalt round a bed of coals, a
+  // higher back of blocks against the rock), its coals a dull red-brown under grey ash (no glow: daylight); the bellows
+  // beside it (two boards and the leather between, pitched to a clay tuyere that goes through the hearth's side)
+  const yawO = Math.atan2(out.x, out.z);
+  const H = (u, y, v) => W(-hw * 0.45 + u, y, 1.2 + v);
+  const hu = 0.7, hv = 0.5;
+  for (let course = 0; course < 2; course++) {
+    const y0 = -0.08 + course * 0.31;
+    for (const [u0, u1, v0, v1] of [[-hu, hu, -hv, -hv + 0.26], [-hu, hu, hv - 0.26, hv], [-hu, -hu + 0.26, -hv + 0.26, hv - 0.26], [hu - 0.26, hu, -hv + 0.26, hv - 0.26]]) {
+      const along = Math.abs(u1 - u0) > Math.abs(v1 - v0), len = along ? u1 - u0 : v1 - v0, n = Math.max(1, Math.round(len / 0.42));
+      for (let k = 0; k < n; k++) {
+        const off = (course % 2) * 0.5 / n, t0 = Math.min(1, k / n + off), t1 = Math.min(1, (k + 1) / n + off);
+        if (t1 - t0 < 0.08) continue;
+        const cu = along ? u0 + (u1 - u0) * (t0 + t1) / 2 : (u0 + u1) / 2, cv = along ? (v0 + v1) / 2 : v0 + (v1 - v0) * (t0 + t1) / 2;
+        const bl = (t1 - t0) * len / 2 - 0.008, q = H(cu, y0 + 0.15, cv), j = hash(course * 7 + k, cu * 3 + cv);
+        S.box(q[0], q[1] + 0.01 * (j - 0.5), q[2], along ? bl : 0.125, 0.145, along ? 0.125 : bl, yawO + 0.03 * (j - 0.5),
+          { col: PAL.quoinA.clone().lerp(PAL.quoinB, j * 0.8).multiplyScalar(course ? 0.78 : 1), kind: 7 });
+      }
+    }
+  }
+  // the back, toward the hill: three more courses, smoke-blackened
+  for (let course = 0; course < 3; course++) for (let k = 0; k < 3; k++) {
+    const q = H(-hu + 0.25 + k * 0.47 + (course % 2) * 0.1, 0.6 + course * 0.26 + 0.12, hv - 0.13), j = hash(k + 11, course);
+    S.box(q[0], q[1], q[2], 0.22, 0.12, 0.13, yawO, { col: PAL.quoinA.clone().multiplyScalar(0.55 + 0.25 * j), kind: 7 });
+  }
+  const bed = H(0, 0.5, 0);
+  S.box(bed[0], bed[1], bed[2], hu - 0.26, 0.04, hv - 0.26, yawO, { col: PAL.coal, kind: 3 });
+  for (let k = 0; k < 9; k++) {
+    const q = H((hash(k, 1) - 0.5) * 0.8, 0.55, (hash(k, 2) - 0.5) * 0.4);
+    S.box(q[0], q[1], q[2], 0.05 + 0.04 * hash(k, 3), 0.035, 0.05 + 0.03 * hash(k, 4), yawO + k, { col: k % 3 ? PAL.coal : PAL.ash, kind: 3 });
+  }
+  // the tuyere and the bellows on the hearth's tangent side
+  const ty0 = H(hu + 0.02, 0.48, 0), ty1 = H(hu + 0.4, 0.5, 0);
+  S.tube(ty1, ty0, 0.05, 0.045, 7, { col: PAL.clayDark, kind: 2 });
+  {
+    const bc = H(hu + 0.95, 0.5, 0), dir = [ty0[0] - bc[0], 0, ty0[2] - bc[2]], yb = Math.atan2(dir[0], dir[2]);
+    for (const [dy, pt] of [[0.13, -0.12], [-0.13, 0.12]]) S.box(bc[0], bc[1] + dy, bc[2], 0.24, 0.018, 0.42, yb, { col: PAL.wood, kind: 2 }, { pitch: pt });
+    S.box(bc[0], bc[1], bc[2], 0.2, 0.1, 0.36, yb, { col: PAL.leather, kind: 2 });
+    const lg = H(hu + 0.95, 0.15, 0);
+    for (const sx of [-0.18, 0.18]) { const q = [lg[0] + Math.cos(yb) * sx, lg[1], lg[2] - Math.sin(yb) * sx]; S.tube([q[0], g - 0.05, q[2]], [q[0], g + 0.38, q[2]], 0.035, 0.03, 5, { col: PAL.woodDark, kind: 2 }); }
+    const hdl = [bc[0] - Math.sin(yb) * 0.55, bc[1] + 0.16, bc[2] - Math.cos(yb) * 0.55];
+    S.tube([bc[0] - Math.sin(yb) * 0.38, bc[1] + 0.14, bc[2] - Math.cos(yb) * 0.38], hdl, 0.02, 0.02, 5, { col: PAL.woodDark, kind: 2 });
+  }
+  // the anvil on its log: a waisted iron body, its face, the horn tapering out, the heel square
   const an = W(hw * 0.2, 0, -2.2);
-  S.lathe(an[0], g - 0.05, an[2], [[0.32, 0], [0.3, 0.62], [0.0, 0.64]], 9, { col: PAL.woodDark, kind: 4 });
-  S.box(an[0], g + 0.72, an[2], 0.12, 0.08, 0.28, Math.atan2(out.x, out.z), { col: PAL.iron, kind: 2 });
-  S.box(an[0], g + 0.84, an[2], 0.16, 0.04, 0.36, Math.atan2(out.x, out.z), { col: PAL.iron, kind: 2 });
+  S.lathe(an[0], g - 0.05, an[2], [[0.34, 0], [0.31, 0.08], [0.3, 0.6], [0.27, 0.64], [0.0, 0.65]], 11, { col: PAL.woodDark, kind: 4 }, { jitter: 0.06, seed: 21 });
+  S.box(an[0], g + 0.68, an[2], 0.14, 0.04, 0.2, yawO, { col: PAL.iron, kind: 2 });
+  S.box(an[0], g + 0.75, an[2], 0.09, 0.04, 0.17, yawO, { col: PAL.iron, kind: 2 });
+  S.box(an[0], g + 0.82, an[2], 0.15, 0.035, 0.3, yawO, { col: PAL.iron, kind: 2 });
+  { const tip = [an[0] + out.x * 0.62, g + 0.84, an[2] + out.z * 0.62], root = [an[0] + out.x * 0.28, g + 0.82, an[2] + out.z * 0.28]; S.tube(root, tip, 0.07, 0.012, 8, { col: PAL.iron, kind: 2 }); }
+  // a hammer and tongs on the anvil's face
+  { const h0 = [an[0] - tg.x * 0.05, g + 0.87, an[2] - tg.z * 0.05]; S.tube(h0, [h0[0] + tg.x * 0.34, h0[1], h0[2] + tg.z * 0.34], 0.014, 0.012, 5, { col: PAL.wood, kind: 2 }); S.box(h0[0], h0[1] + 0.01, h0[2], 0.03, 0.03, 0.07, yawO, { col: PAL.iron, kind: 2 }); }
+  // the tool rack against the arch's foot: two posts, a rail, tongs and hammers hung from it
+  {
+    const r0 = W(hw - 0.7, 0, 0.1), r1 = W(hw - 0.7, 0, 1.1);
+    for (const q of [r0, r1]) S.tube([q[0], g - 0.1, q[2]], [q[0], g + 1.5, q[2]], 0.04, 0.035, 5, { col: PAL.woodDark, kind: 2 });
+    S.tube([r0[0], g + 1.42, r0[2]], [r1[0], g + 1.42, r1[2]], 0.03, 0.03, 5, { col: PAL.wood, kind: 2 });
+    for (let k = 0; k < 5; k++) {
+      const t = (k + 0.5) / 5, x = r0[0] + (r1[0] - r0[0]) * t, z = r0[2] + (r1[2] - r0[2]) * t, ln = 0.5 + 0.2 * hash(k, 77);
+      S.tube([x, g + 1.42, z], [x + tg.x * 0.03, g + 1.42 - ln, z + tg.z * 0.03], 0.011, 0.01, 4, { col: PAL.iron, kind: 2 });
+      if (k % 2) S.box(x, g + 1.42 - ln, z, 0.035, 0.03, 0.065, yawO, { col: PAL.iron, kind: 2 });
+    }
+  }
+  // the quench trough: one dressed basalt block hollowed, its water dark
   const tr = W(hw + 0.9, 0, -1.4);
-  S.box(tr[0], g + 0.25, tr[2], 0.75, 0.25, 0.38, Math.atan2(out.x, out.z) + Math.PI / 2, { col: PAL.stone, kind: 0 });
-  S.box(tr[0], g + 0.47, tr[2], 0.62, 0.02, 0.27, Math.atan2(out.x, out.z) + Math.PI / 2, { col: PAL.water, kind: 6 });
+  S.box(tr[0], g + 0.25, tr[2], 0.75, 0.25, 0.38, yawO + Math.PI / 2, { col: PAL.quoinA, kind: 7 });
+  S.box(tr[0], g + 0.47, tr[2], 0.62, 0.02, 0.27, yawO + Math.PI / 2, { col: PAL.water, kind: 6 });
+  // charcoal heaped by the trough, in a basket
+  { const ch = W(hw + 0.95, 0, -0.8); S.lathe(ch[0], g - 0.03, ch[2], [[0.3, 0], [0.34, 0.32], [0.0, 0.33]], 10, { col: PAL.straw, kind: 2 }); S.lathe(ch[0], g + 0.3, ch[2], [[0.32, 0], [0.18, 0.12], [0.0, 0.16]], 9, { col: PAL.coal, kind: 3 }, { jitter: 0.25, seed: 5 }); }
   // bronze bars stacked by the hearth (cast from salvage)
   for (let k = 0; k < 5; k++) { const q = W(-hw + 0.7 + (k % 3) * 0.24, 0.06 + Math.floor(k / 3) * 0.09, -0.8); S.box(q[0], q[1], q[2], 0.1, 0.04, 0.3, Math.atan2(out.x, out.z), { col: PAL.bronze, kind: 2 }); }
 }
 
-/** The counter at the tube's mouth: a drystone base, a timber top, a palm-mat awning on poles, jars and a salt sack. */
+/** The counter at the tube's mouth: a drystone base under a worn lime plaster, dressed basalt piers at its ends, a top of
+ * three timber planks, a palm-mat awning on poles, a carmine cloth over its front, a bronze balance for the salt, jars,
+ * a basket and salt sacks. */
 function counter(S, ground) {
   const K = L.PLACES.counter, g = ground(K.x, K.z), ry = -K.b * D2R;
-  S.box(K.x, g + (K.h - 0.08) / 2 - 0.1, K.z, K.w / 2, (K.h - 0.08) / 2 + 0.1, K.d / 2, ry, { col: PAL.stone, kind: 0 });
-  S.box(K.x, g + K.h - 0.04, K.z, K.w / 2 + 0.1, 0.05, K.d / 2 + 0.08, ry, { col: PAL.wood, kind: 2 });
   const c = Math.cos(ry), s = Math.sin(ry), W = (lx, y, lz) => [K.x + c * lx + s * lz, g + y, K.z - s * lx + c * lz];
-  for (const lx of [-K.w / 2 - 0.1, K.w / 2 + 0.1]) for (const lz of [-0.9, 0.9]) { const q = W(lx, 0, lz); S.tube([q[0], g - 0.1, q[2]], [q[0], g + (lz > 0 ? 2.05 : 2.35), q[2]], 0.05, 0.045, 5, { col: PAL.woodDark, kind: 2 }); }
-  const a = W(-K.w / 2 - 0.3, 2.1, 1.0), b = W(K.w / 2 + 0.3, 2.1, 1.0), cc = W(K.w / 2 + 0.3, 2.4, -1.0), dd = W(-K.w / 2 - 0.3, 2.4, -1.0);
+  const bh = (K.h - 0.1) / 2 + 0.1, hw = K.w / 2, hd = K.d / 2;
+  { const q = W(0, bh - 0.1, 0); S.box(q[0], q[1], q[2], hw - 0.22, bh, hd - 0.02, ry, { col: PAL.stone, kind: 0, paint: -0.75 }); }
+  // the piers: dressed blocks, long and short in turn
+  for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) {
+    const h = 0.26, y = -0.1 + k * h, long = (k % 2) === 0, lx = long ? 0.3 : 0.22;
+    const q = W(sx * (hw - lx / 2), y + h / 2, 0), j = hash(k, sx + 5);
+    S.box(q[0], q[1], q[2], lx / 2, h / 2 - 0.007, hd + (long ? 0.02 : 0), ry, { col: PAL.quoinA.clone().lerp(PAL.quoinB, j), kind: 7 });
+  }
+  // the top: three planks along it, a finger's gap between, each its own tone
+  for (let k = 0; k < 3; k++) {
+    const w3 = (K.d + 0.16) / 3, lz = -hd - 0.08 + w3 * (k + 0.5), q = W(0, K.h - 0.045, lz);
+    S.box(q[0], q[1] + 0.006 * hash(k, 3), q[2], hw + 0.1 - 0.03 * hash(k, 9), 0.045, w3 / 2 - 0.006, ry, { col: (k === 1 ? PAL.woodDark : PAL.wood).clone().lerp(PAL.wood, 0.5), kind: 2 });
+  }
+  for (const lx of [-hw - 0.1, hw + 0.1]) for (const lz of [-0.9, 0.9]) { const q = W(lx, 0, lz); S.tube([q[0], g - 0.1, q[2]], [q[0], g + (lz > 0 ? 2.05 : 2.35), q[2]], 0.05, 0.045, 5, { col: PAL.woodDark, kind: 2 }); }
+  for (const lz of [-0.9, 0.9]) { const y = lz > 0 ? 2.05 : 2.35; S.tube(W(-hw - 0.25, y - 0.04, lz), W(hw + 0.25, y - 0.04, lz), 0.035, 0.035, 5, { col: PAL.wood, kind: 2 }); }
+  const a = W(-hw - 0.3, 2.1, 1.0), b = W(hw + 0.3, 2.1, 1.0), cc = W(hw + 0.3, 2.4, -1.0), dd = W(-hw - 0.3, 2.4, -1.0);
   S.quad(a, b, cc, dd, { col: PAL.straw, kind: 2 });
-  for (let k = 0; k < 3; k++) { const q = W(-K.w / 2 + 0.4 + k * 0.5, K.h, 0); S.lathe(q[0], q[1], q[2], [[0.06, 0], [0.12, 0.1], [0.1, 0.22], [0.05, 0.27], [0.0, 0.27]], 8, { col: k === 1 ? PAL.clayDark : PAL.clay, kind: 2 }); }
-  const sk = W(K.w / 2 + 0.55, 0, 0.5);
-  S.lathe(sk[0], g - 0.02, sk[2], [[0.2, 0], [0.26, 0.2], [0.22, 0.48], [0.1, 0.58], [0.0, 0.6]], 8, { col: PAL.salt, kind: 2 });
+  // the cloth over the front, its hem uneven
+  { const x0 = -0.55, x1 = 0.45, zf = hd + 0.085; S.quad(W(x0, K.h - 0.1, zf + 0.02), W(x1, K.h - 0.1, zf + 0.02), W(x1, K.h - 0.005, zf - 0.02), W(x0, K.h - 0.005, zf - 0.02), { col: PAL.carmine, kind: 2 });
+    S.quad(W(x0 - 0.02, K.h - 0.55, zf + 0.03), W(x1 + 0.03, K.h - 0.5, zf + 0.03), W(x1, K.h - 0.1, zf + 0.02), W(x0, K.h - 0.1, zf + 0.02), { col: PAL.carmine, kind: 2 }); }
+  // the balance: a post, its beam, two shallow pans on cords
+  {
+    const bx = hw - 0.55, top = K.h + 0.62, p0 = W(bx, K.h, 0), p1 = W(bx, top, 0);
+    S.lathe(p0[0], p0[1], p0[2], [[0.09, 0], [0.08, 0.03], [0.0, 0.035]], 8, { col: PAL.bronze, kind: 2 });
+    S.tube(p0, p1, 0.016, 0.013, 6, { col: PAL.bronze, kind: 2 });
+    const e0 = W(bx - 0.3, top - 0.01, 0), e1 = W(bx + 0.3, top + 0.01, 0);
+    S.tube(e0, e1, 0.01, 0.01, 5, { col: PAL.bronze, kind: 2 });
+    for (const [e, dy] of [[e0, 0.31], [e1, 0.29]]) {
+      for (const k of [0, 1, 2]) { const ang = k * 2.1, o = [Math.cos(ang) * 0.09, Math.sin(ang) * 0.09]; S.tube(e, [e[0] + o[0], e[1] - dy, e[2] + o[1]], 0.003, 0.003, 3, { col: PAL.straw, kind: 2 }); }
+      S.lathe(e[0], e[1] - dy - 0.03, e[2], [[0.0, 0], [0.07, 0.005], [0.11, 0.03], [0.1, 0.035], [0.0, 0.01]], 10, { col: PAL.bronze, kind: 2 });
+    }
+    // a heap of salt on one pan
+    S.lathe(e0[0], e0[1] - 0.33, e0[2], [[0.08, 0], [0.04, 0.035], [0.0, 0.045]], 8, { col: PAL.salt, kind: 2 });
+  }
+  for (let k = 0; k < 3; k++) { const q = W(-hw + 0.4 + k * 0.42, K.h, -0.08 + 0.12 * hash(k, 31)); S.lathe(q[0], q[1], q[2], [[0.06, 0], [0.12, 0.1], [0.1, 0.22], [0.05, 0.27], [0.06, 0.3], [0.0, 0.3]], 9, { col: k === 1 ? PAL.clayDark : PAL.clay, kind: 2 }); }
+  // a basket of figs on the top, salt sacks at its end
+  { const q = W(0.2, K.h, -0.12); S.lathe(q[0], q[1], q[2], [[0.12, 0], [0.18, 0.1], [0.19, 0.13], [0.0, 0.12]], 10, { col: PAL.straw, kind: 2 }); }
+  for (const [lx, lz, sc] of [[hw + 0.55, 0.5, 1], [hw + 0.6, -0.1, 0.85], [hw + 0.95, 0.25, 0.9]]) {
+    const sk = W(lx, 0, lz);
+    S.lathe(sk[0], g - 0.02, sk[2], [[0.2 * sc, 0], [0.26 * sc, 0.2 * sc], [0.22 * sc, 0.48 * sc], [0.1 * sc, 0.58 * sc], [0.06 * sc, 0.64 * sc], [0.0, 0.62 * sc]], 9, { col: PAL.salt.clone().lerp(PAL.paper, 0.4 * hash(lx, lz)), kind: 2 }, { jitter: 0.08, seed: lx * 3 + lz });
+  }
 }
 
 /** The cistern: a drystone kerb with a lime-rendered rim, dark water inside, a timber frame with its bucket. */
 function cistern(S, ground) {
   const Cq = L.PLACES.cistern, g = ground(Cq.x, Cq.z), r = Cq.r;
-  S.lathe(Cq.x, g - 0.3, Cq.z, [[r + 0.05, 0], [r, Cq.h + 0.3]], 20, { col: PAL.stone, kind: 0 });
-  S.lathe(Cq.x, g + Cq.h, Cq.z, [[r + 0.04, 0], [r + 0.02, 0.07], [r - 0.32, 0.08], [r - 0.34, 0]], 20, { col: PAL.lime, kind: 1 });
-  S.lathe(Cq.x, g - 0.45, Cq.z, [[r - 0.34, 0], [r - 0.34, Cq.h + 0.45]], 20, { col: PAL.stone, kind: 0 }, { inward: true });
+  S.lathe(Cq.x, g - 0.3, Cq.z, [[r + 0.05, 0], [r, Cq.h + 0.3]], 32, { col: PAL.stone, kind: 0 }, { smooth: true });
+  S.lathe(Cq.x, g + Cq.h, Cq.z, [[r + 0.04, 0], [r + 0.02, 0.07], [r - 0.32, 0.08], [r - 0.34, 0]], 32, { col: PAL.lime, kind: 1 });
+  S.lathe(Cq.x, g - 0.45, Cq.z, [[r - 0.34, 0], [r - 0.34, Cq.h + 0.45]], 32, { col: PAL.stone, kind: 0 }, { inward: true, smooth: true });
   S.lathe(Cq.x, g - 0.25, Cq.z, [[r - 0.34, 0], [0.0, 0]], 20, { col: PAL.water, kind: 6 }, { inward: true });
   // the frame: two posts, a beam, a rope and a bucket of hide
   const ex = Math.cos(0.6), ez = Math.sin(0.6);
@@ -559,29 +684,41 @@ float nwNoise(vec2 p) {
   return mix(mix(nwHash(i), nwHash(i + vec2(1.0, 0.0)), f.x), mix(nwHash(i + vec2(0.0, 1.0)), nwHash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 float nwFbm(vec2 p) { return 0.55 * nwNoise(p) + 0.3 * nwNoise(p * 2.07 + 3.1) + 0.15 * nwNoise(p * 4.3 - 1.7); }
-/* drystone (no mortar): irregular basalt stones laid in rough courses, a Voronoi of points jittered in cells 0.44 x 0.28 m
-   (each row of cells shifted by its own amount, so no joint runs straight up); edge is the distance to the stone's
-   border (F2 - F1), dark and deep in the gap; returns the stone's height, 0 in a joint */
-float nwStone(vec2 uv, out vec3 sid) {
-  vec2 cs = vec2(0.44, 0.28);
-  vec2 q = uv / cs;
-  float row0 = floor(q.y);
-  float f1 = 9.0, f2 = 9.0; vec2 id1 = vec2(0.0);
-  for (int j = -1; j <= 1; j++) {
-    float rj = row0 + float(j);
-    float shift = nwHash(vec2(rj, 3.7));
-    for (int i = -1; i <= 1; i++) {
-      vec2 c = vec2(floor(q.x - shift) + float(i), rj);
-      vec2 h = vec2(nwHash(c + 0.17), nwHash(c.yx + 4.3));
-      vec2 pt = vec2(c.x + shift + 0.2 + 0.6 * h.x, rj + 0.3 + 0.4 * h.y);
-      vec2 dv = (q - pt) * cs;
-      float d = length(dv * vec2(0.85, 1.0));
-      if (d < f1) { f2 = f1; f1 = d; id1 = c; } else if (d < f2) { f2 = d; }
-    }
-  }
-  sid = vec3(nwHash(id1), nwHash(id1 + 13.1), nwHash(id1.yx + 5.3));
-  float edge = (f2 - f1) * 0.5;
-  return smoothstep(0.006, 0.045, edge) * (0.75 + 0.25 * smoothstep(0.0, 0.12, f2 - f1));
+/* drystone (no mortar): basalt laid in courses. The beds are wavy lines 0.24 m apart (each its own wave, so a course
+   swells and thins along the wall); in each course the stones are of their own length (a row's own mean, each end joint
+   jittered and leaning), each a rounded block inset from its course by its own amounts (a stone that does not fill its
+   course leaves a void over or under it, where a pinning stone is wedged), and the whole plane is warped a few
+   centimetres so no edge is straight. Out: the stone's id, rel (this point from the stone's centre, m), face (m into the
+   stone past its edge; < 0 in the void) and the void's width there. Returns the face's rounded profile 0..1. */
+float nwBed(float x, float k) { return k * 0.24 + 0.034 * (nwNoise(vec2(x * 1.7 + k * 7.13, k * 3.1)) - 0.5) * 2.0; }
+float nwJoint(float i, float r, float L, float sh) { return (i + sh + 0.38 * (nwHash(vec2(i, r) + 0.71) - 0.5)) * L; }
+float nwStone(vec2 uv, out vec3 sid, out vec2 rel, out float face, out float gw) {
+  vec2 p = uv + (vec2(nwNoise(uv * 5.3), nwNoise(uv * 5.3 + 7.7)) - 0.5) * vec2(0.05, 0.034)
+    + (vec2(nwNoise(uv * 17.0 + 3.3), nwNoise(uv * 17.0 + 9.1)) - 0.5) * 0.024;
+  float r = floor(p.y / 0.24);
+  if (p.y < nwBed(p.x, r)) r -= 1.0; else if (p.y >= nwBed(p.x, r + 1.0)) r += 1.0;
+  float y0 = nwBed(p.x, r), y1 = nwBed(p.x, r + 1.0);
+  float L = 0.36 + 0.22 * nwHash(vec2(r, 1.9)), sh = nwHash(vec2(r, 3.7));
+  // the end joints lean: shear x by the height in the course
+  float lean = (nwHash(vec2(r, 8.3)) - 0.5) * 0.5;
+  float px = p.x - (p.y - 0.5 * (y0 + y1)) * lean;
+  float i = floor(px / L - sh);
+  if (px < nwJoint(i, r, L, sh)) i -= 1.0; else if (px >= nwJoint(i + 1.0, r, L, sh)) i += 1.0;
+  float x0 = nwJoint(i, r, L, sh), x1 = nwJoint(i + 1.0, r, L, sh);
+  // one stone in four is two short ones
+  vec2 id = vec2(i, r);
+  if (nwHash(id + 4.4) < 0.25 && x1 - x0 > 0.3) { float xm = mix(x0, x1, 0.4 + 0.2 * nwHash(id + 5.5)); if (px < xm) { x1 = xm; id += 0.37; } else { x0 = xm; id += 0.61; } }
+  sid = vec3(nwHash(id), nwHash(id + 13.1), nwHash(id.yx + 5.3));
+  float ti = 0.05 * sid.y * sid.y, bi = 0.025 * sid.z, eg = 0.006 + 0.014 * nwHash(id + 2.2);
+  vec2 cen = vec2(0.5 * (x0 + x1), 0.5 * (y0 + y1) + 0.5 * (bi - ti));
+  vec2 hb = max(vec2(0.5 * (x1 - x0) - eg, 0.5 * (y1 - y0) - 0.5 * (ti + bi) - 0.004), vec2(0.03));
+  rel = vec2(px, p.y) - cen;
+  float rr = min(hb.x, hb.y) * (0.2 + 0.4 * nwHash(id + 3.3));
+  vec2 qd = abs(rel) - hb + rr;
+  float d = length(max(qd, 0.0)) + min(max(qd.x, qd.y), 0.0) - rr;
+  gw = ti + eg;
+  face = -d;
+  return sqrt(clamp(face / 0.04, 0.0, 1.0));
 }
 vec3 nwBumpN(vec3 surfPos, vec3 surfN, float h, float faceDir) {
   vec3 sx = dFdx(surfPos), sy = dFdy(surfPos);
@@ -598,35 +735,94 @@ const FRAG_COLOR = `
 {
   int k = int(vNwKind + 0.5);
   vec3 base = diffuseColor.rgb;
-  if (k == 0) {
-    vec3 sid; float st = nwStone(vNwUV, sid);
-    // basalt stones: near-black to weathered grey, one in seven a warmer brown, one in nine dusted pale; at range (the
-    // pattern under a few pixels) each stone's tone goes to the wall's mean, so a wall far off is one stone colour
-    float far = clamp(max(fwidth(vNwUV.x), fwidth(vNwUV.y)) / 0.09, 0.0, 1.0);
-    vec3 sc = mix(vec3(0.042, 0.04, 0.038), vec3(0.1, 0.094, 0.086), sid.x);
-    sc = mix(sc, vec3(0.105, 0.07, 0.05), step(0.86, sid.y) * 0.7);
-    sc = mix(sc, vec3(0.15, 0.145, 0.135), step(0.89, sid.z) * (1.0 - step(0.86, sid.y)) * 0.8);
-    float pit = smoothstep(0.66, 0.8, nwNoise(vNwUV * 41.0 + sid.xy * 9.0));
-    sc *= 1.0 - 0.3 * pit;
-    sc *= 0.88 + 0.24 * nwNoise(vNwUV * 9.0 + sid.zx * 5.0);
-    sc = mix(sc, vec3(0.068, 0.064, 0.059), far * 0.8);
-    vec3 joint = vec3(0.016, 0.015, 0.014) * (0.8 + 0.4 * nwNoise(vNwUV * 17.0));
-    vec3 c = mix(mix(joint, sc, st), vec3(0.058, 0.055, 0.051), far * 0.5);
+  // the surface's frame in metres (aUV) and the view in it, for the drystone's parallax: taken here, outside any branch
+  vec3 nwVpx = dFdx(-vViewPosition), nwVpy = dFdy(-vViewPosition);
+  vec2 nwDux = dFdx(vNwUV), nwDuy = dFdy(vNwUV);
+  float nwFar = max(max(abs(nwDux.x) + abs(nwDuy.x), abs(nwDux.y) + abs(nwDuy.y)) / 0.09, 0.0);
+  if (k == 0 && nwFar < 2.5) {
+    // basalt stones: near-black to weathered grey, one in eight a warmer brown, one in ten weathered pale. Each stone is a
+    // rounded face with its own tilt (so each takes the light its own way), its edge falling into a mortarless joint that
+    // is deep and dark, darkest under the stone above; a small pinning stone wedged in the widest voids; up close the
+    // joints shift with the view (one parallax step, the voids 3.5 cm deep). At range (the pattern under a few pixels) each
+    // stone's tone goes to the wall's mean, and past that (below) the stones are not drawn at all.
+    vec3 sid; vec2 rel; float face, gw;
+    vec2 uv = vNwUV;
+    float st = nwStone(uv, sid, rel, face, gw);
+    if (nwFar < 0.4) {
+      vec3 V = normalize(vViewPosition), vpx = nwVpx, vpy = nwVpy;
+      vec3 gn = normalize(vNormal); gn *= sign(dot(gn, V) + 1e-6);
+      vec3 tU = cross(vpy, gn) * nwDux.x + cross(gn, vpx) * nwDuy.x, tV = cross(vpy, gn) * nwDux.y + cross(gn, vpx) * nwDuy.y;
+      vec2 vt = vec2(dot(V, tU) * inversesqrt(max(dot(tU, tU), 1e-12)), dot(V, tV) * inversesqrt(max(dot(tV, tV), 1e-12))) / max(abs(dot(V, gn)), 0.3);
+      uv -= vt * (1.0 - st) * 0.03 * (1.0 - nwFar / 0.4);
+      st = nwStone(uv, sid, rel, face, gw);
+    }
+    float inStone = smoothstep(0.0, 0.012, face);
+    vec3 sc = mix(vec3(0.022, 0.021, 0.021), vec3(0.068, 0.065, 0.062), sid.x);
+    sc = mix(sc, vec3(0.062, 0.044, 0.034), step(0.9, fract(sid.x * 7.3)) * 0.8);
+    sc = mix(sc, vec3(0.105, 0.102, 0.097), step(0.92, fract(sid.z * 5.1)) * 0.8);
+    float pit = smoothstep(0.6, 0.85, nwNoise(uv * 27.0 + sid.xy * 9.0));
+    sc *= (1.0 - 0.28 * pit) * (0.84 + 0.32 * nwNoise(uv * 6.0 + sid.zx * 5.0));
+    // the rounded edge: its top catches the sky, its underside is in its own shade; the cavity darkens toward the joint
+    float up = clamp(rel.y / 0.1, -1.0, 1.0);
+    sc *= (1.0 + 0.22 * up * (1.0 - st)) * mix(0.5, 1.0, smoothstep(0.0, 0.035, face));
+    // the void: the stone above overhangs it, so it is black under a stone's bed and a little lighter on the bed below
+    // (a point over its own stone is under the next course's)
+    vec3 voidc = vec3(0.0045, 0.0042, 0.004) * mix(1.7, 0.5, smoothstep(-0.02, 0.04, rel.y));
+    float chink = smoothstep(0.5, 0.6, nwNoise(uv * 30.0 + 3.0)) * smoothstep(0.02, 0.04, gw) * (1.0 - inStone)
+      * (1.0 - smoothstep(-0.03, -0.004, face)) * smoothstep(-0.07, -0.05, face);
+    vec3 chc = vec3(0.05, 0.047, 0.044) * (0.7 + 0.6 * sid.z);
+    vec3 c = mix(mix(voidc, chc, chink), sc, inStone);
+    c = mix(c, vec3(0.042, 0.04, 0.038), smoothstep(0.5, 2.5, nwFar));
     // the vertex colour is the dust: lapilli in the joints first, then over the stones low down
     vec3 dust = base;
     float dk = clamp(1.0 - (dust.r + dust.g + dust.b) / 3.0, 0.0, 1.0);
-    c = mix(c, c * 0.35 + vec3(0.2, 0.18, 0.155) * 0.5, dk * (1.0 - st * 0.55));
+    c = mix(c, c * 0.35 + vec3(0.2, 0.18, 0.155) * 0.5, dk * (1.0 - inStone * 0.55));
+    // a house's lime plaster (aPaint < 0, its cover): over the stones, following them, worn off low down and in patches
+    float plaster = clamp(-vNwPaint, 0.0, 1.0);
+    if (plaster > 0.0) {
+      float wear = nwFbm(vNwW.xz * 1.7 + vNwW.y * 2.3) + 0.35 * (1.0 - smoothstep(0.1, 0.9, vNwUV.y)) - 0.3 * nwNoise(vNwW.xz * 9.0 + vNwW.y * 7.0);
+      float pc = plaster * (1.0 - smoothstep(0.47, 0.52, wear)) * (0.75 + 0.25 * inStone);
+      vec3 lime = vec3(0.6, 0.57, 0.51) * (0.88 + 0.14 * nwNoise(vNwW.xz * 5.0 + vNwW.y * 4.0)) * mix(0.7, 1.0, smoothstep(0.0, 0.6, vNwUV.y));
+      c = mix(c, lime, pc);
+      st = mix(st, 0.55 + 0.45 * st, pc);
+    }
     // the Datum Line: flat vermilion ink over the stones, thinner in the joints
-    c = mix(c, uNwLine * (0.78 + 0.22 * st), vNwPaint * (0.55 + 0.45 * st));
+    float ink = max(vNwPaint, 0.0);
+    c = mix(c, uNwLine * (0.78 + 0.22 * inStone), ink * (0.55 + 0.45 * inStone));
     diffuseColor.rgb = c;
-    nwHgt = (st * (0.82 + 0.18 * sid.x) + 0.12 * nwNoise(vNwUV * 23.0)) * 0.03 * (1.0 - far);
-    nwRough = mix(0.98, 0.9, st);
+    float tilt = dot(rel, (sid.yz - 0.5) * 0.5);
+    nwHgt = ((0.04 * st + tilt * st) * inStone + 0.016 * chink * (1.0 - inStone) + 0.002 * pit * inStone) * (1.0 - clamp(nwFar, 0.0, 1.0));
+    nwRough = mix(0.98, 0.9, inStone);
+  } else if (k == 0) {
+    // far off: the wall's mean stone, no stones drawn (the pattern is under a pixel); the dust and the line as above
+    vec3 c = vec3(0.042, 0.04, 0.038);
+    float dk = clamp(1.0 - (base.r + base.g + base.b) / 3.0, 0.0, 1.0);
+    c = mix(c, c * 0.35 + vec3(0.2, 0.18, 0.155) * 0.5, dk * 0.6);
+    c = mix(c, vec3(0.5, 0.48, 0.43), clamp(-vNwPaint, 0.0, 1.0) * 0.6);
+    c = mix(c, uNwLine * 0.9, max(vNwPaint, 0.0) * 0.8);
+    diffuseColor.rgb = c;
+    nwRough = 0.95;
+  } else if (k == 7) {
+    // dressed basalt (the houses' quoins, the hearth's and the trough's blocks): one stone per block, its tone in the
+    // vertex colour, tooled across in fine strokes, its arrises worn; vesicles
+    vec2 p = vNwUV;
+    float tool = nwNoise(vec2(p.x * 3.0 + p.y * 60.0, p.y * 3.0));
+    float ves = smoothstep(0.66, 0.8, nwNoise(vNwW.xz * 37.0 + vNwW.y * 41.0));
+    float n = nwNoise(vNwW.xz * 6.0 + vNwW.y * 5.0);
+    diffuseColor.rgb = base * (0.82 + 0.22 * n) * (0.94 + 0.1 * tool) * (1.0 - 0.3 * ves);
+    nwHgt = (0.0015 * tool - 0.0025 * ves + 0.004 * n) * (1.0 - clamp(nwFar, 0.0, 1.0));
+    nwRough = 0.88;
   } else if (k == 1) {
     vec2 p = vNwW.xz + vec2(vNwW.y * 0.7, -vNwW.y * 0.6);
+    // pumice-and-lime render: trowelled in sweeps, pumice grit in it, hairline cracks where it shrank, a grey bloom of
+    // weather in its hollows
     float n = nwFbm(p * 2.6);
     float speck = smoothstep(0.74, 0.86, nwNoise(p * 31.0));
-    diffuseColor.rgb = base * (0.9 + 0.16 * n) * (1.0 - 0.3 * speck);
-    nwHgt = (n * 0.006 - speck * 0.002);
+    float trowel = nwNoise(vec2(p.x * 2.1 + p.y * 5.3, p.y * 1.4 - p.x * 0.8));
+    float crack = (1.0 - smoothstep(0.0, 0.022, abs(nwNoise(p * 1.35 + 11.0) - 0.5))) * smoothstep(0.45, 0.7, nwNoise(p * 0.55 + 4.0));
+    float bloom = smoothstep(0.55, 0.85, nwFbm(p * 0.9 + 7.0));
+    diffuseColor.rgb = base * (0.9 + 0.16 * n) * (0.95 + 0.08 * trowel) * (1.0 - 0.3 * speck) * (1.0 - 0.35 * crack) * mix(1.0, 0.86, bloom);
+    nwHgt = (n * 0.006 + trowel * 0.0025 - speck * 0.002 - crack * 0.0025) * (1.0 - clamp(nwFar, 0.0, 1.0));
     nwRough = 0.86;
   } else if (k == 2) {
     float n = nwNoise(vec2(vNwUV.x * 22.0, vNwUV.y * 2.4)) * 0.6 + nwNoise(vNwUV * 7.0) * 0.4;
@@ -672,7 +868,7 @@ export function kitMaterial(env) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = nwRough;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = nwBumpN(-vViewPosition, normal, nwHgt, faceDirection);');
   };
-  m.customProgramCacheKey = () => 'cal-ninewalls-kit-2';
+  m.customProgramCacheKey = () => 'cal-ninewalls-kit-3';
   env?.registerMaterial?.(m);
   return m;
 }
