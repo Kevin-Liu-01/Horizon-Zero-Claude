@@ -414,7 +414,10 @@ export class FirstHour {
     // its own engage row (the kind's table is shared): the band, and what the constructor derived from it
     const eng = ai.engage;
     if (eng?.cfg?.band) {
-      eng.cfg = { ...eng.cfg, band: [...TERRACE.band] };
+      // it stands where it reads (orbitSpeed 0: inside a metre of its ring it holds still). At c78a669 (run
+      // 20261119T214111Z-c78a669-systems-fix-probe3) it circled her at 10-15 m the whole fight, its glass never still: the
+      // topple waited out its 9 s for a still glass at every shot, loosed 3 arrows in 150 s, and the Sightline took 105 hp
+      eng.cfg = { ...eng.cfg, band: [...TERRACE.band], orbitSpeed: 0 };
       eng.ring = (TERRACE.band[0] + TERRACE.band[1]) / 2;
       if (Number.isFinite(eng._heldHi)) eng._heldHi = Math.max(4, TERRACE.band[1] * 1.5);
     }
