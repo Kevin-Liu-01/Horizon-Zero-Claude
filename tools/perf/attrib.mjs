@@ -84,7 +84,8 @@ try {
     window.WebSocket.prototype = Real.prototype; Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
   let current = 'boot';
-  page.on('console', (m) => { if (m.type() === 'error') run.console.push({ at: current, text: m.text().slice(0, 400) }); });
+  page.on('console', (m) => { if (m.type() === 'error') run.console.push({ at: current, text: m.text().slice(0, 400) }); else if (m.text().startsWith('[d1]')) console.log(`[attrib ${current}] ${m.text()}`); });
+  page.on('error', (e) => console.log(`[attrib] page crashed at ${current}: ${String(e).slice(0, 200)}`));
   page.on('pageerror', (e) => run.console.push({ at: current, text: 'pageerror: ' + String(e).slice(0, 400) }));
   await page.goto(`http://127.0.0.1:${PORT}/?shot=1`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction('window.__READY__ === true', { timeout: 300000, polling: 500 });

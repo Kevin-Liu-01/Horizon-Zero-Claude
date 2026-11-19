@@ -353,9 +353,17 @@ export async function attributeFrame(E, scene, { n = 40 } = {}) {
 const topOf = (o, scene) => { let t = o; while (t.parent && t.parent !== scene) t = t.parent; return t; };
 
 /** Draws and triangles of k consecutive frames, averaged (the far cascades alternate frame to frame). */
-function infoFrames(E, k = 2) {
+// (each render is synchronised by a 1-pixel readback and the task yields to the next animation frame: at e42cf7f the
+//  census queued ~240 unsynchronised renders in one task and the page's renderer died, "Target closed")
+const _px = new Uint8Array(4);
+async function infoFrames(E, k = 2) {
+  const gl = E.renderer.getContext();
   let c = 0, t = 0;
-  for (let i = 0; i < k; i++) { E.render(0); const r = E.renderer.info.render; c += r.calls; t += r.triangles; }
+  for (let i = 0; i < k; i++) {
+    E.render(0); const r = E.renderer.info.render; c += r.calls; t += r.triangles;
+    E.renderer.setRenderTarget(null); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, _px);
+  }
+  await raf();
   return { draws: c / k, tris: t / k };
 }
 
@@ -377,9 +385,9 @@ export async function pairedToggle(E, down, up, { n = 20, pairs = 4 } = {}) {
 }
 
 /** Per top-level child: objects, draws and triangles in the frame (view + shadow maps), and the shadow share. */
-export function census(E, scene) {
+export async function census(E, scene) {
   const kids = scene.children.filter((c) => c.visible && !c.isLight && !c.isCamera && c.name !== 'CAL.attribSentinel');
-  const all = infoFrames(E, 2);
+  const all = await infoFrames(E, 2);
   // children that share a name are one row (hidden together)
   const byName = new Map();
   for (const c of kids) { const k = c.name || `(unnamed ${c.type})`; if (!byName.has(k)) byName.set(k, []); byName.get(k).push(c); }
@@ -398,10 +406,10 @@ export function census(E, scene) {
     });
     if (!objects) continue;
     cs.forEach((c) => { c.visible = false; });
-    const hid = infoFrames(E, 2);
+    const hid = await infoFrames(E, 2);
     cs.forEach((c) => { c.visible = true; });
     casters.forEach((o) => { o.castShadow = false; });
-    const noCast = infoFrames(E, 2);
+    const noCast = await infoFrames(E, 2);
     casters.forEach((o) => { o.castShadow = true; });
     rows.push({ name, children: cs.length, objects, casters: casters.length, meshTris: Math.round(meshTris),
       draws: r3(all.draws - hid.draws), tris: Math.round(all.tris - hid.tris),
@@ -415,8 +423,8 @@ export function census(E, scene) {
   let allow = null;
   sm.render = function (ls, s, cm) { return smr.call(this, allow ? ls.filter(allow) : ls, s, cm); };
   try {
-    allow = () => false; const none = infoFrames(E, 2);
-    lights.forEach((l, i) => { allow = (x) => x === l; const one = infoFrames(E, 2); cascades.push({ cascade: i, mapSize: l.shadow.mapSize.x, draws: r3(one.draws - none.draws), tris: Math.round(one.tris - none.tris) }); });
+    allow = () => false; const none = await infoFrames(E, 2);
+    for (let i = 0; i < lights.length; i++) { const l = lights[i]; allow = (x) => x === l; const one = await infoFrames(E, 2); cascades.push({ cascade: i, mapSize: l.shadow.mapSize.x, draws: r3(one.draws - none.draws), tris: Math.round(one.tris - none.tris) }); }
     allow = null;
     const sumKids = rows.reduce((a, r) => ({ draws: a.draws + r.draws, tris: a.tris + r.tris }), { draws: 0, tris: 0 });
     return { frame: { draws: r3(all.draws), tris: Math.round(all.tris) }, noShadowMaps: { draws: r3(none.draws), tris: Math.round(none.tris) },
@@ -600,16 +608,16 @@ export async function standIns(E, scene, ctx, spec = {}, { n = 20, pairs = 4 } =
   const remove = (gs) => { for (const g of Object.values(gs)) scene.remove(g); };
   const res = { spec: S, full: {}, half: {} };
   try {
-    const before = infoFrames(E, 2);
+    const before = await infoFrames(E, 2);
     Object.assign(groups, add(false));
     try { E.renderer.compile(scene, cam); } catch { /* compiled on first draw */ }
     await wait(20);
-    const after = infoFrames(E, 2);
+    const after = await infoFrames(E, 2);
     res.full.counts = { draws: r3(after.draws - before.draws), tris: Math.round(after.tris - before.tris) };
     const vis = (gs, v) => () => gs.forEach((g) => { g.visible = v; });
     for (const k of Object.keys(colors)) {
       res.full[k] = { ...(await pairedToggle(E, vis([groups[k]], false), vis([groups[k]], true), { n, pairs })) };
-      groups[k].visible = false; const without = infoFrames(E, 2); groups[k].visible = true;
+      groups[k].visible = false; const without = await infoFrames(E, 2); groups[k].visible = true;
       res.full[k].draws = r3(after.draws - without.draws); res.full[k].tris = Math.round(after.tris - without.tris);
     }
     const allG = Object.values(groups);
@@ -618,7 +626,7 @@ export async function standIns(E, scene, ctx, spec = {}, { n = 20, pairs = 4 } =
     const halfG = add(true);
     try { E.renderer.compile(scene, cam); } catch { /* */ }
     await wait(10);
-    const afterHalf = infoFrames(E, 2);
+    const afterHalf = await infoFrames(E, 2);
     res.half.counts = { draws: r3(afterHalf.draws - before.draws), tris: Math.round(afterHalf.tris - before.tris) };
     res.half.all = await pairedToggle(E, vis(Object.values(halfG), false), vis(Object.values(halfG), true), { n, pairs });
     remove(halfG);
@@ -638,15 +646,25 @@ export async function attributeD1(E, scene, ctx, { standIn = false, spec = {} } 
   const info = { gpu: null, renderScale: E.renderScale, tier: E.tierName ?? E.tier?.name ?? null, csmMapSizes: E.csmMapSizes, cadence: E.tier?.csmFarCadence ?? null };
   try { const gl = E.renderer.getContext(); const d = gl.getExtension('WEBGL_debug_renderer_info'); info.gpu = d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; } catch { /* */ }
   const t0 = performance.now();
+  const step = (k) => console.log(`[d1] ${k} ${Math.round(performance.now() - t0)} ms`);
+  step('finish');
   const finishA = await finishFrame(E, 60);
-  const cen = census(E, scene);
+  step('census');
+  const cen = await census(E, scene);
+  step('owners');
   const own = await owners(E, scene, cen, { top: 8 });
+  step('cascades');
   const cas = await cascades(E);
+  step('post');
   const post = await postToggle(E);
+  step('tiny');
   const tn = await tiny(E);
   const finishB = await finishFrame(E, 60);
+  step('standIns');
   const si = standIn ? await standIns(E, scene, ctx, spec) : null;
+  step('cpu');
   const c = await cpuD1(E, ctx);
+  step('done');
   return { probe: 'd1', info, finish: finishA, finishEnd: finishB, census: cen, owners: own, cascades: cas, post, tiny: tn, standIns: si, cpu: c,
     seconds: Math.round((performance.now() - t0) / 1000) };
 }
