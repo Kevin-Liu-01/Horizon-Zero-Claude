@@ -118,9 +118,10 @@ export class ResurveyLive {
 
   /* ------------------------------------------------- come to look */
 
-  _sendLookers() {
+  /** `only`: the machines that may come (F44's staging hands its own three); else every live one near. */
+  _sendLookers(only = null) {
     const M = this.ctx.machines;
-    const list = (M?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.position);
+    const list = (only || M?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.position);
     const refuse = (k) => this.hooks.refuses?.(k) ?? false;
     const plain = list.map((m, i) => ({ id: i, kind: m.kind, x: m.position.x, z: m.position.z }));
     const pick = chooseLookers(plain, this.at, { n: 3, range: 70, standOff: 6, refuse });

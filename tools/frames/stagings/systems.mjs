@@ -64,6 +64,7 @@ export const stagings = {
             api.undo(() => { m.update = u0; });
           }
           if (!rep.lookers.length) api.standIn('no Peg came to look (none could be stood up)');
+          else api.standIn(`staged at 10 s: arc ${rep.arc} s, ${rep.taken} of 3 bearings, lookers ${JSON.stringify(rep.placed)}; her fade ${C.player?.fade ?? '?'}`);
         } catch (e) { api.standIn(`the re-survey staging threw: ${e?.message || e}`); }
       } else api.standIn('no re-survey in this build (src/game/hour.js stageResurvey)');
       const ww = C.combat?.windwall;
@@ -72,6 +73,10 @@ export const stagings = {
       } else api.standIn('no planted Windwall in this build (area D, wave 3: combat.windwall.plant)');
       const pad = (C.props?.survey?.benchmarks || C.survey?.benchmarks || []).find?.((b) => b.id === 'bm-01');
       api.standIn(pad ? `bm-01's pad at (${pad.x.toFixed(1)}, ${pad.z.toFixed(1)}); she stands on the bible's point` : "B1's pad not found on ctx.props.survey: she stands on the bible's point");
+    },
+    async beforeFreeze(f, api) {
+      const p = api.C.player;
+      api.standIn(`before the freeze: her fade ${p?.fade}, solidCut ${p?.solidCut?.toFixed?.(2)}, lensGap ${p?.lensGap?.toFixed?.(2)}, solidReach ${p?.solidReach?.toFixed?.(2)}`);
     },
   },
 };

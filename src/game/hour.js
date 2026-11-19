@@ -483,7 +483,7 @@ export class FirstHour {
     L.arm(true);
     this._spawn('lookers');
     L.running = true; L.startT = L.simT;
-    L._sendLookers();
+    L._sendLookers(this._live(this.spawned.lookers));
     const walked = Math.max(0, atS - 0.9) * 1.25 * 0.7;
     const H = (x, z) => this.ctx.terrain?.getHeight?.(x, z) ?? 0;
     for (const lk of L.lookers) {
@@ -504,7 +504,10 @@ export class FirstHour {
     L.R.t = atS; L.simT = L.startT + atS;
     L.R.on = true; L.R.mark = L.R.marks[Math.max(0, taken - 1)].id;
     L._shown = false; L._show(true); L._paint();
-    return L.report();
+    const P = this.ctx.player?.position;
+    const rep = L.report();
+    rep.placed = L.lookers.map((lk) => ({ kind: lk.kind, x: +lk.m.position.x.toFixed(1), z: +lk.m.position.z.toFixed(1), toHer: P ? +Math.hypot(lk.m.position.x - P.x, lk.m.position.z - P.z).toFixed(1) : null }));
+    return rep;
   }
 
   /** The staging's undo: the quest's own arming takes the re-survey back. */
