@@ -34,9 +34,15 @@ export function blockoutKind({ id, kind, formId = null, url, sizeClass, plannedR
       this._occAt = null;
     }
 
-    /** The occluders follow the hull (cheap: a few boxes, rewritten only when it has moved or turned). */
+    /**
+     * A blockout has no behaviour yet: it never leaves calm and never turns (the line-up films it calm and facing her;
+     * at 6 m on open crust its perception would otherwise raise it to hostile in the settle). The occluders follow the
+     * hull (cheap: a few boxes, rewritten only when it has moved or turned).
+     */
     update(dt, t) {
       const r = super.update(dt, t);
+      if (this.alive && this.state !== 'patrol') this.setState('patrol');
+      if (this.sc) this.sc.suspicion = 0;
       const p = this.position, h = this.heading;
       const o = this._occAt;
       if (this.alive && (!o || Math.abs(o[0] - p.x) > 0.05 || Math.abs(o[1] - p.z) > 0.05 || Math.abs(o[2] - h) > 0.01)) {
@@ -47,6 +53,10 @@ export function blockoutKind({ id, kind, formId = null, url, sizeClass, plannedR
       return r;
     }
 
+    _statePatrol() {}
+    _stateSuspicious() {}
+    _stateAlert() {}
+    _stateSearch() {}
     dispose() { clearOccluders(this._occSlot); return super.dispose?.(); }
     onDeathPose() {}
     animate() {}

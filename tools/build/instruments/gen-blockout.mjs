@@ -10,8 +10,8 @@
  *
  * Every part is read from src/instruments/lib/blockout.js (one source with IN0 and the sight occluders): a box is a
  * bevelled box, a cylinder a 16-sided strut, a leg a strut from its hip on the hull to its foot pad. One grey for the
- * hull, a darker grey for joints and legs, the lamp in the sensor bucket (the lamp system draws its state colour), a
- * vial's glass pale. No rig: a blockout stands (its rules run in Node, tools/instruments/screed-rules.test.mjs).
+ * hull, a darker grey for joints and legs, a dark lamp face under the lamp system's iris (drawn in the state's colour),
+ * a vial's glass pale. No rig: a blockout stands (its rules run in Node, tools/instruments/screed-rules.test.mjs).
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +24,7 @@ export const LANE = 'instruments';
 export const RECIPE = 'tools/build/instruments/gen-blockout.mjs';
 export const OUTPUTS = ['public/models/instruments/screed.glb', 'public/models/instruments/sickle.glb', 'public/models/instruments/tiller-blockout.glb'];
 
-const GREY = 0xa9a7a2, JOINT = 0x6d6c69, GLASS = 0xd6f0ee, LAMP = 0x1a1208;
+const GREY = 0xa9a7a2, JOINT = 0x6d6c69, GLASS = 0xd6f0ee, LAMP_FACE = 0x3a3936;
 
 function cylAlong(bucket, p, opts) {
   const [x, y, z] = p.c, h = p.h / 2;
@@ -34,13 +34,15 @@ function cylAlong(bucket, p, opts) {
 }
 
 async function one(kind, file, formId) {
-  const hull = new KBucket(`${kind}-hull`), lamp = new KBucket(`${kind}-sensor`);
+  const hull = new KBucket(`${kind}-hull`);
   let lampAt = null, lampR = 0.2;
   for (const p of partsOf(kind, formId)) {
     if (p.lamp) {
+      // the lamp is the lamp system's iris at this anchor (drawn in the state's colour); the housing's face is grey.
+      // (An emissive sensor mesh here was drawn away from its anchor in the first film at b89be8d: no sensor mesh.)
       lampAt = p.c; lampR = p.r ?? Math.min(p.s[0], p.s[1]) / 2;
-      if (p.type === 'box') rbox(lamp, V(...p.c), p.s, 0.01, { surf: 'lamp', tone: LAMP, segs: 1 });
-      else cylAlong(lamp, p, { surf: 'lamp', tone: LAMP });
+      if (p.type === 'box') rbox(hull, V(...p.c), p.s, 0.01, { surf: 'graphite', tone: LAMP_FACE, segs: 1 });
+      else cylAlong(hull, p, { surf: 'graphite', tone: LAMP_FACE });
       continue;
     }
     const opts = { surf: p.vial ? 'glaze' : p.blade ? 'bronze' : 'bisque', tone: p.vial ? GLASS : (p.type === 'cyl' && p.r < 0.15) ? JOINT : GREY };
@@ -62,7 +64,6 @@ async function one(kind, file, formId) {
   const b = boundsOf(kind, formId);
   const stats = await writeInstrument([
     { bucket: hull, role: 'hull', material: { name: `r5-${kind}-blockout` } },
-    { bucket: lamp, role: 'sensor', material: { name: `r5-${kind}-blockout-lamp`, emissive: [1.0, 0.78, 0.45], baseColor: [0.02, 0.015, 0.01, 1] } },
   ], {
     file,
     provenance: { recipe: RECIPE, sources: [], licence: 'project-original' },
