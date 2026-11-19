@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { POTS, POT_CAST, castVelocity, flyPot, clampAim, PotBelt, PotField, castPhase } from './pots.js';
 import { ST, STATUS, STATUS_WORDS, StatusBook, tearSeized, hookRipTear, isSeized } from './status.js';
-import { WINDWALL, WindwallState, guardCovers, plantShape } from './windwall.js';
+import { WINDWALL, WINDWALL_FAN, WindwallState, guardCovers, plantShape } from './windwall.js';
 import { GAFF_LIGHTS, HOOK_RIP, GaffVerbs, verbContactAt, verbTotal } from './gaff.js';
 import { setOccluder, clearOccluders, sightBlocked } from '../instruments/lib/sight.js';
 
@@ -69,6 +69,27 @@ test('KT3: pot from belt to release 450-650 ms; Windwall open to guard 200-300 m
   for (let i = 1; i <= 40 && upAt == null; i++) if (ww.step(1 / 60) === 'up') upAt = i / 60;
   assert.ok(upAt >= 0.2 && upAt <= 0.3 + 1 / 60, `request to guard ${upAt}`);
   for (const L of GAFF_LIGHTS) assert.ok(verbTotal(L) <= 0.65, `${L.id} ${verbTotal(L)} s`);
+});
+
+test('the owner\'s bar in the rules: the fan stays shut until the arm is half up, folds before the arm goes down, and a raise turned into a fold (or back) is continuous', () => {
+  // (no step of the arm or the fan over 0.3 of its range, at the turns as anywhere: the fan's own fastest step, as it
+  // snaps open over the guard's last 8 steps, is 0.29)
+  const ww = new WindwallState(); ww.owned = true; ww.guard(true);
+  let last = { arm: 0, open: ww.open };
+  const look = () => {
+    if (ww.arm < 0.5) assert.ok(ww.open < 0.3, `open ${ww.open} at arm ${ww.arm} (${ww.phase})`);
+    const d = Math.max(Math.abs(ww.arm - last.arm), Math.abs(ww.open - last.open));
+    assert.ok(d < 0.3, `a step of ${d.toFixed(3)} (${ww.phase}, t ${ww.t.toFixed(3)})`);
+    last = { arm: ww.arm, open: ww.open };
+  };
+  for (let i = 0; i < 9; i++) { ww.step(1 / 60); look(); }
+  ww.guard(false);
+  for (let i = 0; i < 5; i++) { ww.step(1 / 60); look(); }
+  ww.guard(true);
+  while (ww.phase !== 'guard') { ww.step(1 / 60); look(); }
+  ww.guard(false);
+  while (ww.phase !== 'stowed') { ww.step(1 / 60); look(); }
+  assert.equal(ww.arm, 0); assert.equal(ww.open, WINDWALL_FAN.closed);
 });
 
 test('KT4: the guard covers a frontal hit inside 120 deg; a parry window of 150-220 ms; blocks and parries', () => {

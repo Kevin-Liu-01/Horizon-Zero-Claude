@@ -118,6 +118,31 @@ export const WINDWALL = Object.freeze({
 
 const DEG = Math.PI / 180;
 
+/*
+ * THE RAISE AND THE FOLD (M2 fix wave; the owner's bar: never a held thing above her shoulders or behind her head).
+ * The closed stack lies along her forearm from the wrist past the elbow (slat 0 never turns), so on the hanging arm of
+ * the carry its tip stands beside her shoulder. The fan is therefore a function of the arm, not of the clock: it stays all but shut until the arm is half up
+ * (the forearm already across her front, the stack level under her shoulders) and opens as the arm arrives. On the
+ * way down the order reverses: the fan folds while the arm is still up, then the arm goes down. One curve each way,
+ * the same fan-of-arm both ways, so a raise turned into a fold (or back) mid-way is continuous in both.
+ */
+const smooth = (x) => { const k = x < 0 ? 0 : x > 1 ? 1 : x; return k * k * (3 - 2 * k); };
+/** the arm on the way up, k = t / openS (eased both ends: the wrist moves under 0.08 m a step) */
+export const armUp = (k) => smooth(k);
+/** the arm on the way down, k = t / closeS: it stays up while the fan folds (0 slope at k = 0), then goes down */
+export const armDown = (k) => 1 - smooth(k);
+/** the fan against the arm: shut below FAN_FROM of the arm, open at the guard */
+export const FAN_FROM = 0.4;
+export const fanOfArm = (arm) => WINDWALL_FAN.closed + (1 - WINDWALL_FAN.closed) * smooth((arm - FAN_FROM) / (1 - FAN_FROM));
+/** k at which a monotone curve reaches `arm` (bisection) */
+function kOf(curve, arm, rising) {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if ((curve(m) < arm) === rising) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+const kUpOf = (arm) => kOf(armUp, arm, true);
+const kDownOf = (arm) => kOf(armDown, arm, false);
+
 /** Does a guard facing `heading` (rad, atan2(dx, dz)) cover a hit from (dx, dz) (the striker's offset from her)? */
 export function guardCovers(heading, dx, dz) {
   const d = Math.hypot(dx, dz);
@@ -147,6 +172,7 @@ export class WindwallState {
     this.t = 0;               // seconds in the phase
     this.simT = 0;
     this.open = WINDWALL_FAN.closed;
+    this.arm = 0;             // the arm's weight off the carry (the animator's layer reads it): 0 hung .. 1 the guard
     this.want = false;        // RMB
     this.guardUpAt = -1;      // sim t the fan locked open (the parry window's start)
     this.requestAt = -1;
@@ -213,43 +239,42 @@ export class WindwallState {
     let ev = null;
     switch (this.phase) {
       case 'stowed':
-        this.open = WINDWALL_FAN.closed;
+        this.open = WINDWALL_FAN.closed; this.arm = 0;
         if (this.want && this.owned) { this.phase = 'opening'; this.t = 0; }
         break;
       case 'opening': {
         const k = Math.min(1, this.t / W.openS);
-        // (front-loaded: the slats past her elbow swing down and out of the way while the arm is still coming up)
-        this.open = WINDWALL_FAN.closed + (1 - WINDWALL_FAN.closed) * (1 - (1 - k) * (1 - k));
-        if (!this.want) { this.phase = 'closing'; this.t = (1 - k) * W.closeS; }
-        else if (k >= 1) { this.phase = 'guard'; this.t = 0; this.guardUpAt = this.simT; ev = 'up'; }
+        this.arm = armUp(k); this.open = fanOfArm(this.arm);
+        if (!this.want) { this.phase = 'closing'; this.t = kDownOf(this.arm) * W.closeS; }
+        else if (k >= 1) { this.phase = 'guard'; this.t = 0; this.guardUpAt = this.simT; this.open = 1; ev = 'up'; }
         break;
       }
       case 'guard':
-        this.open = 1;
+        this.open = 1; this.arm = 1;
         if (!this.want) { this.phase = 'closing'; this.t = 0; }
         break;
       case 'bash':
-        this.open = 1;
+        this.open = 1; this.arm = 1;
         if (!this._bashHit && this.t >= W.bashS * 0.42) { this._bashHit = true; ev = 'bash-contact'; }
         if (this.t >= W.bashS) { this.phase = this.want ? 'guard' : 'closing'; this.t = 0; if (this.phase === 'guard') this.guardUpAt = -1; }
         break;
       case 'planting':
-        this.open = 1;
+        this.open = 1; this.arm = 1;
         if (this.t >= W.plantS) {
           this.phase = 'planted'; this.t = 0; this.want = false; ev = 'planted';
           if (me) this.plantedAt = { x: me.x, y: me.y ?? 0, z: me.z, heading: me.heading };
         }
         break;
       case 'planted':
-        this.open = 1;
+        this.open = 1; this.arm = 0;
         if (me && this.plantedAt && Math.hypot(me.x - this.plantedAt.x, me.z - this.plantedAt.z) > W.PICKUP_FAR) this.pickUp();
         break;
       case 'closing': {
         const k = Math.min(1, this.t / W.closeS);
-        // (it closes late, once the arm is down)
-        this.open = 1 - (1 - WINDWALL_FAN.closed) * k * k;
-        if (this.want && this.owned) { this.phase = 'opening'; this.t = (1 - k) * W.openS; }
-        else if (k >= 1) { this.phase = 'stowed'; this.t = 0; this.open = WINDWALL_FAN.closed; ev = 'closed'; }
+        // (it folds first, while the arm is still up, then the arm goes down)
+        this.arm = armDown(k); this.open = fanOfArm(this.arm);
+        if (this.want && this.owned) { this.phase = 'opening'; this.t = kUpOf(this.arm) * W.openS; }
+        else if (k >= 1) { this.phase = 'stowed'; this.t = 0; this.open = WINDWALL_FAN.closed; this.arm = 0; ev = 'closed'; }
         break;
       }
     }

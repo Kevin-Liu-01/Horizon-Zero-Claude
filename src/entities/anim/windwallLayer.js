@@ -179,11 +179,11 @@ export class WindwallLayer {
     let w = 0, drive = 0, drop = 0;
     const W = WINDWALL;
     switch (ww.phase) {
-      case 'opening': w = ease(Math.min(1, ww.t / W.openS)); break;
+      case 'opening': w = ww.arm ?? ease(Math.min(1, ww.t / W.openS)); break;
       case 'guard': w = 1; break;
       case 'bash': { w = 1; const u = Math.min(1, ww.t / W.bashS); drive = Math.sin(Math.PI * Math.min(1, u / 0.7)) * (u < 0.7 ? 1 : 0); break; }
       case 'planting': { w = 1; drop = ease(Math.min(1, ww.t / (W.plantS * 0.7))); break; }
-      case 'closing': w = 1 - ease(Math.min(1, ww.t / W.closeS)); break;
+      case 'closing': w = ww.arm ?? 1 - ease(Math.min(1, ww.t / W.closeS)); break;
       default: w = 0;
     }
     if (ww.phase === 'planted' && ww.t < PLANT_BACK) { const k = ease(ww.t / PLANT_BACK); w = 1 - k; drop = 1 - k; }
