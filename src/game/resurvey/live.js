@@ -26,7 +26,7 @@ import { RESURVEY } from '../quest/scar-plan.js';
  * answers nothing), then restS with no one striking, then the next looker in her reach. The arc still pauses on any hit
  * over 10 (none of a Peg's blows is), and a looker she strikes is not spared its turn.
  */
-export const TURNS = Object.freeze({ strikeS: 2.6, restS: 2.4 });
+export const TURNS = Object.freeze({ strikeS: 3.0, restS: 1.8 });
 
 export class ResurveyLive {
   constructor(ctx, { at, marks, hooks = {}, rules = RESURVEY } = {}) {

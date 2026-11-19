@@ -166,7 +166,7 @@ test('the lookers strike one at a time while armed (TURNS), each in its turn, an
   for (const m of pegs) assert.ok(m.blows >= 2, `looker ${m.id} struck ${m.blows} times in 30 s`);
   const total = pegs.reduce((a, m) => a + m.blows, 0);
   // unheld, three Pegs off a 2.4 s cooldown strike 3 x 12.5 = 37 times in 30 s; in turns about a third of that
-  assert.ok(total <= 14, `${total} blows in 30 s`);
+  assert.ok(total <= 16, `${total} blows in 30 s`);
   console.log(`# turns: ${total} blows in 30 s (unheld: ${pegs.length * Math.floor(30 / 2.4)})`);
   L.R.done = true;
   for (const m of pegs) m.blows = 0;

@@ -53,8 +53,12 @@ const LOOKER_STATIONS = Object.freeze([{ b: 110, r: 27 }, { b: 180, r: 27 }, { b
  * Plumb is a surveyor on a bench, not a fighter: when it turns on her it READS her first (readS of its drum on her, the
  * chime and the lamp up, no blow), and between its blows it stands for gapS more than its table asks. A careful player
  * gets the second vial arrow away in the reading, or backs out of reach. While "The Scar" runs 'herd' or 'plumb-2' only.
+ * And it reads from range: its engage band is 9-14 m (its kind's is 2.6-7, the slice's dyke Plumb keeps that). At 5fb4925
+ * (run 20261119T212927Z-5fb4925-systems-fix-probe, leg 2 from plumb-2) it held at 5-7 m from her for 60 s, every stand
+ * the topple chose was inside its band (out to 14 m, it followed), one arrow was loosed, and it took 105 hp: Sightline
+ * 55, bob-drop 36, pendulum 14. At 9-14 m its blow is the Sightline (5, and the Flag), and the vial is shot from there.
  */
-const TERRACE = Object.freeze({ readS: 1.8, gapS: 1.2 });
+const TERRACE = Object.freeze({ readS: 1.8, gapS: 1.2, band: Object.freeze([9, 14]) });
 /**
  * The stages that stand something up again when a record is continued in them (afterRestore and the 3 s re-spawn tick):
  * a stage's own `spawn`, and what an earlier stage stood up that this one still fights. At fa45e47 a record continued at
@@ -264,7 +268,8 @@ export class FirstHour {
     for (const [id, n] of (r.items || [])) inv?.add?.(id, n);
     if (r.opens) this.ctx.events?.emit?.('counter-opened', { id: r.opens, quest: qid });
     if (r.node) this.ctx.events?.emit?.('travel-node', { id: r.node, quest: qid });
-    this.ctx.progression?.banner?.(this.sys.S.systems.reward.head, words.join('  ·  '), 'quest');
+    // the quest's own title (at 5fb4925 the reward of "True Ground" was headed RAKER'S MORNING: systems.json's slice head)
+    this.ctx.progression?.banner?.(TEXT_W2.quests[qid]?.title ?? this.sys.S.systems.reward.head, words.join('  ·  '), 'quest');
   }
 
   /** A scene of one of these quests has played to its end (SystemsGame._playScene). */
@@ -406,6 +411,13 @@ export class FirstHour {
   _terraceReads(m) {
     const ai = m.ai, pick = ai?.chooseAttack?.bind(ai), scar = this.scar, E = this.ctx.engine;
     if (!pick) return;
+    // its own engage row (the kind's table is shared): the band, and what the constructor derived from it
+    const eng = ai.engage;
+    if (eng?.cfg?.band) {
+      eng.cfg = { ...eng.cfg, band: [...TERRACE.band] };
+      eng.ring = (TERRACE.band[0] + TERRACE.band[1]) / 2;
+      if (Number.isFinite(eng._heldHi)) eng._heldHi = Math.max(4, TERRACE.band[1] * 1.5);
+    }
     let since = -1, inEp = false, blowAt = -1;
     const R = (this.terraceRule = { reads: 0, held: 0, blows: 0 });
     ai.chooseAttack = (dist) => {
