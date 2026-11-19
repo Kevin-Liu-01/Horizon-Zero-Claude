@@ -94,15 +94,15 @@ class Soup {
     }
   }
   /** a lathe about +y at (cx, cy, cz): profile [[r, y], ...] bottom to top, `n` sides, outward faces */
-  lathe(cx, cy, cz, prof, n, o, { inward = false, jitter = 0, seed = 0, smooth = false } = {}) {
-    const R = (i, k) => { const [r, y] = prof[i]; const a = (k / n) * Math.PI * 2, jr = jitter ? 1 + jitter * (hash(seed + i * 3.1, k % n) - 0.5) : 1; return [cx + Math.sin(a) * r * jr, cy + y, cz + Math.cos(a) * r * jr]; };
+  lathe(cx, cy, cz, prof, n, o, { inward = false, jitter = 0, seed = 0, smooth = false, rot = 0 } = {}) {
+    const R = (i, k) => { const [r, y] = prof[i]; const a = (k / n) * Math.PI * 2 + rot, jr = jitter ? 1 + jitter * (hash(seed + i * 3.1, k % n) - 0.5) : 1; return [cx + Math.sin(a) * r * jr, cy + y, cz + Math.cos(a) * r * jr]; };
     for (let i = 0; i + 1 < prof.length; i++) for (let k = 0; k < n; k++) {
       const a = R(i, k), b = R(i, k + 1), c = R(i + 1, k + 1), d = R(i + 1, k);
       const u0 = (k / n) * Math.PI * 2 * prof[i][0], u1 = ((k + 1) / n) * Math.PI * 2 * prof[i][0];
       const uv = [[u0, prof[i][1]], [u1, prof[i][1]], [u1, prof[i + 1][1]], [u0, prof[i + 1][1]]];
       // smooth: each vertex's normal is its own bearing's, tilted by the profile's slope (no facets on a round wall)
       const dr = prof[i + 1][0] - prof[i][0], dy = prof[i + 1][1] - prof[i][1], dl = Math.hypot(dr, dy) || 1, sg = inward ? -1 : 1;
-      const N = (kk) => { const an = (kk / n) * Math.PI * 2; return [Math.sin(an) * dy / dl * sg, -dr / dl * sg, Math.cos(an) * dy / dl * sg]; };
+      const N = (kk) => { const an = (kk / n) * Math.PI * 2 + rot; return [Math.sin(an) * dy / dl * sg, -dr / dl * sg, Math.cos(an) * dy / dl * sg]; };
       const nrm = smooth ? [N(k), N(k + 1), N(k + 1), N(k)] : null;
       if (inward) this.quad(b, a, d, c, { ...o, uv: [uv[1], uv[0], uv[3], uv[2]], nrm: nrm && [nrm[1], nrm[0], nrm[3], nrm[2]] }); else this.quad(a, b, c, d, { ...o, uv, nrm });
     }
@@ -578,12 +578,14 @@ function counter(S, ground) {
   }
 }
 
-/** The cistern: a drystone kerb with a lime-rendered rim, dark water inside, a timber frame with its bucket. */
+/** The cistern: a drystone kerb with a lime-rendered rim, dark water inside, a timber frame with its bucket. The kerb's
+ * lathe starts on its north side (rot pi), so the seam where its stones' course runs out faces up the slope, not the
+ * street (it stood in the middle of F36's cistern at fa37ef4). */
 function cistern(S, ground) {
   const Cq = L.PLACES.cistern, g = ground(Cq.x, Cq.z), r = Cq.r;
-  S.lathe(Cq.x, g - 0.3, Cq.z, [[r + 0.05, 0], [r, Cq.h + 0.3]], 32, { col: PAL.stone, kind: 0 }, { smooth: true });
+  S.lathe(Cq.x, g - 0.3, Cq.z, [[r + 0.05, 0], [r, Cq.h + 0.3]], 32, { col: PAL.stone, kind: 0 }, { smooth: true, rot: Math.PI });
   S.lathe(Cq.x, g + Cq.h, Cq.z, [[r + 0.04, 0], [r + 0.02, 0.07], [r - 0.32, 0.08], [r - 0.34, 0]], 32, { col: PAL.lime, kind: 1 });
-  S.lathe(Cq.x, g - 0.45, Cq.z, [[r - 0.34, 0], [r - 0.34, Cq.h + 0.45]], 32, { col: PAL.stone, kind: 0 }, { inward: true, smooth: true });
+  S.lathe(Cq.x, g - 0.45, Cq.z, [[r - 0.34, 0], [r - 0.34, Cq.h + 0.45]], 32, { col: PAL.stone, kind: 0 }, { inward: true, smooth: true, rot: Math.PI });
   S.lathe(Cq.x, g - 0.25, Cq.z, [[r - 0.34, 0], [0.0, 0]], 20, { col: PAL.water, kind: 6 }, { inward: true });
   // the frame: two posts, a beam, a rope and a bucket of hide
   const ex = Math.cos(0.6), ez = Math.sin(0.6);
