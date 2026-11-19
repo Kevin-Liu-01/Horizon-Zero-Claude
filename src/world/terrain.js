@@ -934,6 +934,8 @@ export class Terrain {
     g.setAttribute('position', this._attr.position);
     g.setAttribute('normal', this._attr.normal);
     g.setAttribute('aTint', this._attr.aTint);
+    // (M2 wave 2) the same buffer again: its fourth channel is the Holds' ground (holds/ground.js), unpacked per vertex
+    g.setAttribute('aGround', this._attr.normal);
     g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
     g.boundingBox = C.box; g.boundingSphere = C.sphere;
     g.userData.tris = quadTris;

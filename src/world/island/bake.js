@@ -4,7 +4,7 @@
  * plan §8.3 pool-terrain-build). No THREE; all buffers are typed arrays.
  *
  *   heights        Float32  H[n²], the render grid; gameplay reads it bilinear
- *   shade          Int16 normals (xyz + pad), Uint8 aTint (sRGB rgb + blockout amount)
+ *   shade          Int16 normals (xyz + the Holds' ground, holds/ground.js packGround), Uint8 aTint (sRGB rgb + blockout amount)
  *   masks          Uint8 RGBA ×3 at 512² over the world square
  *                    maskA  R sea-lavender colonies  G basalt  B shingle  A wet silt
  *                    maskB  R marram cover  G packed track  B damp ground  A the golden meadow (W-06)
@@ -20,6 +20,7 @@
 import { MESH_SPAN, MESH_SEGS, WORLD_SIZE, ISLAND_SCALE as S } from './extent.js';
 import { heightAt, biomesAt, authored, coverAt, ss, fbm, GLASS_LEVEL } from './recipe.js';
 import { SALT_FIELD as SF } from './sites.js';
+import { holdsCult, holdsScar, packGround } from '../holds/ground.js';
 
 export const MASK_N = 512;
 /** The Glass's rim, in its normalised plan distance (1 on the shoreline): the reed belt reaches 1.9 (recipe.js coverAt);
@@ -89,8 +90,9 @@ export function bakeShade(H, r0, r1) {
       normals[o] = Math.round(-gx * il * 32767);
       normals[o + 1] = Math.round(il * 32767);
       normals[o + 2] = Math.round(-gz * il * 32767);
-      normals[o + 3] = 0;
       biomesAt(x, z, _w);
+      // (M2 wave 2, area A) the normal's spare channel: the Holds' weight, worked ground and the Scar (holds/ground.js)
+      normals[o + 3] = packGround(_w[1], holdsCult(x / S, -z / S, _w[1]), holdsScar(x / S, -z / S));
       const m = fbm(x * 0.02 + 7, z * 0.02 - 3, 2);
       let r = 0, g = 0, b = 0;
       for (let k = 0; k < 6; k++) {

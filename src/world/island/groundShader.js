@@ -12,19 +12,35 @@
  *   extra render target.
  *
  * Layer ids: 0 sand, 1 salt, 2 basalt, 3 silt, 4 shingle: one array per part, 1024² (M1.1a; 3 and 4 tiled 2 x 2).
+ *
+ * M2 wave 2 (area A): the Holds' ground (HOLDS_TERM): black lapilli from the shingle layer read at a cinder's scale,
+ * sand drifts in the lee, the pit-cups (a vine in a hollow behind its crescent wall) on worked ground, and the Screed
+ * Scar's planed floor and spoil. Its inputs are unpacked per vertex from the normal's fourth channel (holds/ground.js).
  */
+import { SCAR } from './sites.js';
+const _sl = Math.hypot(SCAR.b.x - SCAR.a.x, SCAR.b.z - SCAR.a.z);
+/** The Scar's line, engine xz, unit: along (toward its south-west end); for the blade's grooves on its floor. */
+const SCAR_DIR = `vec2(${((SCAR.b.x - SCAR.a.x) / _sl).toFixed(6)}, ${((SCAR.b.z - SCAR.a.z) / _sl).toFixed(6)})`;
 export const GROUND_VERT_PARS = /* glsl */ `
 #include <common>
 attribute vec4 aTint;
+attribute vec4 aGround;
 varying vec3 vWPos;
 varying vec3 vWNorm;
 varying vec4 vTint;
+varying vec3 vGround;
 `;
 export const GROUND_VERT_WORLD = /* glsl */ `
 #include <worldpos_vertex>
 vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vWNorm = normalize(mat3(modelMatrix) * objectNormal);
 vTint = vec4(pow(aTint.rgb, vec3(2.2)), aTint.a);
+{
+  /* the Holds' ground (holds/ground.js packGround): hold, worked ground, the Scar (+ floor, - spoil), unpacked here so
+   * the three interpolate apart */
+  float gq = floor(aGround.w * 32767.0 + 0.5);
+  vGround = vec3(floor(gq / 1024.0) / 31.0, mod(floor(gq / 32.0), 32.0) / 31.0, (mod(gq, 32.0) - 15.0) / 15.0);
+}
 `;
 
 export const ROCK_VERT_PARS = /* glsl */ `
@@ -99,6 +115,7 @@ vec4 gNm(int i, vec2 uv, vec2 gx, vec2 gy) {
 export const TERRAIN_FRAG_PARS = /* glsl */ `
 ${GROUND_FRAG_PARS}
 varying vec4 vTint;
+varying vec3 vGround;
 /* M1.1a: the four world masks in one array (one sampler unit): 0 mask A, 1 mask B, 2 shore, 3 the pan */
 uniform highp sampler2DArray tMask;
 #define gPanT(uv) texture(tMask, vec3((uv), 3.0))
@@ -160,6 +177,152 @@ export const STRATA_TERM = /* glsl */ `
   }
 `;
 
+/**
+ * THE HOLDS' GROUND (M2 wave 2, area A; bible §3.3, M2 briefs HG2-HG4). Needs hold, hk, hSkip, slope, wn, xz, dCam,
+ * dpx, dpy, nMac, macA, farN and the stack's col, pert, rSum, aoSum (blended into them by hk).
+ *
+ *   lapilli    the shingle layer (4) read at a 0.9 m tile, so its cobbles are 2-6 cm cinders: black (HG4 L* 12-22* in
+ *              sun), a little warm, with broad oxidised (red-brown) and ashen fields; two turned reads at
+ *              incommensurate scales to 130 m, so no tile repeats over a walk (HG4's autocorrelation)
+ *   drifts     pale dust in broad patches, deepest on the lee (south-west-facing) side of every rise
+ *   pit-cups   on worked ground under slope 0.32-0.5: a staggered grid 8 m apart, turned 20 deg; in each cell (82 %) a
+ *              hollow 1.9-2.6 m across the rim, shaded by its own bowl normal, a crescent drystone wall 0.7 m thick on
+ *              its north-east (the trade wind's) side, and at its foot a vine (green in 85 % of pits, dormant in the
+ *              rest). One cell per pixel, no neighbour search: every pit and its wall stay inside their cell
+ *   the Scar   its planed floor pale graded subsoil scored along the line by the blade; its spoil a heap of the
+ *              same pale stuff and black cinder
+ * Its fetches: four of the layer array (two reads, albedo and normal, the second read and the normals only near);
+ * the whole stack is skipped where hk is 1 (hSkip), so a Holds pixel costs less than a Pans one.
+ */
+const HOLDS_TERM = /* glsl */ `
+  if (hk > 0.004) {
+    /* -- lapilli ---------------------------------------------------------------- */
+    vec2 luv = xz * 1.111, lgx = dpx * 1.111, lgy = dpy * 1.111;
+    vec4 la = gA(4, luv, lgx, lgy);
+    vec4 ln = vec4(0.5, 0.5, 0.631, 0.905);
+    if (farN < 1.0) ln = mix(gNm(4, luv, lgx, lgy), ln, farN);
+    if (dCam < 130.0) {
+      mat2 Lr = mat2(0.788, 0.616, -0.616, 0.788);
+      vec2 luv2 = Lr * luv * 0.731 + vec2(0.41, 0.19), lgx2 = Lr * lgx * 0.731, lgy2 = Lr * lgy * 0.731;
+      float k2 = 0.5 * (1.0 - smoothstep(100.0, 130.0, dCam));
+      la = mix(la, gA(4, luv2, lgx2, lgy2), k2);
+      if (farN < 1.0) {
+        vec4 n2 = gNm(4, luv2, lgx2, lgy2);
+        n2.xy = (vec2(dot(n2.xy * 2.0 - 1.0, Lr[0]), dot(n2.xy * 2.0 - 1.0, Lr[1]))) * 0.5 + 0.5;
+        ln = mix(ln, mix(n2, vec4(0.5, 0.5, 0.631, 0.905), farN), k2);
+      }
+    }
+    vec3 hc = pow(la.rgb, vec3(2.2)) * vec3(2.05, 1.93, 1.8);
+    // broad fields: some cinder oxidised red-brown, some ashen
+    vec4 nF = gNoiseT(xz * 0.0047 + 0.83);
+    float ox = smoothstep(0.58, 0.8, nF.r * 0.7 + nMac.a * 0.3), ashF = smoothstep(0.6, 0.82, nF.b);
+    hc *= mix(vec3(1.0), vec3(1.5, 1.08, 0.86), ox * 0.7) * mix(1.0, 1.28, ashF * 0.6);
+    vec2 ht = ln.xy * 2.0 - 1.0;
+    vec3 hp = vec3(ht.x, 0.0, ht.y) * 1.1;
+    float hR = ln.z, hAO = ln.a * 2.0 - 1.0;
+
+    /* -- drifts: dust on the lee of every rise (the trade wind blows toward the south-west: engine (-0.71, 0.71)) -- */
+    float lee = clamp(dot(wn.xz, vec2(-0.7071, 0.7071)) * 3.0, -0.6, 1.0);
+    vec4 nD = gNoiseT(xz * 0.0213 + 0.31);
+    float drift = smoothstep(0.56, 0.8, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.16 * lee) * (1.0 - smoothstep(0.35, 0.75, slope));
+    vec3 dustC = vec3(0.155, 0.128, 0.094) * (0.86 + 0.28 * nD.g);
+    hc = mix(hc, dustC, drift * 0.72);
+    hp *= 1.0 - 0.65 * drift;
+    hR = mix(hR, 0.97, drift);
+
+    /* -- the pit-cups ------------------------------------------------------------- */
+    float pitK = vGround.y * (1.0 - smoothstep(0.32, 0.5, slope));
+    if (pitK > 0.01) {
+      mat2 PM = mat2(0.9397, 0.342, -0.342, 0.9397);
+      vec2 pq = PM * xz * 0.125;
+      float prow = floor(pq.y);
+      pq.x += 0.5 * mod(prow, 2.0);
+      vec2 pc = floor(pq), ph = gHash2(pc + 17.0);
+      float ph3 = fract(sin(dot(pc, vec2(12.9898, 78.233))) * 43758.5453);
+      vec2 pf = (fract(pq) - 0.5 - (ph - 0.5) * 0.12) * 8.0;     // m from the pit's centre, in the turned frame
+      vec2 po = pf * PM;                                          // the same, in the world
+      float R = 1.9 + 0.7 * ph3, d = length(po);
+      float px = max(length(vec2(length(dpx), length(dpy))), 0.03);   // a pixel's footprint, m
+      float has = step(0.18, ph.x) * pitK;
+      if (has > 0.0 && d < R + 1.4) {
+        vec2 rdir = po / max(d, 1e-3);
+        float inside = 1.0 - smoothstep(R - px, R + px, d);
+        // the bowl, about 1.2 m deep: its floor faces the centre, steepest at the rim
+        float tilt = 2.4 * (d / R) * inside;
+        hp = mix(hp, hp * 0.35, inside * has) + vec3(-rdir.x, 0.0, -rdir.y) * tilt * has;
+        hc *= mix(1.0, 0.7, inside * has * (0.6 + 0.4 * (1.0 - d / R)));
+        hAO = mix(hAO, hAO * 0.62, inside * has);
+        hc = mix(hc, hc * 0.7 + dustC * 0.3, drift * inside * has * 0.5);
+        // the crescent wall on the north-east (engine (0.71, -0.71)): its arc +-75 deg, 0.7 m thick past the rim
+        float face = dot(rdir, vec2(0.7071, -0.7071));
+        float arc = smoothstep(0.2, 0.45, face) * has;
+        float w0 = R + 0.12, w1 = R + 0.82, wm = (w0 + w1) * 0.5;
+        float wall = (smoothstep(w0 - px, w0 + px, d) - smoothstep(w1 - px, w1 + px, d)) * arc;
+        if (wall > 0.0) {
+          // drystone: blocks about 0.4 m along the arc, each its own tone, dark joints between
+          float ang = atan(rdir.y, rdir.x) * R * 2.6, ring = (d - w0) * 2.8;
+          vec2 bc = floor(vec2(ang, ring + floor(ang) * 0.5));
+          float bh = fract(sin(dot(bc + pc * 7.0, vec2(41.3, 289.1))) * 9137.7);
+          vec2 bf = fract(vec2(ang, ring + floor(ang) * 0.5));
+          float joint = (1.0 - smoothstep(0.0, 0.12, min(min(bf.x, 1.0 - bf.x), min(bf.y, 1.0 - bf.y)))) * (1.0 - smoothstep(0.08, 0.2, px));
+          vec3 stoneC = vec3(0.118, 0.106, 0.092) * (0.72 + 0.56 * bh) * (1.0 - 0.45 * joint);
+          hc = mix(hc, stoneC, wall);
+          // its faces: outward on the outer half, inward on the inner, its top flat
+          float fo = clamp((d - wm) / (w1 - wm), -1.0, 1.0);
+          hp = mix(hp, vec3(rdir.x, 0.0, rdir.y) * fo * 1.3 * smoothstep(0.35, 0.9, abs(fo)), wall);
+          hR = mix(hR, 0.86, wall);
+          hAO = mix(hAO, 0.8 - 0.3 * joint, wall);
+        }
+        // the vine at the bowl's foot: a lumpy mat 0.55-0.75 of the rim, green (85 %) or dormant
+        float vr = R * (0.5 + 0.2 * ph.y) * (0.82 + 0.3 * gNoiseT(rdir * 0.5 + pc * 0.37 + 0.5).r);
+        float vine = (1.0 - smoothstep(vr - px * 1.5, vr + px * 1.5, d)) * has;
+        if (vine > 0.0) {
+          float leaf = gNoiseT(xz * 1.37 + ph * 3.0).a * 0.6 + gNoiseT(xz * 0.53 + 0.2).b * 0.4;
+          vec3 green = mix(vec3(0.046, 0.082, 0.018), vec3(0.085, 0.118, 0.026), ph.y) * (0.7 + 0.6 * leaf);
+          vec3 dormant = vec3(0.07, 0.05, 0.032) * (0.7 + 0.6 * leaf);
+          hc = mix(hc, ph.y > 0.15 ? green : dormant, vine);
+          hp = mix(hp, vec3(leaf - 0.5, 0.0, gNoiseT(xz * 1.11 + 0.7).g - 0.5) * 1.4 + vec3(-rdir.x, 0.0, -rdir.y) * 0.4, vine);
+          hR = mix(hR, 0.72, vine);
+          hAO = mix(hAO, 0.62 + 0.3 * leaf, vine);
+        }
+      }
+    }
+
+    /* -- the Scar: its planed floor and its spoil ---------------------------------- */
+    float scS = vGround.z;
+    if (abs(scS) > 0.02) {
+      vec2 sd = ${SCAR_DIR};
+      float across = dot(xz, vec2(-sd.y, sd.x)), along = dot(xz, sd);
+      vec4 nS = gNoiseT(vec2(across * 0.13, along * 0.004) + 0.21);
+      vec3 sub = vec3(0.19, 0.163, 0.128) * (0.84 + 0.32 * nS.r);   // the pale subsoil the blade cut down to
+      if (scS > 0.0) {
+        // the blade's grooves along the line, 0.6-1.3 m apart, fading past 90 m
+        float gv = across * 1.15 + nS.g * 1.6;
+        float groove = (0.5 + 0.5 * sin(gv * 6.2831853)) * (1.0 - smoothstep(60.0, 90.0, dCam));
+        vec3 fc = sub * (1.0 - 0.18 * groove) * mix(1.0, 0.82, smoothstep(0.55, 0.8, nS.b));
+        // cinder blown back onto the floor in patches
+        fc = mix(fc, hc, smoothstep(0.62, 0.86, gNoiseT(xz * 0.041 + 0.5).a) * 0.6);
+        hc = mix(hc, fc, scS);
+        hp = mix(hp, vec3(-sd.y, 0.0, sd.x) * cos(gv * 6.2831853) * 0.35 * (1.0 - smoothstep(30.0, 60.0, dCam)), scS);
+        hR = mix(hR, 0.9, scS);
+        hAO = mix(hAO, 0.88, scS);
+      } else {
+        // spoil: clods of the pale subsoil in the black cinder, about a third of it
+        float clod = smoothstep(0.5, 0.62, gNoiseT(xz * 0.37 + 0.13).a * 0.6 + gNoiseT(xz * 0.11 + 0.71).b * 0.4);
+        hc = mix(hc, mix(hc * 1.25, sub * 0.9, clod), -scS);
+        hp *= 1.0 + 0.6 * clod * -scS;
+      }
+    }
+
+    /* -- into the stack ------------------------------------------------------------ */
+    col = hSkip ? hc : mix(col, hc, hk);
+    pert = hSkip ? hp : mix(pert, hp, hk);
+    rSum = hSkip ? hR : mix(rSum, hR, hk);
+    aoSum = hSkip ? hAO : mix(aoSum, hAO, hk);
+    w[0] *= 1.0 - hk;
+  }
+`;
+
 /** Accumulates one layer: albedo into col, world normal offset, rough + AO, height blend. */
 export const TERRAIN_COLOR = /* glsl */ `
 #include <color_fragment>
@@ -205,6 +368,11 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
   vec4 nMac = gNoiseT(xz * 0.0039);                 // cells 32, 16, 8, 4 m
   float macA = nMac.r * 0.6 + nMac.b * 0.4;
+  /* M2 wave 2: the Holds. On their gentle ground the layer stack is skipped (HOLDS_TERM draws all of it); their steep
+   * faces keep the rock layer and blend into the lapilli over slope 0.55-0.95 */
+  float hold = vGround.x;
+  float hk = hold * (1.0 - smoothstep(0.55, 0.95, slope));
+  bool hSkip = hk > 0.985;
 
   /* -- the five weights, then the three that survive ----------------------- */
   /* The cell's own crust and brine, un-premultiplied, cut by the iso-line of its interior: the
@@ -322,7 +490,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   float hMax = -9.0, wTot = 0.0, rSum = 0.0, aoSum = 0.0;
   vec4 keepA[3]; vec4 keepN[3]; float keepW[3]; int keepI[3]; int nKeep = 0;
   for (int i = 0; i < 5; i++) {
-    if (gSkip) break;
+    if (gSkip || hSkip) break;
     if (w[i] < 0.012) continue;
     float sc = gScale(i);
     vec2 uv = (i == 0 || i == 2 ? xz + sWarp : xz) * sc, gx = dpx * sc, gy = dpy * sc;
@@ -456,6 +624,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     aoSum += (keepN[k].a * 2.0 - 1.0) * b;
   }
   pert *= mix(0.32, 1.0, nearK);
+  ${HOLDS_TERM}
   /* M1a fix round (M1.1e: the swatch's crust is granular, crystals and clods 2-20 cm with dark gaps between them; F04 read a
    * glaze): within 12 m the crust takes a grain, crystal grit at about 3 cm and clods at about 15 cm, each darkening its
    * gaps and tilting the lit faces. Past 12 m it is under a pixel and the texture's own grit carries it */
@@ -577,7 +746,8 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   col *= 1.0 - 0.24 * mB.r;
 
   /* -- the blockout tint: red crater, and biomes 2-6 ------------------------- */
-  float tk0 = vTint.a;
+  /* (M2 wave 2) the Holds' blockout tint gives way to their ground; the crater's bedding is never drawn on them */
+  float tk0 = vTint.a * (1.0 - hold);
   if (tk0 > 0.004) {
     float g = clamp(dot(col, vec3(0.33)) / 0.02, 0.55, 1.5);
     col = mix(col, vTint.rgb * g * (0.82 + 0.36 * macA), tk0 * (1.0 - 0.6 * wRock));
@@ -611,7 +781,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
    * brine or silt) has no pebbles now, and a pebble's tilt is its own cell's hash */
   if (dCam < 16.0 && wSalt < 0.6 && inK < 0.98 && !gSkip) {
     /* (round 3 fix: the basalt at 1 m read as polka dots, the pebbles' pale discs laid on bare rock) no pebble on rock */
-    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - smoothstep(0.15, 0.5, wRock)) * (1.0 - canopy) * (1.0 - inK);
+    float gk = (1.0 - smoothstep(9.0, 16.0, dCam)) * (1.0 - wSalt) * (1.0 - smoothstep(0.15, 0.5, wRock)) * (1.0 - canopy) * (1.0 - inK) * (1.0 - 0.7 * hk);
     vec3 pb = gVoro(xz * 9.0);
     // M1a round 2: a pebble fades out before its cell's edge, so two overlapping discs never meet on a straight cut
     float peb = smoothstep(0.42, 0.3, pb.y) * smoothstep(0.02, 0.16, pb.x) * step(0.58, pb.z) * gk;
@@ -757,6 +927,7 @@ export const FAR_BAKE_D = 200.0;
 export const FAR_FRAG_PARS = /* glsl */ `
 ${GROUND_FRAG_PARS}
 varying vec4 vTint;
+varying vec3 vGround;
 uniform sampler2D tFarA;
 uniform sampler2D tFarN;
 uniform float uFarInv;     // 1 / the baked square's side
@@ -791,7 +962,7 @@ export const FAR_COLOR = /* glsl */ `
     vec3 wn = normalize(vWNorm);
     vec2 xz = vWPos.xz;
     float slope = sqrt(max(1.0 - wn.y * wn.y, 0.0)) / max(wn.y, 0.05);
-    float tk0 = vTint.a;
+    float tk0 = vTint.a * (1.0 - vGround.x);
     vec3 pert = vec3(0.0);
     ${STRATA_TERM}
     gN += pert;
