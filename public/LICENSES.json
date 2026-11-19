@@ -361,6 +361,23 @@
       "attribution": null
     },
     {
+      "id": "instrument-blockouts",
+      "paths": [
+        "public/models/instruments/screed.glb",
+        "public/models/instruments/sickle.glb",
+        "public/models/instruments/tiller-blockout.glb"
+      ],
+      "title": "Screed, Sickle and the Tiller's default form as grey blockouts (M2 wave 1, generated from src/instruments/lib/blockout.js)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-blockout.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "landmarks-world-props",
       "paths": [
         "public/models/landmarks/*.glb"

@@ -33,7 +33,9 @@ function readDescriptors() {
     const head = src.slice(at, at + 800);
     const id = /\bid: '([\w-]+)'/.exec(head)?.[1];
     if (!id) continue;
-    out.push({ id, sizeClass: /\bsizeClass: '(\w+)'/.exec(head)?.[1], url: /const URL = '([^']+)'/.exec(src)?.[1] ?? null });
+    // a wave 1 blockout of a roster kind (blockout-kind.js) is graded as that kind: `blockoutKind({ id, kind: '<roster kind>'`
+    const of = /blockoutKind\(\{ id: '[\w-]+', kind: '(\w+)'/.exec(head)?.[1] ?? id;
+    out.push({ id, of, sizeClass: /\bsizeClass: '(\w+)'/.exec(head)?.[1], url: /const URL = '([^']+)'/.exec(src)?.[1] ?? null });
   }
   return out;
 }
@@ -43,7 +45,7 @@ test('every kind module declares a size class, and it is the bible\'s', () => {
   assert.ok(ds.length >= 4, `kind modules found: ${ds.length}`);
   const sized = buildSizeClasses(ds);
   assert.deepEqual(sized.undeclared, [], 'undeclared');
-  for (const d of ds) assert.equal(d.sizeClass, BIBLE[d.id], `${d.id}: ${d.sizeClass} (bible ${BIBLE[d.id]})`);
+  for (const d of ds) assert.equal(d.sizeClass, BIBLE[d.of], `${d.id}: ${d.sizeClass} (bible ${BIBLE[d.of]})`);
 });
 
 test('each kind\'s model is inside its declared class\'s triangle cap', () => {
