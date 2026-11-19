@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { installPeople } from '../npc/people/index.js';
 import { REST_SITE } from '../island/sites.js';
 import { Saltrow } from './saltrow.js';
+import { Ninewalls } from './ninewalls.js';
 
 /**
  * SETTLEMENT HOST at `REST_SITE` (M0.3: the Round-4 rest site renamed and trimmed).
@@ -77,6 +78,8 @@ export class SettlementHost {
     // Its own group in the scene: the Brazier system hides this host's group (its Round-4 pit gives way to the
     // Brazier, src/game/brazier/braziers.js), and the town must not go with it.
     this.town = new Saltrow(ctx, ctx.scene);
+    // M2 wave 1: Ninewalls at blockout (./ninewalls.js; the nine walls as data in ./ninewalls-layout.js), its own group
+    this.ninewalls = new Ninewalls(ctx, ctx.scene);
 
     ctx.scene.add(this.group);
   }
@@ -683,6 +686,7 @@ export class SettlementHost {
 
     this.people?.update(dt, t);
     this.town?.update(dt, t);
+    this.ninewalls?.update(dt, t);
 
     this._ensureBrazier();
     this._hookProgressionRest();
