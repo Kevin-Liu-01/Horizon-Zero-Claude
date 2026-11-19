@@ -43,8 +43,10 @@ const CLEAR = 0.12, SHOVE_MAX = 0.6;
  * (tools/gates/hero-sweep/kt0-gaff-mount.mjs `rearRight`, butt (-0.04, 1.04, -0.20) to beak end (-0.15, 0.46, -0.17)).
  */
 const REST_C = new THREE.Vector3(-0.11, -0.58, 0.03).normalize();
+const _mA = new THREE.Matrix4(), _mB = new THREE.Matrix4();
+const _qT = new THREE.Quaternion(), _vT = new THREE.Vector3(), _vT2 = new THREE.Vector3();
 
-const _qA = new THREE.Quaternion(), _qB = new THREE.Quaternion(), _qC = new THREE.Quaternion();
+const _qA = new THREE.Quaternion(), _qB = new THREE.Quaternion(), _qC = new THREE.Quaternion(), _qD = new THREE.Quaternion();
 const _vA = new THREE.Vector3(), _vB = new THREE.Vector3(), _vC = new THREE.Vector3(), _vD = new THREE.Vector3();
 const _pA = new THREE.Vector3(), _pB = new THREE.Vector3(), _pC = new THREE.Vector3();
 const _mI = new THREE.Matrix4();
@@ -76,6 +78,12 @@ export class HeroOroKit {
     this.held = 0;
     this.socket = null;
     this._g = null;            // the gaff's hanger state (pelvis frame)
+    this.tiltK = 0;            // the take's tilt (gaffLayer.js): 0 hung, 1 on the take's frame, held by the hand's reach
+    this.takeAxis = new THREE.Vector3(0, -1, 0);   // the take's frame, character space: the haft (butt -> beak)...
+    this.takeHook = new THREE.Vector3(0, 0, -1);   // ...and the hook's side (gaffLayer.js sets both)
+    this.follow = null;        // the held gaff's mesh while it is in her hand (gaffLayer.js): the hanger follows it unseen,
+                               // so the stowed copy is exactly where the held one is at the release
+
     this._loading = null;
   }
 
@@ -169,10 +177,22 @@ export class HeroOroKit {
     m.getVertexPosition(a, _vA); m.localToWorld(_vA);
     m.getVertexPosition(b, _vB); m.localToWorld(_vB);
     const top = par.worldToLocal(_vA.clone()), low = par.worldToLocal(_vB.clone());
+    // the hook's side: from the haft's line to the gaff's vertex farthest off it (the hook's outer curve), pelvis frame
+    const ax = low.clone().sub(top).normalize(), hook = new THREE.Vector3();
+    let far = -1;
+    for (let i = 0; i < pos.count; i++) {
+      if ((Math.round(P.getX(i)) & ORO_PIECE.gaff) === 0) continue;
+      m.getVertexPosition(i, _vC); m.localToWorld(_vC); par.worldToLocal(_vC);
+      _vC.sub(top); _vC.addScaledVector(ax, -_vC.dot(ax));
+      // (the frog's tab stands off the haft too, near the top: only the head's end counts)
+      const along = _vA.copy(_vC).length();
+      if (along > far && m.getVertexPosition(i, _vD) && par.worldToLocal(m.localToWorld(_vD)).sub(top).dot(ax) > 0.45) { far = along; hook.copy(_vC); }
+    }
+    hook.normalize();
     this._g = {
-      top, low, len: top.distanceTo(low), restC: REST_C, fresh: true,
+      top, low, len: top.distanceTo(low), restC: REST_C, fresh: true, hook,
       // the hanger's state: its turn (pelvis frame) and the spring's angular velocity (axis * rad/s, pelvis frame)
-      q: new THREE.Quaternion(), w: new THREE.Vector3(), shove: 0,
+      q: new THREE.Quaternion(), w: new THREE.Vector3(), shove: 0, off: new THREE.Vector3(),
     };
   }
 
@@ -194,9 +214,11 @@ export class HeroOroKit {
     if (!(dt > 0)) dt = 0;
     const model = this.player.model, par = sock.parent;
     par.updateWorldMatrix(true, false);
+    // in her hand: the hanger takes the held gaff's pose (unseen: the stowed copy is folded), offset and all
+    if ((this.held & ORO_PIECE.gaff) && this.follow) { this._followHeld(this.follow, par); return; }
     // the rest line, from character space into the pelvis's frame, and the haft's line with the pelvis as it is
-    _qA.setFromRotationMatrix(model.matrixWorld);
-    _qB.setFromRotationMatrix(par.matrixWorld);
+    model.getWorldQuaternion(_qA);
+    par.getWorldQuaternion(_qB);
     _qC.copy(_qB).invert().multiply(_qA);                         // character -> pelvis
     _vA.copy(G.restC).applyQuaternion(_qC);                       // the rest line, pelvis frame
     _vB.copy(G.low).sub(G.top).normalize();                       // the haft as built (the hanger at the identity), pelvis frame
@@ -209,6 +231,9 @@ export class HeroOroKit {
     _qB.identity().slerp(_qA, HOLD * (1 - crouch));
     // (the first frame after the bind: hang at the target, no swing in)
     if (G.fresh) { G.fresh = false; G.q.copy(_qB); G.w.set(0, 0, 0); }
+    // the take's tilt (the hand's reach holds the gaff on TAKE_C): straight onto it, no spring, while the hand has it
+    const tk = this.tiltK > 0 ? (this.tiltK > 1 ? 1 : this.tiltK) : 0;
+    if (tk > 0) this._takeTarget(_qB, model, par, tk);
     // the spring toward the target: the error as an axis-angle (pelvis frame)
     _qC.copy(G.q).invert().premultiply(_qB);                      // target * current^-1
     if (_qC.w < 0) { _qC.x = -_qC.x; _qC.y = -_qC.y; _qC.z = -_qC.z; _qC.w = -_qC.w; }
@@ -226,15 +251,71 @@ export class HeroOroKit {
       if (wl > 1e-9) { _qA.setFromAxisAngle(_vD.copy(G.w).multiplyScalar(1 / wl), wl * h); G.q.premultiply(_qA); }
     }
     G.q.normalize();
+    if (tk >= 0.999) { G.q.copy(_qB); G.w.set(0, 0, 0); }
+    else if (tk > 0) G.q.slerp(_qB, tk);
     // the leg's shove, over the hung line (not through the spring: a stride comes faster than the hang settles): the low
     // end out, square to the haft, away from the thigh and calf (pelvis frame)
     _qB.copy(G.q);
-    if (this.owned.gaff && !(this.held & ORO_PIECE.gaff)) this._shove(_qB, dt);
-    // about the top: p' = q p + t, t = top - q top
+    // (not while the hand holds it on the take's frame: the hand's frame is the gaff's)
+    if (this.owned.gaff && !(this.held & ORO_PIECE.gaff) && tk < 0.999) this._shove(_qB, dt);
+    // about the top: p' = q p + t, t = top - q top (plus what is left of the held gaff's offset at its release, easing out)
     sock.quaternion.copy(_qB);
     _vA.copy(G.top).applyQuaternion(_qB);
     sock.position.copy(G.top).sub(_vA);
+    if (G.off.lengthSq() > 1e-10) { G.off.multiplyScalar(Math.max(0, 1 - dt * 8)); sock.position.add(G.off); }
     sock.updateWorldMatrix(false, false);
+  }
+
+  /** The hanger onto the held gaff (`mesh`: the GLB's node, +Y the haft from its butt, +Z the hook), pelvis frame. */
+  _followHeld(mesh, par) {
+    const G = this._g, sock = this.socket;
+    mesh.updateWorldMatrix(true, false);
+    _mI.copy(par.matrixWorld).invert();
+    _vA.set(0, 0, 0).applyMatrix4(mesh.matrixWorld).applyMatrix4(_mI);                 // the butt
+    _vB.set(0, 1, 0).applyMatrix4(mesh.matrixWorld).applyMatrix4(_mI).sub(_vA).normalize();   // the haft
+    _vC.set(0, 0, 1).applyMatrix4(mesh.matrixWorld).applyMatrix4(_mI).sub(_vA.clone ? _vA : _vA);
+    _vC.set(0, 0, 1).applyMatrix4(mesh.matrixWorld).applyMatrix4(_mI);
+    _vC.sub(_vA); _vC.addScaledVector(_vB, -_vC.dot(_vB)).normalize();               // the hook
+    _vD.crossVectors(_vB, _vC);
+    _mB.makeBasis(_vD, _vB, _vC);
+    // the built frame (pelvis frame, the hanger at the identity)
+    _pA.copy(G.low).sub(G.top).normalize();
+    _pB.copy(G.hook).addScaledVector(_pA, -G.hook.dot(_pA)).normalize();
+    _pC.crossVectors(_pA, _pB);
+    _mA.makeBasis(_pC, _pA, _pB);
+    _mB.multiply(_mA.transpose());
+    G.q.setFromRotationMatrix(_mB); G.w.set(0, 0, 0); G.fresh = false; G.shove = 0;
+    sock.quaternion.copy(G.q);
+    // p' = q p + t with the top onto the held butt: t = butt - q top; its part off the hung pivot is the offset
+    _pA.copy(G.top).applyQuaternion(G.q);
+    sock.position.copy(_vA).sub(_pA);
+    G.off.copy(sock.position).sub(_pB.copy(G.top).sub(_pA));
+    sock.updateWorldMatrix(false, false);
+  }
+
+  /**
+   * THE TAKE (gaffLayer.js): as the right hand reaches back for it, the gaff swings on its strap about the belt into the
+   * frame the hand closes on with a straight wrist (`takeAxis`, `takeHook`, character space; a haft hanging plumb lies
+   * along her reaching forearm and would need 60+ deg of the wrist, W1's bar is 30). `qT` (pelvis frame) moves `k` of
+   * the way onto the turn that takes the built frame (haft, hook) onto it.
+   */
+  _takeTarget(qT, model, par, k) {
+    const G = this._g;
+    par.getWorldQuaternion(_qC).invert().multiply(model.getWorldQuaternion(_qD));       // character -> pelvis
+    // the built frame (the hanger at the identity), pelvis frame: Y the haft, Z the hook, X = Y x Z
+    _vA.copy(G.low).sub(G.top).normalize();
+    _vC.copy(G.hook).addScaledVector(_vA, -G.hook.dot(_vA)).normalize();
+    _vD.crossVectors(_vA, _vC);
+    _mA.makeBasis(_vD, _vA, _vC);
+    // the take's frame in the pelvis's
+    _vA.copy(this.takeAxis).applyQuaternion(_qC).normalize();
+    _vC.copy(this.takeHook).applyQuaternion(_qC);
+    _vC.addScaledVector(_vA, -_vC.dot(_vA)).normalize();
+    _vD.crossVectors(_vA, _vC);
+    _mB.makeBasis(_vD, _vA, _vC);
+    _mB.multiply(_mA.transpose());
+    _qA.setFromRotationMatrix(_mB);
+    if (k >= 0.999) qT.copy(_qA); else qT.slerp(_qA, k);
   }
 
   /** Turn the target `qT` (pelvis frame) further so the low end keeps CLEAR from the right thigh and calf. */
@@ -288,6 +369,36 @@ export class HeroOroKit {
     out.tip.copy(G.low).applyQuaternion(sock.quaternion).add(sock.position).applyMatrix4(par.matrixWorld);
     if (out.grip) out.grip.copy(out.butt).lerp(out.tip, 0.098 / 0.625);
     return out;
+  }
+
+  /**
+   * The stowed gaff as the hanger holds it on the take's frame (tilt 1, whatever it shows now): world butt, beak, grip
+   * and the hook's side in character space (`out.hookC`). The hand aims for this; the visible copy swings to it.
+   */
+  gaffTake(out, model = this.player.model) {
+    const G = this._g, sock = this.socket;
+    if (!G || !sock || !this.attached) return null;
+    const par = sock.parent;
+    par.updateWorldMatrix(true, false);
+    _qT.identity();
+    this._takeTarget(_qT, model, par, 1);
+    _vT.copy(G.top).applyQuaternion(_qT);
+    _vT2.copy(G.top).sub(_vT);                                   // the socket's position on the hung pivot
+    out.butt.copy(G.top).applyQuaternion(_qT).add(_vT2).applyMatrix4(par.matrixWorld);
+    out.tip.copy(G.low).applyQuaternion(_qT).add(_vT2).applyMatrix4(par.matrixWorld);
+    if (out.grip) out.grip.copy(out.butt).lerp(out.tip, 0.098 / 0.625);
+    if (out.hookC) { par.getWorldQuaternion(_qA).multiply(_qT); model.getWorldQuaternion(_qB).invert(); out.hookC.copy(G.hook).applyQuaternion(_qA.premultiply(_qB)); }
+    return out;
+  }
+
+  /** The stowed gaff's hook side, character space (unit), into `out`. */
+  gaffHookChar(out, model = this.player.model) {
+    const G = this._g, sock = this.socket;
+    if (!G || !sock) return out;
+    sock.parent.getWorldQuaternion(_qA);
+    _qA.multiply(sock.quaternion);
+    model.getWorldQuaternion(_qB).invert();
+    return out.copy(G.hook).applyQuaternion(_qA.premultiply(_qB));
   }
 
   info() {

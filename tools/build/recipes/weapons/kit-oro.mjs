@@ -29,6 +29,8 @@ const RECIPE = 'tools/build/recipes/weapons/kit-oro.mjs';
 export const ORO_PIECE = { gaff: 1, windwall: 2, potBrine1: 4, potBrine2: 8, potCinder: 16 };
 /** The gaff's hanger joint (src/hero/orokit.js creates the same Bone on the hero): a child of `pelvis` at the identity. */
 export const GAFF_SOCKET = 'stow_gaff';
+/** Game metres per bind unit (the armory stow kit's `rawToGame`, the normalisation of her rows to 1.72 m). */
+const RAW_TO_GAME = 0.969;
 
 /** A joint under `parentName` at the identity: its bind is the parent's, its own index in the skin (kit-v0.mjs). */
 function addSocket(doc, name, parentName) {
@@ -88,11 +90,14 @@ export async function build({ out = ROOT, compress = true } = {}) {
     const k = GAFF.length / len;   // (the mount's two points are the gaff's own length apart: k = 1 within a millimetre)
     const [X, Y, Z] = frame(M.butt, M.tip, M.hook);
     const { g, sockets } = gaffGeo(cell, { lod: 1 });
+    // bind space is the source's raw units, 0.969 of a game metre (the kit's rawToGame): the stowed gaff is cut 1/0.969
+    // larger so it is the held one's real 0.625 m on her (no change of size at the hand-over)
     // the frog: a leather loop round the haft under the lashing, its tab up to the slung belt
     const fy = sockets.stow[1];
     merge(g, lathe([[GAFF.rHead + 0.0045, fy - 0.022], [GAFF.r + 0.0062, fy - 0.018], [GAFF.r + 0.0062, fy + 0.018], [GAFF.r + 0.0045, fy + 0.022]], { sides: 8, rect: cell('leatherDark'), uAlong: true }));
     merge(g, place(lathe([[0.0, 0], [0.006, 0.0005], [0.0062, fy - 0.03], [0.0, fy - 0.0295]], { sides: 4, phase: Math.PI / 4, rect: cell('leatherDark'), ry: () => 0.35 }),
       [1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0.015, -(GAFF.r + 0.009)]));
+    for (let i = 0; i < g.pos.length; i++) g.pos[i] /= RAW_TO_GAME;
     pieces.push({ g: place(g, X, Y, Z, M.butt), joint: GAFF_SOCKET, bit: ORO_PIECE.gaff });
     stow.gaff = { butt: M.butt, tip: M.tip, hook: Z, joint: GAFF_SOCKET, parent: 'pelvis', frog: fy, lengthK: +k.toFixed(4) };
   }

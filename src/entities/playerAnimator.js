@@ -14,6 +14,7 @@ import { Reactions } from './anim/reactions.js';
 import { LocomotionDriver } from './anim/locomotionDriver.js';
 import { AimRig } from './anim/aimRig.js';
 import { CarryStow } from './anim/carryStow.js';
+import { GaffLayer } from './anim/gaffLayer.js';
 import { MeleeDriver } from './anim/meleeDriver.js';
 import { SecondaryMotion } from './anim/secondaryMotion.js';
 import { ConstraintAim } from './anim/constraintAim.js';
@@ -1501,6 +1502,10 @@ export class PlayerAnimator {
       pdz += this.melee.pelvisDz || 0;
     }
 
+    /* ============ OVERLAY 4d: the Boat Gaff — draw, carry, stow (M2) ============ */
+    // (gaffLayer.js: nothing runs until the hand-over; then it owns the right arm while the gaff is out or moving)
+    if (this.ctx.combat?.gaff?.owned && !dead) this._gaffLayer(dt);
+
     /* ================ OVERLAY 5: hit react / death / weary ================ */
     pdy += this._reactLayer(dt, p, dodgeW, aimW, carryW);
     if (this._deadW > 0.01 && !this.loco?.actions.death) pdy += this._deathFallback();
@@ -1675,4 +1680,4 @@ export class PlayerAnimator {
 }
 
 /* M1.3a: the members moved into the modules above, back on the prototype (a name defined twice throws). */
-installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose, SliceVerbs);
+installMethods(PlayerAnimator, Reactions, LocomotionDriver, AimRig, CarryStow, MeleeDriver, SecondaryMotion, ConstraintAim, HangPose, SliceVerbs, GaffLayer);

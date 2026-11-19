@@ -8,7 +8,8 @@
  *   1  the bow: the lance goes back on her back (the quick stow) and the first bow in
  *      `combat.weapons` is selected
  *   2  the lance: drawn from the back (`melee.drawLance()`)
- *   3  the gaff         empty until earned (Ninewalls, Milestone 2)
+ *   3  the gaff         empty until earned (the Tube Smith's hand-over at Ninewalls, Milestone 2): drawn from its
+ *                       hanger at the back of her belt (src/combat/gaff.js asks; the animator's gaffLayer.js draws)
  *   4  pots and net     empty until earned
  *
  * An empty slot does nothing and says so (`quick-slot-empty`), so a key press is never silent
@@ -74,6 +75,7 @@ export class QuickMake {
   }
 }
 
+
 /** The lance is the weapon in hand from the first frame of its draw to the last of its stow. */
 const LANCE_STANCES = new Set(['draw', 'ready', 'swing', 'holster']);
 
@@ -115,6 +117,9 @@ export class QuickSlots {
    * key, so the lance's own timed stow and an aim that puts it away both show truthfully.
    */
   get activeSlot() {
+    // (M2 area D) the gaff in her right hand, or on its way there
+    const g = this.ctx.combat?.gaff;
+    if (g?.owned && (g.want || g.inHand)) return 3;
     const m = this.ctx.combat?.melee;
     if (m && (m.lanceInHand || LANCE_STANCES.has(m.stance))) return 2;
     return 1;
@@ -125,12 +130,24 @@ export class QuickSlots {
     const q = QUICK_SLOTS.find((x) => x.slot === n);
     const combat = this.ctx.combat;
     if (!q) return null;
+    if (!combat) { if (!q.kind) this.ctx.events?.emit?.('quick-slot-empty', { slot: n, earns: q.earns }); return null; }
+    // (M2 area D) slot 3 is the gaff once it is earned; 1 and 2 put it back on its hanger first
+    const gaff = combat.gaff ?? null;
+    if (q.earns === 'gaff' && gaff?.owned) {
+      gaff.draw();
+      this.last = 'gaff';
+      this.ctx.events?.emit?.('quick-slot', { slot: n, kind: 'gaff' });
+      return 'gaff';
+    }
     if (!q.kind) {
       this.ctx.events?.emit?.('quick-slot-empty', { slot: n, earns: q.earns });
       return null;
     }
-    if (!combat) return null;
     const melee = combat.melee;
+    if (gaff?.owned && (gaff.want || gaff.inHand)) {
+      if (q.kind === 'lance') { gaff.stow('lance'); this.last = 'lance'; this.ctx.events?.emit?.('quick-slot', { slot: n, kind: 'lance' }); return 'lance'; }
+      gaff.stow(null);
+    }
     if (q.kind === 'bow') {
       melee?.holsterLance?.(true);
       const bow = combat.weapons?.find((w) => /bow|recurve/.test(w.id));

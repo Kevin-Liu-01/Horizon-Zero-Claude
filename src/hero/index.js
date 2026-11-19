@@ -19,6 +19,7 @@
  *   hero.equip(row) / hero.unequip()      outfit sets (rows in rows.js)
  *   hero.kit.setHidden(bits)              PIECE bits (stowkit.js)
  *   hero.loadout                          armor + weapon variants, perks (loadout.js)
+ *   hero.grantOroKit({ gaff, windwall, pots })  the Tube Smith's hand-over (M2): Oro's kit on her (orokit.js)
  *   hero.info()                           draws / tris / casters / skeletons
  *   hero.dispose()                        everything installHero created
  */
@@ -29,6 +30,7 @@ import { applySkinLook, applyClothLook } from './skinLook.js';
 import { disposeClothDetail } from './clothShader.js';
 import { armoryAssets, adoptWeaponAtlas } from './weaponAtlas.js';
 import { HeroLoadout } from './loadout.js';
+import { HeroOroKit } from './orokit.js';
 
 /** Noon's ambient (hemisphere intensity x colour luminance): the hero fill is full from here up (R59 c). */
 const FILL_AMBIENT_REF = 0.155;
@@ -73,10 +75,24 @@ export class HeroRig {
     this.kit = new HeroStowKit(this.player, kit);
     if (kit) this.kit.attach();
     this.loadout = new HeroLoadout(this);
+    // (M2 area D) Oro's kit: nothing loads until the hand-over (grantOroKit)
+    this.oro = new HeroOroKit(this.player);
     this.player._collectMaterials?.();
     // LOOK C-01 (character-art grant): the skin's own light (wrapped scatter, soft terminator, back-transmission) on her live material
     for (const m of this.bodyMeshes) if (m.name === 'Brea_Skin') applySkinLook(m.material, { tier: this.ctx.engine?.quality }); else applyClothLook(m.material, { rim: 0.45 });
     return this;
+  }
+
+  /**
+   * The Tube Smith's hand-over (bible 0:35; or a save that carries it): Oro's kit on her and the held gaff in combat's
+   * hands. Resolves once the kit is bound.
+   */
+  async grantOroKit(own = { gaff: true, windwall: true, pots: 3 }) {
+    if (!this.oro) return null;
+    const { ensureGaff } = await import('../combat/gaff.js');
+    const gaff = ensureGaff(this.ctx);
+    await Promise.all([this.oro.grant(own), own.gaff ? gaff.grant() : null]);
+    return this.oro;
   }
 
   equip(row) { return this.outfit?.equip(row); }
@@ -138,6 +154,12 @@ export class HeroRig {
     this.loadout?.update(dt, this._lanceOut, this._bowOut);
     // the stowed lance rides the trunk in the R10 band (carry.js)
     this.kit.solve(this.player.animator, dt);
+    // (M2 area D) Oro's kit: the gaff's hanger, and the animator's handle on it (gaffLayer.js reads the stowed line)
+    if (this.oro?.attached) {
+      const an = this.player.animator;
+      if (an && an._oroKit !== this.oro) an._oroKit = this.oro;
+      this.oro.solve(dt);
+    }
     // the sash tails' hang (outfit.js SashSwing)
     this.outfit?.update(dt);
   }
@@ -176,7 +198,8 @@ export class HeroRig {
   }
 
   dispose() {
-    const r = { outfit: this.outfit?.dispose() ?? null, kit: this.kit?.dispose() ?? null };
+    const r = { outfit: this.outfit?.dispose() ?? null, kit: this.kit?.dispose() ?? null, oro: this.oro?.dispose() ?? null };
+    this.oro = null;
     this.loadout?.dispose();
     this.loadout = null; this.outfit = null; this.kit = null;
     disposeClothDetail();

@@ -2223,7 +2223,14 @@ export class HUD {
       this._lastQs = slot;
       for (const cell of this._qsCells) cell.classList.toggle('on', +cell.dataset.slot === slot);
     }
+    // (M2 area D) slot 3 names the gaff once it is earned (the Tube Smith's hand-over)
+    if (c?.gaff?.owned && !this._qsGaff) {
+      this._qsGaff = true;
+      const cell = this._qsCells.find((x) => x.dataset.slot === '3');
+      if (cell) { cell.classList.remove('empty'); cell.innerHTML = '<b>3</b><span>GAFF</span>'; }
+    }
     if (slot === 2) { this._updateLanceTag(c); return; }
+    if (slot === 3) { this._updateGaffTag(); return; }
     if (this._wpnEl.classList.contains('melee')) { this._wpnEl.classList.remove('melee'); this._lastW = undefined; }
     const w = c?.activeWeapon;
 
@@ -2278,6 +2285,19 @@ export class HUD {
   }
 
   /** Slot 2: the lance in hand. Name and engraving; no ammo line, no count (it is never thrown). */
+  /** (M2 area D) the gaff in hand: the melee tag with its name and no ammunition. */
+  _updateGaffTag() {
+    if (this._lastWid === 'gaff:boat') return;
+    this._lastWid = 'gaff:boat';
+    this._lastW = undefined;
+    this._wpnEl.classList.add('melee');
+    this._wpnArt.innerHTML = kitArtFor('lance');
+    this._wpnName.textContent = 'BOAT GAFF';
+    this._wpnAmmoName.textContent = '';
+    this._wpnCount.textContent = '';
+    this._wpnDots.innerHTML = '';
+  }
+
   _updateLanceTag(c) {
     const v = c?.melee?.lance?.variant ?? 'shepherd';
     const wid = 'lance:' + v;

@@ -44,6 +44,27 @@ export const BOW_STOW = {
   timer: table([['A', 0.033], ['B', 0.090], ['C', 0.100], ['D', 0.067], ['E', 0.110]], { release: 'D' }),
 };
 
+/*
+ * THE BOAT GAFF'S DRAW (right hand; Milestone 2 area D, wave 2; gaffLayer.js runs it). The gaff hangs butt up from the
+ * back of her belt just right of her spine (kit-oro.mjs, KT0). The hand leaves her side (A) and reaches back round her
+ * right hip to the grip under the butt knob while the gaff swings out on its strap to meet it, square to her forearm
+ * (B), closes on it (C: the grip event at its end; the stowed copy folds, the held one is in her fist), draws it up its
+ * own axis out of the frog and swings it forward past her hip to the ready at her right side, the beak up and forward
+ * and below her shoulders, the hook out in front of the fist (D, one unbroken path at an even pace, the wrist under
+ * W3's 0.08 m a step). KT3's band: request to ready 250-350 ms.
+ */
+export const GAFF_DRAW = {
+  ask: table([['A', 0.033], ['B', 0.083], ['C', 0.033], ['D', 0.183]], { grip: 'C' }),
+};
+/*
+ * THE GAFF'S STOW: from the ready the fist swings it back past the hip and onto its line over the frog (D), seats it down
+ * its axis into the frog (S: the release event at its end), opens (C) and comes back down her side (A). A swap to the
+ * lance starts the lance's draw at the release: the left hand that takes the lance is free.
+ */
+export const GAFF_STOW = {
+  ask: table([['D', 0.183], ['S', 0.050], ['C', 0.033], ['A', 0.117]], { release: 'S' }),
+};
+
 /** Finger curl targets (0 open .. 1 closed) and the most the curl may change in one second. */
 export const CURL = { open: 0.15, closed: 0.85, slide: 0.45, rate: 21 };
 /** Rate bounds, per second of sim time (the brief's per-1/60 s bars x 60, with a margin). */
@@ -83,6 +104,7 @@ export function makeHandlingInfo() {
   return {
     bow: { owner: 'carry', mode: 0, tempo: 'ask', phase: '', k: 0, t: 0, curl: 0, s: 0, gripAt: -1, releaseAt: -1, readyAt: -1, requestAt: -1 },
     lance: { owner: 'carry', gripLAt: -1, gripRAt: -1, releaseRAt: -1, releaseLAt: -1 },
+    gaff: { owner: 'carry', mode: 0, phase: '', k: 0, t: 0, curl: 0, gripAt: -1, releaseAt: -1, readyAt: -1, requestAt: -1, palmMiss: null },
     aimGate: 1,
     simT: 0,
   };
