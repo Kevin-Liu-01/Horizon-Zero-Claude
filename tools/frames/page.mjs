@@ -649,9 +649,16 @@ export async function stageFrame(f, o = {}) {
   // (regfix 4: F16, F17 and F18 too, the orchestrator's ruling after regressions run 3: F18's 1.3 s wall-clock strafe
   // caught a different point of the crouched stride in every film)
   const SIM_POSES = ['run', 'lanceHeavy', 'draw', 'crouchAim'];
-  const sim = SIM_POSES.includes(pose) && o.wallClock !== true ? simClock() : null;
-  if (SIM_POSES.includes(pose) && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
-  if (pose === 'run') {
+  // (M2 wave 0, D10, engine) F14's idle on simulation time too (M2 brief rule 2: a re-anchored frame is staged on sim
+  // time): the slate's 1.5 s of idle from its constructor clocks (the fidget timer at 6 s, so no break starts), frozen
+  const SIM_IDLE = ['F14'];
+  const onSim = SIM_POSES.includes(pose) || (pose === 'idle' && SIM_IDLE.includes(f.id));
+  const sim = onSim && o.wallClock !== true ? simClock() : null;
+  if (onSim && !sim && o.wallClock !== true) standIns.push(`pose ${pose}: the game loop cannot be driven from the page (no __GAME__._frame or engine.clock): staged on the wall clock, it will not repeat`);
+  if (pose === 'idle' && sim) {
+    sim.idle();
+    sim.freeze();
+  } else if (pose === 'run') {
     if (sim) {
       // the run on simulation time: 1.5 s of idle from a re-seated rest, then W + Shift for at least 1.4 s of
       // simulation, frozen on the first step at or past the master gait phase `clipPhase` (default 0: the left
