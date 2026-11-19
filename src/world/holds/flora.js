@@ -153,15 +153,15 @@ function cardonGeo() {
   }
   return geo(P, C, N);
 }
-/** A fig: a short grey trunk and a low broad canopy of five lobes, 3.6 m across, 2.6 m tall at scale 1. */
+/** A fig: three short splayed grey stems and a low, broad, flat-topped canopy of six dark lobes, 4 m across, 2.3 m tall. */
 function figGeo() {
   const R = rng(0xf19), P = [], C = [], N = [];
-  _c.set('#7a7468');
-  column(P, C, N, 0, 0, 0, 0.16, 1.2, 6, _c, 0.7);
-  for (let k = 0; k < 5; k++) {
-    const a = k * 1.26 + R() * 0.4, d = k === 0 ? 0 : 0.8 + R() * 0.4;
-    _c.set(R() > 0.5 ? '#3f5a24' : '#4d6a2b').multiplyScalar(0.9 + R() * 0.2);
-    blob(P, C, N, Math.cos(a) * d, 1.55 + R() * 0.35, Math.sin(a) * d, 1.0 + R() * 0.3, 0.6 + R() * 0.2, 1.0 + R() * 0.3, _c, R, 0.2, 0.55);
+  _c.set('#77705f');
+  for (let k = 0; k < 3; k++) { const a = k * 2.1 + R(); column(P, C, N, Math.cos(a) * 0.25, 0, Math.sin(a) * 0.25, 0.11, 1.0 + R() * 0.3, 5, _c, 0.7); }
+  for (let k = 0; k < 6; k++) {
+    const a = k * 1.05 + R() * 0.4, d = k === 0 ? 0 : 0.9 + R() * 0.5;
+    _c.set(R() > 0.5 ? '#33461e' : '#3d5423').multiplyScalar(0.85 + R() * 0.2);
+    blob(P, C, N, Math.cos(a) * d, 1.45 + R() * 0.3, Math.sin(a) * d, 0.95 + R() * 0.3, 0.42 + R() * 0.12, 0.95 + R() * 0.3, _c, R, 0.22, 0.5);
   }
   return geo(P, C, N);
 }
@@ -231,7 +231,7 @@ export function holdsFloraRecords(hAt) {
   }
   /* figs and bougainvillea round Ninewalls (its open south-west side: bearings 160-300 from the tree) */
   for (let t = 0; t < 400 && (out.fig.length < 14 * 6 || out.bougain.length < 10 * 6); t++) {
-    const brg = (160 + R() * 140) * Math.PI / 180, isFig = R() < 0.55, r = NW_R + (isFig ? 4 + R() * 26 : 1.5 + R() * 6);
+    const brg = (150 + R() * 160) * Math.PI / 180, isFig = R() < 0.55, r = NW_R + (isFig ? 5 + R() * 45 : 1.5 + R() * 7);
     const x = NW.x + Math.sin(brg) * r, z = NW.z - Math.cos(brg) * r;
     const y = hAt(x, z);
     if (!(y > 2) || slopeAt(x, z) > 0.7 || scarKeep(x, z, 3) || holdAt(x, z) < 0.6) continue;

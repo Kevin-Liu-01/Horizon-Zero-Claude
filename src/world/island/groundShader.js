@@ -231,8 +231,8 @@ const HOLDS_TERM = /* glsl */ `
     vec4 nD = gNoiseT(xz * 0.0213 + 0.31);
     float drift = smoothstep(0.66, 0.9, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.08 * lee) * (1.0 - smoothstep(0.3, 0.6, slope));
     vec3 dustC = vec3(0.072, 0.06, 0.045) * (0.86 + 0.28 * nD.g);
-    hc = mix(hc, dustC, drift * 0.6);
-    hp *= 1.0 - 0.65 * drift;
+    hc = mix(hc, dustC, drift * 0.5);
+    hp *= 1.0 - 0.35 * drift;
     hR = mix(hR, 0.97, drift);
 
     /* -- the pit-cups ------------------------------------------------------------- */
