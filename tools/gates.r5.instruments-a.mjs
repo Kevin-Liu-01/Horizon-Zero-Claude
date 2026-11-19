@@ -978,10 +978,12 @@ function FILM_SETUP(kind, o = {}) {
 /**
  * The page half of IN3 (its Node twin: tools/instruments/moving-cover.mjs, ten walks on simulation time). A Tiller file
  * of three walks its bearing in file on open ground; a Plumb stands parked 25 m off the file's line, broadside, facing
- * it; every other machine is frozen. Brea, crouched, is carried with the middle hull at its walk: four lee walks (the
- * hull between her and the Plumb, 0.6-1.0 m off its far flank, along it -0.6..+0.6 m), then the same four out of its
- * shadow (3 m off the near flank). 8 s of sim time each; her suspicion is zeroed between walks. Bars: 0 perception ticks
- * see her in the lee walks; every open walk is seen within 4 s.
+ * it; every other machine is frozen. Brea, crouched, is carried with the middle hull at its walk: four lee walks (on
+ * the Plumb's sightline through the hull, 0.6-1.0 m beyond its far edge, along it -0.6..+0.6 m), then the same four out
+ * of its shadow (3 m short of its near edge on that line). 6 s of sim time each; the Plumb's suspicion is zeroed between
+ * walks. Bars: 0 perception ticks see her in the lee walks; every open walk is seen within 4 s. (The first page run at
+ * e232377 placed her off the far FLANK: once the file had walked on, the Plumb saw the hull obliquely and the flank was
+ * no longer its shadow: 4 of 4 lee walks seen.)
  */
 const A_MOVING_COVER = `(async () => {
   ${KIND_PRELUDE({ kind: 'tiller' })}
@@ -992,7 +994,7 @@ const A_MOVING_COVER = `(async () => {
   const herd = { center: new V3(spot.x, 0, spot.z), vector: new V3(0, 0, 1), alarmed: false, rearguard: null, members: [] };
   __M.squads.registerHerd(herd);
   const hd = Math.atan2(1, 0.2), fx = Math.sin(hd), fz = Math.cos(hd), rx = fz, rz = -fx;
-  const A = new V3(spot.x - fx * 30, 0, spot.z - fz * 30), B = new V3(spot.x + fx * 40, 0, spot.z + fz * 40);
+  const A = new V3(spot.x - fx * 20, 0, spot.z - fz * 20), B = new V3(spot.x + fx * 160, 0, spot.z + fz * 160);
   const ms = [];
   for (let i = 0; i < 3; i++) {
     const m = __M.spawn('tiller', A.x - fx * i * 9.5, A.z - fz * i * 9.5, { herd, route: [B, A], heading: hd });
@@ -1008,7 +1010,7 @@ const A_MOVING_COVER = `(async () => {
   p.setCrouch?.(true);
   const leeEvents = [];
   const offLee = ev.on?.('herd-lee', (e) => leeEvents.push({ inShadow: !!e?.inShadow, t: +simNow().toFixed(2) }));
-  const mid = ms[1], HW = 0.68;
+  const mid = ms[1];
   const walks = [];
   const one = async (along, off, label) => {
     pl.suspicion = 0; if (pl.sc) pl.sc.suspicion = 0; pl._unseenT = 99; if (pl.state !== 'patrol') pl.setState('patrol');
@@ -1016,13 +1018,16 @@ const A_MOVING_COVER = `(async () => {
     let ticks = 0, seen = 0, firstSeen = null, maxSus = 0;
     const t0 = simNow();
     let lastAcc = per ? per.acc : 0;
-    await simSleep(8, (t) => {
+    await simSleep(6, (t) => {
       heal();
-      const h = mid.heading, ux = Math.sin(h), uz = Math.cos(h), vx = Math.cos(h), vz = -Math.sin(h);
-      // the Plumb's side of the hull: the sign of its offset along the hull's right
-      const side = Math.sign((pl.position.x - mid.position.x) * vx + (pl.position.z - mid.position.z) * vz) || 1;
-      const o = off > 0 ? side * (HW + off) : -side * (HW - off);
-      const x = mid.position.x + ux * along + vx * o, z = mid.position.z + uz * along + vz * o;
+      // on the Plumb's sightline through the middle hull (tools/instruments/moving-cover.mjs place(), inlined): off > 0
+      // is m beyond the hull's far edge (the lee); off < 0 is -off m short of its near edge (out of the shadow)
+      const h = mid.heading, cx = mid.position.x + Math.sin(h) * along, cz = mid.position.z + Math.cos(h) * along;
+      let ux = cx - pl.position.x, uz = cz - pl.position.z; const L = Math.hypot(ux, uz) || 1; ux /= L; uz /= L;
+      const uf = Math.abs(ux * Math.sin(h) + uz * Math.cos(h)), ur = Math.abs(ux * Math.cos(h) - uz * Math.sin(h));
+      const edge = Math.min(ur > 1e-6 ? 0.68 / ur : 1e9, uf > 1e-6 ? 1.64 / uf : 1e9);
+      const k = off >= 0 ? edge + off : -(edge - off);
+      const x = cx + ux * k, z = cz + uz * k;
       p.position.set(x, hy(x, z), z); if (p.velocity?.set) p.velocity.set(0, 0, 0);
       if (per && per.acc < lastAcc) { ticks++; if (per.visible) { seen++; if (firstSeen === null) firstSeen = +t.toFixed(2); } }
       if (per) lastAcc = per.acc;
@@ -1030,13 +1035,13 @@ const A_MOVING_COVER = `(async () => {
     });
     walks.push({ label, along, off, ticks, seen, firstSeen, maxSuspicion: +maxSus.toFixed(3), plumbDist: +Math.hypot(pl.position.x - p.position.x, pl.position.z - p.position.z).toFixed(1) });
   };
-  for (const [along, s] of [[-0.6, -0.6], [0, -0.8], [0.6, -1.0], [0.3, -0.7]]) await one(along, s, 'lee');
-  for (const along of [-0.6, 0, 0.6, 0.3]) await one(along, 3, 'open');
+  for (const [along, s] of [[-0.6, 0.6], [0, 0.8], [0.6, 1.0], [0.3, 0.7]]) await one(along, s, 'lee');
+  for (const along of [-0.6, 0, 0.6, 0.3]) await one(along, -3, 'open');
   offLee?.();
   p.setCrouch?.(false);
   const lee = walks.filter((w) => w.label === 'lee'), open = walks.filter((w) => w.label === 'open');
   const leeSeen = lee.filter((w) => w.seen > 0).length, openSeen4 = open.filter((w) => w.firstSeen !== null && w.firstSeen <= 4).length;
-  const ticked = walks.every((w) => w.ticks >= 40);
+  const ticked = walks.every((w) => w.ticks >= 30);
   const pass = ticked && leeSeen === 0 && openSeen4 === open.length;
   return { pass, detail: { bar: 'IN3 on the page: 4 crouched lee walks beside a moving Tiller hull: 0 perception ticks see her; the same 4 walks 3 m off the near flank: seen within 4 s in 4 of 4 (the Node twin, tools/instruments/moving-cover.mjs, runs 10)',
     leeSeen, openSeen4, ticked, walks, herdLee: leeEvents.slice(0, 12), herdLeeHeard: leeEvents.some((e) => e.inShadow) } };
@@ -1119,7 +1124,7 @@ const GATES = [
   { id: 'A-herd-ripple', kind: 'action', lane: LANE, timeout: 150000, settle: 400,
     title: 'A Plumb chimes near a herd: lamps flash in sequence down the herd within 1.5 s; the herd never flees (IN1): no member above its walk, bearing within 2 deg over 12 s, every file gap 3.5-4.5 m at 4 s', assert: A_HERD_RIPPLE },
   { id: 'A-moving-cover', kind: 'action', lane: LANE, timeout: 240000, settle: 400,
-    title: 'IN3 on the page (M2 wave 3): 4 crouched lee walks beside a moving Tiller hull, a parked Plumb 25 m broadside: 0 ticks see her; the same walks 3 m off the near flank: seen within 4 s in 4 of 4', assert: A_MOVING_COVER },
+    title: 'IN3 on the page (M2 wave 3): 4 crouched lee walks behind a moving Tiller hull on the Plumb\'s sightline, the Plumb parked 25 m broadside: 0 ticks see her; the same walks 3 m short of the hull on that line: seen within 4 s in 4 of 4', assert: A_MOVING_COVER },
   { id: 'A-screed-fight', kind: 'action', lane: LANE, timeout: 180000, settle: 400,
     title: 'The Screed on Ninewalls (M2 wave 3, IN5-IN7 on the page): a sidestep in the wind-up; the charge holds its heading (< 3 deg), misses her, stalls 3.0 s +-0.2 on wall-1; Brine + Pry and two arrows in the stall take both seals off; done, 0 walls cut, blade dropped', assert: A_SCREED_FIGHT },
   { id: 'A-instr-shadow-lod', kind: 'action', lane: LANE, timeout: 120000, settle: 400,

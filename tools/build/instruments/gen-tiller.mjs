@@ -201,9 +201,11 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
     rivet(H('head'), V(OX + s * 0.286, DC.y, DC.z), V(s, 0, 0), 0.012);
   }
   const dr = lampDrum(H('head'), DR, V(0, 0, 1), { r: T.drumR, depth: T.drumDepth, ticks: 16 });
-  // the vertical circle on the inboard trunnion: a graduated brass disc square to the axle (edge-on from the bow)
-  limbRing(H('head'), basis(V(0, 1, 0), V(-1, 0, 0), V(0, 0, 1), V(OX - 0.31, DC.y, DC.z)), 0.05, 0.2, 0.02,
-    { ticks: 36, faceSurf: 'bronze', faceTone: C.BRASS, outerSurf: 'glaze', outerTone: C.ENAMEL });
+  // the vertical circle on the OUTBOARD trunnion: a graduated brass disc square to the axle, facing out (edge-on from the
+  // bow, hidden behind the drum from her side of the hull; at wave 3's first film it stood inboard with an enamel rim
+  // and read, beside the lit lens, as a second round feature)
+  limbRing(H('head'), basis(V(0, -1, 0), V(1, 0, 0), V(0, 0, 1), V(OX + 0.31, DC.y, DC.z)), 0.05, 0.17, 0.016,
+    { ticks: 36, faceSurf: 'bronze', faceTone: C.BRASS });
   // the finder: a slim brass tube along the barrel's top, toward the outboard side
   strut(H('head'), V(OX + 0.07, DR.y + T.drumR + 0.05, DR.z + 0.02), V(OX + 0.07, DR.y + T.drumR + 0.05, DR.z + T.drumDepth - 0.04), 0.024, 0.024, { surf: 'bronze', tone: C.BRASS, sides: 10, wear: 0.5 });
   for (const k of [0.2, 0.8]) strut(H('head'), V(OX + 0.05, DR.y + T.drumR - 0.01, DR.z + T.drumDepth * k), V(OX + 0.07, DR.y + T.drumR + 0.04, DR.z + T.drumDepth * k), 0.01, 0.01, { surf: 'graphite', tone: C.GUNMETAL, sides: 6 });

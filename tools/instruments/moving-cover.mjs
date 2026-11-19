@@ -7,16 +7,17 @@
  * perception row as plumb.js registers it (read from the kind's source). A Tiller file of three walks its bearing at
  * the herd's walk (1.5 m/s, 5.0 m of clear space stern to bow, tiller-herd.js FILE); each hull publishes its built
  * form's sight occluders every step exactly as kinds/tiller.js does (blockout.js `hullShapes`, form `built`). Brea walks
- * with the middle hull, crouched, at the herd's speed, s m off its lee flank (the flank away from the Plumb).
+ * with the middle hull, crouched, at the herd's speed, in its lee: on the Plumb's sightline through the hull, s m beyond
+ * its far edge (`place`).
  *
  * Ten lee walks (Ht 4-12 m, D 18-40 m from the Plumb to the file, the file's bearing 50-90 deg to the Plumb's line,
  * her place along the hull and off its flank varied): the Plumb faces her the whole walk (its worst case), and every
  * walk lasts 12 s. A DETECTION is a perception tick that sees her (the cover is broken: her suspicion starts to fill);
  * when the Plumb turns suspicious (suspicion >= susEnter) is reported beside it, not graded (at 40 m a crouched walker
  * fills a Plumb's 0.5 in about 5 s whatever the cover). Bars (IN3): 0 detections in the lee; the same ten walks OUT OF
- * THE SHADOW, 3 m off the hull's near flank (nothing between her and the Plumb; behind the hull the shadow of a 2.2 m
- * hull from a lamp 6.5-14.5 m up reaches 4-14 m, so "3 m further out" on the lee side is still inside it): detected
- * within 4 s in 10 of 10.
+ * THE SHADOW, 3 m short of the hull on the same sightline (nothing between her and the Plumb; behind the hull the shadow
+ * of a 2.2 m hull from a lamp 6.5-14.5 m up reaches 4-14 m, so "3 m further out" on the lee side is still inside it):
+ * detected within 4 s in 10 of 10.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -75,7 +76,6 @@ function walk(w, out, occlude = true) {
   const brea = new THREE.Vector3();
   HOT.terrain = flatTerrain(0); HOT.collision = null; HOT.pOk = 1; HOT.pHealth = 100; HOT.pCrouch = 1; HOT.pReedHide = 0;
   HOT.pMoveSpeed = WALK; HOT.ppos = brea; HOT.simTime = 0;
-  const HW = 1.36 / 2;                 // the built hull's half width over its skirt (blockout.js `built`)
   let seenTicks = 0, firstSeenS = null, detectedS = null, maxS = 0;
   for (let i = 0; i < SECS / DT; i++) {
     const t = i * DT;
@@ -85,10 +85,13 @@ function walk(w, out, occlude = true) {
       if (!h.shapes) { h.shapes = hullShapes('tiller', x, z, yaw, 'built', 0); if (occlude) h.shapes.forEach((s, k) => setOccluder(h.slot + k, s)); }
       else hullShapesInto('tiller', x, z, yaw, 'built', 0, h.shapes);
     }
-    // Brea: beside the middle hull, `w.alongHull` m along it: in the lee (out 0) on the flank AWAY from the Plumb, s m
-    // off it; out of the shadow (out > 0) on the flank toward the Plumb, `out` m off it
-    const cx = fx * WALK * t, cz = fz * WALK * t, off = out > 0 ? side * (HW + out) : -side * (HW + w.s);
-    brea.set(cx + fx * w.alongHull + rx * off, 0, cz + fz * w.alongHull + rz * off);
+    // Brea, ON THE PLUMB'S SIGHTLINE through the middle hull (moving cover is the hull BETWEEN her and the Plumb; with
+    // the file walking on, the Plumb sees the hull obliquely, so "the far flank" is not the shadow): her place is the
+    // hull's centre (`w.alongHull` m along it) plus, along the horizontal line from the Plumb through that point, the
+    // hull's half-extent on that line and s m more (the lee); out of the shadow (out > 0) it is `out` m off the hull on
+    // the Plumb's side of it, on the same line
+    const cx = fx * WALK * t + fx * w.alongHull, cz = fz * WALK * t + fz * w.alongHull;
+    place(brea, cx, cz, plumbPos, yaw, out > 0 ? -(out) : w.s);
     // the Plumb faces her (its worst case): the cone's heading straight at her
     m.sc.heading = Math.atan2(brea.x - plumbPos.x, brea.z - plumbPos.z);
     m.sc._stateT = t;
@@ -99,6 +102,25 @@ function walk(w, out, occlude = true) {
   }
   clearOccluders();
   return { seenTicks, firstSeenS, detectedS, maxSuspicion: +maxS.toFixed(3) };
+}
+
+/** The built hull's half-extents (blockout.js `built`: 1.36 m over the skirt, 3.28 m long). */
+export const HULL_HALF = Object.freeze({ w: 0.68, l: 1.64 });
+
+/**
+ * Her place on the line from the Plumb (eye at `pl`) through the hull point (cx, cz) of a hull facing `yaw`: `d` m beyond
+ * the hull's edge on that line (d > 0: the lee, behind it), or -d m short of the near edge (d < 0: on the Plumb's side).
+ * Written into `out` (x, z; y 0). Shared with the page row's staging (the same arithmetic, inlined there).
+ */
+export function place(out, cx, cz, pl, yaw, d) {
+  let ux = cx - pl.x, uz = cz - pl.z;
+  const L = Math.hypot(ux, uz) || 1; ux /= L; uz /= L;
+  // the hull's half-extent along u: its frame is forward (sin yaw, cos yaw), right (cos yaw, -sin yaw)
+  const uf = Math.abs(ux * Math.sin(yaw) + uz * Math.cos(yaw)), ur = Math.abs(ux * Math.cos(yaw) - uz * Math.sin(yaw));
+  const edge = Math.min(ur > 1e-6 ? HULL_HALF.w / ur : 1e9, uf > 1e-6 ? HULL_HALF.l / uf : 1e9);
+  const k = d >= 0 ? edge + d : -(edge - d);
+  out.x = cx + ux * k; out.z = cz + uz * k; out.y = 0;
+  return out;
 }
 
 /** The ten walks (deterministic). */
