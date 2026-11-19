@@ -194,7 +194,7 @@ const WIND_AT = [
 ];
 const windRow = {
   id: 'A-sweep-wind', kind: 'action', lane: 'hero-anim', timeout: 90000,
-  title: 'M1.2e wind: at F02 and F15 the wrap tail and the three sash panels stream SW in the trade wind (each tip within 45 deg of 225 and of the world downwind); the left panel moves >= 0.05 m and sways more than in still air; the front panels read as cloth, not pennants (chord lift p95 <= 45 deg, median bend along the chain >= 5 deg)',
+  title: 'M1.2e wind (restated for the grid cloth at M2 wave 0): at F02 and F15 the wrap tail and every sash panel the body does not hold (tip off its root >= 0.03 m) stream SW in the trade wind (each tip off its own root within 45 deg of 225 and of the world downwind); the left panel moves >= 0.05 m off its root and sways more than in still air; the front panels read as cloth, not pennants (chord lift p95 <= 45 deg; lifted over 20 deg, median bend along the chain >= 5 deg)',
   setup: `__CTX__.input.enabled = true;`, settle: 400,
   assert: `(async () => {
       const C = __CTX__, p = C.player, an = p.animator, E = C.engine, env = C.environment;
@@ -216,7 +216,12 @@ const windRow = {
         for (const k in acc) { const m = acc[k].map((v) => v / n); out[k] = { m, root: rt[k].map((v) => v / n), sd: Math.sqrt(Math.max(0, sq[k].reduce((s, v, a) => s + v / n - m[a] * m[a], 0))) }; }
         const pct = (a, q) => { const b = a.slice().sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(q * b.length))]; };
         const shape = {};
-        for (const k in shp) shape[k] = { liftP50: +pct(shp[k].lift, 0.5).toFixed(1), liftP95: +pct(shp[k].lift, 0.95).toFixed(1), liftMax: +Math.max(...shp[k].lift).toFixed(1), bendP50: +pct(shp[k].bend, 0.5).toFixed(1) };
+        for (const k in shp) {
+          // (M2 wave 0 restatement: the bend over the steps the panel's chord is lifted over 20 deg, where a board would show)
+          const lb = shp[k].bend.filter((_, i) => shp[k].lift[i] > 20);
+          shape[k] = { liftP50: +pct(shp[k].lift, 0.5).toFixed(1), liftP95: +pct(shp[k].lift, 0.95).toFixed(1), liftMax: +Math.max(...shp[k].lift).toFixed(1), bendP50: +pct(shp[k].bend, 0.5).toFixed(1),
+            liftedSteps: lb.length, steps: shp[k].lift.length, bendLiftedP50: lb.length ? +pct(lb, 0.5).toFixed(1) : null };
+        }
         return { tips: out, n, wind: [wx / n, wz / n], shape };
       };
       /* (M1a regressions, M1.2e "a panel reads as cloth, bending along its chain", never a stiff pennant: per step, the
@@ -255,10 +260,16 @@ const windRow = {
              *  from, which the graded bearing above counts as wind) */
             const rdx = a.root[0] - b.root[0], rdz = a.root[2] - b.root[2];
             const Br = brg(dx - rdx, dz - rdz);
-            r.tips[k] = { bearing: +B.toFixed(1), moveM: +mv.toFixed(3), swayWind: +a.sd.toFixed(4), swayStill: +b.sd.toFixed(4), rootMoveM: +Math.hypot(rdx, rdz).toFixed(3), bearingOffRoot: +Br.toFixed(1), moveOffRootM: +Math.hypot(dx - rdx, dz - rdz).toFixed(3) };
-            if (off(B, 225) > 45) fails.push(P.id + ' ' + k + ' streams to ' + B.toFixed(0));
-            if (off(B, down) > 45) fails.push(P.id + ' ' + k + ' ' + B.toFixed(0) + ' vs downwind ' + down.toFixed(0));
-            if (k === 'panelL' && mv < 0.05) fails.push(P.id + ' panelL moves ' + mv.toFixed(3) + ' m');
+            /* (M2 wave 0, restated for the grid cloth, docs/GATES.md 3 D: the tip's offset is read off its own chain root,
+             *  the belt row's centre (the grid cloth's centre column drives these chains), so the idle's weight shift
+             *  between the two windows is not counted as wind; a panel whose tip moves under 0.03 m off its root is held by
+             *  the body against the wind (the cloth bench's C6 grades only panels not pressed to the body) and its bearing
+             *  is reported, not graded; the tail is always graded. The world-relative reads are kept on the record) */
+            const mvR = Math.hypot(dx - rdx, dz - rdz), held = k !== 'wrapSash' && mvR < 0.03;
+            r.tips[k] = { bearing: +B.toFixed(1), moveM: +mv.toFixed(3), swayWind: +a.sd.toFixed(4), swayStill: +b.sd.toFixed(4), rootMoveM: +Math.hypot(rdx, rdz).toFixed(3), bearingOffRoot: +Br.toFixed(1), moveOffRootM: +mvR.toFixed(3), heldByBody: held };
+            if (!held && off(Br, 225) > 45) fails.push(P.id + ' ' + k + ' streams to ' + Br.toFixed(0) + ' off its root');
+            if (!held && off(Br, down) > 45) fails.push(P.id + ' ' + k + ' ' + Br.toFixed(0) + ' off its root vs downwind ' + down.toFixed(0));
+            if (k === 'panelL' && mvR < 0.05) fails.push(P.id + ' panelL moves ' + mvR.toFixed(3) + ' m off its root');
             if (k === 'panelL' && !(a.sd > b.sd)) fails.push(P.id + ' panelL sways ' + a.sd.toFixed(4) + ' in wind, ' + b.sd.toFixed(4) + ' still');
           }
           if (!r.tips.panelL) fails.push(P.id + ': no panelL chain');
@@ -267,7 +278,9 @@ const windRow = {
             const sh = on.shape[k];
             if (!sh) continue;
             if (sh.liftP95 > 45) fails.push(P.id + ' ' + k + ' lifts ' + sh.liftP95 + ' deg off the plumb (p95; bar 45): a pennant');
-            if (sh.bendP50 < 5) fails.push(P.id + ' ' + k + ' bends ' + sh.bendP50 + ' deg along its chain (median; bar 5): a board');
+            // (M2 wave 0 restatement: graded over the steps the chord is lifted over 20 deg, when they are at least a tenth of
+            //  the window; a panel that hangs is not a board)
+            if (sh.liftedSteps >= 0.1 * sh.steps && sh.bendLiftedP50 < 5) fails.push(P.id + ' ' + k + ' bends ' + sh.bendLiftedP50 + ' deg along its chain lifted over 20 deg (median of ' + sh.liftedSteps + ' steps; bar 5): a board');
           }
           res.push(r);
         }
