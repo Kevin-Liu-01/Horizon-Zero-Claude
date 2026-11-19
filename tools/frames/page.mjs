@@ -248,6 +248,11 @@ export async function stageFrame(f, o = {}) {
     }
   }
 
+  /* ---- 4b. a lane's own staging (Milestone 2: tools/frames/stagings/<lane>.mjs, installed by stagings/index.mjs) ---- */
+  const lane = window.__laneStagings?.[f.id] || null;
+  const laneApi = (simClk) => ({ C, undo: (fn) => undo.push(fn), standIn: (t) => standIns.push(String(t)), sleep, frames, rec: { x: bx, z: bz }, bearing: B, sim: simClk });
+  if (lane?.world) { try { await lane.world(f, laneApi(null)); } catch (e) { standIns.push(`lane staging ${f.id}.world threw: ${String(e?.message || e).slice(0, 200)}`); } }
+
   /* ---- 5. the lens ---- */
   const cam = C.camera, fov0 = cam.fov;
   undo.push(() => { cam.fov = fov0; cam.updateProjectionMatrix(); });
@@ -788,6 +793,8 @@ export async function stageFrame(f, o = {}) {
       await sleep(1300);
     }
   }
+
+  if (lane?.beforeFreeze) { try { await lane.beforeFreeze(f, laneApi(sim)); } catch (e) { standIns.push(`lane staging ${f.id}.beforeFreeze threw: ${String(e?.message || e).slice(0, 200)}`); } }
 
   /* ---- 9. freeze and measure ---- */
   E.requestTimeScale('studio', 0);

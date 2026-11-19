@@ -119,6 +119,8 @@ export class SaveSystem {
         quick: (ctx.quickslots?.slots ?? []).map((s) => (s?.earned ? s.kind : null)),
       },
       sites: ctx.siteClock?.serialize?.() ?? null,
+      // Milestone 2: each area's { get, set } pair (src/game/save/fields.js; ctx.saveFields from src/game/runtime.js)
+      areas: ctx.saveFields?.collect?.() ?? null,
       legacy: { prog: this.prog?.serialize?.() ?? null, roster: this._rosterSnapshot() },
     };
   }
@@ -267,6 +269,7 @@ export class SaveSystem {
     if (opts.world !== false) step('roster', () => this._applyRoster(data.legacy?.roster));
     // the site clock (M1.6n) is the world's: a death keeps the live one (world:false), as it keeps the live roster
     if (opts.world !== false) step('sites', () => ctx.siteClock?.restore?.(data.sites));
+    if (opts.world !== false) step('areas', () => ctx.saveFields?.apply?.(data.areas ?? null));
 
     step('progression', () => {
       if (data.legacy?.prog) this.prog?.deserialize?.(data.legacy.prog);

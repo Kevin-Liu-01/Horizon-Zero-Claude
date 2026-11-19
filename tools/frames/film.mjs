@@ -19,6 +19,8 @@
  *                         regfix 3 (page.mjs 7a)
  *            --clip-phases a,b,...  repeat k freezes a sim-time stride (run, crouched aim-strafe) at gait phase k
  *            --repeat-only a,b,...  with --repeat N, repeats 2..N film only these frames (the selection once first)
+ *            --lanes      also film every Milestone 2 lane frame (tools/frames/stagings/*.mjs); without it a lane frame
+ *                         is filmed only when --only names it
  *            --state-probe  each sim-time staging hashes her animator, player and melee fields at the slate's end and
  *                         after the idle (run.json frames[].sim.state), to name what one staging carried into the next
  *
@@ -41,6 +43,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { filmOrder, loadFrameSet, validate } from './frameset.mjs';
 import { stageFrame, unstageFrame } from './page.mjs';
+import { loadLanes, mergeFrames, installStagings } from './stagings/index.mjs';
 import { RUNS, SLOTS, assertOutsideRepo } from './paths.mjs';
 import { buildReview } from './review.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../chrome-profile.mjs';
@@ -94,7 +97,10 @@ function diffStats(a, b, w, h, box = null) {
 }
 const boxUnion = (a, b) => (a && b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : a || b || null);
 
-const set = loadFrameSet();
+// Milestone 2: the lanes' frames (tools/frames/stagings/*.mjs) join only when named in --only, or all with --lanes
+const LANES = await loadLanes();
+if (LANES.errors.length) { for (const e of LANES.errors) console.error('stagings:', e); process.exit(1); }
+const set = mergeFrames(loadFrameSet(), LANES, { all: args.includes('--lanes'), only: ONLY });
 const problems = validate(set);
 if (problems.length) { for (const p of problems) console.error('frameset:', p); process.exit(1); }
 const frames0 = filmOrder(set.frames).filter((f) => !ONLY || ONLY.has(f.id));
@@ -208,6 +214,7 @@ try {
     }, WEAR).catch((e) => ({ error: String(e?.message || e).slice(0, 200) }));
     log(`wearing ${WEAR}: ${JSON.stringify(run.wear)}`);
   }
+  if (Object.keys(LANES.hooks).length) await installStagings(page, LANES);
   run.three = await page.evaluate(() => window.__calShaderPatchAudit?.report?.().revision ?? null).catch(() => null);
   run.chrome = await browser.version();
   log(`booted in ${run.bootSeconds} s; filming ${frames.length} frames`);

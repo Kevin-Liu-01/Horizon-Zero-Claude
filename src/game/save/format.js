@@ -19,6 +19,8 @@
  * THE ONE DEATH RULE: death returns Brea to the Brazier of her last rest; the world and satchel are those of the
  * NEWEST record, named or checkpoint. `deathRecord(named, checkpoint)` builds exactly that.
  */
+import { normaliseAreas } from './fields.js';
+
 export const VERSION = 6;
 export const SLOTS = 3;
 export const KEY_PREFIX = 'cal.v6';
@@ -86,6 +88,9 @@ export function makeRecord(s, { kind = 'named', reason = 'manual', slot = 1, sav
     // the site clock (M1.6n, src/game/sites/clock.js serialize): its hours and the cleared sites; optional, so a v6
     // record written before it reads as a fresh clock
     sites: s.sites ? JSON.parse(JSON.stringify(s.sites)) : null,
+    // Milestone 2's area fields (./fields.js: walls, benchmarks, kit, region truth, the M2 quests); optional, so a
+    // slice record (none written) carries forward with every one of them fresh (Q5)
+    areas: normaliseAreas(s.areas),
     legacy: s.legacy ?? null,
   };
 }
