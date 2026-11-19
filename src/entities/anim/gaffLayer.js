@@ -19,7 +19,7 @@
  * hip at belt height, the swing passes her hip), never behind her head.
  */
 import * as THREE from 'three';
-import { GAFF_DRAW, GAFF_STOW, phaseAt, phaseEnd, ease } from './handling.js';
+import { GAFF_DRAW, GAFF_STOW, RATE, phaseAt, phaseEnd, ease } from './handling.js';
 
 const Y_UP = new THREE.Vector3(0, 1, 0), X_RT = new THREE.Vector3(1, 0, 0);
 
@@ -32,6 +32,9 @@ const _hm = new THREE.Matrix4(), _hq = new THREE.Quaternion(), _hq2 = new THREE.
 const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
 const _m1 = new THREE.Matrix4(), _m2 = new THREE.Matrix4();
 const _ph = [0, 0];
+const _lgU = new THREE.Vector3(), _lgP = new THREE.Vector3(), _lgT = new THREE.Vector3();
+/** the let-go may run on past the stow's end this long (s) to come within a step of the arm it hands back */
+const LETGO_MAX = 0.15;
 const _sw = { butt: new THREE.Vector3(), tip: new THREE.Vector3(), grip: new THREE.Vector3(), hookC: new THREE.Vector3() };
 
 /** The ready: the right fist beside and in front of her right hip, the haft up and forward, the hook forward. */
@@ -96,12 +99,44 @@ function even(u, a = 0.28) {
   if (x > 1 - a) return 1 - 0.5 * v * (1 - x) * (1 - x) / a;
   return 0.5 * v * a + v * (x - a);
 }
+/** The reach's pace over A and B: soft ends this share long (M2 fix wave, W3: the crouched reach is 0.45 m in 7 steps) */
+const REACH_EASE = 0.15;
+/** D's pace: soft ends this share of the phase long (M2 fix wave: 0.28 -> 0.12; the peak 1.39 -> 1.14 of the mean, W3) */
+const D_EASE = 0.12;
 /** The draw's pull-and-swing path at share `s`: up the haft to `lifted` (the first LIFT_SHARE), then round the hip. */
 const LIFT_SHARE = 0.2;
 function pullSwing(take, lifted, ready, s, out) {
   if (s < LIFT_SHARE) return out.copy(take).lerp(lifted, s / LIFT_SHARE);
   _via.copy(lifted).add(ready).multiplyScalar(0.5); _via.x -= SWING_OUT;
   return bez(lifted, _via, ready, (s - LIFT_SHARE) / (1 - LIFT_SHARE), out);
+}
+
+/**
+ * The path's share `s` (pullSwing's parameter) at the share `f` of its LENGTH (M2 fix wave, W3: the lift is 0.10 m and
+ * the swing 0.45-0.65 m, so a pace even in `s` ran the swing at 0.8 of the time for most of the way: 0.097 m a step
+ * crouched). The swing's length is the quadratic's usual estimate (the mean of its chord and its control polygon).
+ */
+function arcShare(take, lifted, ready, f) {
+  const l0 = take.distanceTo(lifted);
+  _via.copy(lifted).add(ready).multiplyScalar(0.5); _via.x -= SWING_OUT;
+  const l1 = 0.5 * (lifted.distanceTo(ready) + lifted.distanceTo(_via) + _via.distanceTo(ready));
+  const fl = l0 + l1 > 1e-6 ? l0 / (l0 + l1) : LIFT_SHARE;
+  if (f <= fl) return fl > 1e-6 ? LIFT_SHARE * f / fl : LIFT_SHARE;
+  return LIFT_SHARE + (1 - LIFT_SHARE) * (f - fl) / Math.max(1e-6, 1 - fl);
+}
+
+/** The quadratic at the share `f` of its length (a 16-chord table, on the stack each call: the reach is one a step). */
+const _bzL = new Float64Array(17), _bzP = new THREE.Vector3(), _bzQ = new THREE.Vector3();
+function bezArc(a, b, c, f, out) {
+  if (f <= 0) return out.copy(a);
+  if (f >= 1) return out.copy(c);
+  _bzL[0] = 0; bez(a, b, c, 0, _bzP);
+  for (let i = 1; i <= 16; i++) { bez(a, b, c, i / 16, _bzQ); _bzL[i] = _bzL[i - 1] + _bzP.distanceTo(_bzQ); _bzP.copy(_bzQ); }
+  const want = f * _bzL[16];
+  let i = 1; while (i < 16 && _bzL[i] < want) i++;
+  const seg = _bzL[i] - _bzL[i - 1];
+  const t = (i - 1 + (seg > 1e-9 ? (want - _bzL[i - 1]) / seg : 0)) / 16;
+  return bez(a, b, c, t, out);
 }
 
 function bez(a, b, c, t, out) {
@@ -113,7 +148,7 @@ export class GaffLayer {
   /** The sequence's state (built on first use). */
   _gaffState() {
     return this._gf || (this._gf = {
-      mode: 0, owner: 'carry', simT: 0, t: 0, T: null, phase: '', k: 0, was: false, w: 0,
+      mode: 0, owner: 'carry', simT: 0, t: 0, T: null, phase: '', k: 0, was: false, w: 0, outW: new THREE.Vector3(), outOk: false, lagM: 0,
       gripAt: -1, releaseAt: -1, readyAt: -1, requestAt: -1, curl: 0, palmMiss: null,
       start: new THREE.Vector3(), startQ: new THREE.Quaternion(),
       take: new THREE.Vector3(), takeQ: new THREE.Quaternion(), grip: new THREE.Vector3(),
@@ -305,16 +340,20 @@ export class GaffLayer {
     const K = this._oroKit;
     if (G.mode === 1) {
       if (name === 'A' || name === 'B') {
-        const u = name === 'A' ? 0.2 * k : 0.2 + 0.8 * even(k, 0.22);
+        // (one even pace over A and B, by the reach's length, of the hand AS DRAWN: over A the arm's weight comes in from
+        //  the clip's (`w` below), so the target leads by 1 / w and the drawn hand keeps the pace: M2 fix wave, W3)
+        const tB = phaseEnd(T, 'B');
+        const wA = name === 'A' ? even(k, 0.4) : 1;
+        const u = Math.min(1, even(Math.min(1, G.t / tB), REACH_EASE) / Math.max(0.25, wA * wA));
         _viaR.copy(G.start).add(G.take).multiplyScalar(0.5); _viaR.x -= REACH_OUT;
-        bez(G.start, _viaR, G.take, u, W);
+        bezArc(G.start, _viaR, G.take, u, W);
         Q.copy(G.startQ).slerp(G.takeQ, ease(u));
         if (K) K.tiltK = ease(Math.min(1, u * 1.15));
       } else if (name === 'C') {
         W.copy(G.take); Q.copy(G.takeQ); curl = CURL_OPEN + (1 - CURL_OPEN) * ease(k);
         if (K) K.tiltK = 1;
       } else {
-        const sP = name === 'D' ? even(k) : 1;
+        const sP = name === 'D' ? arcShare(G.take, G.lifted, _v2, even(k, D_EASE)) : 1;
         pullSwing(G.take, G.lifted, _v2, sP, W);
         const sw = sP < LIFT_SHARE ? 0 : (sP - LIFT_SHARE) / (1 - LIFT_SHARE);
         pole = _v1.copy(POLE_REACH).lerp(READY.pole, ease(sw)).normalize();
@@ -327,7 +366,7 @@ export class GaffLayer {
     } else {
       // the stow: D back past the hip onto its line over the frog, S seat, C open, A back down her side
       if (name === 'D') {
-        const sP = 1 - even(k);
+        const sP = arcShare(G.take, G.lifted, _v2, 1 - even(k, D_EASE));
         pullSwing(G.take, G.lifted, _v2, sP, W);
         const sw = sP < LIFT_SHARE ? 0 : (sP - LIFT_SHARE) / (1 - LIFT_SHARE);
         Q.copy(G.takeQ).slerp(G.readyQ, ease(sw));
@@ -359,7 +398,33 @@ export class GaffLayer {
     if (G.mode === 2 && name === 'A') w = 1 - even(k, 0.4);
     else if (G.mode === 1 && name === 'A') w = even(k, 0.4);
     G.w = w;
-    if (w > 1e-3) {
+    let follow = false;
+    if (G.mode === 2 && name === 'A' && G.outOk) {
+      /* THE LET-GO, RATE-BOUND (M2 fix wave, W3: a swap to the lance let the arm go over 0.117 s to a lance draw already
+       * carrying the hand away, 0.141 m a step). The hand goes from the frog to where the earlier layers have it THIS
+       * step (the clip's arm, or the lance's draw), its share of the way the letting-go's, but never more than
+       * `RATE.wristM` a step from where it was drawn; the elbow's plane goes over to theirs with it, so at the end the
+       * solved arm is theirs and is let go without a step. If it is still behind at the phase's end the let-go runs on
+       * (at most `LETGO_MAX` s) until it is within a step of them. */
+      follow = true;
+      this._charOf(b.upArmR.bone, _v3); this._charOf(b.loArmR.bone, _v4); this._charOf(b.handR.bone, _lgU);
+      _lgP.subVectors(_v4, _v3); _v4.subVectors(_lgU, _v3).normalize();
+      _lgP.addScaledVector(_v4, -_lgP.dot(_v4));
+      if (_lgP.lengthSq() < 1e-6) _lgP.copy(pole); else _lgP.normalize();
+      _lgT.copy(W).lerp(_lgU, 1 - w);
+      _lgT.sub(G.outW); const d = _lgT.length(), cap = RATE.wristM * dt;
+      if (d > cap) _lgT.multiplyScalar(cap / d);
+      _lgT.add(G.outW);
+      pole = _v1.copy(pole).lerp(_lgP, 1 - w).normalize();
+      this._ikArm('r', _lgT, pole, 1, null);
+      this._liveW(b.handR.bone, _q3);
+      this.space.setCharQ(b.handR, _q3.slerp(Q, w));
+      G.curl = curl;
+      const grip = this.melee?.gripR;
+      if (grip) this._wrapFingers('r', grip, curl, 0.55 * curl, w);
+      G.lagM = _lgT.distanceTo(_lgU);
+    }
+    if (!follow && w > 1e-3) {
       this._ikArm('r', W, pole, w, null);
       this._liveW(b.handR.bone, _q3);
       this.space.setCharQ(b.handR, _q3.slerp(Q, w));
@@ -375,7 +440,9 @@ export class GaffLayer {
       if (okStow && name === 'C') G.palmMiss = _v1.distanceTo(G.grip);
     }
     this._gaffShowHeld(prop, G.owner === 'handR');
-    // the end of the sequence
+    this._charOf(b.handR.bone, G.outW); G.outOk = true;
+    // the end of the sequence (a let-go still behind runs on: see above)
+    if (G.t >= T.total && follow && G.lagM > RATE.wristM * dt && G.t < T.total + LETGO_MAX) return w;
     if (G.t >= T.total) {
       if (G.mode === 1) G.readyAt = G.simT;
       G.mode = 0; G.phase = '';
