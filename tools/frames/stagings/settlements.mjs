@@ -81,7 +81,7 @@ export const STAGINGS = {
   },
   F36: {
     // M2 wave 3: five of the Holds cast at work (src/world/npc/people/holds.js AT_WORK: a farmer drawing water at the cistern,
-    // a picker scraping at the tree's foot, a youth filling his seed bag at a door, a picker sorting at the next, Oro at the anvil)
+    // a picker at the tree's foot, a youth sowing by a door, a picker kneeling to sort at the next, a farmer at the third)
     async world(f, api) {
       if (!api.C.settlements?.ninewalls) api.standIn('no Ninewalls in this build');
       const H = api.C.people?.holds;

@@ -177,15 +177,17 @@ function holdsLoops(P) {
 }
 
 /**
- * F36's street at work (the lens 15 m south-south-west of the tree, looking on bearing 20): five of the cast at a step of their
- * own loop that stands in that lens, from 8.5 m (the cistern) to 31.5 m (Oro at the anvil in the tube mouth).
+ * F36's street at work (the lens 15 m south-south-west of the tree, looking on bearing 20): five of the cast at work in that
+ * lens, from 8.5 m (the cistern) to 21 m (the door of d5 past the tree).
  */
 export const AT_WORK = Object.freeze([
-  { id: 'pit-farmer-3', place: 'cisternE', face: 'cistern', clip: 'PickUp_Table', offset: 0.3 },
-  { id: 'cochineal-picker', place: 'treeSW', face: 'tree', clip: 'Interact', offset: 0.55 },
-  { id: 'tiller-follower-2', place: 'door:d2', face: 'house:d2', clip: 'PickUp_Table', offset: 0.6 },
-  { id: 'cochineal-picker-2', place: 'door:d1', face: 'house:d1', clip: 'Interact', offset: 0.2 },
-  { id: 'oro', place: 'oroAnvil', face: 'anvil', clip: 'TreeChopping_Loop', offset: 0.4 },
+  // (the first film at c5e75eb: four of five in the lens, all four upright, so the street read as people standing about; Oro at
+  // the anvil is behind the slope from this lens) each now in a clip that bends to its work, at the clip's deepest point
+  { id: 'pit-farmer-3', place: 'cisternE', face: 'cistern', clip: 'PickUp_Table', offset: 0.5 },
+  { id: 'cochineal-picker', place: 'treeSW', face: 'tree', clip: 'Farm_Harvest', offset: 0.45 },
+  { id: 'tiller-follower-2', place: 'door:d2', face: 'house:d2', clip: 'Farm_PlantSeed', offset: 0.5 },
+  { id: 'cochineal-picker-2', place: 'door:d1', face: 'house:d1', clip: 'Fixing_Kneeling', offset: 0.4 },
+  { id: 'pit-farmer-2', place: 'door:d5', face: 'house:d5', clip: 'Farm_Harvest', offset: 0.55 },
 ].map((w) => Object.freeze(w)));
 
 /** Shelter spots: every dwelling's door and the tube mouth's throat (the village keeps indoors while a Screed is on the walls). */
