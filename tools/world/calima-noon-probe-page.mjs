@@ -102,7 +102,7 @@ export async function probe(frame) {
         const meshes = []; C.terrain.group.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
         const byMesh = [];
         for (const m of meshes) {
-          m.visible = false; freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc); m.visible = true;
+          m.visible = false; freeze(); E.render(0); freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc); m.visible = true;
           let gone = 0; for (let i = 0, k = 0; i < Cc.length; i += 4, k++) { if (!litMask[k]) continue; const d = Math.max(Cc[i] - B[i], Cc[i + 1] - B[i + 1], Cc[i + 2] - B[i + 2]); if (d <= 2) gone++; }
           if (gone) byMesh.push({ mesh: m.name || m.type, gone, renderOrder: m.renderOrder, material: Array.isArray(m.material) ? m.material.map((x) => x?.name || x?.type) : (m.material?.name || m.material?.type || null), cacheKey: Array.isArray(m.material) ? m.material.map((x) => x?.customProgramCacheKey?.() ?? null) : (m.material?.customProgramCacheKey?.() ?? null), at: m.geometry?.boundingSphere ? [Math.round(m.geometry.boundingSphere.center.x + m.position.x), Math.round(m.geometry.boundingSphere.center.z + m.position.z)] : null });
         }
@@ -117,7 +117,9 @@ export async function probe(frame) {
         const dome0 = Aer.AERIAL_DOME.value.clone();
         for (const [k] of keepC) U[k].value.setRGB(0, 0, 0);
         Aer.AERIAL_DOME.value.setRGB(0, 0, 0);
-        freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc);
+        // drawn twice, as A and B are (at d174a23 one draw after the change lit 1.41 M pixels by up to 104: the post chain's
+        // history from the draw before, not the ground)
+        freeze(); E.render(0); freeze(); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, Cc);
         out.hg5.skyColoursOff = { ...countLit(), what: 'calFogHorizon, calFogZenith, calFogSun, calCloudSeaCol and AERIAL_DOME black: the sky colours the shaders read from uniforms' };
         for (const [k, v] of keepC) U[k].value.copy(v);
         Aer.AERIAL_DOME.value.copy(dome0);
