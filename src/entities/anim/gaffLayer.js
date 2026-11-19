@@ -62,7 +62,7 @@ const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const VK = (p, a) => ({ p: V3(...p), a: V3(...a).normalize() });
 const VERB_KEYS = {
   // the forehand: cocked out to her right at her chest, the haft level and out; across in front of her, the hook leading
-  light1: { W: VK([-0.25, -0.23, 0.10], [-0.85, -0.05, 0.52]), M: VK([-0.06, -0.28, 0.32], [0.0, -0.26, 1]), S: VK([0.13, -0.33, 0.24], [0.72, -0.28, 0.62]), hip: [-0.20, 0.22], pole: V3(-0.55, -0.75, -0.35) },
+  light1: { W: VK([-0.25, -0.23, 0.10], [-0.85, -0.05, 0.52]), M: VK([-0.06, -0.28, 0.32], [0.0, -0.26, 1]), S: VK([0.17, -0.33, 0.25], [0.74, -0.28, 0.60]), hip: [-0.20, 0.22], pole: V3(-0.55, -0.75, -0.35) },
   // the backhand return at her belt, left to right
   light2: { W: VK([0.13, -0.33, 0.22], [0.70, -0.25, 0.66]), M: VK([-0.07, -0.34, 0.27], [0.0, -0.22, 1]), S: VK([-0.27, -0.31, 0.14], [-0.80, -0.22, 0.56]), hip: [0.16, -0.22], pole: V3(-0.70, -0.65, -0.30) },
   // the pull-cut: cocked back at her right chest, the beak driven out in front, then dragged down and back to her hip
@@ -73,7 +73,7 @@ const VERB_KEYS = {
 /** The shoulders follow the hip this far behind (s) and this much further (KT7). */
 const LAG = 0.075, COIL = 1.35;
 /** How much of the shoulders' yaw the wrist keys turn with. */
-const SWING_TURN = 0.6;
+const SWING_TURN = 0.35;
 /** The head keeps its line: this share of the shoulders' turn is taken back out of it. */
 const HEAD_KEEP = 0.75;
 /** The settle: a stow (or a swap) asked mid-verb first brings the fist back to the ready over this long (s). */

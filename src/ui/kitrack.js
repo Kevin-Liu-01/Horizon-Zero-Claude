@@ -40,9 +40,9 @@ const CSS = `
 #cal-kitrack .kr-tick { stroke: var(--cal-glass-tick, rgba(241,238,230,0.62)); stroke-width: 1; }
 #cal-kitrack .kr-tick.major { stroke-width: 1.5; }
 #cal-kitrack .kr-label { font-family: var(--cal-font-ui, 'Chakra Petch', sans-serif); font-weight: 600; letter-spacing: 0.12em;
-  fill: var(--cal-glass-text, #F1EEE6); font-size: 2.0vh; text-anchor: middle; dominant-baseline: middle; }
+  fill: var(--cal-glass-text, #F1EEE6); font-size: 6.5px; text-anchor: middle; dominant-baseline: middle; }
 #cal-kitrack .kr-num { font-family: var(--cal-font-mono, 'IBM Plex Mono', monospace); fill: var(--cal-glass-text-2, rgba(241,238,230,0.66));
-  font-size: 1.5vh; text-anchor: middle; dominant-baseline: middle; }
+  font-size: 4.6px; text-anchor: middle; dominant-baseline: middle; }
 #cal-kitrack .kr-empty .kr-label { fill: var(--cal-glass-text-2, rgba(241,238,230,0.66)); opacity: 0.55; }
 #cal-kitrack .kr-empty .kr-num { opacity: 0.55; }
 `;

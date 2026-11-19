@@ -60,6 +60,9 @@ export class WindwallLayer {
   _wwLocal() {
     const S = this._wwState();
     if (S.local) return S.local;
+    // the fit to what is drawn first (the stowed piece's own skinned vertices); the recipe's placement only without it
+    const fit = this._wwFit();
+    if (fit) { S.local = fit; return fit; }
     const K = this._oroKit, m = K?.meshes?.[0];
     const st = K?.entry?.extras?.r5OroKit?.stow?.windwall;
     if (!m?.skeleton || !st) return null;
@@ -88,6 +91,61 @@ export class WindwallLayer {
     L.decompose(pos, q, sc);
     S.local = { pos, q, sc, bone: m.skeleton.bones[bi] };
     return S.local;
+  }
+
+  /**
+   * The held fan's place on `lowerarm_l` fitted to the stowed copy AS IT IS DRAWN (M2 wave 3: at 8d5ec5b the recipe's
+   * bind placement put the held fan at half size below her wrist in the page while it sat right in Node): the stowed
+   * piece's skinned vertices in the bone's frame against the held mesh's own vertices closed the same way (the fan at
+   * `WINDWALL_FAN.closed`, as the vertex program does), matched by their centroids, their principal axes (signs by
+   * each axis's third moment) and their spread. Pose-independent (both are rigid on the forearm); once.
+   */
+  _wwFit() {
+    const K = this._oroKit, m = K?.meshes?.[0], prop = this.ctx.combat?.windwall?.prop;
+    if (!m?.skeleton || !prop?.u) return null;
+    const P = m.geometry.getAttribute('_piece');
+    const bone = m.skeleton.bones.find((b) => b.name === 'lowerarm_l');
+    if (!P || !bone) return null;
+    this.model.updateMatrixWorld(true);
+    m.skeleton.update();
+    const binv = new THREE.Matrix4().copy(bone.matrixWorld).invert();
+    const A = [], v = new THREE.Vector3();
+    const pos = m.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      if ((Math.round(P.getX(i)) & 2) === 0) continue;
+      m.getVertexPosition(i, v); m.localToWorld(v); v.applyMatrix4(binv);
+      A.push(v.x, v.y, v.z);
+    }
+    // the held mesh in its group's frame, closed as the vertex program closes it
+    const g = prop.group, Bp = [];
+    const k = -(WINDWALL_FAN.spreadDeg * Math.PI / 180) / (WINDWALL_FAN.slats - 1) * WINDWALL_FAN.closed;
+    g.updateMatrixWorld(true);
+    const gInv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+    g.traverse((o) => {
+      if (!o.isMesh) return;
+      const ps = o.geometry.getAttribute('position'), sl = o.geometry.getAttribute('_slat');
+      const M = new THREE.Matrix4().copy(gInv).multiply(o.matrixWorld);
+      for (let i = 0; i < ps.count; i++) {
+        let x = ps.getX(i), y = ps.getY(i);
+        const a = (sl ? sl.getX(i) : 0) * k, c = Math.cos(a), sn = Math.sin(a);
+        const xr = c * x - sn * y, yr = sn * x + c * y;
+        v.set(xr, yr, ps.getZ(i)).applyMatrix4(M);
+        Bp.push(v.x, v.y, v.z);
+      }
+    });
+    if (A.length < 30 || Bp.length < 30) return null;
+    const fa = frameOf(A), fb = frameOf(Bp);
+    // the scale is known, not fitted (the two LODs spread their vertices differently): the held mesh is in metres of
+    // her model's space; the bone's own scale against her model's is taken out (as the gaff's hand-to-prop map does)
+    const e = bone.matrixWorld.elements, me = this.model.matrixWorld.elements;
+    const sc = Math.hypot(me[0], me[1], me[2]) / (Math.hypot(e[0], e[1], e[2]) || 1);
+    // rotation: held axes -> stowed axes
+    const Ra = new THREE.Matrix4().makeBasis(fa.ax[0], fa.ax[1], fa.ax[2]);
+    const Rb = new THREE.Matrix4().makeBasis(fb.ax[0], fb.ax[1], fb.ax[2]);
+    const R = Ra.multiply(Rb.transpose());
+    const q = new THREE.Quaternion().setFromRotationMatrix(R);
+    const p = fb.c.clone().multiplyScalar(sc).applyQuaternion(q).negate().add(fa.c);
+    return { pos: p, q, sc: new THREE.Vector3(sc, sc, sc), bone, fit: { n: [A.length / 3, Bp.length / 3], scale: +sc.toFixed(4), spreadK: +Math.sqrt(fa.spread / fb.spread / (sc * sc)).toFixed(3) } };
   }
 
   /** The held fan on her forearm at the stowed copy's place (or hidden). */
@@ -202,4 +260,46 @@ export class WindwallLayer {
     const f2 = _v4.set(0, 0, 1).applyQuaternion(L.q).applyQuaternion(_q1).normalize();
     S.faceErrDeg = +(Math.acos(Math.max(-1, Math.min(1, f2.dot(face)))) * 180 / Math.PI).toFixed(1);
   }
+}
+
+/** Centroid, principal axes (largest first; each signed by its third moment; right-handed) and the mean square spread. */
+function frameOf(arr) {
+  const n = arr.length / 3, c = new THREE.Vector3();
+  for (let i = 0; i < arr.length; i += 3) { c.x += arr[i]; c.y += arr[i + 1]; c.z += arr[i + 2]; }
+  c.multiplyScalar(1 / n);
+  const C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < arr.length; i += 3) {
+    const d = [arr[i] - c.x, arr[i + 1] - c.y, arr[i + 2] - c.z];
+    for (let r = 0; r < 3; r++) for (let q = 0; q < 3; q++) C[r][q] += d[r] * d[q] / n;
+  }
+  const { vals, vecs } = jacobi3(C);
+  const order = [0, 1, 2].sort((a, b) => vals[b] - vals[a]);
+  const ax = order.map((j) => new THREE.Vector3(vecs[0][j], vecs[1][j], vecs[2][j]).normalize());
+  for (let a = 0; a < 2; a++) {
+    let m3 = 0;
+    for (let i = 0; i < arr.length; i += 3) { const t = (arr[i] - c.x) * ax[a].x + (arr[i + 1] - c.y) * ax[a].y + (arr[i + 2] - c.z) * ax[a].z; m3 += t * t * t; }
+    if (m3 < 0) ax[a].negate();
+  }
+  ax[2] = new THREE.Vector3().crossVectors(ax[0], ax[1]).normalize();
+  return { c, ax, spread: vals[0] + vals[1] + vals[2] };
+}
+
+/** Eigen-decomposition of a symmetric 3x3 (cyclic Jacobi): vals, vecs (columns). */
+function jacobi3(A0) {
+  const A = A0.map((r) => r.slice()), V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 30; sweep++) {
+    let off = 0;
+    for (let p = 0; p < 2; p++) for (let q = p + 1; q < 3; q++) off += A[p][q] * A[p][q];
+    if (off < 1e-20) break;
+    for (let p = 0; p < 2; p++) for (let q = p + 1; q < 3; q++) {
+      if (Math.abs(A[p][q]) < 1e-30) continue;
+      const th = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+      const t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+      const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < 3; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+      for (let k = 0; k < 3; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+      for (let k = 0; k < 3; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq; }
+    }
+  }
+  return { vals: [A[0][0], A[1][1], A[2][2]], vecs: V };
 }
