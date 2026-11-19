@@ -40,9 +40,11 @@ async function one(kind, file, formId) {
     if (p.lamp) {
       // the lamp is the lamp system's iris at this anchor (drawn in the state's colour); the housing's face is grey.
       // (An emissive sensor mesh here was drawn away from its anchor in the first film at b89be8d: no sensor mesh.)
+      // the face sits just behind the iris (in the film at cb501fb the face's own depth hid the iris at its centre)
       lampAt = p.c; lampR = p.r ?? Math.min(p.s[0], p.s[1]) / 2;
-      if (p.type === 'box') rbox(hull, V(...p.c), p.s, 0.01, { surf: 'graphite', tone: LAMP_FACE, segs: 1 });
-      else cylAlong(hull, p, { surf: 'graphite', tone: LAMP_FACE });
+      const back = { ...p, c: [p.c[0], p.c[1], p.c[2] - 0.06] };
+      if (p.type === 'box') rbox(hull, V(...back.c), p.s, 0.01, { surf: 'graphite', tone: LAMP_FACE, segs: 1 });
+      else cylAlong(hull, back, { surf: 'graphite', tone: LAMP_FACE });
       continue;
     }
     const opts = { surf: p.vial ? 'glaze' : p.blade ? 'bronze' : 'bisque', tone: p.vial ? GLASS : (p.type === 'cyl' && p.r < 0.15) ? JOINT : GREY };
