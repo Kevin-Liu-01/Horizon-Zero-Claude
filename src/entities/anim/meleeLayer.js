@@ -314,8 +314,10 @@ const READY = {
 const LEFT_FORE_CLEAR = 0.13;
 /** How much of the trunk's turn the head keeps, and how much of its lean the
  *  neck and skull take out (see `update`). */
-const HEAD_LEAD = 0.14;
+const HEAD_LEAD = 0.06;   // (M2 fix wave, W11's head yaw <= 3 deg: 0.14 -> 0.06, and the 0.08 the neck and skull did not take out is
+                          //  taken out: the click's swing turned her head 11.3 deg off her line)
 const HEAD_LEVEL = 0.92;
+const _hyQ = new THREE.Quaternion(), _hyV = new THREE.Vector3();
 /** The wrap and knot tails: the two simulated chains near the haft (A104). */
 const TAIL_RE = /^dyn_(wrapSash|sashEnd|hairKnotTail)/;
 /** `lhOn` is authored on the 1.55 m lance at the guard's 0.20 -> 0.55. */
@@ -1707,6 +1709,13 @@ export class MeleeLayer {
    *   { stance:'holstered'|'draw'|'ready'|'swing'|'holster', drawK, phase, k,
    *     combo, heavy, aimYaw, contactK }
    */
+  /** The head bone's turn about char +Y (rad; its +Z in char, as the handling rows read it). */
+  _headYawChar() {
+    this.an._liveW(this.an.b.head.bone, _hyQ);
+    _hyV.set(0, 0, 1).applyQuaternion(_hyQ);
+    return Math.atan2(_hyV.x, _hyV.z);
+  }
+
   update(dt, st) {
     if (!this.ok) return;
     const an = this.an;
@@ -1907,6 +1916,7 @@ export class MeleeLayer {
     /* ------------------- the lower body (fix pass 2) ------------------- */
     // Before the torso, because it publishes the pelvis offset the animator
     // adds to `pdy` on the same frame (see `_stance` and STANCE).
+    const headY0 = b.head ? this._headYawChar() : 0;   // (before the hips and the trunk turn: see the head below)
     this._stance(dt, w, u, beat, stance);
 
     /* --------------------- procedural torso rotation ------------------ */
@@ -1938,11 +1948,22 @@ export class MeleeLayer {
      * woman looking at her own feet). The neck and the skull take out most of the
      * chest's turn and lean, so she faces down the haft however bladed she stands;
      * `HEAD_LEAD` of the turn stays, because the head does lead the swing. */
+    /* (M2 fix wave, W11 "head yaw <= 3 deg": outside a swing nothing leads, so the neck and the skull take out ALL of the
+     *  trunk's turn: the draw, the guard and the stow turned her head 9-15 deg off her line with it; in a swing the head
+     *  leads by `HEAD_LEAD` of it) */
     {
-      const ty = (yaw + (this._pelvisYawNow || 0) * w) * (1 - HEAD_LEAD);
+      const swing = stance === 'swing';
+      const ty = (yaw + (this._pelvisYawNow || 0) * w) * (swing ? 1 - HEAD_LEAD : 1);
+      const tk = 1 / 0.92;
       const tp = pitch;
-      an._rot(b.neck1, Y_AXIS, -ty * 0.42);
-      an._rot(b.head, Y_AXIS, -ty * 0.50);
+      an._rot(b.neck1, Y_AXIS, -ty * 0.42 * tk);
+      an._rot(b.head, Y_AXIS, -ty * 0.50 * tk);
+      /* ...measured, not assumed: the spine's three turns about their own (pitched, rolled) axes do not add to `yaw`
+       * about char +Y, and the guard's and the swings' clips turn the head as well, so what is left of the head's turn off
+       * her line (plus the swing's lead; at the layer's weight, from where the clip had it) is taken out here, the neck
+       * and the skull sharing it, after the arms are solved (the neck carries no arm) and the trunk's last trim (M2 fix
+       * wave: the click's swing read 5.7 deg after the line above) */
+      this._headWant = b.head && w > 1e-3 ? headY0 * (1 - w) + (swing ? HEAD_LEAD * (yaw + (this._pelvisYawNow || 0) * w) : 0) : null;
       an._rot(b.neck1, X_AXIS, -tp * HEAD_LEVEL * 0.45);
       an._rot(b.head, X_AXIS, -tp * HEAD_LEVEL * 0.55);
     }
@@ -2075,6 +2096,11 @@ export class MeleeLayer {
     else if (this.gripLFore) an._wrapFingers('l', this._lc?.on && !this._held ? this.gripLButt : this.gripLFore, this._curlL / 0.85, this._curlL * 0.91 * wFL, wFL);
     else an._curlFingers(an._fingerL, this._curlL * wFL, (this._curlL * 0.91) * wFL);
 
+    if (this._headWant != null) {
+      let r = this._headYawChar() - this._headWant;
+      r = Math.atan2(Math.sin(r), Math.cos(r));
+      if (Math.abs(r) < 0.6) { an._rot(b.neck1, Y_AXIS, -r * 0.45); an._rot(b.head, Y_AXIS, -r * 0.55); }
+    }
     this._measure();
     this._settleLance(stance, st);
     /* THE REACH THIS BEAT ACTUALLY GETS (round 6, R7). The contact keys ask

@@ -1645,6 +1645,13 @@ export class PlayerAnimator {
       const rigid = !!(this.melee?.w > 0.02);
       this._rollArmGuard(guardW, rigid);
     }
+    // (M2 fix wave, W11: the elbow's swivel rate-bound while a weapon is handled: carryStow.js SWIVEL_STEP)
+    {
+      const ml = this.melee, lanceOn = !!(ml?.ok && ml.w > 0.02 && ml._dbg?.stance !== 'swing');
+      const kitOn = (this._bp?.mode ?? 0) > 0 || (this._gf?.mode ?? 0) > 0 || (this._wwS?.w ?? 0) > 1e-3;
+      this._swvOn = (lanceOn || kitOn) && guardW <= 0.02 && aimW <= 0.01;
+      this._elbowSwivelLimit(this._swvOn, dt);
+    }
     this._twistLayer();
 
     /* ------------------ secondary motion: dyn_ spring chains --------------- */
@@ -1666,6 +1673,7 @@ export class PlayerAnimator {
     // scan of 32 hair bones and does nothing unless a strand is inside 0.078 m
     // of the haft, which at idle/walk/run/sprint it never is.
     this.melee?.postFix?.();
+    this._elbowSwivelLimit(this._swvOn, dt);   // (again: the haft's last fix moves the hands)
     /* (M1a debt, M1.3f blendUnstowLanceRoll: the haft's last fix above moves the hands on the pose the renderer draws,
      *  after the roll's guards, and on the somersault's fastest steps it put the left hand back over the inverted crown
      *  for one step: the crown guard again on the final pose, in a roll or a jump only) */
@@ -1690,6 +1698,7 @@ export class PlayerAnimator {
       }
       this.trunkReach = r; this.trunkStep = this._trOk && dt > 0 ? st : 0; this._trOk = true;
     }
+    this._elbowSwivelCapture();
   }
 
   /** World point -> character space. */

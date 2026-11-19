@@ -173,7 +173,83 @@ function turnToward(cur, want, max) {
 const WRIST_DEV_MAX = 27 * Math.PI / 180, WRIST_FLEX_MAX = 55 * Math.PI / 180;
 const _wbF = new THREE.Vector3(), _wbH = new THREE.Vector3(), _wbG = new THREE.Vector3(), _wbN = new THREE.Vector3();
 const _wbG2 = new THREE.Vector3(), _wbE = new THREE.Vector3(), _wbQ = new THREE.Quaternion(), _wbR = new THREE.Quaternion();
+/*
+ * THE ELBOW'S SWIVEL, RATE-BOUND (M2 fix wave; W11 "the elbow pole <= 25 deg a step"). The handling layers solve each
+ * arm toward their own pole hints, and where a sequence hands the arm from one key's pole to the next (the lance's
+ * reach, take, carry and pull; the bow's reach round the hip) the elbow swung 50-160 deg about the shoulder-wrist line in
+ * one step. On the pose that will be drawn, while a weapon is being handled, each arm's elbow is turned about its own
+ * shoulder-wrist line at most `SWIVEL_STEP` a step from where it was drawn last step: the wrist stays where the layers
+ * put it (it is on the line) and the hand keeps its turn (the prop in it does not move); only the elbow lags its key.
+ * Not in a swing (its own fast arm), a roll, an aim (the rig owns the arms), nor where an elbow stands above its
+ * shoulder (the head-plane guards' ground: they move elbows on purpose).
+ */
+const SWIVEL_STEP = 16 * Math.PI / 180;
+const _swA = new THREE.Vector3(), _swO = new THREE.Vector3(), _swP = new THREE.Vector3(), _swS = new THREE.Vector3();
+const _swE = new THREE.Vector3(), _swW = new THREE.Vector3(), _swC = new THREE.Vector3();
+const _swQ = new THREE.Quaternion(), _swH = new THREE.Quaternion();
+const _swHP = new THREE.Vector3(), _swHF = new THREE.Vector3(), _swP2 = new THREE.Vector3();
+
 export class CarryStow {
+  /** The elbow's offset off the shoulder-wrist line (unit, char) and that line, of arm `s` ('l' | 'r'): 0 straight (or no
+   *  arm), 1 bent, 2 bent with the elbow above its shoulder. */
+  _swivelOf(s, offOut, axOut) {
+    const b = this.b, up = s === 'l' ? b.upArmL : b.upArmR, lo = s === 'l' ? b.loArmL : b.loArmR, ha = s === 'l' ? b.handL : b.handR;
+    if (!up || !lo || !ha) return 0;
+    this._charOf(up.bone, _swS); this._charOf(lo.bone, _swE); this._charOf(ha.bone, _swW);
+    axOut.subVectors(_swW, _swS); if (axOut.lengthSq() < 1e-6) return 0; axOut.normalize();
+    offOut.subVectors(_swE, _swS); offOut.addScaledVector(axOut, -offOut.dot(axOut));
+    const l = offOut.length(); if (l < 0.04) return 0;
+    offOut.multiplyScalar(1 / l);
+    return _swE.y < _swS.y ? 1 : 2;   // (an elbow above its shoulder is the guards')
+  }
+
+  /** The limiter (see SWIVEL_STEP): `on` this step (a weapon being handled, no swing, roll or aim). */
+  _elbowSwivelLimit(on, dt) {
+    const P = this._swv;
+    if (!on || !P) return;
+    const max = SWIVEL_STEP * Math.min(2, Math.max(0.25, dt * 60));
+    for (const s of ['l', 'r']) {
+      const pr = P[s];
+      if (!pr.ok) continue;
+      if (this._swivelOf(s, _swO, _swA) !== 1) continue;
+      _swP.copy(pr.off).addScaledVector(_swA, -pr.off.dot(_swA));
+      if (_swP.lengthSq() < 0.09) continue;   // (the line itself turned past ~73 deg: nothing to hold to)
+      _swP.normalize();
+      let a = Math.acos(Math.max(-1, Math.min(1, _swP.dot(_swO))));
+      if (a <= max) continue;
+      if (_swC.crossVectors(_swP, _swO).dot(_swA) < 0) a = -a;
+      const back = a > 0 ? a - max : a + max;
+      const b = this.b, up = s === 'l' ? b.upArmL : b.upArmR, ha = s === 'l' ? b.handL : b.handR;
+      // (never into the owner's ground: the held elbow may not rise to its shoulder, nor the forearm over it: as much of
+      //  the hold as keeps it 0.02 m under)
+      //  ...nor behind her head where A107 reads it: within 0.14 m under the shoulder, at most 0.08 m behind the head's
+      //  frontal plane)
+      const elbAt = (t) => {
+        _swQ.setFromAxisAngle(_swA, -back * t);
+        _swC.subVectors(_swE, _swS).applyQuaternion(_swQ).add(_swS);
+        if (_swC.y >= _swS.y - 0.02) return false;
+        if (s === 'r' && _swC.y > _swS.y - 0.14 && -_swHF.dot(_swP2.subVectors(_swC, _swHP)) > 0.08) return false;
+        return true;
+      };
+      if (b.head) { this._charOf(b.head.bone, _swHP); this._liveW(b.head.bone, _swH); _swHF.set(0, 0, 1).applyQuaternion(_swH); _swHF.y = 0; _swHF.normalize(); }
+      else _swHF.set(0, 0, 0);
+      let t = 1;
+      if (!elbAt(1)) { let lo = 0, hi = 1; for (let i = 0; i < 8; i++) { const m = 0.5 * (lo + hi); if (elbAt(m)) lo = m; else hi = m; } t = lo; }
+      if (t < 0.02) continue;
+      _swQ.setFromAxisAngle(_swA, -back * t);
+      this._liveW(ha.bone, _swH);
+      this.space.rotCharQ(up, _swQ, false);
+      this.space.setCharQ(ha, _swH);
+      this._swvN = (this._swvN || 0) + 1;
+    }
+  }
+
+  /** Each arm's elbow swivel as drawn (the limiter's reference next step). Every step, at the end of the update. */
+  _elbowSwivelCapture() {
+    const P = this._swv || (this._swv = { l: { ok: false, off: new THREE.Vector3() }, r: { ok: false, off: new THREE.Vector3() } });
+    for (const s of ['l', 'r']) { P[s].ok = this._swivelOf(s, _swO, _swA) > 0; if (P[s].ok) P[s].off.copy(_swO); }
+  }
+
   /** The left wrist inside WRIST_DEV_MAX / WRIST_FLEX_MAX (see above), by weight `w`. Returns the turn applied (rad). */
   _bowWristBound(w = 1) {
     const b = this.b, g0 = this.melee?.gripDirLL;
