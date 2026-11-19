@@ -73,7 +73,7 @@ export const HERD_SLOPE = Object.freeze([Object.freeze({ e: -130, n: -215 }), Ob
  * downhill, its depth and half-width (m); about 33 m from the herd's line, so the two roads are two. */
 export const BARRANCO = Object.freeze({
   path: Object.freeze([[-58, -120], [-80, -133], [-100, -150], [-118, -161], [-138, -176]].map(([e, n]) => Object.freeze({ e, n }))),
-  depth: 2.8, half: 3.2, bank: 4.2,
+  depth: 2.4, half: 3.0, bank: 7.0,
 });
 
 /** The bounding box (authored frame, m) outside which nothing here changes the ground. */
