@@ -709,12 +709,15 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
         }
         if (!sc && ditchPts) {
           const dsc = await page.evaluate(scanStands, t.i, tried, undefined, ditchPts.filter((q) => { const d = Math.hypot(q.x - t.x, q.z - t.z); return d >= 10 && d <= VIAL_MAX_D; }));
-          if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= 2) sc = dsc; }
+          // (M2 fix wave) a caller's own stands take one clear glass point of three, as the ring does (at 0f3e810 the terrace
+          // Plumb's 144 stands gave no stand with two, and the topple loosed no arrow in 150 s)
+          const need = (await page.evaluate(() => !!window.__standOnly)) ? 1 : 2;
+          if (dsc) { (ditchScans ||= []).push({ of: dsc.of, open: dsc.open, masked: dsc.masked, stands: dsc.stands.slice(0, 3) }); if (dsc.stands[0] && dsc.stands[0].clear >= need) sc = dsc; }
         }
         if (!sc && !(await page.evaluate(() => !!window.__standOnly))) sc = await page.evaluate(scanStands, t.i, tried, VIAL_RING);
         scans.push(sc && { open: sc.open, masked: sc.masked, vial: sc.vial, nockH: sc.nockH, best: sc.stands[0] ?? null, from: { x: +s.p.x.toFixed(1), z: +s.p.z.toFixed(1) }, ...(sc.known ? { known: true } : {}) });
         const best = sc?.stands?.[0];
-        if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? {})})`, fired, scans };
+        if (!best) return { ok: false, why: `${kind} ${part}: no open stand found round it (${JSON.stringify(sc?.masked ?? ditchScans?.at(-1)?.masked ?? {})})`, fired, scans, ditchScans };
         stand0 = best;
         if (!sc.known) tried.push({ x: best.x, z: best.z });
         const w = best.walk > 30 ? await walkPath(page, K, best, 1.5, { maxS: 60, sprint: true }) : await walkTo(page, K, best, 1.5, { maxS: 30, sprint: best.walk > 8 });

@@ -495,7 +495,7 @@ async function driveTopple(page, K) {
     out.drink = await SH.drink(page, K, 98);
     for (let i = 0; i < 3; i++) {
       const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: 150, tolDeg: 0.08, reach: 220 });
-      out.steps.push({ ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length });
+      out.steps.push({ ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
       if (f.ok || f.why === 'died') break;
       // no stand clear of the herd just now: it walks on; wait a little where she is
       await sleep(2500);
