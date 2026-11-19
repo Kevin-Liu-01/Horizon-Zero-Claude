@@ -167,3 +167,15 @@ test('the gaff: three lights chain on presses inside the combo window; one conta
   for (let i = 1; i < 60; i++) if (h.step(1 / 60) === 'contact') { c = i / 60; break; }
   assert.ok(Math.abs(c - verbContactAt(HOOK_RIP)) < 1 / 60 + 1e-9, `contact at ${c}`);
 });
+
+test('the seam with a kind that answers its own parts: Brine seizes the seals the mist reaches, by the kind\'s names', () => {
+  const book = new StatusBook();
+  const calls = [];
+  const m = { alive: true, walkSpeed: 1.4, kitBlow: (n, k) => { calls.push([n, k]); return 'seized'; } };
+  book.apply(m, ST.lock, { parts: [], kitParts: ['sealL'] });
+  assert.deepEqual(calls, [['sealL', 'brine']]);
+  calls.length = 0;
+  const m2 = { alive: true, kitBlow: (n, k) => { calls.push([n, k]); return 'seized'; } };
+  book.apply(m2, ST.lock, { parts: [] });
+  assert.deepEqual(calls, [['seal', 'brine']], 'no names reached: its own nearest seal');
+});

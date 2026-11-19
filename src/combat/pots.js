@@ -394,7 +394,13 @@ export class PotKit {
           parts.push(p);
         }
       }
-      this.status.apply(m, id, { parts: parts ?? undefined, at: { x: F.x, y: F.y, z: F.z } });
+      // (a kind that answers its own parts: its seals inside the mist, by the kind's names, e.g. the Screed's sealL/sealR)
+      let kitParts;
+      if (id === ELEMENT_STATUS.brine && typeof m.kitBlow === 'function' && Array.isArray(m._sealW)) {
+        kitParts = [];
+        for (const w of m._sealW) { if (!w?.obj?.getWorldPosition) continue; w.obj.getWorldPosition(_pp); if (F.contains(_pp.x, _pp.y, _pp.z, 0.8)) kitParts.push(w.name); }
+      }
+      this.status.apply(m, id, { parts: parts ?? undefined, kitParts, at: { x: F.x, y: F.y, z: F.z } });
       this.ctx.events?.emit?.('pot-status', { kind: m.kind, pot: F.id, parts: parts ? parts.map((p) => p.name) : null });
     }
   }

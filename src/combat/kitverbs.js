@@ -189,7 +189,14 @@ export class KitVerbs {
     }
     if (part && !object) object = part.mesh;
     const tear = rip ? hookRipTear(m, part) : (part ? tearSeized(part, v.tear) : 0);
-    if (rip && part) { try { m.kitBlow?.(part.name, 'hookRip'); } catch { /* the kind's own rule */ } }
+    // a kind that answers its own parts (the Screed's seals, src/instruments/kinds/screed.js kitBlow): the seal nearest
+    // the hook (within 1.2 m), else the part struck, else its own nearest seal
+    let blown = null;
+    if (rip && typeof m.kitBlow === 'function') {
+      let name = part?.name ?? null, bd = 1.2;
+      if (Array.isArray(m._sealW)) for (const w of m._sealW) { if (!w?.obj?.getWorldPosition) continue; w.obj.getWorldPosition(_pp); const d = _pp.distanceTo(_tip); if (d < bd) { bd = d; name = w.name; } }
+      try { blown = m.kitBlow(name ?? 'seal', 'hookRip'); } catch { /* the kind's own rule */ }
+    }
     _d.subVectors(_tip, p.position).setY(0);
     if (_d.lengthSq() < 1e-6) _d.set(Math.sin(p.heading || 0), 0, Math.cos(p.heading || 0));
     _d.normalize(); _n.copy(_d).negate();
@@ -204,7 +211,7 @@ export class KitVerbs {
       point: _tip, normal: _n, machine: m, damage: res?.damage ?? 0, weak: !!res?.weak, tear: res?.tear ?? tear,
       tornPart: res?.tornPart ?? null, kind: rip ? 'tear' : 'impact', maxHealth: m.maxHealth ?? 100, colors: SPARK,
     });
-    const out = { verb: v.id, kind: m.kind ?? null, part: part?.name ?? null, torn: !!res?.tornPart, damage: +(res?.damage ?? 0).toFixed(2), tear: +tear.toFixed(1) };
+    const out = { verb: v.id, kind: m.kind ?? null, part: part?.name ?? null, torn: !!res?.tornPart || blown === 'off', blown, damage: +(res?.damage ?? 0).toFixed(2), tear: +tear.toFixed(1) };
     this._note(out);
     ctx.events?.emit?.('gaff-hit', out);
     return out;

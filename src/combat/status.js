@@ -101,9 +101,12 @@ export class StatusBook {
         const p = parts[i];
         if (!p || p.attached === false) continue;
         p.seizedT = S.seconds;
-        if (typeof m.kitBlow === 'function') { try { m.kitBlow(p.name, 'brine'); } catch { /* the kind's own rule */ } }
       }
-      if (typeof m.kitBlow === 'function' && !parts.length) { try { m.kitBlow(null, 'brine'); } catch { /* none */ } }
+      // a kind that answers its own parts (the Screed's ram seals): the names the element reached, else its nearest seal
+      if (typeof m.kitBlow === 'function') {
+        const names = opts.kitParts ?? parts.map((p) => p.name);
+        try { if (names.length) for (const n of names) m.kitBlow(n, 'brine'); else m.kitBlow('seal', 'brine'); } catch { /* the kind's own rule */ }
+      }
     } else if (id === ST.burn) {
       // the machine's own burn over time (machine.js: 8 s of damage over time at its own rate)
       if (typeof m._triggerElement === 'function') { try { m._triggerElement('fire', opts.at ?? null); } catch { /* none */ } }
