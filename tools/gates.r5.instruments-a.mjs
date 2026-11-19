@@ -387,7 +387,7 @@ const A_HERD_RIPPLE = `(async () => {
   const diag = { rippleHook: !!__M._herdRipple, ripples: __M._herdRipple ? __M._herdRipple.ripples : null, file: !!f, fileOrder: f ? f.order.length : 0, sentryState: s ? s.state : null, herds: __M.squads.herds.length, alarmedAtEnd: herd.alarmed, leader: lead ? ms.indexOf(lead) : null };
   return { pass: Object.values(checks).every(Boolean), detail: { checks, diag, flashesS: flashes, flashSpanS: span && +span.toFixed(3), alarmS: alarmT,
     maxSpeedOverWalk: +maxOverWalk.toFixed(3), maxBearingChangeDeg: +maxTurnDeg.toFixed(2), gapsAt4sM: gapsAt4, sentry: sentryKind,
-    bar: 'IN1 (M2 wave 1; was: the herd flees in file): a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd never flees: no alarm, no member above its walk, no member\'s bearing changes by more than 2 deg over 12 s, and every file gap (clear, stern to bow) 3.5-4.5 m 4 s after the chime' } };
+    bar: 'IN1 (M2 wave 1; was: the herd flees in file): a Plumb chimes near a herd -> lamps flash in sequence down the herd within 1.5 s; the herd never flees: no alarm, no member above its walk, no bearing of a member changes by more than 2 deg over 12 s, and every file gap (clear, stern to bow) 3.5-4.5 m 4 s after the chime' } };
 })()`;
 
 /* ------------------------------------------------------------------ */
