@@ -185,7 +185,7 @@ export const STRATA_TERM = /* glsl */ `
  *              sun), a little warm, with broad oxidised (red-brown) and ashen fields; two turned reads at
  *              incommensurate scales to 130 m, so no tile repeats over a walk (HG4's autocorrelation)
  *   drifts     pale dust in broad patches, deepest on the lee (south-west-facing) side of every rise
- *   pit-cups   on worked ground under slope 0.32-0.5: a staggered grid 8 m apart, turned 20 deg; in each cell (82 %) a
+ *   pit-cups   on worked ground under slope 0.42-0.6: a staggered grid 8 m apart, turned 20 deg; in each cell (82 %) a
  *              hollow 1.9-2.6 m across the rim, shaded by its own bowl normal, a crescent drystone wall 0.7 m thick on
  *              its north-east (the trade wind's) side, and at its foot a vine (green in 85 % of pits, dormant in the
  *              rest). One cell per pixel, no neighbour search: every pit and its wall stay inside their cell
@@ -214,7 +214,10 @@ const HOLDS_TERM = /* glsl */ `
     }
     vec3 hc = pow(la.rgb, vec3(2.2));
     // black: the shingle's pale and rusty stones pulled down toward the cinder (a 1 + 6 L compression), a little warm
-    hc *= vec3(1.22, 1.13, 1.04) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
+    /* (F33 at 2253f73: the Rise's crown in sun read L* 22-31 against HG4's 12-22) about 0.017 linear */
+    hc *= vec3(0.74, 0.68, 0.63) / (1.0 + 6.0 * dot(hc, vec3(0.2126, 0.7152, 0.0722)));
+    // a steep cinder face is coarser and shadowed in its own scree
+    hc *= 1.0 - 0.25 * smoothstep(0.7, 1.4, slope);
     // broad fields: some cinder oxidised red-brown, some ashen
     vec4 nF = gNoiseT(xz * 0.0047 + 0.83);
     float ox = smoothstep(0.58, 0.8, nF.r * 0.7 + nMac.a * 0.3), ashF = smoothstep(0.6, 0.82, nF.b);
@@ -226,21 +229,26 @@ const HOLDS_TERM = /* glsl */ `
     /* -- drifts: dust on the lee of every rise (the trade wind blows toward the south-west: engine (-0.71, 0.71)) -- */
     float lee = clamp(dot(wn.xz, vec2(-0.7071, 0.7071)) * 3.0, -0.6, 1.0);
     vec4 nD = gNoiseT(xz * 0.0213 + 0.31);
-    float drift = smoothstep(0.63, 0.86, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.1 * lee) * (1.0 - smoothstep(0.35, 0.75, slope));
-    vec3 dustC = vec3(0.098, 0.082, 0.061) * (0.86 + 0.28 * nD.g);
+    float drift = smoothstep(0.66, 0.9, nD.r * 0.55 + gNoiseT(xz * 0.0071 + 0.67).b * 0.45 + 0.08 * lee) * (1.0 - smoothstep(0.3, 0.6, slope));
+    vec3 dustC = vec3(0.072, 0.06, 0.045) * (0.86 + 0.28 * nD.g);
     hc = mix(hc, dustC, drift * 0.6);
     hp *= 1.0 - 0.65 * drift;
     hR = mix(hR, 0.97, drift);
 
     /* -- the pit-cups ------------------------------------------------------------- */
-    float pitK = vGround.y * (1.0 - smoothstep(0.32, 0.5, slope));
+    float pitK = vGround.y * (1.0 - smoothstep(0.42, 0.6, slope));
     if (pitK > 0.01) {
       mat2 PM = mat2(0.9397, 0.342, -0.342, 0.9397);
       vec2 pq = PM * xz * 0.125;
       float prow = floor(pq.y);
       pq.x += 0.5 * mod(prow, 2.0);
-      vec2 pc = floor(pq), ph = gHash2(pc + 17.0);
-      float ph3 = fract(sin(dot(pc, vec2(12.9898, 78.233))) * 43758.5453);
+      // an integer hash, so holds/flora.js finds the same pits in JS (holds/pits.js pitHash): bits 0-9, 10-19, 20-29
+      vec2 pc = floor(pq);
+      uvec2 pu = uvec2(ivec2(pc) + 4096);
+      uint phh = (pu.x * 73856093u) ^ (pu.y * 19349663u);
+      phh ^= phh >> 13u; phh *= 1274126177u; phh ^= phh >> 16u;
+      vec2 ph = vec2(float(phh & 1023u), float((phh >> 10u) & 1023u)) / 1023.0;
+      float ph3 = float((phh >> 20u) & 1023u) / 1023.0;
       vec2 pf = (fract(pq) - 0.5 - (ph - 0.5) * 0.12) * 8.0;     // m from the pit's centre, in the turned frame
       vec2 po = pf * PM;                                          // the same, in the world
       float R = 1.9 + 0.7 * ph3, d = length(po);
@@ -270,7 +278,7 @@ const HOLDS_TERM = /* glsl */ `
           float bh = fract(sin(dot(bc + pc * 7.0, vec2(41.3, 289.1))) * 9137.7);
           vec2 bf = fract(vec2(ang, ring + floor(ang) * 0.5));
           float joint = (1.0 - smoothstep(0.0, 0.12, min(min(bf.x, 1.0 - bf.x), min(bf.y, 1.0 - bf.y)))) * (1.0 - smoothstep(0.08, 0.2, px));
-          vec3 stoneC = vec3(0.15, 0.136, 0.118) * (0.7 + 0.6 * bh) * (1.0 - 0.5 * joint);
+          vec3 stoneC = vec3(0.11, 0.1, 0.087) * (0.7 + 0.6 * bh) * (1.0 - 0.5 * joint);
           hc = mix(hc, stoneC, wall);
           // its faces: outward on the outer half, inward on the inner, its top flat
           float fo = clamp((d - wm) / (w1 - wm), -1.0, 1.0);
@@ -300,7 +308,7 @@ const HOLDS_TERM = /* glsl */ `
       vec2 sd = ${SCAR_DIR};
       float across = dot(xz, vec2(-sd.y, sd.x)), along = dot(xz, sd);
       vec4 nS = gNoiseT(vec2(across * 0.13, along * 0.004) + 0.21);
-      vec3 sub = vec3(0.19, 0.163, 0.128) * (0.84 + 0.32 * nS.r);   // the pale subsoil the blade cut down to
+      vec3 sub = vec3(0.135, 0.117, 0.092) * (0.84 + 0.32 * nS.r);   // the pale subsoil the blade cut down to
       if (scS > 0.0) {
         // the blade's grooves along the line, 0.6-1.3 m apart, fading past 90 m
         float gv = across * 1.15 + nS.g * 1.6;
@@ -375,9 +383,10 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   vec4 nMac = gNoiseT(xz * 0.0039);                 // cells 32, 16, 8, 4 m
   float macA = nMac.r * 0.6 + nMac.b * 0.4;
   /* M2 wave 2: the Holds. On their gentle ground the layer stack is skipped (HOLDS_TERM draws all of it); their steep
-   * faces (over 44 deg) keep the rock layer and blend into the lapilli over slope 0.95-1.4 */
+   * faces (over 52 deg) keep the rock layer and blend into the lapilli over slope 1.3-1.9 (its banded triplanar basalt,
+   * untinted, drew wood grain over the Rise in F33 at 2253f73) */
   float hold = vGround.x;
-  float hk = hold * (1.0 - smoothstep(0.95, 1.4, slope));
+  float hk = hold * (1.0 - smoothstep(1.3, 1.9, slope));
   bool hSkip = hk > 0.985;
 
   /* -- the five weights, then the three that survive ----------------------- */
@@ -767,7 +776,7 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
 
   /* -- rills: every real slope is scored down its fall line (gullies on the ring, wash on the
    *    knolls); from 300 m a smooth tinted hill is what reads as CG, a scored one does not -- */
-  float rillK = smoothstep(0.16, 0.55, slope) * (1.0 - wSalt);
+  float rillK = smoothstep(0.16, 0.55, slope) * (1.0 - wSalt) * (1.0 - 0.55 * hk);
   #ifdef CAL_P_NORILL
   rillK = 0.0;
   #endif

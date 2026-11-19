@@ -10,6 +10,7 @@ import {
 import { GROUND_AO } from './terrain.js';
 import { Props } from './props.js';
 import { Meadow } from './island/meadow.js';
+import { HoldsFlora } from './holds/flora.js';
 
 /**
  * THE PANS' FLORA AND LOOSE STONE (world-ground W1; bible §8.3, §9.6, plan §4.1).
@@ -476,6 +477,8 @@ export class Vegetation {
     const t0 = performance.now();
     this._buildFlora();
     this._buildStatic();
+    /* M2 wave 2 (area A): the Holds' plants, their own group and draws (holds/flora.js) */
+    this.holdsFlora = new HoldsFlora(this);
     if (ctx.environment && !ctx.environment.water) ctx.environment.water = ctx.water;
     /* The world's props (world-props). Built after the scatter: their keepouts thin it. */
     this.props = new Props(ctx);
@@ -1123,6 +1126,8 @@ export class Vegetation {
   }
 
   dispose() {
+    this.holdsFlora?.dispose();
+    this.holdsFlora = null;
     this.meadow?.dispose();
     this.meadow = null;
     this.props?.dispose?.();
