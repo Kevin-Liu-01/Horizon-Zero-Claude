@@ -23,10 +23,21 @@ import { fill } from '../strings.js';
  * · checkpoint(reason) · spawn(what) · reward(REWARD) · triangle(id) · sighting(id, card) · done()
  */
 export class QuestSpine {
-  constructor({ strings, hooks = {}, stages = STAGES }) {
+  /**
+   * Milestone 2: one spine per quest. "Raker's Morning" is the default (plan.js); "The Scar" and "True Ground" hand in
+   * their own `id`, `stages`, `reward` and strings (src/game/quest/scar-plan.js, makeQuestStrings). `failSoft` is a
+   * quest's one branch: { event, where, from: [stage ids], continuesTo } (HR2: the Screed cuts the third wall and the
+   * quest goes on from 'seal-2'). `closingCard` is the tutorial card the reward raises (the BRAZIER card, the slice's).
+   */
+  constructor({ strings, hooks = {}, stages = STAGES, id = QUEST_ID, reward = REWARD, triangles = TRIANGLES, failSoft = null, closingCard = 'brazier' }) {
     this.S = strings;
     this.hooks = hooks;
     this.stages = stages;
+    this.qid = id;
+    this.reward = reward;
+    this.triangleSets = triangles;
+    this.failSoft = failSoft;
+    this.closingCard = closingCard;
     this.byId = new Map(stages.map((s) => [s.id, s]));
     for (const s of stages) {
       if (!strings.stage(s.id)) throw new Error(`stage ${s.id} has no text`);
@@ -34,7 +45,7 @@ export class QuestSpine {
     this.reset();
   }
 
-  get id() { return QUEST_ID; }
+  get id() { return this.qid; }
 
   reset() {
     this.started = false;
@@ -54,6 +65,7 @@ export class QuestSpine {
     this.surveyT = {};
     this.log = [];
     this.order = [];
+    this.branch = null;
   }
 
   /* ------------------------------------------------------------ flow */
@@ -134,7 +146,7 @@ export class QuestSpine {
     if (s.after) this.timers.push({ at: this.t + s.after.delay, turn: s.after.turn, stage: s.id });
     if (s.triangle && !this.triangles.has(s.triangle)) {
       this.triangles.add(s.triangle);
-      this._hook('triangle', s.triangle, TRIANGLES[s.triangle]);
+      this._hook('triangle', s.triangle, this.triangleSets?.[s.triangle]);
     }
     // the stage that ran alongside closes with its count (an optional one never blocks)
     if (s.with) {
@@ -159,10 +171,10 @@ export class QuestSpine {
     const closing = this.S.quest.closing;
     if (!this.rewarded) {
       this.rewarded = true;
-      this._hook('reward', REWARD, closing.reward);
+      if (this.reward) this._hook('reward', this.reward, closing.reward);
     }
-    this._log('end', closing.logEnd);
-    this._card('brazier');
+    this._log('end', this.branch && closing.logEndBranch ? closing.logEndBranch : closing.logEnd);
+    if (this.closingCard) this._card(this.closingCard);
     this._note();
     this._hook('checkpoint', 'quest:done');
     this._hook('done');
@@ -221,8 +233,15 @@ export class QuestSpine {
       if (this.current()?.id === 'topple') this._turn('vial-hit');
       return;
     }
+    if (this.failSoft && type === this.failSoft.event && matches(this.failSoft.where, e) && this._failSoft()) return;
     for (const s of act) {
       const rec = this.st[s.id];
+      // Milestone 2 objective types (src/game/quest/scar-plan.js): each completes on its one event
+      if (s.type === 'event') { if (type === s.event && matches(s.where, e)) this._complete(s); continue; }
+      if (s.type === 'hold' && type === 'bearing-taken' && e.benchmark === s.benchmark) { rec.n = Math.min(s.bearings ?? 3, e.n | 0); this._note(); continue; }
+      if (s.type === 'hold') { if (type === 'resurvey-done' && e.benchmark === s.benchmark) { rec.n = (e.bearings || []).length; this._complete(s); } continue; }
+      if (s.type === 'rest') { if (type === 'rested' && e.brazier === s.brazier) this._complete(s); continue; }
+      if (s.type === 'read') { if (type === 'sighted' && e.card === s.card) this._complete(s); continue; }
       if (s.type === 'talk' && type === 'scene-done' && e.scene === s.scene && e.exit !== false) this._complete(s);
       else if (s.type === 'gather') {
         const hit = (s.source && type === 'gathered' && e.source === s.source)
@@ -245,6 +264,27 @@ export class QuestSpine {
     }
   }
 
+  /**
+   * The quest's one branch (HR2's fail-soft): while a stage it covers runs, its event skips the stages between and
+   * enters `continuesTo`, quietly (each skipped stage is 'cut'; the log keeps the branch's own line). Once only.
+   */
+  _failSoft() {
+    const F = this.failSoft, cur = this.current();
+    if (this.branch || !cur || !(F.from || []).includes(cur.id)) return false;
+    this.branch = F.event;
+    for (const id of F.from) {
+      if (id === F.continuesTo) break;
+      const rec = this.st[id];
+      if (rec && (rec.state === 'active' || rec.state === 'pending')) { rec.state = 'cut'; rec.t1 = this.t; }
+    }
+    const text = this.S.stage(cur.id);
+    if (text?.logBranch) this._log(cur.id, text.logBranch);
+    if (F.turn) this._turn(F.turn);
+    const i = this.stages.findIndex((s) => s.id === F.continuesTo);
+    if (i >= 0 && this.st[F.continuesTo].state === 'pending') this._enter(i);
+    return true;
+  }
+
   /** The player spoke to `npc`. Returns the scene to play, or null when the quest has nothing to say. */
   talk(npc) {
     const s = this.current();
@@ -260,7 +300,7 @@ export class QuestSpine {
     const s = this.current();
     if (!s) return '';
     const rec = this.st[s.id];
-    const count = s.type === 'survey' ? s.pillars.length : s.count;
+    const count = s.type === 'survey' ? s.pillars.length : s.type === 'hold' ? s.bearings : s.count;
     return fill(this.S.stage(s.id).note, { n: rec.n, of: count });
   }
 
@@ -270,7 +310,7 @@ export class QuestSpine {
       const s0 = this.stages.find((s) => !s.optional);
       const count = s0?.type === 'survey' ? s0.pillars.length : s0?.count;
       return {
-        id: QUEST_ID, status: 'active', title: this.S.quest.title, armed: true,
+        id: this.qid, status: 'active', title: this.S.quest.title, armed: true,
         current: { id: s0?.id ?? 'start', type: s0?.type ?? 'goto', label: s0 ? fill(this.S.stage(s0.id).note, { n: 0, of: count }) : '', have: 0, need: 1 },
         progress: 0,
       };
@@ -278,7 +318,7 @@ export class QuestSpine {
     if (!this.started) return null;
     const s = this.current();
     return {
-      id: QUEST_ID,
+      id: this.qid,
       status: 'active',   // the note stays up after the reward to say what the reward opened
       title: this.S.quest.title,
       current: { id: s?.id ?? 'end', type: s?.type ?? 'end', label: this.noteText(), have: 0, need: 1 },
@@ -288,7 +328,7 @@ export class QuestSpine {
 
   report() {
     return {
-      quest: QUEST_ID,
+      quest: this.qid,
       started: this.started,
       done: this.done,
       current: this.current()?.id ?? (this.done ? 'reward' : null),
@@ -299,13 +339,14 @@ export class QuestSpine {
       flaggedCrossing: !!this.st.cross?.flagged,
       seenCrossing: !!this.st.cross?.seen,
       triangles: [...this.triangles],
+      branch: this.branch,
       t: +this.t.toFixed(2),
     };
   }
 
   serialize() {
     return {
-      v: 1, id: QUEST_ID, started: this.started, done: this.done, rewarded: this.rewarded, idx: this.idx,
+      v: 1, id: this.qid, started: this.started, done: this.done, rewarded: this.rewarded, idx: this.idx,
       t: +this.t.toFixed(2),
       stages: Object.fromEntries(Object.entries(this.st).map(([k, v]) => [k, [v.state, v.n, v.flagged ? 1 : 0, v.seen ? 1 : 0]])),
       surveyed: [...this.surveyed],
@@ -313,13 +354,14 @@ export class QuestSpine {
       triangles: [...this.triangles],
       order: this.order.slice(),
       log: this.log.slice(),
+      ...(this.branch ? { branch: this.branch } : {}),
     };
   }
 
   /** Restore without replaying anything: no card, turn or scene fires for what is already seen. */
   restore(d) {
     this.reset();
-    if (!d || d.id !== QUEST_ID) return false;
+    if (!d || d.id !== this.qid) return false;
     this.started = !!d.started;
     this.done = !!d.done;
     this.rewarded = !!d.rewarded;
@@ -337,12 +379,13 @@ export class QuestSpine {
     for (const t of (d.triangles || [])) this.triangles.add(t);
     this.order = Array.isArray(d.order) ? d.order.slice() : [];
     this.log = Array.isArray(d.log) ? d.log.slice() : [];
+    this.branch = d.branch ?? null;
     // an older record may hold a finished stage as current (written before the next was entered): step on to the
     // first unfinished one and make it active, quietly (its cards, turns and scenes are not replayed; its spawn is
     // the runtime's, restoreQuest)
     if (this.started && !this.done) {
       let i = this.idx;
-      while (this.stages[i] && (this.stages[i].optional || ['done', 'skipped'].includes(this.st[this.stages[i].id].state))) i++;
+      while (this.stages[i] && (this.stages[i].optional || ['done', 'skipped', 'cut'].includes(this.st[this.stages[i].id].state))) i++;
       this.idx = i;
       const cur = this.stages[i];
       if (!cur) { this.done = true; this.idx = this.stages.length; }
@@ -389,4 +432,16 @@ export class QuestSpine {
     this.seen.scenes.add(id);
     this._hook('scene', id, scene);
   }
+}
+
+/** A stage's `where` against an event's payload: every key equal (a wall's id may come as 3 or 'wall-3'). */
+export function matches(where, e = {}) {
+  if (!where) return true;
+  for (const k of Object.keys(where)) {
+    const want = where[k], got = e?.[k];
+    if (want === got) continue;
+    if (k === 'wall' && String(got).replace(/^wall-/, '') === String(want).replace(/^wall-/, '')) continue;
+    return false;
+  }
+  return true;
 }

@@ -8,6 +8,7 @@ import { installReeds } from './reeds/index.js';
 import { SiteClock } from './sites/clock.js';
 import { SiteRefill, HourMeter } from './sites/refill.js';
 import { saveFieldsOf } from './save/fields.js';
+import { FirstHour } from './hour.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
 import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
@@ -71,6 +72,8 @@ export class SystemsGame {
     this._entries();
     this._listen();
     this._hookProgression();
+    // Milestone 2: "The Scar" and "True Ground", chained after this quest's reward (./hour.js)
+    this.hour = new FirstHour(this);
   }
 
   /* ----------------------------------------------------------- places */
@@ -186,7 +189,8 @@ export class SystemsGame {
         return { x: c.position.x, y: c.position.y, z: c.position.z, dx: v.x, dy: v.y, dz: v.z, fov: c.fov, aspect: c.aspect, far: c.far };
       },
       groundAt: (x, z) => ctx.terrain?.getHeight?.(x, z) ?? 0,
-      datum: () => ctx.datum ?? null,
+      // (Milestone 2) the regions made true by a re-survey stand in for world-ground's datum service until it exists
+      datum: () => ctx.datum ?? this.hour?.trueGround?.datum?.() ?? null,
       questStages: () => (this.spine?.activeStages?.() ?? []).map((st) => ({ quest: QUEST_ID, id: st.id, type: st.type, kind: st.kind ?? null })),
       emit: (n, e) => ctx.events?.emit?.(n, e),
     }, this.siteClock);
@@ -214,17 +218,22 @@ export class SystemsGame {
       reward: (r, words) => this._reward(r, words),
       triangle: (id, pillars) => ctx.events?.emit?.('triangle-closed', { id, pillars }),
       sighting: (id) => { this.sightingCard = id; },
-      done: () => ctx.events?.emit?.('quest-complete', { questId: QUEST_ID }),
+      done: () => {
+        ctx.events?.emit?.('quest-complete', { questId: QUEST_ID });
+        // Milestone 2: the reward opens "The Scar" (./hour.js)
+        this.hour?.startScar();
+      },
     };
   }
 
   /** Scenes queue: one lower-third at a time (a stage's end scene and the next stage's start scene can coincide). */
-  _playScene(id, scene) {
+  _playScene(id, scene, spine = this.spine, S = this.S) {
     this._sceneChain = (this._sceneChain || Promise.resolve()).then(async () => {
       this.sceneOpen = id;
-      const res = await this.present.scene(scene, this.S.speakers, { next: this.S.systems.dialogue.next });
+      const res = await this.present.scene(scene, S.speakers, { next: this.S.systems.dialogue.next });
       this.sceneOpen = null;
-      this.spine.notify('scene-done', { scene: id, exit: res?.exit !== false });
+      spine.notify('scene-done', { scene: id, exit: res?.exit !== false });
+      if (spine !== this.spine) this.hour?.sceneDone(id, spine);
     }).catch(() => { this.sceneOpen = null; });
     return this._sceneChain;
   }
@@ -292,6 +301,7 @@ export class SystemsGame {
 
   talk(npc) {
     if (this.present.busy) return;
+    if (npc === 'oro') { this.hour?.talk('oro'); return; }
     this.spine.talk(npc);
   }
 
@@ -416,6 +426,7 @@ export class SystemsGame {
     this.rung = 'starter';
     this.wear('starter');
     this.braziers.newGame(7);
+    this.hour?.newGame();
     this.spine.start();
     if (ctx.progression) ctx.progression.tracked = QUEST_ID;
     this._writeNamed('new-game');
@@ -446,6 +457,8 @@ export class SystemsGame {
     for (const t of (triangles || [])) this.spine.triangles.add(t);
     if (this.ctx.progression) this.ctx.progression.tracked = this.spine.started ? QUEST_ID : this.ctx.progression.tracked;
     this._syncEntries();
+    // Milestone 2: the rest of the hour after the record's own quest (a slice save carries forward into "The Scar", Q5)
+    this.hour?.afterRestore();
   }
 
   /* --------------------------------------------------------- the frame */
@@ -520,6 +533,7 @@ export class SystemsGame {
     // Ansel and Mise stand at their anchors once a run has started (never in a ?shot film: F20/F21 stage their own)
     if (this._peopleT > 2 && this.spine.started) this._stagePeople();
     if (this.ctx.state === 'playing') this.spine.update(dt, this.world);
+    this.hour?.update(dt);
     // while the quest runs its own cards (src/game/text/cards) are the only tutorial cards: hud.js reads this flag
     // and holds the bible-table cards it raises by itself (tips.js), which ran alongside them in round 1
     if (this.ctx.hud) this.ctx.hud.questCards = !!this.spine.started;
@@ -537,11 +551,12 @@ export class SystemsGame {
   }
 
   report() {
-    return { ...this.spine.report(), rung: this.rung, braziers: this.braziers.serialize(), stats: this.braziers.stats, log: this.events.slice() };
+    return { ...this.spine.report(), rung: this.rung, braziers: this.braziers.serialize(), stats: this.braziers.stats, log: this.events.slice(), hour: this.hour?.report?.() ?? null };
   }
 
   dispose() {
     for (const e of Object.values(this.entry || {})) this.ctx.interactables?.unregister?.(e);
+    this.hour?.dispose();
     this.braziers.dispose();
     this.present.dispose();
   }

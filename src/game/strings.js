@@ -36,15 +36,19 @@ export function fill(template, vars = {}) {
   });
 }
 
-/** Index the writing so code asks for a line by id, never by text. */
+/**
+ * Index the writing so code asks for a line by id, never by text. `text.quest` is the quest this view speaks for
+ * ("Raker's Morning" by default); `text.extraCards` / `text.extraSighting` are W2's tutorial and Sighting cards, which
+ * every quest's view can show (a card id is unique across the sets).
+ */
 export function makeStrings(text) {
   const quest = text.quest;
   const stages = new Map(quest.stages.map((s) => [s.id, s]));
-  const scenes = new Map(quest.scenes.map((s) => [s.id, s]));
+  const scenes = new Map((quest.scenes || []).map((s) => [s.id, s]));
   const turns = new Map();
   for (const c of quest.breaAlone.cards) if (!turns.has(c.on)) turns.set(c.on, c);
-  const cards = new Map(text.tutorial.cards.map((c) => [c.id, c]));
-  const sightings = new Map(text.sighting.cards.map((c) => [c.id, c]));
+  const cards = new Map([...text.tutorial.cards, ...(text.extraCards || [])].map((c) => [c.id, c]));
+  const sightings = new Map([...text.sighting.cards, ...(text.extraSighting || [])].map((c) => [c.id, c]));
   return {
     text,
     quest,
@@ -57,4 +61,12 @@ export function makeStrings(text) {
     sighting: (id) => sightings.get(id) ?? null,
     hasTurn: (on) => turns.has(on),
   };
+}
+
+/**
+ * Milestone 2: a view of the writing for one more quest (W2: "The Scar", "True Ground"), sharing W1's speakers,
+ * systems strings and cards with W2's own tutorial and Sighting cards.
+ */
+export function makeQuestStrings(text, quest, w2 = {}) {
+  return makeStrings({ ...text, quest, extraCards: w2.tutorial?.cards || [], extraSighting: w2.sighting?.cards || [] });
 }

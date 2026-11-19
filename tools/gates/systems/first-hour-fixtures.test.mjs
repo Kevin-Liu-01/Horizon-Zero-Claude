@@ -37,6 +37,11 @@ test('leg 3 starts after the fight: Oro\'s kit owned exactly, the line on four w
   assert.equal(r.kind, 'checkpoint');
   assert.equal(r.reason, 'seal-2');
   assert.deepEqual(r.areas.kit.given, ORO_KIT.map(([id, n]) => [id, n]));
-  assert.equal(r.areas.walls.painted.length, 4);
+  assert.deepEqual(Object.entries(r.areas.walls).filter(([, w]) => w.painted).map(([id]) => id), ['wall-1', 'wall-2', 'wall-3', 'wall-4']);
   assert.equal(map.regionAt(r.position.x, r.position.z), 'holds');
+  // wave 3: real spine records, "The Scar" done through 'seal-2' and "True Ground" waiting at 'scar'
+  assert.equal(r.areas.quests['the-scar'].done, true);
+  assert.deepEqual(r.areas.quests['the-scar'].order.map((o) => o.id), ['walk', 'herd', 'plumb-2', 'barbed', 'oro', 'stall', 'seal-1', 'seal-2']);
+  assert.equal(r.areas.quests['true-ground'].started, true);
+  assert.equal(r.areas.quests['true-ground'].idx, 0);
 });

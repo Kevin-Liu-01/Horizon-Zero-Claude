@@ -951,6 +951,8 @@ export class Progression {
   state(id) {
     const spine = this.ctx.spine;
     if (spine && id === spine.id) return spine.hudState();
+    // (systems, Milestone 2, the smallest change) "The Scar" and "True Ground" are spines too (src/game/hour.js ctx.quests)
+    if (id && this.ctx.quests?.[id]?.hudState) return this.ctx.quests[id].hudState();
     const def = QUESTS.find((q) => q.id === id);
     if (!def) return null;
     const st = this.questState.get(id);

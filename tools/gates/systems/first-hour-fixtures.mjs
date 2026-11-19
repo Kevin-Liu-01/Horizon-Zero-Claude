@@ -9,14 +9,17 @@
  *                09:24 (the 72296aa slice run's save-continue read: hour 9.399, x -262.6, z 217.6), no `areas` (a slice
  *                save: every Milestone 2 field fresh, Q5)
  *   fixture(3)   after the Screed fight (a silent checkpoint, 'seal-2'): at Ninewalls' south gate at 11:00, Oro's kit
- *                owned, the line on walls 1-4, the Holds untrue; "The Scar" is recorded as done through 'seal-2'
+ *                owned, the line on walls 1-4, the Holds untrue; "The Scar" a real spine record walked to its end and
+ *                "True Ground" begun at 'scar' (the record the 'seal-2' checkpoint writes: the stage after is entered first)
+ * Wave 3: the slice's end carries the makings of one batch of Barbed arrows (cane x2, a feather, obsidian x2: combat's
+ * 'hardpoint' recipe), which a Peg crossing leaves her with; leg 2's 'barbed' beat quick-makes them.
  */
 import { QuestSpine } from '../../../src/game/quest/spine.js';
 import { makeRecord } from '../../../src/game/save/format.js';
-import { SCAR_STAGES, SCAR_ID, ORO_KIT } from '../../../src/game/quest/scar-plan.js';
+import { SCAR_STAGES, SCAR_ID, ORO_KIT, TRUE_GROUND_ID, TRUE_GROUND_STAGES, SCAR_REWARD, TRUE_GROUND_REWARD, FAIL_SOFT } from '../../../src/game/quest/scar-plan.js';
 import { CISTERN, siteById } from '../../../src/world/island/sites.js';
 import { heightAt } from '../../../src/world/island/recipe.js';
-import { strings } from './lib.mjs';
+import { strings, questStrings } from './lib.mjs';
 
 const RUN = [
   { at: 'pans' },
@@ -51,13 +54,33 @@ export function sliceDone() {
   return spine.serialize();
 }
 
+/** "The Scar" walked to its end on its own events, and "True Ground" begun: their serialize() as the save seam carries them. */
+export function scarDone() {
+  const mk = (id, stages, reward, extra = {}) => new QuestSpine({ strings: questStrings(id), id, stages, reward, triangles: {}, closingCard: null, ...extra });
+  const tg = mk(TRUE_GROUND_ID, TRUE_GROUND_STAGES, TRUE_GROUND_REWARD);
+  const scar = new QuestSpine({ strings: questStrings(SCAR_ID), id: SCAR_ID, stages: SCAR_STAGES, reward: SCAR_REWARD, triangles: {}, closingCard: null, failSoft: FAIL_SOFT,
+    hooks: { done: () => tg.start() } }).start();
+  const probe = { near: () => false, aim: () => false, bearing: () => 0 };
+  for (const [ev, e] of [['region-enter', { region: 'holds' }], ['herd-lee', { inShadow: true }], ['plumb-topple', { kind: 'plumb' }],
+    ['ammo-crafted', { ammo: 'hardpoint', n: 6 }], ['talk', 'oro'], ['scene-done', { scene: 'hand-over', exit: true }],
+    ['screed-stalled', {}], ['seal-off', { seal: 'sealL' }], ['seal-off', { seal: 'sealR' }]]) {
+    if (ev === 'talk') scar.talk(e); else scar.notify(ev, e);
+    scar.update(0.1, probe);
+  }
+  if (!scar.done || !tg.started) throw new Error(`fixture: "The Scar" stopped at ${scar.current()?.id}`);
+  return { [SCAR_ID]: scar.serialize(), [TRUE_GROUND_ID]: tg.serialize() };
+}
+
+/** The nine walls as the walls seam saves them (ninewalls-layout.js wallsSave: { [id]: { state, painted } }). */
+const WALLS_LINE_ON_1_4 = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`wall-${i + 1}`, { state: 'whole', painted: i < 4 }]));
+
 const CISTERN_REST = { id: 'cistern', x: CISTERN.x + 0.6, y: 2.1, z: CISTERN.z - 0.7, yaw: 2.36, hour: 7 };
 
 function sliceEnd() {
   return {
     hour: 9.399, weather: 'trade', place: 'SALTROW',
     quest: sliceDone(),
-    satchel: { 'metal-shards': 30, 'ridge-wood': 2 },
+    satchel: { 'metal-shards': 30, 'ridge-wood': 2, feather: 1, obsidian: 2 },
     ammo: { hunter: 14, hardpoint: 4 },
     position: { x: -262.647, y: 4.885, z: 217.625, yaw: 0, pitch: 0, heading: 0 },
     vitals: { health: 100, maxHealth: 100, gourd: 2, maxGourd: 2 },
@@ -73,7 +96,6 @@ export function fixture(leg, { savedAt = 1_700_000_000_000 } = {}) {
   if (leg === 3) {
     const nw = siteById('ninewalls');
     const s = sliceEnd();
-    const through = SCAR_STAGES.map((x) => x.id);
     const x = nw.x + 8, z = nw.z + 40;   // the recipe's ground there, so the floor search starts on it
     return makeRecord({
       ...s, hour: 11.0, place: 'NINEWALLS',
@@ -82,9 +104,9 @@ export function fixture(leg, { savedAt = 1_700_000_000_000 } = {}) {
       vitals: { health: 72, maxHealth: 100, gourd: 1, maxGourd: 2 },
       areas: {
         kit: { gaff: true, windwall: true, pots: { brine: 2, cinder: 1 }, given: ORO_KIT.map(([id, n]) => [id, n]) },
-        walls: { cut: [], painted: ['wall-1', 'wall-2', 'wall-3', 'wall-4'] },
-        regions: { holds: { true: false } },
-        quests: { [SCAR_ID]: { done: true, through, at: 'seal-2' } },
+        walls: WALLS_LINE_ON_1_4,
+        regions: {},
+        quests: scarDone(),
       },
     }, { kind: 'checkpoint', reason: 'seal-2', slot: 1, savedAt });
   }

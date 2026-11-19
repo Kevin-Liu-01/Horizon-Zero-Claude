@@ -8,7 +8,22 @@ import tutorial from './text/cards/tutorial.json';
 import sighting from './text/cards/sighting.json';
 import barks from './text/barks/saltrow.json';
 import systems from './text/ui/systems.json';
-import { makeStrings } from './strings.js';
+// W2 (Milestone 2): the rest of the first hour
+import scar from './text/quests/the-scar.json';
+import trueGround from './text/quests/true-ground.json';
+import tutorialW2 from './text/cards/tutorial-w2.json';
+import sightingW2 from './text/cards/sighting-w2.json';
+import barksHolds from './text/barks/holds.json';
+import booksW2 from './text/books/field-books-w2.json';
+import noticesNinewalls from './text/notices/ninewalls.json';
+import { makeStrings, makeQuestStrings } from './strings.js';
 
 export const TEXT = Object.freeze({ index, quest, tutorial, sighting, barks, systems });
-export const STRINGS = makeStrings(TEXT);
+export const STRINGS = makeStrings({ ...TEXT, extraCards: tutorialW2.cards, extraSighting: sightingW2.cards });
+
+/** W2 as plain data, and one strings view per Milestone 2 quest (src/game/quest/scar-plan.js ids). */
+export const TEXT_W2 = Object.freeze({ quests: { 'the-scar': scar, 'true-ground': trueGround }, tutorial: tutorialW2, sighting: sightingW2, barks: barksHolds, books: booksW2, notices: noticesNinewalls });
+export const QUEST_STRINGS = Object.freeze({
+  'the-scar': makeQuestStrings(TEXT, scar, TEXT_W2),
+  'true-ground': makeQuestStrings(TEXT, trueGround, TEXT_W2),
+});

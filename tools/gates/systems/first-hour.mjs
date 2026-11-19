@@ -24,6 +24,11 @@
  * presented frame over 33 and 50 ms: EN1), leg 3 walks from the south gate to Benchmark 1 and raises the Alidade (V).
  * The runner never writes a position or a quest stage; the fixture is written into localStorage before the title
  * boots, as a save on disk is, and CONTINUE is pressed on the title.
+ * WAVE 3: the quests are wired (src/game/hour.js publishes ctx.quests). Leg 2 also drives the herd beat (she walks to the
+ * lee side of the nearest Tiller from the terrace Plumb and keeps to it); leg 3 drives the re-survey by input (onto
+ * B1's pad, V, the look onto each mark's plate as slice-hour's aimPoint steers it, T, held about 5 s each, the last
+ * held until the arc closes) and waits for the line to come off the walls. A beat that fails stops the driving of the
+ * beats after it in that leg (each is still probed and named).
  *
  * Output: <review>/runs/<utc>-<commit>-<label>/report.json (never the repo): per leg its beats, each
  *   { leg, beat, ok, why, hp, t (s since the leg's play began), hour, at {x, z}, region, numbers }
@@ -98,12 +103,15 @@ const beatProbe = (beat, questId, places, card) => {
     case 'herd': {
       n.tillerKind = can('tiller'); n.tillersNearNinewalls = within(live('tiller'), places.ninewalls, 200);
       n.plumbsNearNinewalls = within(live('plumb'), places.ninewalls, 200);
-      if (!n.tillersNearNinewalls) missing.push('no Tiller herd in the Holds (area C places it, wave 3)');
+      n.lee = C.systemsGame?.hour?.lastLee ?? null;
+      if (!n.tillersNearNinewalls) missing.push('no Tiller herd in the Holds');
+      else missing.push('never in a hull\'s shadow from the terrace Plumb\'s lamp (herd-lee)');
       break;
     }
     case 'plumb-2': {
       n.plumbsNearNinewalls = within(live('plumb'), places.ninewalls, 200);
-      if (!n.plumbsNearNinewalls) missing.push('no second Plumb on the terrace above Ninewalls (areas C and E, wave 3)');
+      if (!n.plumbsNearNinewalls) missing.push('no second Plumb on the terrace above Ninewalls');
+      else missing.push('the terrace Plumb not toppled (the runner has no topple driver for it yet: slice-hour.mjs fight() is the one that works)');
       break;
     }
     case 'barbed': {
@@ -115,8 +123,8 @@ const beatProbe = (beat, questId, places, card) => {
     case 'oro': {
       const list = C.people?.list || [];
       n.people = list.length;
-      n.oro = list.some((x) => /oro/i.test(String(x.id ?? x.spec?.id ?? '')));
-      if (!n.oro) missing.push('no Oro in this build (area B, wave 2)');
+      n.oro = list.some((x) => x.archetype === 'oro' || /oro/i.test(String(x.id ?? x.spec?.id ?? '')));
+      if (!n.oro) missing.push('Oro not standing at the tube mouth');
       n.kit = ['gaff', 'windwall', 'brine-pot', 'cinder-pot'].map((id) => [id, C.inventory?.count?.(id) ?? 0]);
       break;
     }
@@ -133,7 +141,9 @@ const beatProbe = (beat, questId, places, card) => {
       n.sighting = !!C.sighting?.on; n.scanTarget = C.sighting?.scanTarget?.kind ?? C.sighting?.scanTarget?.id ?? null;
       n.toB1 = +Math.hypot(P.x - places.b1.x, P.z - places.b1.z).toFixed(1);
       n.resurveyUi = !!document.querySelector('.cal-resurvey, #cal-resurvey');
-      if (!n.resurveyUi) missing.push('no re-survey (the 15 s hold, three bearings: systems and ui, wave 3)');
+      n.resurvey = C.systemsGame?.hour?.resurvey?.report?.() ?? null;
+      if (!n.resurveyUi) missing.push('no re-survey overlay');
+      else if (!n.resurvey?.done) missing.push(`the re-survey did not close (arc ${n.resurvey?.arc ?? '?'} s, ${n.resurvey?.taken ?? 0} of 3 bearings)`);
       break;
     }
     case 'fade': {
@@ -172,10 +182,10 @@ const where = () => { const C = window.__CTX__, p = C.player; return { state: C.
 
 /* ------------------------------------------------------------------ driving */
 
-async function walkTo(page, target, radius, maxS) {
+async function walkTo(page, target, radius, maxS, { sprint = true } = {}) {
   const t0 = Date.now();
   let best = Infinity, bestAt = Date.now(), hops = 0;
-  await page.keyboard.down('KeyW'); await page.keyboard.down('ShiftLeft');
+  await page.keyboard.down('KeyW'); if (sprint) await page.keyboard.down('ShiftLeft');
   try {
     for (;;) {
       const s = await page.evaluate(where);
@@ -189,7 +199,7 @@ async function walkTo(page, target, radius, maxS) {
       await page.evaluate(face, target.x, target.z);
       await sleep(120);
     }
-  } finally { await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW'); }
+  } finally { if (sprint) await page.keyboard.up('ShiftLeft'); await page.keyboard.up('KeyW'); }
 }
 
 /** Along the game's own nav grid (ctx.nav.path), a waypoint every ~8 m, as slice-hour walks a long leg. */
@@ -265,6 +275,118 @@ function installHitch() {
   requestAnimationFrame(tick);
 }
 
+const qidOf = (leg) => (leg === 2 ? SCAR_ID : TRUE_GROUND_ID);
+
+async function waitReached(page, qid, beat, ms) {
+  const t0 = Date.now();
+  for (;;) {
+    const ok = await page.evaluate((q, b) => !!window.__CTX__.quests?.[q]?.report?.().reached?.includes(b), qid, beat);
+    if (ok) return { ok: true, s: +((Date.now() - t0) / 1000).toFixed(1) };
+    if (Date.now() - t0 > ms) return { ok: false, s: +((Date.now() - t0) / 1000).toFixed(1) };
+    await sleep(200);
+  }
+}
+
+/** in-page: steer the look (camYaw / camPitch, what the mouse writes) until the camera's own ray is on (x, y, z). As slice-hour's. */
+async function aimPoint(x, y, z, tolDeg = 0.35) {
+  const C = window.__CTX__, p = C.player, cam = C.camera;
+  const V = cam.position.constructor;
+  const dir = new V(), pos = new V();
+  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const read = () => {
+    cam.getWorldPosition(pos); cam.getWorldDirection(dir);
+    const tx = x - pos.x, ty = y - pos.y, tz = z - pos.z, L = Math.hypot(tx, ty, tz) || 1;
+    const yT = Math.atan2(-tx, -tz), yC = Math.atan2(-dir.x, -dir.z);
+    const pT = Math.asin(ty / L), pC = Math.asin(Math.max(-1, Math.min(1, dir.y)));
+    return { dy: wrap(yT - yC), dp: pT - pC, err: Math.hypot(wrap(yT - yC) * Math.cos(pT), pT - pC) * 180 / Math.PI, L };
+  };
+  let r = read();
+  for (let i = 0; i < 12 && r.err > tolDeg; i++) {
+    p.camYaw += r.dy;
+    p.camPitch -= r.dp;
+    await raf(); await raf();
+    const r2 = read();
+    if (Math.abs(r2.dp) > Math.abs(r.dp) * 1.5 && Math.abs(r.dp) > 0.01) { p.camPitch += 2 * r.dp; await raf(); await raf(); }
+    r = read();
+  }
+  return { err: +r.err.toFixed(2), dist: +r.L.toFixed(1) };
+}
+
+/**
+ * THE HERD BEAT: walk (no sprint) to the lee side of the nearest Tiller from the terrace Plumb, 3 m behind its hull on
+ * the line from the Plumb, and keep to it as it walks, until "The Scar" reaches 'herd' or the time is up.
+ */
+async function driveLee(page, maxS) {
+  const t0 = Date.now(), tries = [];
+  for (;;) {
+    if (await page.evaluate(() => !!window.__CTX__.quests?.['the-scar']?.report?.().reached?.includes('herd'))) return { ok: true, s: +((Date.now() - t0) / 1000).toFixed(1), tries: tries.length, last: tries.at(-1) ?? null };
+    if ((Date.now() - t0) / 1000 > maxS) return { ok: false, why: 'no lee reached in time', s: maxS, tries: tries.length, last: tries.at(-1) ?? null };
+    const pt = await page.evaluate(() => {
+      const C = window.__CTX__, P = C.player.position, H = C.systemsGame?.hour;
+      const live = (k) => (C.machines?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.kind === k);
+      const T = H?.sys?.A?.terrace;
+      const plumb = live('plumb').filter((m) => T && Math.hypot(m.position.x - T.x, m.position.z - T.z) < 40)[0];
+      if (!plumb) return { why: 'no terrace Plumb' };
+      const tl = live('tiller').sort((a, b) => Math.hypot(a.position.x - P.x, a.position.z - P.z) - Math.hypot(b.position.x - P.x, b.position.z - P.z))[0];
+      if (!tl) return { why: 'no Tiller' };
+      const dx = tl.position.x - plumb.position.x, dz = tl.position.z - plumb.position.z, L = Math.hypot(dx, dz) || 1;
+      return { x: tl.position.x + dx / L * 3.2, z: tl.position.z + dz / L * 3.2, d: +Math.hypot(tl.position.x - P.x, tl.position.z - P.z).toFixed(1), lee: H.lastLee };
+    });
+    tries.push(pt);
+    if (!pt.x) { await sleep(500); continue; }
+    if (Math.hypot(pt.x - (await page.evaluate(where)).x, pt.z - (await page.evaluate(where)).z) > 25) await walkPath(page, pt, 4, 30);
+    else await walkTo(page, pt, 1.2, 4, { sprint: false });
+    await sleep(300);
+  }
+}
+
+/**
+ * THE RE-SURVEY BY INPUT: onto Benchmark 1's pad, V (the Alidade), then for each of the three marks the look steered onto
+ * its plate and T pressed, held there ~5 s; the last mark held until the arc closes. Reports the rule's own numbers.
+ */
+async function driveResurvey(page) {
+  const pad = await page.evaluate(() => window.__CTX__.systemsGame?.A?.b1 ?? null);
+  if (!pad) return { ok: false, why: 'no pad' };
+  const onPad = await walkTo(page, pad, 1.0, 20, { sprint: false });
+  await sleep(600);
+  const on = await page.evaluate(() => !!window.__CTX__.sighting?.on);
+  if (!on) { await page.keyboard.press('KeyV'); await sleep(900); }
+  const marks = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.resurvey?.R?.marks || []).map((m) => ({ id: m.id, x: m.x, y: m.y1 - 0.3, z: m.z })));
+  if (!marks.length) return { ok: false, why: 'the re-survey is not armed', onPad };
+  const log = [];
+  const t0 = Date.now();
+  for (let i = 0; i < marks.length; i++) {
+    const m = marks[i];
+    const a = await page.evaluate(aimPoint, m.x, m.y, m.z, 0.3);
+    await sleep(150);
+    await page.keyboard.press('KeyT');
+    await sleep(150);
+    const holdMs = i < marks.length - 1 ? 5200 : 9000;
+    const th = Date.now();
+    while (Date.now() - th < holdMs) {
+      await page.evaluate(aimPoint, m.x, m.y, m.z, 0.5);
+      const r = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
+      if (r.done) break;
+      if (!r.bearings.find((b) => b.id === m.id)) { await page.keyboard.press('KeyT'); }
+      await sleep(250);
+    }
+    const r = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
+    log.push({ mark: m.id, aimErr: a.err, arc: r.arc, taken: r.taken, err: r.err, hp: (await page.evaluate(where)).hp });
+    if (r.done) break;
+  }
+  // hold the last mark until the arc is full (up to 10 s more)
+  const last = marks.at(-1);
+  for (let k = 0; k < 40; k++) {
+    const r = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
+    if (r.done) break;
+    await page.evaluate(aimPoint, last.x, last.y, last.z, 0.5);
+    await sleep(250);
+  }
+  const rep = await page.evaluate(() => window.__CTX__.systemsGame.hour.resurvey.report());
+  return { ok: !!rep.done, onPad, wallS: +((Date.now() - t0) / 1000).toFixed(1), log, report: rep };
+}
+
 /* ------------------------------------------------------------------ one leg in its own launch */
 
 async function boot(page, leg) {
@@ -332,12 +454,13 @@ async function runLeg(leg) {
       dxz: +Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z).toFixed(3), hour: +L.start.hour.toFixed(3) };
     const stages = beatsOf(leg);
     const qid = leg === 2 ? SCAR_ID : TRUE_GROUND_ID;
-    let k = 0;
+    let k = 0, driveOn = true;
     for (const st of stages) {
       if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: st.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const bt0 = T();
       const played = {};
-      if (st.id === 'walk') {
+      if (!driveOn) played.notDriven = 'a beat before it did not pass';
+      else if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
         // (M2 wave 2, area B, the smallest change: the walk in) Ninewalls publishes its road (settlements.ninewalls.road: the
         // west face's switchback, the bible's graded 256 m). She walks to its foot on the nav grid, up it point by point (about
@@ -351,11 +474,14 @@ async function runLeg(leg) {
         played.approachHolds = played.regionEvents.find((e) => e.k === 'approach' && e.region === 'holds')?.t ?? null;
       } else if (st.id === 'scar') {
         played.walk = await walkPath(page, PLACES.b1, 4, 90);
+      } else if (st.id === 'herd') {
+        played.lee = await driveLee(page, 60);
       } else if (st.id === 'survey') {
-        // the Alidade raised on the mark, held 2 s (the 15 s hold is the verb wave 3 builds)
-        await page.keyboard.press('KeyV'); await sleep(2000);
+        played.resurvey = await driveResurvey(page);
         played.alidade = await page.evaluate(() => ({ on: !!window.__CTX__.sighting?.on }));
       } else if (st.id === 'fade') {
+        // the line comes off the walls after the re-survey: wait for the stage (up to 8 s)
+        played.fadeWait = await waitReached(page, qidOf(leg), 'fade', 8000);
         await page.evaluate(async () => {
           try { const W = await import('/src/world/settlements/ninewalls-layout.js'); window.__wallsPainted = (W.WALLS || []).filter((w) => W.wallState?.(w.id)?.painted).length; } catch { window.__wallsPainted = null; }
         });
@@ -366,6 +492,8 @@ async function runLeg(leg) {
       L.beats.push(b);
       log(`leg ${leg} ${st.id}: ${b.ok ? 'PASS' : 'FAIL'} hp ${b.hp} t ${b.t} s ${b.why ? `(${b.why.slice(0, 160)})` : ''}`);
       if (st.id === 'survey' && played.alidade?.on) { await page.keyboard.press('KeyV'); await sleep(400); }
+      // a beat that did not pass stops the leg's driving: the beats after it wait on it (each still probed and named)
+      if (!b.ok && !['rest-noon', 'calima-cross', 'read-transit'].includes(st.id)) driveOn = false;
     }
     L.hitch = await page.evaluate(() => { const H = window.__hitch; return { frames: H.n, maxMs: +H.max.toFixed(1), over33: H.over33, over50: H.over50 }; });
     L.end = { ...(await page.evaluate(where)), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), systemErrors: await page.evaluate(() => (window.__GAME__?.systemErrors || []).map((e) => `${e.key}: ${e.message}`).slice(0, 8)) };
