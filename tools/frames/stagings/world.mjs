@@ -24,11 +24,39 @@
  * @property {number} headroom        metres above the ground of the region in which new content may stand
  */
 
-/** @type {ReadonlyArray<object>} */
-export const FRAMES = Object.freeze([]);
+export const lane = 'world';
+
+/**
+ * Wave 1 (blockout): three lenses for the owner's next page, while the Holds are grey. F33 is the brief's frame (the
+ * Holds from Ninewalls Rise; its look and its masked crops come in wave 2); F33-scar and F33-trig are this area's
+ * blockout lenses (the Scar from Benchmark 1, and the T1 beat's lens from T1's deck toward T2, which is also the
+ * T1 beat's skyline mask). Fixed cameras on the wall clock: nothing in them moves but the wind and the clouds.
+ * @type {ReadonlyArray<object>}
+ */
+export const FRAMES = Object.freeze([
+  {
+    id: 'F33', subject: 'the Holds from Ninewalls Rise, golden (blockout)', in: 'M2', hour: 17.75, weather: 'trade',
+    at: 'trig:T2', bearing: 310, camera: { mode: 'eye', eye: 4.6, pitch: -5, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { written: "wave 1 blockout: from T2's deck, Ninewalls' nine grey walls below on the left, the Plumb's bench on the brow beyond them, the herd's slope falling to the Pans on the left, the barranco beyond it; wave 2: 5-9 terrace tiers and >= 40 pit-cups countable, green on >= a third (HG2)" },
+  },
+  {
+    id: 'F33-scar', subject: 'the Screed Scar from Benchmark 1 (blockout)', in: 'M2', hour: 17.75, weather: 'trade',
+    at: { en: [12, -282] }, bearing: 45, camera: { mode: 'chase', pitch: 3 }, state: { pose: 'idle', hud: false },
+    ref: { written: "wave 1 blockout: Brea on B1's pad on the Scar's planed floor, the floor 25 m wide between its two berms running dead straight up the Holds to the north-east skyline (HG1)" },
+  },
+  {
+    id: 'F33-trig', subject: "the T1 beat's lens: from T1's deck toward T2 (blockout)", in: 'M2', hour: 9, weather: 'trade',
+    at: 'trig:T1', bearing: 71, camera: { mode: 'eye', eye: 4.6, pitch: -2, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { written: "the slice's 0:18 beat at blockout: the Holds rising beyond the Organ Shelf, the Scar's pale line across them and its south-west end at the Shelf's foot, T2 on the Rise; the skyline mask of the T1 beat" },
+  },
+]);
 
 /** @type {Readonly<Record<string, WorldStaging>>} */
 export const STAGINGS = Object.freeze({});
 
-/** @type {ReadonlyArray<MaskTarget>} */
-export const MASKS = Object.freeze([]);
+/**
+ * The frames the Holds' places can appear in (M2 briefs §2 rule 3, HG8). The region and headrooms are
+ * tools/world/skyline-masks.mjs MASK_REGION; the masks are built from each frame's own filmed lens.
+ * @type {ReadonlyArray<MaskTarget>}
+ */
+export const MASKS = Object.freeze(['F02', 'F05', 'F17', 'F24', 'F25', 'F32', 'F33-trig'].map((id) => Object.freeze({ id, headroom: 12 })));
