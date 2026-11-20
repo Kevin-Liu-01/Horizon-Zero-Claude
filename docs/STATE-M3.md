@@ -327,3 +327,166 @@ items are not met.
 6. The Sonde mask's pixel proof (3 frames over their noise).
 7. The Spindle's "T" reading, for the owner.
 8. The region hitch was not re-run after 1c707aa's look changes; F56's terrain cost was 8.05 ms in one pass (bar 6).
+
+## Milestone 3 wave 2b: wave 2's open look and kite items (Nov 20 2026)
+
+Wave 2b of Milestone 3 ran on `r5/m3` from 3077689 (wave 2's head), beside the Milestone 2 exit run. Milestone 2 has
+not exited. The defaults of the M3 brief's open questions and the orchestrator's provisional rulings R1-R9 still
+apply. Three lanes worked in the one tree: A (the Malpais and the Kiln Yards), B (the Survey Kite) and C (the Sonde's
+lamp, R8 wired, the last two seams). Nothing was pushed, and nothing reached `main` or `r5/int`.
+
+The commits: area C 70d7c61, 39069c5, 65e5e65; area A a0ab47e, d6d482e, dde7982, 75f62d6; area B 857a2c7, 9e6c1b4.
+
+The review was taken at **75f62d6** in a clean detached worktree on port 5280. The lance rows were also run at
+3077689, in a second clean worktree, as their base. Chrome was shared with the Milestone 2 exit run, so the review used
+four short sessions, about 16 minutes in all. Every number below names its commit.
+
+**Verdict: NOT CLEAN.** No accepted frame moved, and nothing regressed. These are still open: the Yards' stack steam,
+the aa tile repeat, the steam's cost per source, F56's warm light (a ruling), and KF1's reach to the back mount (a
+ruling).
+
+### Gates at 75f62d6
+
+- **Tier 0: PASS.**
+  - Node checks: 8 of 8, with 425 tests passing and 0 failing in 76 files.
+  - Boot: ready in 4.3 s with 0 errors. Rendered-page name lint: 0.
+  - First load: 55.97 MB of 60. `public/` is 60.95 MB. Texture ledger: 140 MB of 175.
+- **`vite build`: green**, 4.4 MB of code.
+- **Kept rows the wave touches: 3 of 3 pass.** A1, A20b and A-stow-clearance.
+  - A-stow-clearance: sprint leg gap 0.106 m; the roll's mount beside the stowed kit.
+- **Lane page rows outside the kept stack (D3 debt): A100, A101 and A103 fail at 75f62d6 and at 3077689 alike.**
+  Which clause fails moves from run to run on both commits.
+
+  | row | 75f62d6 | 3077689 |
+  |---|---|---|
+  | A100 | stowed lance tilt 34.9-85.0 deg in the dodge | 34.9-88.5 deg |
+  | A101 | left palm 0.052 m off the haft in light-2; guard tip 0.544 m (passes) | guard tip 0.578 m |
+  | A103 | blade 0.633 m short; no tip in the ground uphill | blade 0.516 m short; tip 0.047 m into the ground uphill |
+
+  The kite's code does not run in a melee swing. A103's 0.633 m is the widest reading recorded. Earlier readings:
+  0.507, 0.517, 0.522 and 0.613 m.
+- **Rows the review did not re-run on the page:** A102 and A104-A107. Area B passed them at 9e6c1b4 in a clean tree,
+  and the hero and kite code is the same at 75f62d6: the diff 9e6c1b4..75f62d6 under `src/entities`, `src/hero`,
+  `src/game` and `src/core` is empty. A107 alone takes 1,394 s of Chrome.
+- **The slice: 14 of 14**, stopped at the reward. It used 326 s of Chrome, logged 0 console errors, and its lowest
+  health was 84.
+- **Accepted frames: no change.**
+  - All 16 were filmed at 75f62d6 and compared with wave 2's review film (9d1acc3), outside the computed masks
+    (a45b567).
+  - F08, F11 and F13: 0 px. F14: 98 px. F19: 19 px. F15, F16, F18, F09, F10 and F24: under their same-session
+    repeats.
+  - F02 (7.9 %), F03 (3.6 %), F05 (2.5 %), F20 (17.2 %) and F23-plumb (25.2 %) differ by less than the repeat floors
+    wave 1's film set for them (61, 46, 36, 27 and 50 %). The differences are her cloth, grass and cloud drift.
+  - F02, F03 and F05 stay closer to their references than the 2026-11-14 refilm.
+- **Subject checks:** 30 of 31 frames filmed.
+  - F45 is refused as at wave 2: tower-b 10 % in the safe area, Brea 59 %.
+  - F56, F57 and F58 pass.
+
+### Area A: the Malpais and the Kiln Yards (75f62d6)
+
+- **MP4, steam.**
+  - 11 plumes in 2 instanced draws, carried by the wind seam, lit, and 0 emissive.
+  - In frame: 6 of 11 plumes in F56, and 4 of 4 steaming hornitos in F58. PASS.
+  - **The Yards' stacks: FAIL.** In F57 the probe reads the stack plumes visible and in the frustum, but none shows
+    against the sky. The cause is not found.
+  - **Cost: not met as written.**
+    - All plumes together cost 1.45 ms in F56 (IQR 0.35-1.7), 0.65 ms in F57 and 0.15 ms in F58. That is the
+      paired toggle of the M0.8 readback, 3 pairs.
+    - Spread over 11 sources this averages 0.13 ms. Most of it is the two vents 34-40 m from the lens, and no
+      single source was measured.
+- **MP2, tile repeat** (autocorrelation peak, bar 0.35). The review read these again in Node from area A's top-down
+  captures at 75f62d6.
+  - Pahoehoe 0.196, PASS.
+  - Scree 0.332, PASS.
+  - **aa 0.353, FAIL.** The aa peak and the scree peak both sit at 9.06 m north-south. The cause is not found.
+- **R9, the tube shelter at the hornito field: PASS.**
+  - A 22 m pahoehoe tube, mouth at (306, -198).
+  - At least 1.5 m from every hornito's foot, and 79 m or more from the Holds' ground.
+  - MP9: 0 holes on 8 of 8 walks.
+- **MP6:** the shelter's Brazier, the Peg nest and the salt cache are data and grey markers only. UNMEASURED.
+- **F58, written target:**
+  - 7 of 7 hornitos and 4 of 4 steaming: PASS.
+  - The unlit Brazier and the dormant nest: not built.
+- **F57:**
+  - tower-b is 85.7 % unoccluded.
+  - The fallen tiles lie on the ground.
+  - The dark lost-tile patches are gone.
+- **MP10, from area A's attribution at 75f62d6 in a clean tree:**
+  - Median GPU: F56 11 ms, F57 10.2 ms, F58 10.7 ms.
+  - Draws: 81, 95 and 86.
+  - **Terrain alone in F56: 4.5 ms (IQR 4.25-4.7) against 6, PASS.** At 9d1acc3 it was 5.75-8.05 ms.
+  - F58's terrain reads 6.3 ms (IQR 4.15-6.3). F58 is not in MP10's bar, but it sits on the line.
+  - F56's end-of-run sample reads 17.8 ms, the same pattern as wave 2.
+- **EF1 `A-region-hitch` at 75f62d6** (area A, clean tree): 0 frames over 33 ms.
+  - Jog: 11,485 frames, worst 26.2 ms.
+  - Flight: 8,451 frames, worst 25.0 ms.
+- **MP7, looks against the masked crops** (four points, against wave 2's film):
+  - **F56:** silhouette closer, material closer, light the same, finish the same.
+    - The spire fields stand up from the plain, and Rust Cone's face is down to about 15 % of the frame.
+    - The sea and the warm sunset sky (the bible's Malpais fog) still fill the upper half, and the sun's disc is in
+      the frame.
+    - Rows of yellow rings mark the far plain about 200 m out.
+    - The Malpais ground is 41 % of the frame (51 % at 9d1acc3).
+  - **F57:** silhouette the same, material closer, light the same, finish closer. There is no stack steam.
+  - **F58** (wave 2's frame was refused): silhouette closer, material the same, light the same (the lens faces the
+    sun), finish further. The tube is a faceted blockout arch, and the hornitos are small behind the spires.
+
+### Area B: the Survey Kite (Node at 75f62d6; page at 9e6c1b4, the same code)
+
+- **The rows:** 30 PASS, 0 FAIL, 9 UNMEASURED, 4 RECORDED, 2 RULED (`tools/gates/kite/rows.mjs`).
+  `flight-law.test.mjs`: 29 of 29.
+- **The roll is carried by her hand:**
+  - 0 steps move the roll without a hand on it.
+  - The take pulls the roll at most 0.004 m off its mount.
+- **The fold stays off her face:** 0 kite vertices in the column in front of her face. The nearest is 0.026 m.
+- **KF4, palms on the bar: PASS.** 2,506 hand-steps, the most 0.006 m off (bar 0.010). The kite is now placed from
+  her solved palms.
+- **The law's times:** the open 0.6 s, the fold 0.39 s, the landing 0.55 s, all inside KF4's bars. The largest wrist
+  step is 0.078 m (bar 0.08).
+- **The arm bars, Node:** 0 of 2,360 steps fail on the M1.3f sweep's read.
+- **KF1 as written:** 855 wrist-steps are behind a head plane, all at least 0.301 m under the head. This is the reach
+  to the back mount. **A ruling is owed.**
+- **The arm bars on the page:** 68 clip shots, 0 fails, and the highest elbow is -0.053 m. The review looked at 40 of
+  the 68 shots:
+  - no hand or arm is behind or above her head;
+  - the hand carries the roll round her hip;
+  - at the fold's 0.30 the roll is at her belly.
+- **F52:** a profile, and its subject check passes.
+  - Wrists 0.350 m in front of the head and 0.138-0.141 m under it.
+  - Elbows 0.103-0.105 m under the shoulders.
+- **On the page:**
+  - At the end of the open and the start of the fold, the kite pitches forward. It reads as a flat box about 2 m in
+    front of her.
+  - In the held glide her head bows over a bar at chin height, and her legs stand as if on the ground (the page holds
+    her in the air).
+  - From behind, the furled roll covers the stowed bow.
+
+### Area C (65e5e65; nothing on the page changes at 75f62d6)
+
+- **The Sonde's lamp: PASS.** It is now an upright lantern at the gondola's port bow, dE 0 to its token in calm, wary
+  and hostile in its own view. At 9d1acc3 it read 6.53 dE from calm.
+  - Only the lamp's own box changed in each line-up view.
+  - IK1, IK1-never and IK1-read pass.
+  - The swept volume is unchanged (r 22.43 m).
+- **R8 wired into `src/game/hour2/plan.js`: PASS.**
+  - gauge-tide 60 s, hand-net 40 s, oro-yards 52 s, each keeping its old budget as `wave1S`.
+  - Leg 5 is 290 s (327 with its boot); legs 4+5 are 784 s and legs 5+6 884 s, against 900.
+  - The fishing hut stands at (-341.5, 190.7).
+  - The runner at 65e5e65: 0 of 27 beats pass, as expected while the beats are unbuilt. Each names the first piece
+    it is missing, with 0 console errors.
+- **The seams: PASS.** `SOCKETS.heldNet` (typed, empty) and `src/world/fauna/index.js` (typed, empty).
+  `seams.test.mjs` passes 3 of 3.
+- **Instruments rows at 75f62d6: 12 of 12 PASS**, the same as wave 2.
+
+### Open
+
+1. The Yards' stack steam does not show over the sky in F57.
+2. MP2: aa 0.353 against 0.35, with a 9.06 m peak shared with the scree.
+3. MP4's cost per source, unmeasured. The two near vents carry most of F56's 1.45 ms.
+4. F56's warm light: the Malpais fog tint is the bible's value and a kept gate, so cooling it needs a ruling.
+5. KF1's literal head-plane clause against the reach to the back mount: a ruling.
+6. MP6: the Brazier prop, the Peg nest and the salt cache are not built. The tube reads as blockout.
+7. F45 needs a new lens.
+8. A100, A101 and A103 (D3) fail at 75f62d6 and at its base.
+9. The forward-pitched fold reads as a slab, and the roll covers the stowed bow from behind.
+10. F58's terrain is at 6.3 ms.
