@@ -93,7 +93,15 @@ export class NpcBank {
     const k = (dir > 0 ? 0 : FADE_LEVELS) + level;
     let m = pool[k];
     if (m) return m;
-    m = base.clone();
+    // C5 (engine lane, the smallest change here: the first hour's hitches): cloned with its userData held aside and given
+    // back as a shallow copy. Material.copy deep-copies userData through JSON, and a skin's userData.calSkinU holds the
+    // skin look's DataTextures (src/hero/skinLook.js), whose toJSON writes out their pixels: 161 ms of the first 30 s of
+    // first-hour leg 2 at 865e8c6 went to that (run hh-c5-865e8c6), a frame at a time as people changed tier. Nothing
+    // reads a fade's own copy (its program takes its uniforms from the hooks below).
+    const ud = base.userData;
+    base.userData = {};
+    try { m = base.clone(); } finally { base.userData = ud; }
+    m.userData = { ...ud };
     m.name = `${base.name}-fade`;
     // fading in shows the first `level / N` of the dither; fading out hides the same share (the two never overlap)
     const u = { value: dir > 0 ? level / FADE_LEVELS : -(level / FADE_LEVELS) };
