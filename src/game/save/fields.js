@@ -39,6 +39,10 @@ export const AREA_FIELDS = Object.freeze({
   certs: Object.freeze({ owner: 'systems', file: 'src/game/certs/**' }),
   /** systems (wave 4, HR10): the Ninewalls counter (open, its stock) and the Guild Notices taken, src/game/trade/counter.js */
   counter: Object.freeze({ owner: 'systems', file: 'src/game/trade/**' }),
+  /** systems (Milestone 3 wave 1, HT5): hour two's state until each quest's spine and each area's own field lands:
+   *  `{ quests: { [id]: spine serialize() }, kite: bool, sonde: 'moored'|'cut'|'sunk', wellheads: { [id]: 'hot'|'quenched' },
+   *  nets: { [id]: n }, rungs: [id], held: [id] }` (src/game/hour2/plan.js names the quests) */
+  hour2: Object.freeze({ owner: 'systems', file: 'src/game/hour2/**' }),
 });
 
 const clone = (v) => (v === undefined ? null : JSON.parse(JSON.stringify(v)));

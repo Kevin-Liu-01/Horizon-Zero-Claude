@@ -31,7 +31,7 @@ function areas() {
 }
 
 test('the field ids are fixed; an unknown or a doubled id is refused', () => {
-  assert.deepEqual(Object.keys(AREA_FIELDS).sort(), ['benchmarks', 'certs', 'counter', 'kit', 'quests', 'regions', 'walls']);
+  assert.deepEqual(Object.keys(AREA_FIELDS).sort(), ['benchmarks', 'certs', 'counter', 'hour2', 'kit', 'quests', 'regions', 'walls']);
   const F = new SaveFields();
   assert.throws(() => F.register('holds-walls', { get() {}, set() {} }), /not one of/);
   F.register('walls', { get: () => 1, set() {} });
