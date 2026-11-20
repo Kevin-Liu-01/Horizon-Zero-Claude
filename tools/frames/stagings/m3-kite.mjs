@@ -29,7 +29,9 @@ export const FRAMES = Object.freeze([
     id: 'F51', subject: 'the flight frame at blockout: Brea under the grey kite, 20 s into a glide off T2, 57 m over the Pans, golden', in: 'M3', hour: 18.25, weather: 'trade',
     at: { en: [F51_AT.e, F51_AT.n] }, bearing: F51_AT.headingDeg,
     // off her left side (bearing 120 from her), looking past her on bearing 300 toward the Ring (288) and Saltrow (311)
-    camera: { mode: 'orbit', yawRel: 98, dist: 9, height: 3, target: { fwd: 4.2, side: -29.7, up: -6 }, fov: 55, lookAt: 'off' },
+    // (fix round 1: at 9 m, 3 m up, the kite was drawn (its 464 triangles x 3 passes counted) and never seen in the shot,
+    //  four films running, while F52's 4 m lens showed it; the lens comes in to 6 m and the kite's cloth takes no fog)
+    camera: { mode: 'orbit', yawRel: 98, dist: 6, height: 2.5, target: { fwd: 4.2, side: -29.7, up: -5 }, fov: 60, lookAt: 'off' },
     state: { pose: 'idle', hud: false },
     ref: { written: 'two rectangular cells and at least 6 spars countable; the leading cell orchil-dyed (wave 2: grey here); both wrists in front of the head plane and at or below head height; the Ring and Saltrow below. Wave 1: the grey box-frame kite on the static hang, placed by the flight law 20 s into a real glide (57.4 m over the Pans against the brief\'s 60)' },
   },
@@ -65,6 +67,7 @@ const hangUnderKite = {
     // (the hero's meshes set no layers: the kite stays on the default layer; and it is never frustum-culled: at
     //  c0f55e7 and 1c26781 F51 showed no kite with its bar on screen at ndc (-0.06, 0.02), F52 showed it)
     K.mesh.frustumCulled = false;
+    K.mesh.material.fog = false;
     root.add(K.group);
     // the kite's program built and linked before the frame (at f1f8364 F51, the first frame it was ever in, was filmed
     // with no kite at all: its program was still linking; F52, the second, drew it)
