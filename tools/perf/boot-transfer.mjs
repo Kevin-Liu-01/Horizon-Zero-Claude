@@ -23,7 +23,8 @@
  *
  * Control is the frame two frames after `game-start` (the state 'playing', as tools/perf/exit-bar.mjs times it). For
  * each case: the requests started before control (files, bytes), whether any of them is a deferred file (the game's
- * own list: src/audio/manifest.js DEFERRED_FILES, the list the shipped ledger reads), the late bank's log after control
+ * ledger's own deferred set: the audio's late bank, never before control, and the Holds people streamed by her distance,
+ * never in a New Game's), the late bank's log after control
  * (GameAudio.lateAudit(): started, every set decoded, first asks and leads, any miss), the presented frames over 33 and
  * 50 ms in the WATCH_S after control, and (New Game) the earliest a first-hour cue can be asked: the sprint time from the
  * spawn to the nearest ground each late place's weight reaches 0.01 (the director's own weights), against the time its
@@ -90,11 +91,13 @@ const LEDGER = await deferredFiles(REPO, loadBudgets(REPO).shipped.deferred || [
 if (LEDGER.errors.length) throw new Error(`boot-transfer: the ledger's deferred set: ${LEDGER.errors.join('; ')}`);
 /** '/audio/holds/x.ogg' -> the module that defers it */
 const DEFERRED = new Map([...LEDGER.files].map(([f, mod]) => [f.replace(/^public/, ''), mod]));
+/** the late bank's files ('control': never before control in any case); the rest are 'region' (never in New Game's) */
+const AFTER_CONTROL = new Set([...LEDGER.files].filter(([f]) => LEDGER.when.get(f) === 'control').map(([f]) => f.replace(/^public/, '')));
 const SHIPPED = listFiles(REPO, ['public']).map((f) => ({ path: f.replace(/^public/, ''), bytes: sizeOf(REPO, f) }));
 const run = {
   row: 'P-boot-transfer', tool: 'tools/perf/boot-transfer.mjs', commit, clean: dirty.length === 0, dirty: dirty.slice(0, 20),
   tree: process.env.CLEAN_TREE || REPO, via: process.env.CLEAN_TREE ? 'tools/perf/clean-measure.sh' : 'in place', port: PORT, startedAt: utc(),
-  capBytes: CAP_BYTES, ledger: { deferredFiles: DEFERRED.size, deferredFrom: [...new Set(DEFERRED.values())], lateBytes: LATE_BYTES, bootAudioBytes: BOOT_BYTES,
+  capBytes: CAP_BYTES, ledger: { deferredFiles: DEFERRED.size, afterControlFiles: AFTER_CONTROL.size, deferredFrom: [...new Set(DEFERRED.values())], lateBytes: LATE_BYTES, bootAudioBytes: BOOT_BYTES,
     shippedFiles: SHIPPED.length, shippedBytes: SHIPPED.reduce((a, f) => a + f.bytes, 0) }, cases: [], console: [],
 };
 const save = () => writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(run, null, 1));
@@ -278,7 +281,7 @@ async function oneCase(browser, kind, from) {
   const after = all.filter((r) => r.wall >= ctl);
   const sum = (a) => a.reduce((s, r) => s + r.bytes, 0);
   const deferredBefore = before.filter((r) => DEFERRED.has(pathOf(r.url))).map((r) => ({ file: pathOf(r.url), msBeforeControl: Math.round(ctl - r.wall) }));
-  const deferredAfter = after.filter((r) => DEFERRED.has(pathOf(r.url)));
+  const deferredAfter = after.filter((r) => AFTER_CONTROL.has(pathOf(r.url)));
   const firstDeferred = deferredAfter.length ? Math.min(...deferredAfter.map((r) => r.wall)) : null;
   const byKind = {};
   for (const r of before) { const ext = (pathOf(r.url).match(/\.([a-z0-9]+)$/i)?.[1] || 'other').toLowerCase(); byKind[ext] = (byKind[ext] || 0) + r.bytes; }
@@ -296,6 +299,8 @@ async function oneCase(browser, kind, from) {
     stillInFlightAtControl: before.filter((r) => !r.done).length, failed: before.filter((r) => r.failed).length,
     byKindMb: Object.fromEntries(Object.entries(byKind).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, +(v / 1e6).toFixed(2)])),
     deferredFiles: deferredBefore.length, deferred: deferredBefore.slice(0, 10),
+    afterControlFiles: deferredBefore.filter((d) => AFTER_CONTROL.has(d.file)).length,
+    regionFiles: deferredBefore.filter((d) => !AFTER_CONTROL.has(d.file)).length,
   };
   rec.afterControl = {
     seconds: WATCH_S, files: after.length, mb: +(sum(after) / 1e6).toFixed(2),
@@ -324,9 +329,11 @@ async function oneCase(browser, kind, from) {
   const late = rec.late;
   rec.checks = {
     underCap: rec.beforeControl.bytes <= CAP_BYTES,
-    noDeferredBeforeControl: rec.beforeControl.deferredFiles === 0,
+    // New Game: no deferred file at all before control; a Continue: none of the late bank's (a Continue inside a region
+    // may stream that region's files before control: they are in its bytes, under the cap)
+    noDeferredBeforeControl: kind === 'new-game' ? rec.beforeControl.deferredFiles === 0 : rec.beforeControl.afterControlFiles === 0,
     lateAfterControl: !!late && late.startedS != null && late.startedS >= 0 && rec.afterControl.firstDeferredMsAfterControl != null && rec.afterControl.firstDeferredMsAfterControl >= 0,
-    lateWhole: !!late && late.state === 'done' && late.decoded === late.rows && rec.afterControl.deferredFiles === DEFERRED.size,
+    lateWhole: !!late && late.state === 'done' && late.decoded === late.rows && rec.afterControl.deferredFiles === AFTER_CONTROL.size,
     noOneShotMiss: !!late && late.missedOneShots.length === 0,
     tellsDecoded: w.tells.every((t) => t.decoded),
   };

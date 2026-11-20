@@ -6,6 +6,7 @@ import { FaceDirector } from './faces.js';
 import { Routines } from './routines.js';
 import { HoldsPeople } from './holds.js';
 import { TEXT } from '../../../game/text.js';
+import * as IDS from './ids.js';
 
 /**
  * CALIMA · the people of the island (settlements, W1 by R56 + R57 c; bible §6; plan §4.1, §4.2). Every
@@ -48,21 +49,21 @@ const NEAR_R = 18, MID_R = 35, HIDE_R = 90, MAX_NEAR = 6, MAX_CAST = 4, HYST = 1
  * `stage()` / `clearStage()` already dispose everything (`A-npc-dispose`, `A-npc-atlas-resident`).
  */
 const STREAM_IN = 130;
-export const ARCHETYPE_IDS = ['salt-raker', 'guild-matron', 'salt-porter', 'boat-caulker', 'lantern-keeper', 'pit-farmer', 'tiller-follower', 'cochineal-picker', 'tube-smith'];
+export const ARCHETYPE_IDS = IDS.ARCHETYPE_IDS;   // the lists live in ./ids.js (no imports: the shipped ledger reads them in Node)
 const PAN_IDS = ARCHETYPE_IDS.slice(0, 5), HOLDS_IDS = ARCHETYPE_IDS.slice(5);
 /**
  * M2 wave 2: the named people a quest or a frame spawns by id (`spawn('oro')`), each its own GLB under public/models/npc/.
  * Not archetypes: no staged group or cast draws on them, so the slice's world is unchanged. Tube Smith Oro
  * (tools/build/recipes/npc/lib/archetypes.mjs 'oro') stands at the tube mouth from wave 3 (the Holds people's routines).
  */
-export const NAMED_IDS = ['oro'];
+export const NAMED_IDS = IDS.NAMED_IDS;
 /**
  * M1.5c — the slice's cast (tools/build/recipes/npc/lib/archetypes.mjs CAST): Lantern-Keeper Mise ('lantern-keeper') and seven unnamed
  * Pan Houses people of archetypes 1, 3, 4 and 5 (the Harvester, Trader, Sailor and Healer callings), each with a face and head set of
  * their own. Where they stand and what they do in Saltrow is the settlements' (M1.5a) and the routines' (M1.5d); the W1 group above
  * is unchanged, so no kept row's world changes with them.
  */
-export const SLICE_CAST = ['lantern-keeper', 'salt-raker', 'salt-raker-2', 'salt-porter', 'salt-porter-2', 'boat-caulker', 'boat-caulker-2', 'lantern-keeper-2'];
+export const SLICE_CAST = IDS.SLICE_CAST;
 
 const _cam = new THREE.Vector3();
 const _probe = new THREE.Vector3();

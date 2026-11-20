@@ -8,7 +8,9 @@
  *                     (../../../src/audio/slice/director.js ATTACK_CUES) and the Screed's charge (a Continue at 'seal-1'
  *                     or 'seal-2' can hear it on its first frame of play, before any late row is fetched)
  *   late-ledger       the shipped ledger's deferred set (tools/tier0/budgets.mjs deferredFiles, read through
- *                     budgets.json shipped.deferred) is the manifest's list, file for file: one source of truth
+ *                     budgets.json shipped.deferred) is the manifest's list, file for file (one source of truth), plus
+ *                     the Holds people the game streams by her distance (holds.js HOLDS_CAST less ids.js ARCHETYPE_IDS
+ *                     and SLICE_CAST, the people staged at boot), and nothing else
  *   late-bank-order   SampleBank.load() fetches only boot rows; loadLate() fetches the late rows, the place she is in
  *                     first and its bed before its one-shots, a machine kind standing near her before both (lateRank:
  *                     a Continue at 'seal-1' fetches the Screed's rows first); an ask before a set's decode is a miss, one after it a lead
@@ -64,13 +66,22 @@ test('late-tells: every tell loads before control', () => {
   console.log(`# late-tells: ${tells.size} tells, all boot: ${[...tells].sort().join(', ')}`);
 });
 
-test('late-ledger: the ledger defers exactly the files the game loads late', async () => {
+test('late-ledger: the ledger defers exactly the files the game loads late (the late bank) or streams (the Holds people)', async () => {
   const S = loadBudgets(ROOT).shipped;
   assert.ok(Array.isArray(S.deferred) && S.deferred.length > 0, 'budgets.json shipped.deferred names a module');
   assert.ok(!JSON.stringify(S.deferred).includes('.ogg'), 'no file list in budgets.json: the module is the list');
   const D = await deferredFiles(ROOT, S.deferred);
   assert.deepEqual(D.errors, []);
-  assert.deepEqual([...D.files.keys()].sort(), DEFERRED_FILES.map((f) => `public/${f}`).sort());
+  const audio = [...D.files.keys()].filter((f) => f.startsWith('public/audio/'));
+  assert.deepEqual(audio.sort(), DEFERRED_FILES.map((f) => `public/${f}`).sort());
+  for (const f of audio) assert.equal(D.when.get(f), 'control', `${f}: the late bank's files are never fetched before control`);
+  // the Holds people streamed by her distance: the cast's own GLBs less the archetypes the W1 group stages at boot
+  const { HOLDS_CAST } = await import('../../../src/world/npc/people/holds.js');
+  const { ARCHETYPE_IDS, SLICE_CAST } = await import('../../../src/world/npc/people/ids.js');
+  const region = [...D.files.keys()].filter((f) => D.when.get(f) === 'region').sort();
+  assert.deepEqual(region, HOLDS_CAST.filter((id) => !ARCHETYPE_IDS.includes(id) && !SLICE_CAST.includes(id)).map((id) => `public/models/npc/${id}.glb`).sort());
+  assert.ok(!region.some((f) => /\/(pit-farmer|tiller-follower|cochineal-picker)\.glb$/.test(f)), 'a staged archetype is never deferred');
+  assert.equal(D.files.size, audio.length + region.length, 'nothing else is deferred');
   const raw = readFileSync(path.join(ROOT, 'tools/tier0/budgets.mjs'), 'utf8');
   assert.ok(!/audio\/(holds|screed|forge|tiller)\//.test(raw), 'the ledger names no audio file itself');
 });

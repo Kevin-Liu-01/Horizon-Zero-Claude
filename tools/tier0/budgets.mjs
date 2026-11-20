@@ -7,6 +7,9 @@
  *                     plus the built code) against the first-load cap, and every file against the milestone total cap.
  *                     The deferred set is read from the modules the game itself loads late by (budgets.json
  *                     shipped.deferred: today the audio manifest's DEFERRED_FILES), never from a list kept here.
+ *                     Its megabytes are DECIMAL (10^6 bytes), the unit tools/perf/boot-transfer.mjs measures the built
+ *                     game's first load in: one cap, one unit (the mebibyte figure is printed beside it). The texture
+ *                     ledger stays in mebibytes (resident memory).
  *
  *   node tools/tier0/budgets.mjs [--tree <dir>]
  *
@@ -169,26 +172,52 @@ export async function runTextureLedger({ root, assets }) {
 
 /**
  * The deferred set: the files the game fetches only after she is under control, read from the game's own modules
- * (budgets.json shipped.deferred: { module, export, under }). Paths come back repo-relative ('public/...').
+ * (budgets.json shipped.deferred). Each source names a module and an array export of it:
+ *   { module, export, under }                      the export lists paths relative to `under`
+ *   { module, export, under, file: 'x/{}.glb' }    the export lists ids; each id's path is `file` with the id for {}
+ *   except: [{ module, export }]                   ids that something before control loads all the same (they stay in
+ *                                                  the first load)
+ *   when: 'control' (default) | 'region'          'control': never fetched before control (the audio's late bank);
+ *                                                  'region': streamed by where she is, so never in a New Game's first
+ *                                                  load (the first load is the boot, the title, the Pans and Saltrow,
+ *                                                  TECH 9.4) though a Continue inside the region may fetch it early
+ * Paths come back repo-relative ('public/...'), with the source that defers each and its `when`.
  * @param {string} root
- * @param {{ module: string, export: string, under: string }[]} sources
+ * @param {{ module: string, export: string, under: string, file?: string, except?: { module: string, export: string }[], when?: string }[]} sources
  */
 export async function deferredFiles(root, sources = []) {
   /** @type {Map<string, string>} file -> the module that defers it */
   const out = new Map();
+  /** @type {Map<string, string>} file -> 'control' | 'region' */
+  const when = new Map();
   const errors = [];
+  /** @param {string} mod @param {string} name */
+  const listOf = async (mod, name) => {
+    const abs = path.join(root, mod);
+    if (!existsSync(abs)) throw new Error(`${mod} is missing`);
+    const m = await import(pathToFileURL(abs).href);
+    const list = m[name];
+    if (!Array.isArray(list)) throw new Error(`${mod} has no array export ${name}`);
+    return list.map(String);
+  };
   for (const d of sources) {
-    const abs = path.join(root, d.module);
-    if (!existsSync(abs)) { errors.push(`deferred: ${d.module} is missing`); continue; }
     try {
-      const m = await import(pathToFileURL(abs).href);
-      const list = m[d.export];
-      if (!Array.isArray(list)) { errors.push(`deferred: ${d.module} has no array export ${d.export}`); continue; }
-      for (const f of list) out.set(path.posix.join(d.under, String(f)), d.module);
-    } catch (e) { errors.push(`deferred: ${d.module}: ${String(e).slice(0, 200)}`); }
+      let list = await listOf(d.module, d.export);
+      for (const x of d.except || []) { const no = new Set(await listOf(x.module, x.export)); list = list.filter((id) => !no.has(id)); }
+      for (const f of list) {
+        const rel = path.posix.join(d.under, d.file ? d.file.replace('{}', f) : f);
+        out.set(rel, d.module);
+        when.set(rel, d.when || 'control');
+      }
+    } catch (e) { errors.push(`deferred: ${d.module}: ${String(e?.message || e).slice(0, 200)}`); }
   }
-  return { files: out, errors };
+  return { files: out, when, errors };
 }
+
+/** The shipped ledger's megabyte: decimal (see the header). */
+export const MB10 = 1e6;
+/** @param {number} bytes */
+const mbd = (bytes) => Math.round((bytes / MB10) * 100) / 100;
 
 /**
  * @param {{ root: string, assets?: ReturnType<typeof readAssets>, dist?: { file: string, bytes: number }[] | null, exit?: string }} o
@@ -207,10 +236,16 @@ export async function runShippedLedger({ root, assets, dist = null, exit }) {
   const onDisk = new Set(A.files);
   for (const f of D.files.keys()) if (!onDisk.has(f)) failures.push(`deferred file ${f} (${D.files.get(f)}) is not shipped in public/`);
   let pub = 0, late = 0, lateN = 0;
+  /** @type {Record<string, { bytes: number, n: number }>} by `when` */
+  const byWhen = {};
   for (const f of A.files) {
     const b = sizeOf(root, f);
     pub += b; byLine[lineOf(f, S.lines)] += b;
-    if (D.files.has(f)) { late += b; lateN++; }
+    if (D.files.has(f)) {
+      late += b; lateN++;
+      const w = byWhen[D.when.get(f) || 'control'] ||= { bytes: 0, n: 0 };
+      w.bytes += b; w.n++;
+    }
   }
   let code = 0;
   for (const d of dist || []) { code += d.bytes; byLine[lineOf(`dist:${d.file}`, S.lines)] += d.bytes; }
@@ -218,18 +253,20 @@ export async function runShippedLedger({ root, assets, dist = null, exit }) {
   const boot = pub - late;
   const first = boot + code;
   const cap = S.totalCapMb[ex];
-  if (first / MB > S.firstLoadCapMb) failures.push(`first load (the boot set ${mb(boot)} MB + built code ${mb(code)} MB) ${mb(first)} MB > ${S.firstLoadCapMb} MB`);
-  if (cap != null && total / MB > cap) failures.push(`total shipped ${mb(total)} MB > ${cap} MB (${ex} exit)`);
-  const rows = S.lines.map((/** @type {any} */ l) => `${l.label}: ${mb(byLine[l.id])} MB (plan line ${l.estimateMb} MB)${byLine[l.id] / MB > l.estimateMb && l.estimateMb ? ' OVER LINE' : ''}`);
-  rows.push(`first load: the boot set ${mb(boot)} MB (${A.files.length - lateN} files) + built code ${mb(code)} MB = ${mb(first)} MB of ${S.firstLoadCapMb} MB`);
-  rows.push(`deferred (fetched after control): ${mb(late)} MB in ${lateN} files, from ${[...new Set(D.files.values())].join(', ') || 'no module'}`);
+  if (first / MB10 > S.firstLoadCapMb) failures.push(`first load (the boot set ${mbd(boot)} MB + built code ${mbd(code)} MB) ${mbd(first)} MB > ${S.firstLoadCapMb} MB (decimal; ${mb(first)} MiB)`);
+  if (cap != null && total / MB10 > cap) failures.push(`total shipped ${mbd(total)} MB > ${cap} MB (${ex} exit; decimal)`);
+  const rows = S.lines.map((/** @type {any} */ l) => `${l.label}: ${mbd(byLine[l.id])} MB (plan line ${l.estimateMb} MB)${byLine[l.id] / MB10 > l.estimateMb && l.estimateMb ? ' OVER LINE' : ''}`);
+  rows.push(`first load: the boot set ${mbd(boot)} MB (${A.files.length - lateN} files) + built code ${mbd(code)} MB = ${mbd(first)} MB of ${S.firstLoadCapMb} MB (${mb(first)} MiB); margin ${mbd(S.firstLoadCapMb * MB10 - first)} MB`);
+  rows.push(`deferred: ${mbd(late)} MB in ${lateN} files, from ${[...new Set(D.files.values())].join(', ') || 'no module'}`);
+  if (byWhen.control) rows.push(`  after control (any start): ${mbd(byWhen.control.bytes)} MB in ${byWhen.control.n} files`);
+  if (byWhen.region) rows.push(`  by region (never in a New Game's first load): ${mbd(byWhen.region.bytes)} MB in ${byWhen.region.n} files`);
   return {
     id: 'shipped-ledger',
     status: failures.length ? 'FAIL' : dist ? 'PASS' : 'PENDING',
-    summary: `first load ${mb(first)} MB of ${S.firstLoadCapMb} (boot set ${mb(boot)} MB in ${A.files.length - lateN} files + built code ${dist ? `${mb(code)} MB` : 'not measured (no build)'}; ${mb(late)} MB in ${lateN} files deferred until control); total ${mb(total)} MB of the ${ex} cap ${cap} MB (public/ ${mb(pub)} MB in ${A.files.length} files)`,
+    summary: `first load ${mbd(first)} MB of ${S.firstLoadCapMb} (decimal MB; ${mb(first)} MiB; boot set ${mbd(boot)} MB in ${A.files.length - lateN} files + built code ${dist ? `${mbd(code)} MB` : 'not measured (no build)'}; ${mbd(late)} MB in ${lateN} files deferred until control); total ${mbd(total)} MB of the ${ex} cap ${cap} MB (public/ ${mbd(pub)} MB in ${A.files.length} files)`,
     failures,
     notes: rows,
-    details: { firstLoadMb: mb(first), bootMb: mb(boot), bootFiles: A.files.length - lateN, deferredMb: mb(late), deferredFiles: lateN, totalMb: mb(total), publicMb: mb(pub), codeMb: mb(code), byLine: Object.fromEntries(Object.entries(byLine).map(([k, v]) => [k, mb(v)])) },
+    details: { unit: 'MB = 1e6 bytes', firstLoadMb: mbd(first), firstLoadMib: mb(first), marginMb: mbd(S.firstLoadCapMb * MB10 - first), bootMb: mbd(boot), bootFiles: A.files.length - lateN, deferredMb: mbd(late), deferredFiles: lateN, deferredByWhen: Object.fromEntries(Object.entries(byWhen).map(([k, v]) => [k, { mb: mbd(v.bytes), files: v.n }])), totalMb: mbd(total), publicMb: mbd(pub), codeMb: mbd(code), byLine: Object.fromEntries(Object.entries(byLine).map(([k, v]) => [k, mbd(v)])) },
     ms: Date.now() - t0,
   };
 }
