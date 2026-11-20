@@ -552,27 +552,42 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
       const st = await page.evaluate(where);
       if (st.dead || st.state === 'dead') { out.ok = false; out.why = 'died'; break; }
       if (T() > maxS) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd)`; break; }
-      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 11 } });
+      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 16 } });
       out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
       if (f.ok) { out.ok = true; break; }
       if (f.why === 'died') { out.ok = false; out.why = 'died'; break; }
       if (f.threat) {
-        // a Tiller turned on her: out of its reach (its trample ploughs ~7 m past a 0.6 s wind-up, its shove 4 m) to a
-        // point 20-34 m from it on her side of it, sprinting, then on with the topple; a drink on the way out when low
+        // (M2 fix wave 2) a Tiller turned on her: out past the herd's leash (hour.js _herdLeash: its line's middle, half
+        // its length + the leash), on her side of the line's middle, by the nav grid; there she waits up to 25 s for no
+        // Tiller to stand alert within 25 m (a drink under 55), then goes on with the topple. At e04e963 chained run 2 a
+        // 22 m sprint from a Tiller at 7.8 m was not enough: it came on and the herd took 100 hp in 13 s (dead at plumb-2)
         threats++;
-        const th = f.threat, far = threats > 3 ? 34 : 22;
-        const pt = await page.evaluate((tx, tz, far) => {
+        const th = f.threat;
+        const pt = await page.evaluate((tx, tz) => {
           const C = window.__CTX__, P = C.player.position;
-          const base = Math.atan2(P.x - tx, P.z - tz);
-          for (const off of [0, 25, -25, 50, -50, 80, -80]) for (const d of [far, far - 6]) {
-            const a = base + off * Math.PI / 180, x = tx + Math.sin(a) * d, z = tz + Math.cos(a) * d;
-            if (C.nav?.blockedAt?.(x, z)) continue;
-            return { x, z, off, d };
+          const blocked = (x, z) => !!C.nav?.blockedAt?.(x, z);
+          const herd = (C.machines?.list || []).find((m) => m && m.kind === 'tiller' && m.alive !== false && !m._disposed && m.territory);
+          if (herd) {
+            const tr = herd.territory, R = tr.r + (herd.ai?.engage?.cfg?.leash ?? 150) + 18;
+            if (R < 140) {
+              const base = Math.atan2(P.x - tr.x, P.z - tr.z);
+              for (const off of [0, 20, -20, 40, -40, 60, -60]) { const a = base + off * Math.PI / 180, x = tr.x + Math.sin(a) * R, z = tr.z + Math.cos(a) * R; if (!blocked(x, z)) return { x, z, R: +R.toFixed(1), off, beyond: true }; }
+            }
           }
+          const base = Math.atan2(P.x - tx, P.z - tz);
+          for (const off of [0, 25, -25, 50, -50, 80, -80]) { const a = base + off * Math.PI / 180, x = tx + Math.sin(a) * 30, z = tz + Math.cos(a) * 30; if (!blocked(x, z)) return { x, z, off, d: 30 }; }
           return null;
-        }, th.x, th.z, far);
-        const w = pt ? await walkTo(page, pt, 2.5, 9) : { ok: false, why: 'no open ground' };
-        out.moves.push({ t: T(), threat: th, to: pt ? { off: pt.off, d: pt.d } : null, ok: w.ok, hp: (await page.evaluate(where)).hp });
+        }, th.x, th.z);
+        const w = pt ? await walkPath(page, pt, 3, 35) : { ok: false, why: 'no open ground' };
+        const tw = Date.now();
+        let calm = false;
+        while (Date.now() - tw < 25000) {
+          const near = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position; return (C.machines?.list || []).filter((m) => m && m.kind === 'tiller' && m.alive !== false && !m._disposed && (m.state === 'alert' || m.state === 'attack') && Math.hypot(m.position.x - P.x, m.position.z - P.z) < 25).length; });
+          if (!near) { calm = true; break; }
+          if ((await page.evaluate(where)).dead) break;
+          await sleep(1000);
+        }
+        out.moves.push({ t: T(), threat: th, to: pt ? { beyond: !!pt.beyond, R: pt.R ?? null, off: pt.off } : null, ok: w.ok, why: w.why ?? null, calm, waitedS: +((Date.now() - tw) / 1000).toFixed(1), hp: (await page.evaluate(where)).hp });
         if ((await page.evaluate(where)).hp < 55) await SH.drink(page, K, 92);
         continue;
       }
