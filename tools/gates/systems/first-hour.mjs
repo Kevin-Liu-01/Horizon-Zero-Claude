@@ -963,7 +963,7 @@ async function volley(page, K, stage, maxS = 8) {
 async function driveScreed(page, K, stage, maxS = 120) {
   const t0 = Date.now(), log = [];
   const T = () => +((Date.now() - t0) / 1000).toFixed(1);
-  let shots = 0, lastPhase = null, sidestepS = -1, approach = null;
+  let shots = 0, lastPhase = null, lastMode = null, sidestepS = -1, approach = null;
   const standLog = [];
   const note = (S, extra = {}) => log.push({ t: T(), phase: S.phase, mode: S.mode, d: +S.d.toFixed(1), ahead: +S.ahead.toFixed(1), side: +S.side.toFixed(1), rS: +S.rS.toFixed(1), bS: +S.bS.toFixed(1), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1), between: S.between, hp: S.hp, cuts: S.cuts, stalls: S.stalls, seals: S.seals, ...extra });
   if (stage !== 'stall') await SH.readyBow(page, K); else { await K.tap('Digit1'); await sleep(200); }
@@ -989,7 +989,7 @@ async function driveScreed(page, K, stage, maxS = 120) {
     if (T() > maxS) { note(S, { timeout: true }); return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-40), approach, stands: standLog.slice(-20) }; }
     const st = await page.evaluate(where);
     if (st.dead || st.state === 'dead') return { ok: false, why: 'died', log: log.slice(-40), approach };
-    if (S.phase !== lastPhase) { note(S); lastPhase = S.phase; }
+    if (S.phase !== lastPhase || S.mode !== lastMode) { note(S); lastPhase = S.phase; lastMode = S.mode; }
     const C12 = S.c12, rMid = (C12.rIn + C12.rOut) / 2;
     if (stage === 'stall') {
       // out of the village and into corridor 1/2 by its east mouth, then along it to 4 deg past the Screed's bearing
@@ -1005,6 +1005,17 @@ async function driveScreed(page, K, stage, maxS = 120) {
       }
       if (S.phase === 'windup' || S.phase === 'charge' || S.phase === 'stall') { await sleep(120); continue; }
       const want = S.bS + 4;
+      // (M2 exit, area E) from 52 m off (it comes at 45: ScreedFight engageM) she runs the rest of the way to her stand in
+      // steps of up to 14 deg (a chord that keeps to the corridor), not 6 deg with a stop at each: it is a race. In the three chains at 621a2c7 that passed it wound
+      // up at 10.5 m, a moment short of wall-1 (chargeM 7-24 m, cone 0.6 rad); in chained run 4 it reached wall-1 first,
+      // walked through all three walls with no charge (0 stalls) and the fight went fail-soft. Her stand is behind wall-1,
+      // so a charge that starts while she runs still meets the wall
+      const inBand = S.d >= 7.5 && S.d <= 23 && Math.abs(Math.atan2(S.side, S.ahead)) <= 0.55;
+      if ((S.mode === 'come' || S.d < 52) && S.phase === 'walk' && !inBand && S.bP - want > 2.5) {
+        const w = await walkTo(page, await page.evaluate(polarNW, Math.max(want, S.bP - 14), rMid), 2.5, 5);
+        note(await page.evaluate(screedNow), { run: true, ok: w.ok, why: w.why ?? null });
+        continue;
+      }
       if (S.bP - want > 2.5) {
         const b = Math.max(want, S.bP - 6);
         await walkTo(page, await page.evaluate(polarNW, b, rMid), 1.6, 3);
@@ -1448,7 +1459,9 @@ try {
     report.hitch = { bar: 'C5 (TECH 9.1): 0 frames over 50 ms, at most 3 over 33 ms per 10 minutes of play', legs: legsH.length, frames: legsH.reduce((a, h) => a + h.frames, 0),
       s: +s.toFixed(1), min: +(s / 60).toFixed(2), over33, over50, maxMs: Math.max(0, ...legsH.map((h) => h.maxMs)), over33Per10Min: s ? +(over33 * 600 / s).toFixed(2) : null,
       long: report.legs.flatMap((l) => (l.hitchSum?.long || []).map((q) => ({ leg: l.leg, ...q }))) };
-    report.hitch.pass = over50 === 0 && s > 0 && over33 * 600 / s <= 3;
+    // graded only on a whole run: every leg asked for played (a chain that stopped is not C5's 10 minutes)
+    report.hitch.complete = legsH.length === LEGS.length && legsH.every((h) => h.whole !== false);
+    report.hitch.pass = report.hitch.complete && over50 === 0 && s > 0 && over33 * 600 / s <= 3;
   }
   const lows = report.legs.map((l) => l.hp?.min).filter((v) => v != null);
   report.hr8 = { bar: 'hp never under 25 on any frame in play (HR8)', lowest: lows.length ? Math.min(...lows) : null, pass: lows.length === report.legs.length && lows.every((v) => v >= 25) };
@@ -1456,6 +1469,6 @@ try {
   log(`report: ${path.join(runDir, 'report.json')}`);
   for (const l of report.legs) log(`leg ${l.leg}: ${l.passed}${l.error ? ` (error: ${l.error.slice(0, 120)})` : ''}; lowest hp ${l.hp?.min ?? '?'} (${l.hp?.under25Frames ?? '?'} frames under 25); late bank ${l.lateAudit ? `${l.lateAudit.state}, ${l.lateAudit.asked} asked, ${(l.lateAudit.missed || []).length} missed` : 'not read'}`);
   for (const l of report.legs) if (l.hitchSum) log(`leg ${l.leg} hitch: ${l.hitchSum.frames} frames in ${l.hitchSum.s} s, ${l.hitchSum.over33} over 33 ms, ${l.hitchSum.over50} over 50 ms, max ${l.hitchSum.maxMs} ms${l.hitchSum.whole === false ? ' (NOT WHOLE: a document of the slice was not taken)' : ''}${l.hitchSum.long.length ? `: ${l.hitchSum.long.map((q) => `${q.ms} ms at ${q.tPlay ?? '?'} s (${q.beat ?? '?'})`).join('; ')}` : ''}`);
-  if (report.hitch) log(`hitch, the whole run (C5): ${report.hitch.frames} frames in ${report.hitch.min} min, ${report.hitch.over33} over 33 ms (${report.hitch.over33Per10Min} per 10 min), ${report.hitch.over50} over 50 ms, max ${report.hitch.maxMs} ms: ${report.hitch.pass ? 'PASS' : 'FAIL'}`);
+  if (report.hitch) log(`hitch, the whole run (C5): ${report.hitch.frames} frames in ${report.hitch.min} min, ${report.hitch.over33} over 33 ms (${report.hitch.over33Per10Min} per 10 min), ${report.hitch.over50} over 50 ms, max ${report.hitch.maxMs} ms: ${!report.hitch.complete ? `not graded (${legsH.length} of ${LEGS.length} legs played)` : report.hitch.pass ? 'PASS' : 'FAIL'}`);
   log(`beats ${report.beats}; ${report.chromeSeconds} s of Chrome; HR8 lowest hp ${report.hr8.lowest} (${report.hr8.pass ? 'PASS' : 'FAIL'})`);
 }
