@@ -40,21 +40,24 @@ const LENSES = [
 const HANG_ON = async () => {
   const C = window.__CTX__, p = C.player, an = p.animator, E = C.engine;
   const frame = () => new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); });
-  // stageFrame ends frozen (the 'studio' time scale 0): let the game run 1.2 s with the hang on, then freeze again
-  E.requestTimeScale('studio', null);
-  an.setHangPose(true);
-  const s0 = E.simTime, w0 = performance.now();
-  while (E.simTime - s0 < 1.2 && performance.now() - w0 < 8000) await frame();
-  E.requestTimeScale('studio', 0);
-  if (!an.hangPoseInfo()) throw new Error(`the hang layer never ran (sim ${(E.simTime - s0).toFixed(2)} s in ${Math.round(performance.now() - w0)} ms)`);
+  // stageFrame ends frozen (the 'studio' time scale 0): the kite goes on first, then the game runs 1.2 s with the hang
+  // on (the kite re-seated on the bar every frame, so it is drawn in frames the engine renders), then freezes again
   const { buildGreyKite, placeAtBar } = await import('/src/entities/anim/kite/greyKite.js');
   const K = buildGreyKite();
   const root = an.space?.root || p.model;
-  // parented to the hang pose's own frame (the bar is given in it), so the kite rides with her model
+  // the kite drawn on her layers (the hero's meshes' layer mask)
+  let heroMesh = null; p.model.traverse((o) => { if (!heroMesh && o.isMesh) heroMesh = o; });
+  if (heroMesh) K.mesh.layers.mask = heroMesh.layers.mask;
   root.add(K.group);
+  window.__KITE_BLOCKOUT__ = K.group;
+  E.requestTimeScale('studio', null);
+  an.setHangPose(true);
+  const s0 = E.simTime, w0 = performance.now();
+  while (E.simTime - s0 < 1.2 && performance.now() - w0 < 8000) { await frame(); const i = an.hangPoseInfo(); if (i) placeAtBar(K.group, root, i.bar); }
+  E.requestTimeScale('studio', 0);
+  if (!an.hangPoseInfo()) throw new Error(`the hang layer never ran (sim ${(E.simTime - s0).toFixed(2)} s in ${Math.round(performance.now() - w0)} ms)`);
   const info = an.hangPoseInfo();
   placeAtBar(K.group, root, info.bar);
-  window.__KITE_BLOCKOUT__ = K.group;
   await frame(); await frame();
   // the page's read: wrists against the head bone's frontal plane (her facing) and height; elbows against shoulders
   const V = p.position.constructor, b = an.b;
@@ -69,7 +72,7 @@ const HANG_ON = async () => {
   const kw = K.group.getWorldPosition(new V()), rw = root.getWorldPosition(new V()), rs = root.getWorldScale(new V());
   let inScene = false; for (let o = K.group; o; o = o.parent) if (o === C.scene) inScene = true;
   return { L: side('L'), R: side('R'), bar: info, kiteTris: K.triangles, hang: !!an._hangOn,
-    where: { kite: r2(kw), root: r2(rw), rootScale: r2(rs), rootName: root.name || root.type, player: r2(p.position), head: r2(head), inScene, visible: K.mesh.visible, cam: r2(C.camera.position) } };
+    where: { kite: r2(kw), root: r2(rw), rootScale: r2(rs), rootName: root.name || root.type, player: r2(p.position), head: r2(head), inScene, visible: K.mesh.visible, cam: r2(C.camera.position), camLayers: C.camera.layers.mask, kiteLayers: K.mesh.layers.mask, heroLayers: heroMesh?.layers.mask ?? null, frame: C.renderer?.info?.render?.frame ?? null, programs: C.renderer?.info?.programs?.length ?? null } };
 };
 const HANG_OFF = () => {
   const C = window.__CTX__;
