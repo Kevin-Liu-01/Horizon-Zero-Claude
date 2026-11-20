@@ -114,5 +114,25 @@ const out = {
   },
   allPathMs: { p50: r2(q(sorted(rows.map((r) => r.pathMs ?? 0)), 0.5)), p99: r2(q(sorted(rows.map((r) => r.pathMs ?? 0)), 0.99)), max: r2(Math.max(0, ...rows.map((r) => r.pathMs ?? 0))) },
 };
+// THE SLICED REBUILD (C5): wall-1's colliders taken away (as the Screed's cut does), the grid ticked as Nav.update ticks
+// it (0.5 ms slices) until the new grid swaps in, against a grid built at once on the same colliders: every cell the same
+{
+  const ids = [];
+  for (const [id, c] of C.byId || []) if (c && /wall-1\b/.test(String(c.ref?.name ?? c.kind ?? '')) ) ids.push(id);
+  const wallIds = ids.length ? ids : [...(C.byId?.keys?.() || [])].slice(0, 12);
+  grid._ticked = true;
+  C.unregister(wallIds);
+  grid.dirty = true; grid._dirtyN = (grid._dirtyN || 0) + 1;
+  const before = grid.open.slice();
+  let ticks = 0, worst = 0;
+  grid.path(places[0], marks[0]);           // a query on the dirty grid starts the rebuild and answers from the old one
+  const answeredOld = grid.open.every((v, i) => v === before[i]);
+  while (grid.dirty && ticks < 100000) { const t1 = performance.now(); grid.tick(); worst = Math.max(worst, performance.now() - t1); ticks++; }
+  const sliced = grid.open.slice(), slicedWhy = grid.why.slice();
+  grid.build();
+  let diff = 0; for (let i = 0; i < sliced.length; i++) if (sliced[i] !== grid.open[i] || slicedWhy[i] !== grid.why[i]) diff++;
+  let changed = 0; for (let i = 0; i < sliced.length; i++) if (sliced[i] !== before[i]) changed++;
+  out.slicedRebuild = { colliders: wallIds.length, ticks, worstTickMs: r2(worst), answeredFromOld: answeredOld, cellsChanged: changed, cellsDifferentFromBuild: diff };
+}
 console.log(JSON.stringify(out, null, 1));
 if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ ...out, rows: rows.map((r) => ({ f: r.f, to: r.to, exact: r.exact, alt: r.alt ?? null, pathMs: r2(r.pathMs) })) }));

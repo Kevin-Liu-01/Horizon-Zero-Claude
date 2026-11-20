@@ -274,7 +274,7 @@ export class Nav {
 
   update() {
     // C5: a walk grid's landmarks, a slice a tick, once a long search has wanted them (WalkGrid.landmarkStep)
-    if (this._walk) for (let i = 0; i < this._walk.length; i++) this._walk[i].landmarkStep();
+    if (this._walk) for (let i = 0; i < this._walk.length; i++) this._walk[i].tick();
     if (this._phase !== 'done') { this._buildSlice(this._budgetRows); return; }
     if (this._dirty) this.rebuild();
   }
@@ -765,7 +765,7 @@ export class WalkGrid {
   }
   wx(i) { return this.x0 + (i % this.nx) * this.cell; }
   wz(i) { return this.z0 + ((i / this.nx) | 0) * this.cell; }
-  blockedAt(x, z) { if (this.dirty) this.build(); const i = this.index(x, z); return i < 0 || this.open[i] === 0; }
+  blockedAt(x, z) { this._current(); const i = this.index(x, z); return i < 0 || this.open[i] === 0; }
 
   /** Overlaps the box (a collider's AABB grown by the walker's radius)? */
   overlaps(c) {
@@ -775,14 +775,32 @@ export class WalkGrid {
 
   build() {
     const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
-    const { nx, nz, cell } = this, S = this.src, h = this.h, open = this.open, why = this.why;
+    const { nx, nz, cell } = this, S = this.src, h = this.h;
     for (let iz = 0; iz < nz; iz++) {
       const z = this.z0 + iz * cell;
       for (let ix = 0; ix < nx; ix++) h[iz * nx + ix] = S.height(this.x0 + ix * cell, z);
     }
+    this._heights = true;
+    this._rb = null;   // a sliced rebuild in flight is superseded
+    this._tOpen = this.open; this._tWhy = this.why;
     const sh = this.stats.shut;
     sh.slope = sh.water = sh.collider = sh.disc = 0;
-    for (let iz = 0; iz < nz; iz++) {
+    this._costRows(0, nz);
+    // blockers
+    const cols = S.colliders ? S.colliders() : [];
+    let nCol = 0;
+    for (let k = 0; k < cols.length; k++) if (this._stampCollider(cols[k], 0, Infinity).any) nCol++;
+    this._discsIn();
+    this._tOpen = null; this._tWhy = null;
+    this._finishBuild(nCol);
+    this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
+    return this;
+  }
+
+  /** The step costs of rows [iz0, iz1) from the heights, into the target arrays. */
+  _costRows(iz0, iz1) {
+    const { nx, nz, cell } = this, S = this.src, h = this.h, open = this._tOpen, why = this._tWhy, sh = this.stats.shut;
+    for (let iz = iz0; iz < iz1; iz++) {
       const z = this.z0 + iz * cell;
       for (let ix = 0; ix < nx; ix++) {
         const i = iz * nx + ix, x = this.x0 + ix * cell;
@@ -794,45 +812,117 @@ export class WalkGrid {
         open[i] = Math.min(255, 1 + Math.round(slope * 6)); why[i] = 0;
       }
     }
-    // blockers
-    const pad = this.radius, cols = S.colliders ? S.colliders() : [];
-    let nCol = 0;
-    for (let k = 0; k < cols.length; k++) {
-      const c = cols[k];
-      if (!c || c.dead || !c.blocking || c.dynamic || c.kind === 'npc' || !this.overlaps(c)) continue;
-      if (c.type === 'mesh') {
-        if (!S.forEachTriangle) continue;
-        let any = false;
-        S.forEachTriangle(c, (ax, ay, az, bx, by, bz, cx, cy, cz) => {
-          const mx = (ax + bx + cx) / 3, mz = (az + bz + cz) / 3, g = S.height(mx, mz);
-          const lo = Math.min(ay, by, cy) - g, hi = Math.max(ay, by, cy) - g;
-          if (hi < WALK.under || lo > WALK.over) return;
-          if (this._tri(ax, az, bx, bz, cx, cz, pad)) any = true;
-        });
-        if (any) nCol++;
-        continue;
-      }
-      // primitives: in the walker's height band over the ground under their centre?
-      const ccx = c.type === 'box' || c.type === 'sphere' ? c.cx : (c.ax + c.bx) * 0.5;
-      const ccz = c.type === 'box' || c.type === 'sphere' ? c.cz : (c.az + c.bz) * 0.5;
-      const g = S.height(ccx, ccz);
-      if (c.maxy - g < WALK.under || c.miny - g > WALK.over) continue;
-      if (c.type === 'box') this._box(c, pad);
-      else if (c.type === 'capsule' && !c.vertical) this._seg(c.ax, c.az, c.bx, c.bz, c.r + pad);
-      else this._disc(ccx, ccz, c.r + pad);
-      nCol++;
+  }
+
+  /**
+   * Stamp one collider into the target arrays: a mesh's triangles from `from`, at most `limit` of them (the source's
+   * forEachTriangle resumes where it stopped when it takes a range). Returns { any (it shut a cell or counts), next
+   * (the triangle to resume at, -1 when done) }.
+   */
+  _stampCollider(c, from, limit) {
+    const S = this.src, pad = this.radius;
+    if (!c || c.dead || !c.blocking || c.dynamic || c.kind === 'npc' || !this.overlaps(c)) return { any: false, next: -1 };
+    if (c.type === 'mesh') {
+      if (!S.forEachTriangle) return { any: false, next: -1 };
+      let any = false;
+      const next = S.forEachTriangle(c, (ax, ay, az, bx, by, bz, cx, cy, cz) => {
+        const mx = (ax + bx + cx) / 3, mz = (az + bz + cz) / 3, g = S.height(mx, mz);
+        const lo = Math.min(ay, by, cy) - g, hi = Math.max(ay, by, cy) - g;
+        if (hi < WALK.under || lo > WALK.over) return;
+        if (this._tri(ax, az, bx, bz, cx, cz, pad)) any = true;
+      }, from, limit);
+      return { any, next: typeof next === 'number' ? next : -1 };
     }
-    for (const d of this.discs) this._disc(d.x, d.z, d.r + pad, 4);
+    // primitives: in the walker's height band over the ground under their centre?
+    const ccx = c.type === 'box' || c.type === 'sphere' ? c.cx : (c.ax + c.bx) * 0.5;
+    const ccz = c.type === 'box' || c.type === 'sphere' ? c.cz : (c.az + c.bz) * 0.5;
+    const g = S.height(ccx, ccz);
+    if (c.maxy - g < WALK.under || c.miny - g > WALK.over) return { any: false, next: -1 };
+    if (c.type === 'box') this._box(c, pad);
+    else if (c.type === 'capsule' && !c.vertical) this._seg(c.ax, c.az, c.bx, c.bz, c.r + pad);
+    else this._disc(ccx, ccz, c.r + pad);
+    return { any: true, next: -1 };
+  }
+
+  _discsIn() { for (const d of this.discs) this._disc(d.x, d.z, d.r + this.radius, 4); }
+
+  _finishBuild(nCol) {
     this.stats.colliders = nCol;
     this.stats.builds++;
     this.dirty = false;
     this._compStale = true;
     this._components();
-    this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
     // landmarks measured on the grid before are not this grid's: made again (when wanted) from the next tick
     this._lm = null;
     if (this.open.length >= WALK_LM_MIN_CELLS) this._lmWanted = true;
-    return this;
+  }
+
+  /**
+   * C5 (the first hour's hitches): the grid is current for a query. A grid built once and ticked by Nav.update (the game)
+   * that has gone dirty (a collider registered or removed: a wall the Screed cut) is rebuilt a slice a tick into spare
+   * arrays (rebuildStep) while every query keeps the grid it had, then swapped in whole; anything else (the first build,
+   * Node rows, benches) builds now, as before. At 71644c5 the first route after a cut rebuilt Ninewalls' 135,529 cells in
+   * one frame (17.7 ms of a 33.7 ms frame, first-hour leg 2's seal stages, run hh-c5-71644c5-prof).
+   */
+  _current() {
+    if (!this.dirty) return;
+    if (this._ticked && this._heights) { if (!this._rb) this._startRebuild(); return; }
+    this.build();
+  }
+
+  _startRebuild() {
+    const n = this.open.length;
+    if (!this._open2 || this._open2.length !== n) { this._open2 = new Uint8Array(n); this._why2 = new Uint8Array(n); }
+    this._rb = { phase: 'cost', row: 0, k: 0, tri: 0, nCol: 0, any: false, cols: null, dirtyAt: this._dirtyN || 0 };
+    this.stats.slicedRebuilds = (this.stats.slicedRebuilds || 0) + 1;
+  }
+
+  /** One slice of a sliced rebuild, about `ms` of work; swaps the new grid in when it is done. Returns true when done. */
+  rebuildStep(ms = WALK_LM_SLICE_MS) {
+    const R = this._rb;
+    if (!R) return true;
+    const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
+    const t0 = now();
+    this._tOpen = this._open2; this._tWhy = this._why2;
+    try {
+      if (R.phase === 'cost') {
+        if (R.row === 0) { const sh = this.stats.shut; sh.slope = sh.water = sh.collider = sh.disc = 0; }
+        while (R.row < this.nz && now() - t0 < ms) { const r1 = Math.min(this.nz, R.row + 16); this._costRows(R.row, r1); R.row = r1; }
+        if (R.row >= this.nz) { R.phase = 'stamp'; R.cols = (this.src.colliders ? this.src.colliders() : []).slice(); }
+        return false;
+      }
+      if (R.phase === 'stamp') {
+        while (R.k < R.cols.length && now() - t0 < ms) {
+          const { any, next } = this._stampCollider(R.cols[R.k], R.tri, this.src.trianglesInRange ? 256 : Infinity);
+          if (any) R.any = true;
+          if (next >= 0) { R.tri = next; continue; }
+          if (R.any) R.nCol++;
+          R.k++; R.tri = 0; R.any = false;
+        }
+        if (R.k >= R.cols.length) R.phase = 'discs';
+        return false;
+      }
+      // discs, then the swap
+      this._discsIn();
+    } finally { this._tOpen = null; this._tWhy = null; }
+    const o = this.open, w = this.why;
+    this.open = this._open2; this.why = this._why2;
+    this._open2 = o; this._why2 = w;
+    this._rb = null;
+    this._finishBuild(R.nCol);
+    this.stats.swapMs = +(now() - t0).toFixed(1);
+    // a collider changed again while this one was being made: it stands (it is newer than the last), and another follows
+    if ((this._dirtyN || 0) !== R.dirtyAt) this.dirty = true;
+    return true;
+  }
+
+  /** Nav.update's tick: a sliced rebuild first, else the landmarks. */
+  tick() {
+    this._ticked = true;
+    if (this._rb) { this.rebuildStep(); return; }
+    // a grid gone dirty is made again in the background at once, not at the next query
+    if (this.dirty && this._heights) { this._startRebuild(); return; }
+    this.landmarkStep();
   }
 
   /**
@@ -868,9 +958,10 @@ export class WalkGrid {
   }
 
   _shut(i, w) {
-    if (this.open[i] === 0) return;
-    this._compStale = true;
-    this.open[i] = 0; this.why[i] = w;
+    const open = this._tOpen || this.open;
+    if (open[i] === 0) return;
+    if (open === this.open) this._compStale = true;
+    open[i] = 0; (this._tWhy || this.why)[i] = w;
     if (w === 3) this.stats.shut.collider++; else if (w === 4) this.stats.shut.disc++;
   }
 
@@ -923,7 +1014,7 @@ export class WalkGrid {
 
   /** The nearest open cell to (x, z) within `ring` cells, or -1. */
   nearestOpen(x, z, ring = 8) {
-    if (this.dirty) this.build();
+    this._current();
     let i = this.index(x, z);
     if (i >= 0 && this.open[i]) return i;
     const ix0 = Math.round((x - this.x0) / this.cell), iz0 = Math.round((z - this.z0) / this.cell);
@@ -944,7 +1035,7 @@ export class WalkGrid {
 
   /** Is the straight segment (ax, az) -> (bx, bz) on open cells all the way (marched at a quarter cell)? */
   lineOpen(ax, az, bx, bz) {
-    if (this.dirty) this.build();
+    this._current();
     const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
     const steps = Math.max(1, Math.ceil(len / (this.cell * 0.25)));
     for (let k = 0; k <= steps; k++) {
@@ -1185,7 +1276,7 @@ export class WalkGrid {
    * cell nearest it), or null when there is none. A fresh array of fresh points: the caller keeps it.
    */
   path(from, to, opts = null) {
-    if (this.dirty) this.build();
+    this._current();
     const maxExp = (opts && opts.maxExpansions) || 120000;
     const start = this.nearestOpen(from.x, from.z), goal = this.nearestOpen(to.x, to.z, 12);
     this.stats.paths++;
@@ -1246,7 +1337,8 @@ Nav.prototype.addWalkGrid = function addWalkGrid(box, opts = {}) {
     height: (x, z) => T.getHeight(x, z),
     depth: W && typeof W.depthAt === 'function' ? (x, z) => W.depthAt(x, z) : (x, z) => Math.max(0, -T.getHeight(x, z)),
     colliders: () => C.colliders,
-    forEachTriangle: (c, fn) => C.forEachTriangle(c, fn),
+    forEachTriangle: (c, fn, from = 0, limit = Infinity) => C.forEachTriangle(c, fn, from, limit),
+    trianglesInRange: true,
   }, opts);
   const i = this._walk.findIndex((w) => w.id === g.id);
   if (i >= 0) this._walk[i] = g; else this._walk.push(g);
@@ -1262,11 +1354,11 @@ Nav.prototype.walk = function walk(from, to, opts = null) {
 {
   const added = Nav.prototype.onColliderAdded, dirty = Nav.prototype.markDirty;
   Nav.prototype.onColliderAdded = function onColliderAdded(col) {
-    if (this._walk && col && !col.dead && !col.dynamic && col.blocking) for (const w of this._walk) if (w.overlaps(col)) w.dirty = true;
+    if (this._walk && col && !col.dead && !col.dynamic && col.blocking) for (const w of this._walk) if (w.overlaps(col)) { w.dirty = true; w._dirtyN = (w._dirtyN || 0) + 1; }
     return added.call(this, col);
   };
   Nav.prototype.markDirty = function markDirty() {
-    if (this._walk) for (const w of this._walk) w.dirty = true;
+    if (this._walk) for (const w of this._walk) { w.dirty = true; w._dirtyN = (w._dirtyN || 0) + 1; }
     return dirty.call(this);
   };
 }
