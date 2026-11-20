@@ -696,14 +696,16 @@ const screedNow = async () => {
 };
 
 /**
- * in-page (M3 fix wave): is the Screed within 0.45 s of changing its motion (an arrow's release and flight at 8 m)? The
- * end of a stall (it backs off at once) or of the back-off (it walks on).
+ * in-page (M3 fix wave): is the Screed within 0.45 s of changing its motion (an arrow's release and flight at 8 m), or
+ * backing off? The end of a stall (it backs off at once), and the back-off itself until it walks on.
  */
 const screedEdge = async (i) => {
   const R = (await import('/src/instruments/kinds/screed-rules.js')).SCREED_RULES;
   const m = window.__CTX__.machines.list[i], b = m?.brain, backT = m?.fightRules?.backT ?? 0;
   if (!b) return false;
-  return (b.phase === 'stall' && R.stallS - b.phaseT < 0.45) || (backT > 0 && backT < 0.45);
+  // (a7d1cc3 probe e-stall-p4: an arrow held past the stall's end and solved in the first 0.3 s of the back-off met the
+  // hull 0.62 m off the seal: the whole back-off is held through)
+  return (b.phase === 'stall' && R.stallS - b.phaseT < 0.45) || backT > 0;
 };
 
 /** in-page: a point at compass bearing b, r m from Ninewalls' centre (the walls seam's polar) */
@@ -743,6 +745,8 @@ const SEAL_MARGIN = 0.45;
 // a stand's margins are read from her nock and lens carried there; at f5c955a one read 0.71 m and gave 0.45 m once she
 // stood there with the bow raised, so a stand must clear the bar by this much more
 const STAND_SLACK = 0.4;
+/** the draw a seal arrow is loosed at (combat.drawStrength) */
+const DRAW_FIRE = 0.75;
 const sealGeom = (mi, stand = null) => {
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, cb = C.combat, T = C.terrain;
   if (!m || !m._sealW) return null;
@@ -879,12 +883,14 @@ async function volley(page, K, stage, maxS = 8) {
       }
       blocked = null;
       await draw();
-      while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= 0.99 && Date.now() - td > 300)) break; }
+      // (M3 fix wave) loosed at three-quarter draw (a quick shot at 6-9 m; solveShot flies the arrow at the draw it has):
+      // nock 0.42 s + draw 0.65 s held the cadence to 1.2-1.3 s, two arrows and a third at the stall's edge
+      while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= DRAW_FIRE && Date.now() - td > 300)) break; }
       // (M3 fix wave) never loosed across a change of its motion: at 3e576c6 chained run 3 an arrow solved on a stalled
       // Screed (missM 0.019) left as the stall ended and it began to back off at 1.2 m/s, and met its hull 0.71 m from the
       // seal; the next, loosed in the back-off, met nothing. Held drawn until the change is past, then solved again
       let held = 0;
-      for (; held < 12 && (await page.evaluate(screedEdge, S.i)); held++) await sleep(100);
+      for (; held < 26 && (await page.evaluate(screedEdge, S.i)); held++) await sleep(100);
       if (held) sol = await page.evaluate(SH.solveShot, S.i, part, 0.12);
       const G2 = await page.evaluate((i) => window.__sealGeom(i), S.i);
       const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null,
