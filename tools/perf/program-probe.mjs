@@ -36,6 +36,7 @@ const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[
 const PORT = guardPort(flag('--port'));
 const RESOLVE = args.includes('--resolve');
 const WARMDRAW = args.includes('--warm-draw');
+const KEYS = flag('--keys');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 const OUT = flag('--out') || path.join(RUNS, `${stamp}-${process.env.CLEAN_COMMIT || 'tree'}-program-probe`);
 assertOutsideRepo(OUT, REPO);
@@ -84,7 +85,7 @@ async function main() {
     await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 180000, polling: 100 });
     out.titleS = +((Date.now() - tC) / 1000).toFixed(2);
     await sleep(4000);   // the deferred warm-up's poll (main.js _warmUpDeferred) and a few title frames
-    out.page = await page.evaluate(async (RESOLVE, WARMDRAW) => {
+    out.page = await page.evaluate(async (RESOLVE, WARMDRAW, KEYS) => {
       const C = window.__CTX__, E = C.engine, r = E.renderer, gl = r.getContext(), THREE = E.constructor.THREE || null;
       const R = window.__pp;
       const o = {};
@@ -106,6 +107,8 @@ async function main() {
       o.boot = { programs: list.length, used: list.length - unused.length, firstUseMsSum: Math.round(R.log.reduce((a, b) => a + b, 0)),
         firstUseOver5: R.log.filter((d) => d > 5).length,
         unused: unused.map((q) => ({ name: q.name, kind: (q.cacheKey || '').split(',')[0], key: (q.cacheKey || '').slice(0, 90), usedTimes: q.usedTimes, ready: (() => { try { return q.isReady(); } catch { return null; } })(), owners: owners(q) })) };
+      // (--keys <regex>) the full keys of the programs whose key matches
+      if (KEYS) o.keys = list.filter((q) => new RegExp(KEYS).test(q.cacheKey || '')).map((q) => q.cacheKey);
       // the shadow side
       const csm = E.csm;
       o.shadow = { hour: C.environment?.time ?? null, sunY: C.environment?.sunDir?.y ?? null, shadowMap: { enabled: r.shadowMap.enabled, autoUpdate: r.shadowMap.autoUpdate, type: r.shadowMap.type },
@@ -167,7 +170,7 @@ async function main() {
         o.resolve = { n: unused.length, ms: Math.round(performance.now() - t0), each };
       }
       return o;
-    }, RESOLVE, WARMDRAW);
+    }, RESOLVE, WARMDRAW, KEYS);
     out.errors = errors; out.warns = warns;
   } catch (e) {
     out.error = String(e?.stack || e);

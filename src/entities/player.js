@@ -1353,6 +1353,7 @@ export class Player {
     // and registered with the world now (fog, cascades: another program), as its material scan would some frames later
     ctx.engine?.addWarmPass?.(() => {
       if (!this.model) return;
+      this.animator?._warmPots?.();   // her belt of pots, hidden until she carries one (src/entities/anim/potLayer.js)
       this._collectMaterials();
       for (const e of this._mats) ctx.environment?.registerMaterial?.(e.mat);
     });
@@ -1436,6 +1437,10 @@ void main() {
           c.customProgramCacheKey = () => key;
           c.needsUpdate = true;
           this._mats.push({ mat: c, u });
+          // C5 (engine lane, the smallest change here): registered with the world now, as its material scan would some
+          // frames later: drawn unregistered first, a clone made in play linked a program of its own (Oro's kit at the
+          // hand-over, 15 ms at 1aba506) and then the registered one, which the boot's clones already hold
+          this.ctx.environment?.registerMaterial?.(c);
         }
         // also true when `c` came from the map: a second mesh sharing the same
         // source material still has to be re-pointed at OUR clone, or it keeps
