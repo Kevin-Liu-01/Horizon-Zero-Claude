@@ -1103,7 +1103,54 @@ const A90_LOOP_NEW = `      // restated (docs/GATES.md 3 D, the A90 warm-cycle r
 const A90_DET_OLD = "const detail = { kills, workload: W, before: a,";
 const A90_DET_NEW = "const detail = { restated: 'M1a regfix 3 (docs/GATES.md 3 D): one warm cycle, then 30 counted', cycles, loopSeconds: Math.round((performance.now() - t0) / 1000), warm, kills, workload: W, before: a,";
 
+/* M2 fix wave 3 (hero-anim; the orchestrator's ruling 4, provisional until the owner answers): A100's DODGE clause is
+ * measured against her upper back, the strap frame, not her upright char frame: through the somersault her back turns
+ * over, and a lance strapped to it turns with it, so "30-60 deg from vertical" and "the blade over the right shoulder"
+ * in the upright frame read her tumble, not the strap. The strap frame is the trunk frame src/hero/carry.js straps the
+ * lance in: U her pelvis -> neck line, L her shoulder line square to U, F = L x U. The four geometric clauses are read
+ * in it: the midpoint against the upper back (spine_03 0.13 m behind along F), the tilt off U, the blade over the right
+ * shoulder along U, the tip right of the spine along L. Every other row and clause is unchanged; the old upright
+ * readings stay in the detail beside the new ones, not graded. */
+const A100_STRAP_FN = `const __strap = () => {
+        // the trunk frame carry.js straps the lance in: U pelvis -> neck, L the shoulder line square to U, F = L x U
+        const U = q.a2.clone(), Lt = q.uL.clone().sub(q.uR); Lt.addScaledVector(U, -Lt.dot(U)).normalize();
+        const F = Lt.clone().cross(U).normalize(), d = q.t.clone().sub(q.b).normalize();
+        return { sMid: +q.m.distanceTo(q.s3.clone().addScaledVector(F, -0.13)).toFixed(3),
+          sTilt: +(Math.acos(Math.min(1, Math.abs(d.dot(U)))) * 180 / Math.PI).toFixed(2),
+          sBlade: +q.t.clone().sub(q.uR).dot(U).toFixed(3), sTip: +(-(q.t.clone().sub(q.s3).dot(Lt))).toFixed(3) };
+      };`;
+const A100_READ_OLD = "        return {\n          parent: kit.socket?.parent?.name || null, collapsed: !!(kit.hidden & 1), held: !!M.lanceInHand,";
+const A100_READ_NEW = "        return { ...__strap(),\n          parent: kit.socket?.parent?.name || null, collapsed: !!(kit.hidden & 1), held: !!M.lanceInHand,";
+const A100_INIT_OLD = "anyHeld: r.held, anyCollapsed: r.collapsed, ...extra() }; continue; }";
+const A100_INIT_NEW = "anyHeld: r.held, anyCollapsed: r.collapsed, ...extra(), sTiltMin: r.sTilt, sTiltMax: r.sTilt, sMidMax: r.sMid, sBladeMin: r.sBlade, sBladeMax: r.sBlade, sTipMin: r.sTip }; continue; }";
+const A100_UPD_OLD = "          o.midMax = Math.max(o.midMax, r.midToBack);";
+const A100_UPD_NEW = "          o.midMax = Math.max(o.midMax, r.midToBack);\n          o.sTiltMin = Math.min(o.sTiltMin, r.sTilt); o.sTiltMax = Math.max(o.sTiltMax, r.sTilt); o.sMidMax = Math.max(o.sMidMax, r.sMid);\n          o.sBladeMin = Math.min(o.sBladeMin, r.sBlade); o.sBladeMax = Math.max(o.sBladeMax, r.sBlade); o.sTipMin = Math.min(o.sTipMin, r.sTip);";
+const A100_BAD_OLD = `        if (!(r.midMax <= 0.30)) bad.push(r.label + ': midpoint ' + r.midMax + ' m from the upper back');
+        if (!(r.tiltMin >= 30 && r.tiltMax <= 60)) bad.push(r.label + ': tilt ' + r.tiltMin + '-' + r.tiltMax + ' deg');
+        if (!(r.bladeMin > 0.20 && r.bladeMax <= 0.70)) bad.push(r.label + ': blade ' + r.bladeMin + '-' + r.bladeMax + ' m over the right shoulder');
+        if (!(r.tipMin > 0.15)) bad.push(r.label + ': tip ' + r.tipMin + ' m right of the spine');`;
+const A100_BAD_NEW = `        /* (M2 fix wave 3, ruling 4: the dodge's four geometric clauses in the strap frame; the upright readings reported) */
+        const S = r.label === 'dodge', fr = S ? ' (strap frame)' : '';
+        const mid = S ? r.sMidMax : r.midMax, t0 = S ? r.sTiltMin : r.tiltMin, t1 = S ? r.sTiltMax : r.tiltMax;
+        const b0 = S ? r.sBladeMin : r.bladeMin, b1 = S ? r.sBladeMax : r.bladeMax, tp = S ? r.sTipMin : r.tipMin;
+        if (!(mid <= 0.30)) bad.push(r.label + ': midpoint ' + mid + ' m from the upper back' + fr);
+        if (!(t0 >= 30 && t1 <= 60)) bad.push(r.label + ': tilt ' + t0 + '-' + t1 + ' deg' + fr);
+        if (!(b0 > 0.20 && b1 <= 0.70)) bad.push(r.label + ': blade ' + b0 + '-' + b1 + ' m over the right shoulder' + fr);
+        if (!(tp > 0.15)) bad.push(r.label + ': tip ' + tp + ' m right of the spine' + fr);`;
+const A100_FN_OLD = "      const read = () => {\n        const L = lineOf(1, q.b, q.t);";
+
 export const RESTATED = [
+  {
+    id: 'A100-lance-holster',
+    why: 'M2 fix wave 3, the orchestrator\'s ruling 4 (provisional until the owner answers): the dodge row\'s midpoint, tilt, blade and tip clauses are read in the strap frame (the trunk frame the carry straps the lance in: pelvis -> neck, the shoulder line square to it), not her upright char frame: a lance strapped to her back stays in its band relative to the back through the somersault. Every other row and clause is unchanged; the upright readings are reported beside them',
+    patches: [
+      [A100_FN_OLD, A100_STRAP_FN + '\n' + A100_FN_OLD],
+      [A100_READ_OLD, A100_READ_NEW],
+      [A100_INIT_OLD, A100_INIT_NEW],
+      [A100_UPD_OLD, A100_UPD_NEW],
+      [A100_BAD_OLD, A100_BAD_NEW],
+    ],
+  },
   {
     id: 'A16-draw-anchor',
     why: 'the M1.3b rig holds the string in a hook at the jaw corner (BIBLE 5.2: the draw hand at the cheek); the row measured the wrist and the knuckle against the nock, which the hook puts 0.09-0.12 m apart by design; M1b wave 2 ruling: the launch clause is measured on Steady (sway 0), since the row tests the draw rig and the breath sway is graded by its own rows',

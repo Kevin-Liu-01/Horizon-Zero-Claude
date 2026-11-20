@@ -414,6 +414,21 @@ export class LanceCarry {
       return;
     }
     this._fpOn = false;
+    /* M2 fix wave 3 (hero-anim; the orchestrator's ruling 4, provisional until the owner answers: A100's dodge clause is
+     * read against her upper back, the strap frame, not her upright char frame). THROUGH A ROLL THE STRAP HOLDS. The
+     * search below holds R10's bounds in the upright frame (32-40 deg from vertical, the blade over the shoulder along
+     * char +Y); a somersault turns her back over, no pose on it holds them, and the search chased them round the back:
+     * alpha 34 -> 71 deg and beta 0 -> 45 deg in the strap frame (Node probe of the dodge at ddc31c1: 24-71 deg off the
+     * back's vertical, the blade 0.02-0.55 m over the shoulder along it; the page row read 22-67 deg and 0.18-0.59 m).
+     * While she rolls the lance keeps the (alpha, beta, slide) it had in the trunk frame as the roll began, so it turns
+     * with her back as a strapped lance does; the search takes over again when she is up (and eases, as always). */
+    if (this.player.dodging && this.out.active && this._freeT >= FREE.blendOut) {
+      _ARG[0] = this.alpha; _ARG[1] = this.beta; _ARG[2] = this.sl;
+      this._placeS(this.butt, this.tip);
+      this._report(armOn, true, 'roll');
+      this._pose();
+      return;
+    }
     // the search: the feasible (alpha, beta) nearest the authored pose
     // the best pose so far lives in a typed slot (cost, alpha, beta, slide): no double merges through control flow
     const BS = _BS;
