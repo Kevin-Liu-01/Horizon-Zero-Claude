@@ -117,8 +117,9 @@ export async function residentLedger({ root = REPO, assets = null, map = null, r
       .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([f, b]) => ({ file: f, mb: mb(b) }));
     const byRegion = mb(sum(near)), today = mb(sum([...sofar]));
     out.push({ id: p.id, label: p.label, mode: p.mode, region: M.regionAt(p.x, p.z), regions: near, regionsSoFar: [...sofar],
-      byRegion, today, withPlan: Math.round((today + planMb) * 100) / 100, top5: lines,
-      pass: { byRegion: byRegion <= CAP_MB, today: today <= CAP_MB, withPlan: today + planMb <= CAP_MB } });
+      byRegion, today, withPlan: Math.round((today + planMb) * 100) / 100, byRegionWithPlan: Math.round((byRegion + planMb) * 100) / 100,
+      overMb: Math.max(0, Math.round((today + planMb - CAP_MB) * 100) / 100), top5: lines,
+      pass: { byRegion: byRegion <= CAP_MB, today: today <= CAP_MB, withPlan: today + planMb <= CAP_MB, byRegionWithPlan: byRegion + planMb <= CAP_MB } });
   }
   return {
     capMb: CAP_MB, alwaysMb: mb(always), planMb,
@@ -135,7 +136,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   console.log(`resident textures per place (MiB, cap ${L.capMb}); always resident ${L.alwaysMb}; M3 plan lines not on disk ${L.planMb}`);
   for (const [id, r] of Object.entries(L.regions)) console.log(`  region ${id.padEnd(9)} ${String(r.mb).padStart(7)} MB${r.standIn ? ' (stand-in)' : ''}  ${r.files} files, cast ${r.cast}; approach ${r.approach.walk} m walk / ${r.approach.flight} m flight`);
   for (const p of L.places) {
-    console.log(`${p.label} [${p.region}, ${p.mode}]: by region ${p.byRegion} (${p.regions.join('+')}), today ${p.today} (${p.regionsSoFar.join('+')}), with the plan lines ${p.withPlan}: ${p.pass.withPlan ? 'PASS' : 'FAIL'}`);
+    console.log(`${p.label} [${p.region}, ${p.mode}]: by region ${p.byRegion} (${p.regions.join('+')}), today ${p.today} (${p.regionsSoFar.join('+')}), with the plan lines ${p.withPlan}: ${p.pass.withPlan ? 'PASS' : `FAIL (over by ${p.overMb})`}; by region with the plan lines ${p.byRegionWithPlan} (a region's files leaving on its depart): ${p.pass.byRegionWithPlan ? 'PASS' : 'FAIL'}`);
     for (const l of p.top5) console.log(`    ${String(l.mb).padStart(6)}  ${l.file}`);
   }
   if (j >= 0) writeFileSync(args[j + 1], JSON.stringify(L, null, 1));

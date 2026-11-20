@@ -16,7 +16,8 @@
  *   const tr = new RegionTracker(map)
  *   tr.update(x, z)             -> events[]     fires each crossing once (see HYSTERESIS_M)
  *   tr.modeOf = () => 'walk' | 'flight'          (M3) how she moves: a region's approach distance is per mode
- *                                                (`approachOf`); the engine binds it to the flight state seam
+ *                                                (`approachOf`); the systems runtime binds it to the flight state
+ *                                                seam (`modeOfFlight(player.flight)`, src/game/runtime.js)
  *   tr.on('enter' | 'leave' | 'approach' | 'depart', fn({ region, x, z, depth }))
  *   tr.current                  -> id | null    the region she is in (null only between a leave and the next enter)
  *   tr.resident()               -> id[]         the region she is in plus every region she is approaching
@@ -52,6 +53,11 @@ export const FLIGHT_APPROACH_M = 150;
 /** The approach distance (m) of `region` for a mode ('walk' or 'flight'): its own if it has one, else the seam's. */
 export const approachOf = (region, mode = 'walk') =>
   region?.approach?.[mode] ?? (mode === 'flight' ? Math.max(FLIGHT_APPROACH_M, APPROACH_M) : APPROACH_M);
+/**
+ * (M3) The mode the regions read from the flight-state seam (`player.flight`, src/game/kite/flight.js FLIGHT_STATES):
+ * any state but 'none' is the air ('opening', 'gliding', 'folding', 'landing': she is off the ground or about to be).
+ */
+export const modeOfFlight = (state) => (typeof state === 'string' && state !== 'none' ? 'flight' : 'walk');
 /** The label grid's cell, metres. */
 export const CELL_M = 4;
 

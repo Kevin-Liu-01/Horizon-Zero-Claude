@@ -4,7 +4,7 @@
  * and at kite speed, with the region's assets STOOD IN AT THEIR CAPS, every presented frame recorded:
  * bar 0 frames over 50 ms and at most 1 over 33 ms per crossing; every frame over 33 ms named by its cause.
  *
- *   tools/perf/clean-measure.sh <commit> 5284 node tools/perf/region-hitch.mjs --port 5284 --built [--only <ids>]
+ *   tools/perf/clean-measure.sh <commit> 5284 node tools/perf/region-hitch.mjs --port 5284 --built [--skip-build] [--only <ids>]
  *        [--upload spread|at-load] [--out <dir outside the repo>]
  *
  * THE CROSSINGS are tools/perf/region-hitch-paths.mjs (the Node twin sweeps the same lines: region-hitch.test.mjs).
@@ -85,7 +85,6 @@ async function waitHttp(url, ms = 180000) {
 let server = null;
 async function serve() {
   if (!(await portFree(PORT))) throw new Error(`port ${PORT} is taken: this tool runs its own server`);
-  if (BUILT) execFileSync('nice', ['-n', '10', 'npx', 'vite', 'build', '--logLevel', 'error'], { cwd: REPO, stdio: 'inherit' });
   const a = BUILT ? ['vite', 'preview'] : ['vite'];
   server = spawn('nice', ['-n', '10', 'npx', ...a, '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
   if (!(await waitHttp(`http://127.0.0.1:${PORT}/`))) throw new Error(`server did not answer on ${PORT}`);
@@ -168,7 +167,17 @@ const installStandIn = (rows, upload, place, warm) => {
       mark('uploaded-spread');
     }
     // the programs: issued off the frame and awaited (KHR_parallel_shader_compile) before the models are drawn, as the
-    // engine's warm-up does (engine.compileAsDrawn + _awaitProgramsReady); --no-warm adds them to the scene cold
+    // engine's warm-up does (engine.compileAsDrawn + _awaitProgramsReady); --no-warm adds them to the scene cold.
+    // Their materials are REGISTERED with the environment first (fog uniforms and the cascades: registerMaterial changes
+    // the program): at cc1e850 the warm-up compiled the unregistered variant, and the environment's material scan (every
+    // 2.5 s) registered them 359 ms (jog) and 494 ms (flight) after they were drawn, so the next frame linked 6 programs
+    // again, 93.4 and 80.3 ms in getProgramInfoLog (frames of 106.9 and 91.7 ms). A region's loader registers, then
+    // compiles, then awaits, then adds: that order is the seam's (BACKLOG: engine.attachRegions' own load)
+    if (warm && C.environment?.registerMaterial) {
+      let n = 0;
+      for (const r of held.roots) r.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine || o.isSprite) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) { C.environment.registerMaterial(m); n++; } } });
+      mark('registered', { materials: n });
+    }
     if (warm && E.compileAsDrawn && E._awaitProgramsReady) {
       const g = new (E.scene.constructor)();
       for (const r of held.roots) g.add(r);
@@ -196,7 +205,9 @@ const installStandIn = (rows, upload, place, warm) => {
 const carry = (c, from, to, agl) => new Promise((resolve) => {
   const C = window.__CTX__, p = C.player, R = C.engine.regions;
   const H = (x, z) => C.terrain?.getHeight?.(x, z) ?? p.position.y;
-  R.tracker.modeOf = () => c.mode;
+  // her mode goes through the game's own binding (the flight-state seam, player.flight, read by the tracker's modeOf:
+  // src/game/runtime.js), never by overriding modeOf: the row checks the binding as it measures
+  p.flight = c.mode === 'flight' ? 'gliding' : 'none';
   const L = Math.hypot(to.x - from.x, to.z - from.z);
   const t0 = performance.now();
   p.camYaw = Math.atan2(-(to.x - from.x), -(to.z - from.z));
@@ -252,6 +263,8 @@ function causeOf(f, marks, res, loaf) {
 let browser = null, profile = null, slotTaken = false;
 const tStart = Date.now();
 try {
+  // the build is not Chrome time: it runs before the slot is asked for (at cc1e850 it ran inside the slot)
+  if (BUILT && !args.includes('--skip-build')) execFileSync('nice', ['-n', '10', 'npx', 'vite', 'build', '--logLevel', 'error'], { cwd: REPO, stdio: 'inherit' });
   const slot = await takeMachineSlot({ who: `int e+f region-hitch ${PORT}`, waitS: 1800, log });
   if (!slot.ok) throw new Error(slot.why);
   slotTaken = true;
@@ -294,14 +307,15 @@ try {
   await sleep(4000);
   const rows = Object.fromEntries(STANDIN_FILES.map((f) => [`standin-${f.replace(/^.*\//, '').replace(/\.glb$/, '')}`, { url: `/${f}`, targetHeight: 6 }]));
   for (const c of crossings) {
-    const C = { id: c.id, mode: c.mode, speed: c.speed, agl: c.agl, a: c.a, b: c.b, standIn: 'carried; Malpais files stood in' };
+    const C = { id: c.id, mode: c.mode, speed: c.speed, agl: c.agl, a: c.a, b: c.b, standIn: c.to === 'malpais' || c.from === 'malpais' ? 'carried; Malpais files stood in' : 'carried; the Holds\' own files (nothing stood in)' };
     try {
       const inside = { x: c.b.x, z: c.b.z };
       await page.evaluate(installStandIn, rows, UPLOAD, inside, WARM);
       // to the start (a teleport: not counted), settle 4 s
-      await page.evaluate((cc) => { const C = window.__CTX__, p = C.player; C.engine.regions.tracker.modeOf = () => cc.mode; p.position.x = cc.a.x; p.position.z = cc.a.z; p._snapToGround?.(p.position.y + 200); }, c);
+      await page.evaluate((cc) => { const C = window.__CTX__, p = C.player; p.flight = cc.mode === 'flight' ? 'gliding' : 'none'; p.position.x = cc.a.x; p.position.z = cc.a.z; p._snapToGround?.(p.position.y + 200); }, c);
       await page.evaluate(hold, c.a, c.agl, 4000);
-      C.before = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), where: window.__rh.where() }));
+      C.before = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), where: window.__rh.where(), flight: window.__CTX__.player.flight, modeSeen: window.__CTX__.engine.regions.tracker.modeOf() }));
+      C.modeBound = C.before.modeSeen === c.mode;
       await page.evaluate(() => { const S = window.__rh; S.on = true; S.frames = 0; S.over33 = 0; S.over50 = 0; S.max = 0; S.long = []; S.marks = []; S.res = []; S.loaf = []; S.last = 0; });
       C.out = await page.evaluate(carry, c, c.a, c.b, c.agl);
       await page.evaluate(hold, c.b, c.agl, 3000);
@@ -316,12 +330,12 @@ try {
       const R = await page.evaluate(() => { const S = window.__rh; S.on = false; return { frames: S.frames, over33: S.over33, over50: S.over50, maxMs: +S.max.toFixed(1), long: S.long, marks: S.marks, res: S.res, loaf: S.loaf }; });
       C.after = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), standInHeld: window.__standIn.names.length, hp: Math.round(window.__CTX__.player.health ?? 0), dead: !!document.querySelector('.mn-death.show') }));
       // down to the ground again before the next crossing (a teleport: not counted)
-      await page.evaluate(() => { const p = window.__CTX__.player; p._snapToGround?.(p.position.y + 2); window.__CTX__.engine.regions.tracker.modeOf = () => 'walk'; });
+      await page.evaluate(() => { const p = window.__CTX__.player; p._snapToGround?.(p.position.y + 2); window.__CTX__.player.flight = 'none'; });
       C.frames = R.frames; C.over33 = R.over33; C.over50 = R.over50; C.maxMs = R.maxMs;
       C.long = R.long.map((f) => ({ ...f, ...causeOf(f, R.marks, R.res, R.loaf) }));
       C.marks = R.marks; C.fetched = R.res.map((r) => ({ url: r.url, ms: Math.round(r.end - r.start), bytes: r.bytes }));
       C.fetchedBytes = R.res.reduce((s, r) => s + (r.bytes || 0), 0);
-      C.pass = !C.after.dead && C.fetchedBytes > 0 && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+      C.pass = !C.after.dead && C.modeBound && (c.to !== 'malpais' || C.fetchedBytes > 0) && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
       C.shot = path.basename(shotOut);
       log(`${c.id}: ${C.frames} frames, ${C.over33} over 33 ms, ${C.over50} over 50 ms (max ${C.maxMs}); stand-in ${(C.fetchedBytes / 1e6).toFixed(2)} MB fetched; ${C.pass ? 'PASS' : 'FAIL'}`);
       // back at the start in the Holds the Malpais must have departed (its stand-ins disposed) before the next crossing

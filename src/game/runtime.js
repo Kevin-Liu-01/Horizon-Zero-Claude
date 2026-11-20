@@ -12,6 +12,7 @@ import { FirstHour } from './hour.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
 import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
+import { modeOfFlight } from '../core/regions.js';
 import { vec3 } from '../world/settlements/brazier.js';
 import { streetPoint } from '../world/settlements/saltrow-layout.js';
 
@@ -566,6 +567,8 @@ export function installGame(ctx) {
   installReeds(ctx);   // M1.6e: reed cover, the gust clock, the rule (src/game/reeds); ctx.terrain.cutCover
   // Milestone 2: the regions (engine's seam, src/core/regions.js) built behind the loading sheet; ticked in update()
   ctx.regions = ctx.engine?.attachRegions?.({ assets: ctx.assets, events: ctx.events }) ?? null;
+  // M3: a region's approach is per mode (the Malpais at 60 m walking, 150 m flying): the tracker reads the flight seam
+  if (ctx.regions?.tracker) ctx.regions.tracker.modeOf = () => modeOfFlight(ctx.player?.flight);
   saveFieldsOf(ctx);   // the save seam (src/game/save/fields.js): areas register their { get, set } pairs on it
   const sys = new SystemsGame(ctx);
   ctx.game?.systems?.push?.(sys);
