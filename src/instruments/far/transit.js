@@ -154,9 +154,17 @@ export class TransitFar {
         };
       });
       root.updateMatrixWorld(true);
-      root.visible = this.wanted && this.gate().ok;
-      this.root = root;
-      this.ctx.scene?.add(root);
+      const add = () => {
+        root.visible = this.wanted && this.gate().ok;
+        this.root = root;
+        this.ctx.scene?.add(root);
+      };
+      // C5 (engine lane, the smallest change here: the first hour's hitches): its program (the hulls' but for its key) is
+      // linked off the frame before it stands in the scene: added as the GLB landed, it linked on its first frame when
+      // calima arrived after the rest, 35.4 ms at ddc31c1 (first-hour leg 3)
+      const E = this.ctx.engine;
+      if (E?.compileOffFrame) return E.compileOffFrame(root).then(add, add);
+      add();
     }).catch((err) => { this.failed = String(err?.message || err); });
     return this.loading;
   }

@@ -301,9 +301,18 @@ async function shot(page, name) {
 function installHitch() {
   const H = (window.__hitch = { n: 0, max: 0, over33: 0, over50: 0, pause: 0, skip: false, last: 0, was: false, marks: [] });
   window.__hitchMark = (tag) => H.marks.push({ tag, n: H.n, over33: H.over33, over50: H.over50, max: H.max });
+  // (M3 fix wave, HR8 "never under 25") her hp on every presented frame in play, not only at the beats: the leg's lowest
+  // and when, the lowest since the beat before (`beatMin`, reset by the runner as each beat's drive begins), frames under 25
+  const HP = (window.__hp = { n: 0, min: Infinity, minT: null, beatMin: Infinity, under25: 0, t0: performance.now() });
   const tick = (t) => {
     const C = window.__CTX__, L = document.getElementById('loading'), sheet = !!L && !L.classList.contains('hidden');
     const playing = C?.state === 'playing' && !sheet;
+    const hp = playing ? C.player?.health : null;
+    if (typeof hp === 'number' && Number.isFinite(hp)) {
+      HP.n++; if (hp < HP.min) { HP.min = hp; HP.minT = +((t - HP.t0) / 1000).toFixed(1); }
+      if (hp < HP.beatMin) HP.beatMin = hp;
+      if (hp < 25) HP.under25++;
+    }
     if (H.last && playing && H.was) {
       const d = t - H.last;
       if (H.pause || H.skip) { if (!H.pause) H.skip = false; } else { H.n++; if (d > H.max) H.max = d; if (d > 33.4) H.over33++; if (d > 50) H.over50++; }
@@ -704,6 +713,116 @@ const mayShoot = (S) => {
 };
 
 /**
+ * (M3 fix wave, area E) A CLEAR LINE TO A SEAL. At ddc31c1 every chained run ended fail-soft: in the wall-2 stall she
+ * stood beside the Screed (2.6 m ahead of its centre, 5.5 m to its left), and from there the far seal sits behind the
+ * near one: the straight line from her nock to it passes 0.2-0.3 m from the near seal's centre (the seals are 1.9 m
+ * apart across its front, 1.6 m ahead of its centre). The game's flight was solved onto the far seal (first: its weak
+ * sphere, 1 cm) and the arrow met the near ram, every run (hits 0.19-0.23 m from the near seal: the near one's hit, or
+ * once it was off, a wasted arrow). A line is CLEAR here when the game's own ballistic solution meets that seal first
+ * AND the line from her nock and the one from the lens both pass the other seal (on or off: its ram is still there)
+ * by at least SEAL_MARGIN.
+ * in-page: per seal, where it is, its state, and those two margins from where she stands now (or from `stand`, her
+ * nock and lens carried there as they sit about her now, turned to face the seal).
+ */
+const SEAL_MARGIN = 0.55;
+const sealGeom = (mi, stand = null) => {
+  const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, cb = C.combat, T = C.terrain;
+  if (!m || !m._sealW) return null;
+  const V = C.camera.position.constructor;
+  const nk = new V(), cam = new V(), dir = new V();
+  try { cb.bow.getNockWorld(1, nk); } catch { nk.set(P.x, P.y + 1.45, P.z); }
+  if (!(nk.y - P.y > 0.6 && nk.y - P.y < 2.4)) nk.set(P.x, P.y + 1.45, P.z);
+  C.camera.getWorldPosition(cam); C.camera.getWorldDirection(dir);
+  const seals = {};
+  for (const w of m._sealW) seals[w.name] = { c: w.obj.getWorldPosition(new V()), r: w.radius, on: w.enabled !== false };
+  // her nock and lens about her, in the frame of the look (forward f, right r, up): carried to `stand` facing the seal
+  const f0 = Math.atan2(dir.x, dir.z);
+  const local = (q) => { const dx = q.x - P.x, dz = q.z - P.z; return { a: dx * Math.sin(f0) + dz * Math.cos(f0), s: dx * Math.cos(f0) - dz * Math.sin(f0), y: q.y - P.y }; };
+  const nL = local(nk), cL = local(cam);
+  const segDist = (o, t, q) => {
+    const dx = t.x - o.x, dy = t.y - o.y, dz = t.z - o.z, L2 = dx * dx + dy * dy + dz * dz;
+    const u = L2 > 1e-9 ? Math.max(0, Math.min(1, ((q.x - o.x) * dx + (q.y - o.y) * dy + (q.z - o.z) * dz) / L2)) : 0;
+    return Math.hypot(o.x + dx * u - q.x, o.y + dy * u - q.y, o.z + dz * u - q.z);
+  };
+  const out = { at: stand ? [+stand.x.toFixed(2), +stand.z.toFixed(2)] : [+P.x.toFixed(2), +P.z.toFixed(2)] };
+  const sy = stand ? T.getHeight(stand.x, stand.z) : P.y;
+  for (const [name, s] of Object.entries(seals)) {
+    const other = Object.entries(seals).find(([k]) => k !== name)?.[1];
+    let o1 = nk, o2 = cam;
+    if (stand) {
+      const f = Math.atan2(s.c.x - stand.x, s.c.z - stand.z), sf = Math.sin(f), cf = Math.cos(f);
+      const at = (L) => new V(stand.x + sf * L.a + cf * L.s, sy + L.y, stand.z + cf * L.a - sf * L.s);
+      o1 = at(nL); o2 = at(cL);
+    }
+    out[name] = { on: s.on, c: [+s.c.x.toFixed(2), +s.c.y.toFixed(2), +s.c.z.toFixed(2)],
+      mNock: other ? +segDist(o1, s.c, other.c).toFixed(3) : 9, mLens: other ? +segDist(o2, s.c, other.c).toFixed(3) : 9,
+      nock: [o1.x, o1.y, o1.z], lens: [o2.x, o2.y, o2.z] };
+    out[name].margin = Math.min(out[name].mNock, out[name].mLens);
+  }
+  return out;
+};
+
+/**
+ * in-page: A STAND WITH A CLEAR LINE to one of `parts` (the seals still on), as a player steps round for a better
+ * angle: points 2.4-7 m to either side of the Screed and 1-8 m ahead of its centre, on her side of every wall (whole
+ * or cut: the walk there and the line from there to the Screed cross none), on ground within 1.5 m of hers, clear of
+ * its body and its blade box, never where mayShoot holds the bow (in its cone, 0.8 rad, beyond 5.5 m while it walks), each
+ * line passing the other seal by SEAL_MARGIN + 0.15 (sealGeom's margins, carried to the stand); the nearest walk wins.
+ * Returns { stand, part, margin, d, n (candidates), why } or { stand: null, best (the widest margin seen), n, why }.
+ */
+const sealStand = async (mi, parts, margin) => {
+  const W = await import('/src/world/settlements/ninewalls-layout.js');
+  const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, T = C.terrain;
+  if (!m) return { stand: null, why: 'no Screed' };
+  const h = m.brain?.heading ?? m.heading, fx = Math.sin(h), fz = Math.cos(h), rx = Math.cos(h), rz = -Math.sin(h);
+  const walking = (m.brain?.phase === 'walk') && !((m.fightRules?.backT ?? 0) > 0);
+  const geom = window.__sealGeom, HH = C.hitHulls, V = C.camera.position.constructor;
+  const why = { wall: 0, ground: 0, body: 0, cone: 0, margin: 0, line: 0 };
+  const ray = { origin: new V(), direction: new V() };
+  const first = (o, t, exact) => {
+    ray.origin.set(o[0], o[1], o[2]); ray.direction.set(t[0] - o[0], t[1] - o[1], t[2] - o[2]);
+    const L = ray.direction.length(); ray.direction.multiplyScalar(1 / L);
+    const h = HH?.raycast?.(ray, { far: L + 0.3, exact });
+    return h && h.hit ? { name: h.name || 'hull', m: h.machine === m, d: h.distance, L } : { name: null, d: Infinity, L };
+  };
+  const lineTo = (g, p) => {
+    const q = g?.[p];
+    if (!q || !HH?.raycast) return !HH?.raycast;
+    const a = first(q.nock, q.c, true), b = first(q.lens, q.c, false);
+    return a.name === `weak:${p}` && !(b.name && b.d < b.L - 0.6);
+  };
+  let best = null, bestSeen = null, n = 0;
+  for (let a = 1; a <= 8.01; a += 0.5) {
+    for (let s0 = 2.4; s0 <= 7.01; s0 += 0.5) {
+      for (const sg of [-1, 1]) {
+        const s = s0 * sg, x = m.position.x + fx * a + rx * s, z = m.position.z + fz * a + rz * s;
+        n++;
+        if (Math.abs(T.getHeight(x, z) - P.y) > 1.5) { why.ground++; continue; }
+        if (W.segmentHitsWall(P.x, P.z, x, z, 0.45, { includeCut: true }) || W.segmentHitsWall(m.position.x, m.position.z, x, z, 0, {})) { why.wall++; continue; }
+        // the walk there keeps 2.6 m off its centre, and the stand is off its blade box (3.6 m ahead, 2.2 m to a side)
+        const dx = x - P.x, dz = z - P.z, L2 = dx * dx + dz * dz, u = L2 > 1e-6 ? Math.max(0, Math.min(1, ((m.position.x - P.x) * dx + (m.position.z - P.z) * dz) / L2)) : 0;
+        if (Math.hypot(P.x + dx * u - m.position.x, P.z + dz * u - m.position.z) < 2.6 || (a < 4.2 && Math.abs(s) < 2.4)) { why.body++; continue; }
+        const d = Math.hypot(x - m.position.x, z - m.position.z), ang = Math.abs(Math.atan2(s, a));
+        // (mayShoot's own 'chargeable': no arrow is loosed there while it walks)
+        if (walking && d > 5.5 && ang < 0.8) { why.cone++; continue; }
+        const g = geom(mi, { x, z });
+        for (const p of parts) {
+          const mg = g?.[p]?.margin ?? 0;
+          if (!bestSeen || mg > bestSeen.margin) bestSeen = { part: p, margin: mg, a, s, at: [+x.toFixed(1), +z.toFixed(1)] };
+          if (mg < margin + 0.15) { why.margin++; continue; }
+          // the straight line from there meets that seal's own sphere first (the moldboard stands 1.4 m tall in front of
+          // the seals at 1.34 m; the flight's drop over 8 m is 2 cm), and the lens's line meets no hull short of it
+          if (!lineTo(g, p)) { why.line++; continue; }
+          const walk = Math.sqrt(L2);
+          if (!best || walk < best.d) best = { stand: { x, z }, part: p, margin: mg, d: +walk.toFixed(1), a, s };
+        }
+      }
+    }
+  }
+  return best ? { ...best, n, why } : { stand: null, best: bestSeen, n, why };
+};
+
+/**
  * A VOLLEY ON THE SEALS: the bow kept raised (RMB held) while she may shoot, each arrow on the first seal the game's own
  * flight reaches from here (solveShot), Steady taken fresh, drawn until full, loosed only if the flight still meets that
  * seal first; a blocked draw is let down (RMB let go before LMB: combat.js keeps the arrow) and the bow raised again.
@@ -713,10 +832,8 @@ const mayShoot = (S) => {
  */
 async function volley(page, K, stage, maxS = 8) {
   const t0 = Date.now(), shots = [];
-  let blocked = null, drawing = false, td = 0;
+  let blocked = null, drawing = false, td = 0, needStand = false;
   const draw = async () => { if (drawing) return; await K.up('ShiftLeft'); await sleep(30); await K.down('ShiftLeft'); await sleep(30); await K.mouse('left', true); drawing = true; td = Date.now(); };
-  // a flight that meets either seal still on first is an arrow worth loosing (both need hits)
-  const onSeal = (S, first) => { const m = /^weak:(seal[LR])$/.exec(first || ''); return !!m && S.sealsLeft.includes(m[1]); };
   await K.mouse('right', true); await sleep(200);
   try {
     while ((Date.now() - t0) / 1000 < maxS) {
@@ -725,19 +842,27 @@ async function volley(page, K, stage, maxS = 8) {
       // its charge, she out of its line: the arrow nocked and drawn, held full for the stall
       if (S.phase === 'charge' && !inLineOf(S) && S.sealsLeft.length) { await draw(); await sleep(40); continue; }
       if (!mayShoot(S)) break;
-      // the far seal first while both are on: an arrow it cannot reach meets the near one, a hit either way. Once the near
-      // seal is off its hull still takes those arrows (at f0053bc final1 a draw the game's flight put on the far seal
-      // struck the spent near one), so the far one's hits are best taken while the near one still counts
+      // (M3 fix wave) only a seal with a CLEAR LINE (sealGeom: both lines pass the other seal by SEAL_MARGIN) and the
+      // game's flight on it first; the far seal first when both are clear (its line closes as the Screed comes on), else
+      // the near one. At ddc31c1 the far seal was tried first from beside it and the arrows met the near ram (the near
+      // seal's hit, or once it was off, nothing). No clear line: the volley ends and the drive steps to a stand
       const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
-      const order = S.sealsLeft.length === 2 ? [far, near] : S.sealsLeft.slice();
+      const G = await page.evaluate((i) => window.__sealGeom(i), S.i);
+      const order = (S.sealsLeft.length === 2 ? [far, near] : S.sealsLeft.slice()).filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
       let part = null, sol = null;
-      for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && (q.clear || onSeal(S, q.first))) { part = p; sol = q; break; } }
-      if (!part) { blocked ??= Date.now(); if (Date.now() - blocked > 700) { shots.push({ t: +((Date.now() - t0) / 1000).toFixed(1), none: true, phase: S.phase }); break; } continue; }
+      for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && q.first === `weak:${p}`) { part = p; sol = q; break; } }
+      if (!part) {
+        blocked ??= Date.now();
+        if (!order.length || Date.now() - blocked > 700) { shots.push({ t: +((Date.now() - t0) / 1000).toFixed(1), none: true, phase: S.phase, margins: G ? Object.fromEntries(S.sealsLeft.map((p) => [p, G[p]?.margin ?? null])) : null }); needStand = true; break; }
+        continue;
+      }
       blocked = null;
       await draw();
       while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= 0.99 && Date.now() - td > 300)) break; }
-      const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null };
-      if (sol && (sol.clear || onSeal(S, sol.first))) { await K.mouse('left', false); rec.fired = true; await sleep(100); }
+      const G2 = await page.evaluate((i) => window.__sealGeom(i), S.i);
+      const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null,
+        mNock: G2?.[part]?.mNock ?? null, mLens: G2?.[part]?.mLens ?? null };
+      if (sol && sol.first === `weak:${part}` && (G2?.[part]?.margin ?? 0) >= SEAL_MARGIN) { await K.mouse('left', false); rec.fired = true; await sleep(100); }
       else { await K.mouse('right', false); await sleep(30); await K.mouse('left', false); await sleep(30); await K.mouse('right', true); await sleep(200); rec.letDown = true; }
       drawing = false;
       shots.push(rec);
@@ -750,7 +875,7 @@ async function volley(page, K, stage, maxS = 8) {
   }
   await sleep(250);
   const hits = await page.evaluate((n) => window.__screedHits.slice(-n), Math.max(1, shots.filter((q) => q.fired).length));
-  return { shots, hits, s: +((Date.now() - t0) / 1000).toFixed(1) };
+  return { shots, hits, needStand, s: +((Date.now() - t0) / 1000).toFixed(1) };
 }
 
 /**
@@ -770,6 +895,7 @@ async function driveScreed(page, K, stage, maxS = 120) {
   const t0 = Date.now(), log = [];
   const T = () => +((Date.now() - t0) / 1000).toFixed(1);
   let shots = 0, lastPhase = null, sidestepS = -1, approach = null;
+  const standLog = [];
   const note = (S, extra = {}) => log.push({ t: T(), phase: S.phase, mode: S.mode, d: +S.d.toFixed(1), ahead: +S.ahead.toFixed(1), side: +S.side.toFixed(1), rS: +S.rS.toFixed(1), bS: +S.bS.toFixed(1), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1), between: S.between, hp: S.hp, cuts: S.cuts, stalls: S.stalls, seals: S.seals, ...extra });
   if (stage !== 'stall') await SH.readyBow(page, K); else { await K.tap('Digit1'); await sleep(200); }
   // every arrow that meets the Screed: where, against each seal's own place (screed.js takeDamage counts a hit within
@@ -790,8 +916,8 @@ async function driveScreed(page, K, stage, maxS = 120) {
   for (;;) {
     const S = await page.evaluate(screedNow);
     if (!S) return { ok: false, why: 'no Screed', log: log.slice(-40) };
-    if (done(S)) { note(S, { end: true, hits: S.hits }); return { ok: true, s: T(), shots, arrowHits: await page.evaluate(() => window.__screedHits.slice(-12)), log: log.slice(-40), cuts: S.cuts, stalls: S.stalls, stallBy: S.stallBy, approach }; }
-    if (T() > maxS) { note(S, { timeout: true }); return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-40), approach }; }
+    if (done(S)) { note(S, { end: true, hits: S.hits }); return { ok: true, s: T(), shots, arrowHits: await page.evaluate(() => window.__screedHits.slice(-12)), log: log.slice(-40), cuts: S.cuts, stalls: S.stalls, stallBy: S.stallBy, failSoft: S.failSoft, approach, stands: standLog.slice(-20) }; }
+    if (T() > maxS) { note(S, { timeout: true }); return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-40), approach, stands: standLog.slice(-20) }; }
     const st = await page.evaluate(where);
     if (st.dead || st.state === 'dead') return { ok: false, why: 'died', log: log.slice(-40), approach };
     if (S.phase !== lastPhase) { note(S); lastPhase = S.phase; }
@@ -844,8 +970,19 @@ async function driveScreed(page, K, stage, maxS = 120) {
       const v = await volley(page, K, stage);
       shots += v.shots.filter((q) => q.fired).length;
       log.push({ t: T(), volley: v });
-      if (!v.shots.some((q) => q.fired)) await sleep(150);
-      continue;
+      if (v.needStand) {
+        // (M3 fix wave) no clear line to a seal still on from here: a stand that has one, if a player can reach it
+        const S2 = await page.evaluate(screedNow);
+        if (S2 && S2.sealsLeft.length) {
+          const st = await page.evaluate(sealStand, S2.i, S2.sealsLeft, SEAL_MARGIN);
+          const rec = { t: T(), stand: st.stand ? { part: st.part, margin: +st.margin.toFixed(3), d: st.d, a: st.a, s: st.s } : null, best: st.best ?? null, why: st.why, phase: S2.phase, backT: S2.backT };
+          standLog.push(rec);
+          if (st.stand) { rec.walk = await walkTo(page, st.stand, 0.5, 3, { sprint: st.d > 3 }); continue; }
+        }
+        // none: stand still while it is stalled or backing off (its front opens as it backs), else the ambush below
+        if (S2 && (S2.phase === 'stall' || S2.backT > 0)) { await sleep(150); continue; }
+      } else if (!v.shots.some((q) => q.fired)) await sleep(150);
+      if (!v.needStand) continue;
     }
     // the ambush point: 10 m in front of it and 5 m to one side, kept on corridor 1/2's floor while it is outside or in it
     const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
@@ -1038,6 +1175,7 @@ async function runLeg(leg, startRec = null) {
     page.on('pageerror', (e) => L.console.push(`pageerror: ${String(e).slice(0, 300)}`));
     await page.evaluateOnNewDocument(installHitch);
     await page.evaluateOnNewDocument(`window.__aimPoint = ${SH.aimPoint.toString()};`);
+    await page.evaluateOnNewDocument(`window.__sealGeom = ${sealGeom.toString()};`);
     const K = SH.keys(page);
     const rec = await boot(page, leg, startRec);
     const tPlay = Date.now();
@@ -1059,6 +1197,7 @@ async function runLeg(leg, startRec = null) {
       if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: st.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const bt0 = T();
       const played = {};
+      await page.evaluate(() => { if (window.__hp) window.__hp.beatMin = Infinity; });
       if (!driveOn) played.notDriven = 'a beat before it did not pass';
       else if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
@@ -1104,7 +1243,8 @@ async function runLeg(leg, startRec = null) {
       }
       played.hurt = await page.evaluate(() => { const D = window.__dmg.splice(0); const by = {}, atk = {}; for (const d of D) { by[d.kind] = (by[d.kind] || 0) + d.n; const k = `${d.kind}:${d.atk}`; atk[k] = (atk[k] || 0) + d.n; } return { by, atk, n: D.length, all: D.slice(-30) }; });
       const pr = await page.evaluate(beatProbe, st.id, qid, PLACES, TRANSIT_CARD);
-      const b = { leg, beat: st.id, ok: pr.ok, why: pr.why, hp: pr.hp, t: T(), seconds: +(T() - bt0).toFixed(1), hour: pr.hour, at: pr.at, region: pr.region, numbers: { ...pr.numbers, ...played } };
+      const hpMin = await page.evaluate(() => (window.__hp && Number.isFinite(window.__hp.beatMin) ? Math.round(window.__hp.beatMin) : null));
+      const b = { leg, beat: st.id, ok: pr.ok, why: pr.why, hp: pr.hp, hpMin, t: T(), seconds: +(T() - bt0).toFixed(1), hour: pr.hour, at: pr.at, region: pr.region, numbers: { ...pr.numbers, ...played } };
       b.shot = await shot(page, `l${leg}-${String(++k).padStart(2, '0')}-${st.id}`);
       L.beats.push(b);
       log(`leg ${leg} ${st.id}: ${b.ok ? 'PASS' : 'FAIL'} hp ${b.hp} t ${b.t} s ${b.why ? `(${b.why.slice(0, 160)})` : ''}`);
@@ -1113,6 +1253,11 @@ async function runLeg(leg, startRec = null) {
       if (!b.ok) driveOn = false;
     }
     L.hitch = await page.evaluate(() => { const H = window.__hitch; return { frames: H.n, maxMs: +H.max.toFixed(1), over33: H.over33, over50: H.over50 }; });
+    // (M3 fix wave) HR8 between the beats: her lowest hp on any frame of the leg in play (window.__hp, installHitch)
+    L.hp = await page.evaluate(() => { const P = window.__hp; return P ? { frames: P.n, min: Number.isFinite(P.min) ? Math.round(P.min) : null, minT: P.minT, under25Frames: P.under25 } : null; }).catch(() => null);
+    // (M3 fix wave) the late audio bank's log from real play (GameAudio.lateAudit: every late set's decode and first ask,
+    // the leads, any set asked for before it was decoded)
+    L.lateAudit = await page.evaluate(() => window.__CTX__.audio?.lateAudit?.() ?? null).catch((e) => ({ error: String(e).slice(0, 200) }));
     // the record this leg leaves (the next leg's start with --chain): the store's newest, as CONTINUE would load it
     L.endRecord = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); return n ? S.latest(n) : null; }).catch(() => null);
     L.endRecordAt = L.endRecord ? { kind: L.endRecord.kind, reason: L.endRecord.reason, hour: L.endRecord.hour, x: L.endRecord.position?.x, z: L.endRecord.position?.z } : null;
@@ -1148,7 +1293,8 @@ function runLeg1() {
       const L = { leg: 1, from: 'New Game', exit: code, chromeSeconds: Math.round((Date.now() - t0) / 1000), report: m ? m[1] : null, beats: [] };
       if (m && existsSync(m[1])) {
         const r = JSON.parse(readFileSync(m[1], 'utf8'));
-        L.beats = (r.beats || []).map((b) => ({ leg: 1, beat: b.stage, ok: !!b.ok, why: b.ok ? null : (b.why || r.why || 'stopped'), hp: b.hp ?? null, seconds: b.seconds ?? null }));
+        L.beats = (r.beats || []).map((b) => ({ leg: 1, beat: b.stage, ok: !!b.ok, why: b.ok ? null : (b.why || r.why || 'stopped'), hp: b.hp ?? null, hpMin: b.hpMin ?? null, seconds: b.seconds ?? null }));
+        L.hp = r.hp ?? null; L.lateAudit = r.lateAudit ?? null;
         L.reached = r.spine?.reached ?? null; L.stoppedAt = r.stoppedAt; L.why = r.why; L.hitch = r.hitch ?? null; L.rows = Object.fromEntries(Object.entries(r.rows || {}).map(([k, v]) => [k, v?.pass ?? v?.ok ?? null]));
         L.chromeSeconds = r.chromeSeconds ?? L.chromeSeconds;
         L.endRecord = r.finalRecord ?? null;
@@ -1179,8 +1325,10 @@ try {
   const want = (LEGS.includes(1) ? 14 : 0) + (LEGS.includes(2) ? SCAR_STAGES.length : 0) + (LEGS.includes(3) ? TRUE_GROUND_STAGES.length : 0);
   report.beats = `${all.filter((b) => b.ok).length}/${want}`;
   report.chromeSeconds = report.legs.reduce((s, l) => s + (l.chromeSeconds || 0), 0);
+  const lows = report.legs.map((l) => l.hp?.min).filter((v) => v != null);
+  report.hr8 = { bar: 'hp never under 25 on any frame in play (HR8)', lowest: lows.length ? Math.min(...lows) : null, pass: lows.length === report.legs.length && lows.every((v) => v >= 25) };
   writeFileSync(path.join(runDir, 'report.json'), JSON.stringify(report, null, 2));
   log(`report: ${path.join(runDir, 'report.json')}`);
-  for (const l of report.legs) log(`leg ${l.leg}: ${l.passed}${l.error ? ` (error: ${l.error.slice(0, 120)})` : ''}`);
-  log(`beats ${report.beats}; ${report.chromeSeconds} s of Chrome`);
+  for (const l of report.legs) log(`leg ${l.leg}: ${l.passed}${l.error ? ` (error: ${l.error.slice(0, 120)})` : ''}; lowest hp ${l.hp?.min ?? '?'} (${l.hp?.under25Frames ?? '?'} frames under 25); late bank ${l.lateAudit ? `${l.lateAudit.state}, ${l.lateAudit.asked} asked, ${(l.lateAudit.missed || []).length} missed` : 'not read'}`);
+  log(`beats ${report.beats}; ${report.chromeSeconds} s of Chrome; HR8 lowest hp ${report.hr8.lowest} (${report.hr8.pass ? 'PASS' : 'FAIL'})`);
 }

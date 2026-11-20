@@ -844,6 +844,14 @@ export class Environment {
     this._shafts = this._buildShafts();
     this._afterRender = () => this._renderShafts();
     engine?.onAfterRender?.push(this._afterRender);
+    // C5 (engine lane, the smallest change here: the first hour's hitches): the shafts' two programs compiled behind the
+    // boot's sheet as they are drawn (the gather into its quarter target, the composite onto the finished frame). Drawn
+    // only with the sun in view, the composite linked its program on the walk into the Malpais at noon (28.8 ms at ddc31c1)
+    this._unwarmShafts = engine?.addWarmPass?.((e, cam) => {
+      const s = this._shafts;
+      e.compileFor(s.quadA._mesh, s.rt, cam);
+      e.compileFor(s.quadB._mesh, null, cam);
+    }) ?? null;
 
     /** The fog's camera uniforms are those of the camera the frame is drawn with. */
     this._prevOBR = scene.onBeforeRender;
@@ -2806,6 +2814,7 @@ export class Environment {
     const engine = this.ctx.engine;
     const hooks = engine?.onAfterRender;
     if (hooks) { const i = hooks.indexOf(this._afterRender); if (i >= 0) hooks.splice(i, 1); }
+    this._unwarmShafts?.();
     if (scene.onBeforeRender === this._obr) scene.onBeforeRender = this._prevOBR ?? (() => {});
     for (const o of [this.sky, this.birds, this.motes, this.rain]) {
       scene.remove(o);

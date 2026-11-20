@@ -396,6 +396,9 @@ export class SightingSystem {
 
     this._afterComposer = (engine) => this._drawOverlay(engine);
     ctx.engine?.onAfterRender?.push(this._afterComposer);
+    // C5 (engine lane, the smallest change here): its programs compiled behind the boot's sheet (engine.addWarmPass)
+    this._pathKeep = null;
+    this._unwarm = ctx.engine?.addWarmPass?.((engine, cam) => this._warmPrograms(engine, cam)) ?? null;
 
     this._buildDom();
 
@@ -1147,6 +1150,42 @@ export class SightingSystem {
       vertexShader: PATH_VS,
       fragmentShader: PATH_FS,
     });
+  }
+
+  /**
+   * C5 (engine lane, the smallest change here: the first hour's hitches). Raised for the first time at Benchmark 1, the
+   * alidade linked 9 programs in one 41.4 ms frame at ddc31c1 (first-hour leg 3): the figure's four mask materials (Brea's
+   * on her skinned meshes too) into the mask's target, and the ring, the gather glow, the figure and a transect onto the
+   * finished frame. The boot's warm-up compiles each as it is drawn, here. A transect's material is made and disposed
+   * with its line, which let its program go: one is kept (`_pathKeep`, never drawn) so the program stays linked.
+   */
+  _warmPrograms(engine, cam) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0.1, 0, 0, 0, 0.1, 0]), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1]), 2));
+    geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Uint16Array(12), 4));
+    geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4));
+    const bone = new THREE.Bone(), skel = new THREE.Skeleton([bone]);
+    const temp = [];
+    for (const mat of [this._hullMaskMat, this._partMaskMat, this._quietMaskMat, this._heroMaskMat]) {
+      temp.push(new THREE.Mesh(geo, mat));
+      const sk = new THREE.SkinnedMesh(geo, mat); sk.add(bone.clone()); sk.bind(skel); temp.push(sk);
+    }
+    for (const m of temp) this._maskScene.add(m);
+    const hadHero = this._heroShells.size > 0;
+    try {
+      this._refreshHero();   // her own meshes' shells: her skin's morphs and skinning as the mask draws them
+      engine.compileFor(this._maskScene, this._figureRT, cam);
+    } finally {
+      for (const m of temp) this._maskScene.remove(m);
+      if (!hadHero) this._clearHero();
+    }
+    if (!this._pathKeep) this._pathKeep = this._pathMat();
+    const keep = new THREE.Mesh(geo, this._pathKeep);
+    this._overlayScene.add(keep);
+    try { engine.compileFor(this._overlayScene, null, cam); } finally { this._overlayScene.remove(keep); }
+    geo.dispose();
+    if (!this.on && !this._hulls.size && !this._parts.size) this._figureRT.dispose();   // as _releaseFigure leaves it
   }
 
   /** Is this Instrument actually walking its route? A fighting one is not: no line for it. */
@@ -2420,6 +2459,8 @@ export class SightingSystem {
     this._partMaskMat.dispose();
     this._quietMaskMat.dispose();
     this._heroMaskMat.dispose();
+    this._pathKeep?.dispose();
+    this._unwarm?.();
     this.ctx.engine?.unregisterRenderTarget?.(this._figureRT);
     this._figureRT.dispose();
     this._overlayScene.remove(this._ring);
