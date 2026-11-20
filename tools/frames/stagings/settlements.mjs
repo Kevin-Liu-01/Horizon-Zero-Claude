@@ -83,8 +83,30 @@ FRAMES.push({
   note: 'A cost frame, not a look frame: the people shelter at the doors 73-86 m from her, as NW9 sends them, and the lens (within 90 m of them) holds them with the fight.',
 });
 
+/** F39-look (POLISH 3, frames lane): the LOOK frame of the Holds fight with the people in it (F39-people stays IN11's cost
+ * frame). The same staging as F39-people (F39's fight, then the five sheltering where holds.js stageSheltered sends them,
+ * the doors farthest from the Screed's threat lines). Where they shelter decides the lens: the fight stands OUTSIDE wall-1
+ * (the Screed 3.8 m off its face, Brea and the Sickles beyond it) 30-35 m above the doors and 73-86 m from them, so from
+ * any lens near the people at ground height the nine walls hide the fight: in Node (recipe.js heightAt, the walls' and
+ * dwellings' collider boxes from ninewalls-layout.js) no lens up to 6 m over the village's ground sees the Screed's middle
+ * and three of the five at once, and the Screed's top shows only from the village's east edge, 90 deg away from the
+ * people. So it is a long lens over the south lip of the village: 26 m over its own ground (20.62, 285.22), 118 m from
+ * her, fov 28, turned so the people sit in the lower half and the fight on the skyline above them (aimed at a point 0.7 of
+ * the way from the Screed to the people's middle). The Node read: four of the five in frame and in sight, each 39-48 px
+ * tall, the Screed 62 px, Brea 30 px and in sight, one Sickle clear of the walls; the fifth (93 m from the lens) is past
+ * the people system's 90 m and is not drawn. Readable people AND a readable fight at once needs the people nearer the
+ * fight than the game sends them: a staging question for the owner, not a lens. */
+FRAMES.push({
+  id: 'F39-look', subject: 'the Holds fight with the people sheltering in the village below it (a look frame)', in: 'M2', hour: 16.5, weather: 'trade',
+  at: { en: [44.83, -169.9] }, bearing: 321,
+  camera: { mode: 'orbit', yawRel: 129.14, dist: 117.83, height: -12.11, target: { fwd: 1.31, side: 55.34, up: -19.64 }, fov: 28 },
+  state: { pose: 'idle', hud: false },
+  ref: { written: 'the Screed stalled on wall-1 with its Sickles and Brea on the skyline; the Holds people at their doors below in their dyed wool, readable as people' },
+  note: 'polish 3: F39-people\'s staging on a long lens from the village\'s south lip; the look probe reads each person\'s height on screen and the fight\'s.',
+});
+
 /** F34-F36 are fixed lenses on a still village (wall clock is honest; --repeat 2 grades them). F37 is a slate. */
-export const STAGED = { F34: 'wall', F35: 'wall', F36: 'wall', F37: 'wall', 'F39-people': 'wall' };
+export const STAGED = { F34: 'wall', F35: 'wall', F36: 'wall', F37: 'wall', 'F39-people': 'wall', 'F39-look': 'wall' };
 
 export const STAGINGS = {
   F34: {
@@ -137,3 +159,5 @@ export const STAGINGS = {
     },
   },
 };
+/* F39-look: F39-people's own staging (the lens is the frame's) */
+STAGINGS['F39-look'] = STAGINGS['F39-people'];

@@ -16,6 +16,11 @@
  *   F42          the Sickle's pixels against the meadow they hide: luminance, chroma and hue, and its share of the
  *                screen box of its hull (what the grass hides of it)
  *   F39-people   each of the five sheltering people: inside the frustum, pixels drawn, screen point
+ *   F39-look     (polish 3) the same, with each person's height on screen (its mask's box), and the fight's: the Screed's,
+ *                each Sickle's and Brea's pixels and box heights
+ *   F42          (polish 3) also the hook-rip held for the frame (verb, phase, its clock) and the staging's report: the
+ *                part on the hook and the gap from the hook's tip to it
+ *   F44          (polish 3) also her own pixels and box, and the lens's view bearing and pitch
  */
 export async function probe(frame) {
   const C = window.__CTX__, E = C.engine, env = C.environment, cam = C.camera, R = E.renderer;
@@ -181,6 +186,9 @@ export async function probe(frame) {
         r.lamp = { state: m.state ?? null, colour: m.lamp?.color?.getHexString?.() ?? m._lampColor ?? null };
         out.sickle = r;
       }
+      const V = C.combat?.gaff?.verbs;
+      out.gaff = { verb: V?.verb?.id ?? null, phase: V?.phase ?? null, k: V ? r1(V.k * 1000) / 1000 : null, t: V ? Math.round(V.t * 1000) / 1000 : null, staged: window.__f42 ?? null };
+      if (m?.root && C.player?.model) out.her = (({ pixels, box }) => ({ pixels, box }))(maskRead(C.player.model));
     } catch (e) { out.sickle = { error: String(e?.message || e).slice(0, 300) }; }
   }
 
@@ -207,21 +215,29 @@ export async function probe(frame) {
         }
         return { kind: m.kind, toHerM: r1(Math.hypot(m.position.x - P.x, m.position.z - P.z)), screen: proj(m.position.clone().add(new THREE.Vector3(0, 0.6, 0))), pixels: r.pixels, box: r.box, windwallOnLine: onLine };
       });
-      out.herBox = null;
+      const hr = p?.model ? maskRead(p.model) : null;
+      out.herBox = hr ? hr.box : null; out.herPixels = hr ? hr.pixels : null;
+      const fwd = cam.getWorldDirection(new THREE.Vector3());
+      out.lens = { at: [r1(cam.position.x), r1(cam.position.y), r1(cam.position.z)], bearing: r1(((Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI) + 360) % 360), pitch: r1(Math.asin(fwd.y) * 180 / Math.PI), aboveGround: r1(cam.position.y - C.terrain.getHeight(cam.position.x, cam.position.z)) };
     } catch (e) { out.f44error = String(e?.message || e).slice(0, 300); }
   }
 
   /* ---- F39-people: the five in the lens ---- */
-  if (id.startsWith('F39-people')) {
+  if (id.startsWith('F39-people') || id === 'F39-look') {
     try {
       const st = C.people?.holds?._staged || [];
       out.people = st.map((q) => {
         const g = q.group || q.root || q.model || null;
         const pos = g ? g.getWorldPosition(new THREE.Vector3()) : null;
         const r = g ? maskRead(g) : { pixels: null };
-        return { id: q.id ?? q.castId ?? null, at: pos ? [r1(pos.x), r1(pos.z)] : null, screen: pos ? proj(pos.clone().add(new THREE.Vector3(0, 1, 0))) : null, pixels: r.pixels, toHerM: pos ? r1(Math.hypot(pos.x - C.player.position.x, pos.z - C.player.position.z)) : null };
+        return { id: q.id ?? q.castId ?? null, at: pos ? [r1(pos.x), r1(pos.z)] : null, screen: pos ? proj(pos.clone().add(new THREE.Vector3(0, 1, 0))) : null, pixels: r.pixels, boxH: r.box ? r.box[3] - r.box[1] : null, toHerM: pos ? r1(Math.hypot(pos.x - C.player.position.x, pos.z - C.player.position.z)) : null, toLensM: pos ? r1(Math.hypot(pos.x - cam.position.x, pos.z - cam.position.z)) : null };
       });
       out.peopleInLens = out.people.filter((q) => q.pixels > 0).length;
+      if (id === 'F39-look') {
+        out.fight = (C.machines?.list || []).filter((m) => m && !m._disposed && m.root && (m.kind === 'screed' || m.kind === 'sickle') && m.root.visible).map((m) => { const r = maskRead(m.root); return { kind: m.kind, pixels: r.pixels, boxH: r.box ? r.box[3] - r.box[1] : null, toLensM: r1(Math.hypot(m.position.x - cam.position.x, m.position.z - cam.position.z)) }; });
+        const hr = C.player?.model ? maskRead(C.player.model) : null;
+        out.brea = hr ? { pixels: hr.pixels, boxH: hr.box ? hr.box[3] - hr.box[1] : null } : null;
+      }
       out.machines = (C.machines?.list || []).filter((m) => m && !m._disposed && m.root).map((m) => ({ kind: m.kind, screen: proj(m.position.clone().add(new THREE.Vector3(0, 1, 0))) }));
     } catch (e) { out.peopleError = String(e?.message || e).slice(0, 300); }
   }

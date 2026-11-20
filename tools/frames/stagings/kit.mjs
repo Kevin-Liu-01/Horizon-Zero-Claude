@@ -88,11 +88,11 @@ frames.push(
     note: 'M2 wave 3 (area D): potLayer.js, held at the release (src/combat/pots.js POT_CAST.releaseAt).',
   },
   {
-    id: 'F42', subject: 'the gaff hook-rip at contact on a Sickle, three-quarter front from her right', in: 'M2', hour: 16.5, weather: 'trade', at: 'place:openGround', bearing: 180,
-    camera: { mode: 'orbit', yawRel: 300, dist: 4.8, height: 1.4, target: { fwd: 1.6, side: 0, up: 0.9 }, fov: 45 },
+    id: 'F42', subject: 'the gaff hook-rip mid-pull on a Sickle, three-quarter front from her right', in: 'M2', hour: 16.5, weather: 'trade', at: 'place:openGround', bearing: 180,
+    camera: { mode: 'orbit', yawRel: 300, dist: 4.4, height: 1.4, target: { fwd: 1.3, side: 0, up: 0.85 }, fov: 45 },
     state: { pose: 'idle', hud: false },
-    ref: { written: "Kevin's bars: the body performs it: the hook out in front at the Sickle's blade, the fist below her shoulder, her hips turned; never a hand behind the head" },
-    note: 'M2 wave 3 (area D): gaffLayer.js hookRip, held at the contact (the end of its H phase).',
+    ref: { written: "Kevin's bars: the body performs it: the hook in the Sickle's part, the rip mid-pull (her pelvis dropping back, the lead foot stepping back), the fist below her shoulder; never a hand behind the head" },
+    note: 'M2 wave 3 (area D): gaffLayer.js hookRip; polish 3: held mid-pull (half-way through its P phase), the Sickle moved so the hook\'s tip is in one of its parts (run.json names the part and the gap).',
   },
   {
     id: 'F42-light', subject: 'the gaff light 1 at contact, side-on from her right, flat light', in: 'M2', ...STUDIO,
@@ -320,26 +320,28 @@ stagings['F42-light'] = {
 stagings.F42 = {
   beforeFreeze: hook(`
     await drawGaff();
-    const M = C.machines, p = C.player, h = p.heading || 0;
+    const M = C.machines, p = C.player, an = p.animator, h = p.heading || 0;
     const t0 = performance.now();
     while (!M?.expansionReady && performance.now() - t0 < 30000) await api.sleep(200);
-    // a Sickle in front of her, its hub 1.9 m out, facing her, held where it stands. POLISH (frames lane): its own rules
-    // (SickleBrain) walked it off its mark in the 0.3 s before it was held (02f7125: 4.9 m from her, its hull off the
-    // frame's right edge, the grass over what was left): its brain is put on the mark with it, it is calmed, its feet seated,
-    // and it is put back on the mark once more when it is held. The lens stands back to 4.8 m (was 3.6) so the Sickle's
-    // hub, blades and the front of its body are in frame with her
-    // (its body's centre 3.3 m out, so its hub and blades stand 1.9 m from her; turned to her: the kind's art faces
-    // its root's heading reversed, so at h + PI, as at 02f7125, it stood with its tail to her)
-    const x = p.position.x + Math.sin(h) * 3.3, z = p.position.z + Math.cos(h) * 3.3, hd = h;
+    /* POLISH 3 (frames lane): the hook-rip MID-PULL with the hook in a part of the Sickle. At 2944784 the frame held the
+     * contact (the end of H, when the reach has just arrived) with the Sickle's hub 1.9 m out, so it read as the ready
+     * stance: no part on the hook, no pull. Now: the Sickle stands up in front of her (its brain calmed and on its mark,
+     * its feet seated, then held), its blows switched off for the frame (a rip would tear the part off at the contact);
+     * the rip is held half-way through P (her pelvis dropping back, the lead foot stepping back: gaffLayer.js hookRip);
+     * then the hook's tip is read (gaffLayer.js gaffHookWorld) and the Sickle is moved on the ground so that its part
+     * nearest the tip's height, on the side toward her, sits on the tip. (Its art faces its root's heading reversed, so
+     * at her own heading it faces her.) */
+    let x = p.position.x + Math.sin(h) * 3.3, z = p.position.z + Math.cos(h) * 3.3;
+    const hd = h;
     const m = M?.spawn?.('sickle', x, z, { heading: hd });
+    const mark = () => {
+      const B = m.brain; if (B) { B.x = x; B.z = z; B.heading = hd; }
+      m.heading = hd; m.root.position.set(x, C.terrain.getHeight(x, z), z); m.root.rotation.y = hd;
+      m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; m.sc.heading = hd; }
+    };
     if (!m) api.standIn('no Sickle stood up'); else {
       api.undo(() => { try { if (M.sites?.dispose) M.sites.dispose(m); else m.dispose?.(); } catch { try { m.dispose?.(); } catch { /* */ } } });
-      const mark = () => {
-        const B = m.brain; if (B) { B.x = x; B.z = z; B.heading = hd; }
-        m.heading = hd; m.position?.set?.(x, C.terrain.getHeight(x, z), z);
-        m.root.position.set(x, C.terrain.getHeight(x, z), z); m.root.rotation.y = hd;
-        m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; m.sc.heading = hd; }
-      };
+      const td = m.takeDamage; m.takeDamage = function () { return null; }; api.undo(() => { m.takeDamage = td; });
       mark();
       await api.sleep(300);
       mark();
@@ -348,11 +350,48 @@ stagings.F42 = {
       m.root.updateMatrixWorld?.(true);
     }
     const V = C.combat.gaff.verbs, G = await import('/src/combat/gaff.js');
-    const at = G.verbContactAt(G.HOOK_RIP);
-    V.hookRip();
+    const R = G.HOOK_RIP, at = R.W + R.H + R.P * 0.5;
+    if (!V.hookRip()) api.standIn('the hook-rip did not start (a verb was playing: ' + (V.verb?.id ?? '-') + ')');
     holdAt(V, 'step', () => (V.verb ? V.t : 1e9), at - 0.001);
-    await waitFor(() => V.verb && V.t >= at - 0.002, 2000);
-    await api.sleep(400);
+    const held = await waitFor(() => V.verb && V.t >= at - 0.002, 2000);
+    if (!held) api.standIn('the hook-rip did not reach mid-pull: verb ' + (V.verb?.id ?? '-') + ', t ' + (V.t ?? 0).toFixed(3));
+    await api.sleep(300);
+    const V3 = p.position.constructor, tip = new V3();
+    const rep = { verb: V.verb?.id ?? null, phase: V.phase, k: +(V.k ?? 0).toFixed(3), t: +(V.t ?? 0).toFixed(3), at: +at.toFixed(3) };
+    if (m && an?.gaffHookWorld?.(tip)) {
+      rep.tip = [+tip.x.toFixed(3), +tip.y.toFixed(3), +tip.z.toFixed(3)];
+      const fx = Math.sin(h), fz = Math.cos(h), q = new V3();
+      m.root.updateMatrixWorld(true);
+      const cands = [];
+      for (const pt of (m.parts || [])) {
+        if (!pt || pt.attached === false || !pt.mesh?.getWorldPosition) continue;
+        pt.mesh.getWorldPosition(q);
+        // on her side of the hull: its offset from the root along her heading is negative (toward her)
+        const along = (q.x - m.root.position.x) * fx + (q.z - m.root.position.z) * fz;
+        cands.push({ pt, ox: q.x - m.root.position.x, oz: q.z - m.root.position.z, dy: Math.abs(q.y - tip.y), along, y: q.y });
+      }
+      const near = cands.filter((c) => c.along < 0.1);
+      near.sort((a, b) => a.dy - b.dy);
+      const pick = (near.length ? near : cands.sort((a, b) => a.dy - b.dy))[0];
+      if (!pick) api.standIn('the Sickle has no attached part to hook');
+      else {
+        // the root moves so that part sits on the tip, 3 cm past it along her heading (the hook IN it); the hull must stay
+        // 1.15 m clear of her (its body radius 0.75 and 0.4 of room)
+        x = tip.x + fx * 0.03 - pick.ox; z = tip.z + fz * 0.03 - pick.oz;
+        const gap = Math.hypot(x - p.position.x, z - p.position.z);
+        mark();
+        try { m.seatFeet?.(); } catch { /* */ }
+        m.root.updateMatrixWorld(true);
+        pick.pt.mesh.getWorldPosition(q);
+        rep.part = pick.pt.name ?? null; rep.parts = cands.length;
+        rep.tipToPartM = +q.distanceTo(tip).toFixed(3); rep.tipToPartFlatM = +Math.hypot(q.x - tip.x, q.z - tip.z).toFixed(3);
+        rep.hullToHerM = +gap.toFixed(2);
+        if (gap < 1.15) api.standIn('the Sickle stands ' + gap.toFixed(2) + ' m from her (under 1.15)');
+      }
+    } else if (m) api.standIn('no hook tip to read (gaffHookWorld)');
+    window.__f42 = rep;
+    api.standIn('the hook-rip ' + JSON.stringify(rep));
+    await api.sleep(200);
   `),
 };
 stagings.F43 = {
