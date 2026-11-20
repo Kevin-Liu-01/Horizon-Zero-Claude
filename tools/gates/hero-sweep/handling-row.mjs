@@ -364,7 +364,11 @@ export function gradeCase(kind, L, meta = {}) {
     if (kind === 'swapGB') { const i = first(L, (r) => r.bowReady); w7.bowReadyS = i >= 0 ? r3(L[i].t) : null; const h = first(L, (r) => r.gaffHome && r.t > 0.05); w7.gaffHomeS = h >= 0 ? r3(L[h].t) : null; }
     out.W7 = w7;
     const band = (v, lo, hi, what) => { if (meta.w9mid) return; if (v == null) fail(`W7 ${what}: never`); else if (v < lo || v > hi) fail(`W7 ${what} ${v} s (band ${lo}-${hi})`); };
-    if (kind === 'bowUnstow') band(w7.bowReadyS, 0.30, 0.40, 'bow unstow');
+    /* (M2 fix wave 2, the orchestrator's ruling 2, provisional until the owner answers: "W3 before W7". The bow's unstow
+     *  holds W3 (0.076 m a step) at 0.483 s; its time is the right hand's 1.43 m to the regrip on the upper limb (the wave 3
+     *  ruling's two-handed regrip) at the wrist's rate bound, and the waits for that hand on its socket (W1). 17 % faster
+     *  puts the wrist over 0.08. The band's top rises 0.40 -> 0.50 s, recorded for the owner) */
+    if (kind === 'bowUnstow') band(w7.bowReadyS, 0.30, 0.50, 'bow unstow (ruling 2 band)');
     if (kind === 'lanceDraw') band(w7.lanceReadyS, 0.30, 0.40, 'lance draw');
     if (kind === 'click') band(w7.clickToSwingS, 0.25, 0.35, 'click to swing');
     if (kind === 'bowStow') band(w7.bowStowS, meta.tempo === 'timer' ? 0.43 : 0.30, meta.tempo === 'timer' ? 0.50 : 0.37, `bow stow (${meta.tempo})`);
