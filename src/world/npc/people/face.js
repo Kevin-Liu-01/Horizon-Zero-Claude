@@ -533,6 +533,21 @@ export function installFaceGeometry(mesh, eyePatch) {
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
 const _mw = new THREE.Matrix4();
 let _cavityGeo = null;
+const CAVITY_MAT = Object.freeze({ color: 0x1a0d0c, side: THREE.BackSide });
+
+/**
+ * C5 (engine lane, the smallest change here: the first hour's hitches): a stand-in for the mouth's cavity, never drawn,
+ * for the boot's warm-up (engine.addWarmExtra) to link its program behind the loading sheet. The cavity is made the first
+ * time a person speaks (Face._showCavity), and its program linked on that frame: 31 ms at 7b555a6 on the first bark of
+ * first-hour leg 2 (run hh-c5-7b555a6-prof, the preload naming neck_01/Head/face-cavity MeshBasicMaterial).
+ */
+export function cavityWarmMesh() {
+  if (!_cavityGeo) _cavityGeo = new THREE.SphereGeometry(1, 14, 10);
+  const m = new THREE.Mesh(_cavityGeo, new THREE.MeshBasicMaterial(CAVITY_MAT));
+  m.name = 'face-cavity-warm';
+  m.castShadow = false; m.receiveShadow = false;
+  return m;
+}
 
 /** A seeded random stream (mulberry32). */
 function rng(seed) {
@@ -606,7 +621,7 @@ export class Face {
     if (on && !this.cavity) {
       const R = this.rig.mouth.cavity.r, s = this.rig.s;
       if (!_cavityGeo) _cavityGeo = new THREE.SphereGeometry(1, 14, 10);
-      const mat = new THREE.MeshBasicMaterial({ color: 0x1a0d0c, side: THREE.BackSide });
+      const mat = new THREE.MeshBasicMaterial(CAVITY_MAT);
       const m = new THREE.Mesh(_cavityGeo, mat);
       m.name = 'face-cavity';
       m.castShadow = false; m.receiveShadow = false;

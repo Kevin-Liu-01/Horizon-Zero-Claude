@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Face, installFaceGeometry } from './face.js';
+import { Face, installFaceGeometry, cavityWarmMesh } from './face.js';
 
 /**
  * CALIMA · who looks at whom, and who speaks (people; BUILD M1.5f). `ctx.people.faces`.
@@ -20,6 +20,8 @@ const _t = new THREE.Vector3();
 export class FaceDirector {
   constructor(ctx) {
     this.ctx = ctx;
+    // C5: the mouth's cavity program is linked by the boot's warm-up (face.js cavityWarmMesh)
+    ctx?.engine?.addWarmExtra?.(cavityWarmMesh());
     this.list = [];            // every live Face (no Set: a frame's walk allocates nothing)
     this.brea = null;
     this.alive = null;         // null: alive in play, at rest in a ?shot film
