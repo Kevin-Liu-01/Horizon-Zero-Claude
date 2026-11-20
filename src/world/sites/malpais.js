@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { patchAerial, patchDeck } from '../island/aerial.js';
 import { YARDS_WALK, yardsColliders } from './kilnyards-layout.js';
-import { HORNITOS, TUBE_SHELTER, malpaisColliders, tubeBoxes } from './malpais-layout.js';
+import { HORNITOS, TUBE_SHELTER, malpaisColliders } from './malpais-layout.js';
 
 /**
  * THE MALPAIS AT BLOCKOUT, ON THE PAGE (Milestone 3 wave 1, area A; BUILD M3.2, the world half of M3.3). Grey forms
  * and the blockers for what ./malpais-layout.js and ./kilnyards-layout.js hold as data:
  *   - the hornito field's seven spatter cones (grey truncated cones);
- *   - the tube shelter: its two walls, its back and its crust in four lengths (the trench itself is the island
- *     recipe's, ./malpais-ground.js), and two small markers on the floor (the dormant nest, the salt cache);
+ *   - the tube shelter's two small markers on its floor (the dormant nest, the salt cache); (M3 wave 2b, R9) the tube
+ *     itself is rock at the hornito field (./malpais-rocks.js tubeGeometry), its walls blockers (malpaisColliders);
  *   - the colliders of the Yards (towers, stacks, wellheads, rack posts: yardsColliders) and of the Malpais (the
  *     hornitos, the tube's walls; the crust a camera collider only), registered once the collision world exists;
  *   - the Yards' walk grid (YARDS_WALK) on ctx.nav, for area C's kinds and the hour-two runner.
@@ -39,12 +39,8 @@ export function malpaisGeometry(ground, { hornitos = true } = {}) {
     geo.translate(h.x, g - 0.5 + (h.h + 0.5) / 2, h.z);
     parts.push(paint(geo.toNonIndexed(), GREY));
   }
-  for (const b of tubeBoxes(ground)) {
-    const geo = new THREE.BoxGeometry(b.half[0] * 2, b.half[1] * 2, b.half[2] * 2);
-    geo.rotateY(-b.yaw);
-    geo.translate(b.x, b.y, b.z);
-    parts.push(paint(geo.toNonIndexed(), b.blocking ? GREY_DARK : GREY));
-  }
+  // (M3 wave 2b, R9) the tube's grey boxes are gone: its crust and vault are rock (./malpais-rocks.js tubeGeometry); its
+  // walls and back stay blockers (malpaisColliders)
   for (const [p, r, hh] of [[TUBE_SHELTER.nest, 0.9, 0.7], [TUBE_SHELTER.cache, 0.35, 0.5]]) {
     const geo = new THREE.CylinderGeometry(r * 0.7, r, hh, 8);
     geo.translate(p.x, ground(p.x, p.z) + hh / 2, p.z);

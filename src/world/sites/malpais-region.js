@@ -5,7 +5,9 @@ import { biomesAt, fbm } from '../island/recipe.js';
 import { MalpaisBlockout } from './malpais.js';
 import { MALPAIS_PARS, MALPAIS_ROCK_COLOR } from './malpais-shader.js';
 import { MALPAIS_LAYERS } from './malpais-files.js';
-import { CLINKER, clinkerPlan, pinnaclePlan, ridgePlan, clastGeometry, pinnacleGeometry, ridgeGeometry, hornitoGeometry, pinnacleColliders, ridgeColliders, coneWeight } from './malpais-rocks.js';
+import { CLINKER, clinkerPlan, pinnaclePlan, ridgePlan, clastGeometry, pinnacleGeometry, ridgeGeometry, hornitoGeometry, tubeGeometry, pinnacleColliders, ridgeColliders, coneWeight } from './malpais-rocks.js';
+import { STEAM } from './malpais-layout.js';
+import { buildSteam } from './malpais-steam.js';
 import { kilnYardsNearJobs, finishKilnYardsNear } from './kilnyards-near.js';
 
 /**
@@ -37,7 +39,7 @@ import { kilnYardsNearJobs, finishKilnYardsNear } from './kilnyards-near.js';
  *   M.release()                       take it down
  *   M.state                           'cold' | 'building' | 'ready' | 'failed'
  *   M.stats                           { builds, ms: { step: ms }, totalMs, worstSliceMs, clasts, pinnacles, tris, draws, colliders, textures }
- *   M.perfSwitches()                  [{ id: 'malpais-ground' | 'malpais-rock' | 'malpais-kit', on, off }] (paired readback, MP4/MP10)
+ *   M.perfSwitches()                  [{ id: 'malpais-ground' | 'malpais-rock' | 'malpais-steam' | 'malpais-kit', on, off }] (paired readback, MP4/MP10)
  *   M.update()                        each frame (terrain.update): the clinker tiles past CLINKER.far hidden
  */
 export const ZONE_MAP = Object.freeze({ x0: 40, z0: -376, x1: 512, z1: 448, cell: 2.5 });
@@ -67,7 +69,7 @@ export class MalpaisRegion {
     this._promise = null;
     this._held = null;
     this.stats = { builds: 0, releases: 0, ms: {}, totalMs: 0, worstSliceMs: 0, clasts: 0, pinnacles: 0, tris: 0, draws: 0, colliders: 0, textures: 0, error: null };
-    this._switch = { ground: true, rock: true, kit: true };
+    this._switch = { ground: true, rock: true, kit: true, steam: true };
     const ev = ctx.events;
     this._listeners = [];
     if (ev?.on) {
@@ -165,7 +167,7 @@ export class MalpaisRegion {
       step('clinker', now() - tb);
       this.stats.clasts = plan.n;
 
-      // the materials (rock: aa clinker and spires, the hornitos' spatter as dark scree)
+      // the materials (rock: aa clinker and spires, the hornitos' spatter as dark scree, the tube's pahoehoe crust)
       const U = T.groundUniforms;
       const malU = {
         tMalA: { value: null }, tMalN: { value: null }, tMalZ: { value: zoneTex },
@@ -197,6 +199,10 @@ export class MalpaisRegion {
       const matClinker = rockMat('aa', 0, 1.6, 1.0, 0);
       // (e664972: the scree layer on the hornitos read as red foliage) spatter is the aa's dark clinker, a little warmer
       const matSpatter = rockMat('spatter', 0, 0.9, 1.1, 0.0);
+      // (wave 2b, R9) the tube shelter's crust and vault: the pahoehoe layer at its own 3.4 m tile (the rock reads layer 1
+      // at the cinder's tile x scale), a little darker than the sheets
+      const matTube = rockMat('tube', 1, MALPAIS_LAYERS.tile.cinder / MALPAIS_LAYERS.tile.pahoehoe, 0.85, 0.0);
+      matTube.side = THREE.DoubleSide;
 
       const group = new THREE.Group();
       group.name = 'malpais';
@@ -254,7 +260,23 @@ export class MalpaisRegion {
       tris += rgeo.attributes.position.count / 3;
       step('rock', now() - tb);
       await slice();
-      // the tube shelter's blockout (wave 3 has its look) and the Yards' and the Malpais' blockers
+      // (wave 2b, R9) the tube shelter at the hornito field: its crust and vault
+      tb = now();
+      const tgeo = tubeGeometry(ground);
+      held.geos.push(tgeo);
+      const tm = new THREE.Mesh(tgeo, matTube); tm.name = 'malpais-tube'; tm.castShadow = true; tm.receiveShadow = true;
+      group.add(tm);
+      tris += tgeo.attributes.position.count / 3;
+      // (wave 2b, MP4) the steam: every plume of a group in one instanced draw
+      const steam = buildSteam(STEAM, ground);
+      held.steam = steam;
+      for (const m of steam.materials) held.mats.push(m);
+      group.add(steam.group);
+      tris += steam.counts.triangles;
+      this.stats.steam = steam.counts;
+      step('rock', now() - tb);
+      await slice();
+      // the tube shelter's markers and the Yards' and the Malpais' blockers
       tb = now();
       const block = new MalpaisBlockout(C, group, ground, { hornitos: false });
       held.block = block;
@@ -345,7 +367,7 @@ export class MalpaisRegion {
       step('add', now() - tb);
       this.stats.colliders = (block.stats.colliders || 0) + held.colliderIds.length;
       this.stats.tris = Math.round(tris);
-      this.stats.draws = held.tiles.length + 3 + block.stats.draws + 2;
+      this.stats.draws = held.tiles.length + 4 + block.stats.draws + 2 + steam.counts.draws;
       this.stats.totalMs = Math.round(now() - t0);
       this.stats.builds++;
       const ds = now() - sliceT;
@@ -366,6 +388,7 @@ export class MalpaisRegion {
     const H = this._held;
     if (!H) return;
     H.block?.update();
+    if (this._switch.steam) H.steam?.update(this.ctx.environment);
     const cam = this.ctx.camera?.position;
     if (!cam) return;
     const far = CLINKER.far, on = this._switch.rock;
@@ -389,6 +412,7 @@ export class MalpaisRegion {
     H.colliderIds = [];
     H.block?.dispose();
     H.kit?.dispose();
+    H.steam?.dispose();
     for (const t of H.tiles || []) t.mesh.dispose?.();
     for (const g of H.geos) g.dispose();
     for (const m of H.mats) m.dispose();
@@ -400,8 +424,9 @@ export class MalpaisRegion {
     const T = this.terrain;
     return [
       { id: 'malpais-ground', on: () => { this._switch.ground = true; if (this._held) T.setMalpaisGround?.(this._held.ground); }, off: () => { this._switch.ground = false; T.setMalpaisGround?.(null); } },
-      { id: 'malpais-rock', on: () => { this._switch.rock = true; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = true; } },
-        off: () => { this._switch.rock = false; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = false; } } },
+      { id: 'malpais-rock', on: () => { this._switch.rock = true; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges', 'malpais-tube']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = true; } },
+        off: () => { this._switch.rock = false; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges', 'malpais-tube']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = false; } } },
+      { id: 'malpais-steam', on: () => { this._switch.steam = true; if (this._held?.steam) this._held.steam.group.visible = true; }, off: () => { this._switch.steam = false; if (this._held?.steam) this._held.steam.group.visible = false; } },
       { id: 'malpais-kit', on: () => { if (this._held?.kit) this._held.kit.group.visible = true; }, off: () => { if (this._held?.kit) this._held.kit.group.visible = false; } },
     ];
   }

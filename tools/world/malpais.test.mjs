@@ -98,9 +98,10 @@ test('the blockout changes the ground only inside its footprint, and levels the 
     const p = K.apronPoint(u, v);
     assert.ok(Math.abs(heightAt(p.e, -p.n) - K.APRON.h) < 1e-6);
   }
-  // the tube's floor under its crust
-  const T = M.TUBE_SHELTER, p = K.apronPoint(T.u, T.v0 + 15);
-  assert.ok(Math.abs(heightAt(p.e, -p.n) - M.tubeFloor(T.v0 + 15)) < 1e-6);
+  // (M3 wave 2b, R9) the tube shelter lies on the hornito field's floor and cuts nothing: its spots are outside the
+  // footprint, so the ground under them is the island's own
+  const T = M.TUBE_SHELTER;
+  for (const p of [T.mouth, T.brazier, T.nest, T.back]) assert.ok(p.e < F.e0 || p.e > F.e1 || p.n < F.n0 || p.n > F.n1, `${p.id} inside the footprint`);
 });
 
 test('MP3: Rust Cone\'s top at 145 +-3, T3 on it', () => {

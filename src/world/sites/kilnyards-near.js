@@ -47,7 +47,7 @@ const flat = (g) => (g.index ? g.toNonIndexed() : g);
 
 /* ------------------------------------------------------------------ the towers */
 /** A tower stub's parts: `which` 'shell' (the double shell and its ring beam) or 'foot' (the colonnade, the fallen tiles). */
-function towerNear(t, seed, which = 'all') {
+function towerNear(t, seed, which = 'all', groundAt = () => 1.2) {
   const R = rng(0x70e1 + seed * 31);
   const base = 3.4, thick = 0.38, H = t.h;
   // the shell's profile, foot (at the ring beam) to the broken top: it narrows all the way (a stub is the lower shell)
@@ -99,13 +99,16 @@ function towerNear(t, seed, which = 'all') {
       parts.push(paint(flat(g), (x, y, z, c, k) => { c.copy(CONCRETE).multiplyScalar(0.8); k[0] = KIT.concrete; k[1] = x + z; k[2] = y; }));
     }
   }
-  // fallen tiles and shell pieces at its foot, outside the colonnade
+  // fallen tiles and shell pieces at its foot, outside the colonnade, each lying on the ground under it (wave 2b: at
+  // 9d1acc3 they lay on the tower's own foot level, so on the shelf's falling edge they floated up to 2 m in the air beside
+  // the towers in F57 and F45); `groundAt(lx, lz)` is the ground's height under a point, relative to the tower's origin
   for (let i = 0; i < 70; i++) {
     const a = R() * Math.PI * 2, d = t.r0 + 0.5 + R() * 6;
     const s = 0.5 + R() * 1.3;
     const g = new THREE.BoxGeometry(s * 1.2, 0.08 + R() * 0.1, s * 0.6);
     g.rotateZ((R() - 0.5) * 0.5); g.rotateX((R() - 0.5) * 0.5); g.rotateY(R() * Math.PI);
-    g.translate(Math.cos(a) * d, 0.05, Math.sin(a) * d);
+    const lx = Math.cos(a) * d, lz = Math.sin(a) * d;
+    g.translate(lx, groundAt(lx, lz) + 0.02, lz);
     const tone = 0.7 + R() * 0.5;
     parts.push(paint(flat(g), (x, y, z, c, k) => { c.copy(TILE).multiplyScalar(tone); k[0] = KIT.none; }));
   }
@@ -229,7 +232,9 @@ const KIT_COLOR = /* glsl */ `
   vec2 fw = max(fwidth(p), vec2(1e-4));
   float m = 1.0;
   if (kind == 1.0) {
-    // weathered tile in courses 0.6 m, staggered, 1.2 m long; a missing patch shows the dark render behind
+    // weathered tile in courses 0.6 m, staggered, 1.2 m long; (wave 2b) a lost tile shows the shell's grey render behind,
+    // a little darker and rust-stained, single or in pairs (at 9d1acc3 a lost cluster of 3 x 4 went near black, 0.38, and
+    // read as missing pixels on the towers in F57)
     vec2 ts = vec2(1.2, 0.6);
     float row = floor(p.y / ts.y);
     vec2 q = vec2(p.x / ts.x + 0.5 * mod(row, 2.0), p.y / ts.y);
@@ -239,9 +244,10 @@ const KIT_COLOR = /* glsl */ `
     vec2 e = smoothstep(vec2(0.0), aw * 1.5 + 0.03, f) * smoothstep(vec2(0.0), aw * 1.5 + 0.03, 1.0 - f);
     float grout = 1.0 - e.x * e.y;
     float h = kitHash(id), h2 = kitHash(floor(id / vec2(3.0, 4.0)) + 7.0);
-    float lost = step(0.86, h2) * step(0.35, h);
+    float lost = step(0.9, h2) * step(0.6, h);
     float t = mix(0.82 + 0.34 * h, 0.42, grout);
-    t = mix(t, 0.38, lost);
+    t = mix(t, 0.74 + 0.1 * kitHash(id + 3.0), lost * fade);
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 0.96, 0.86), lost * fade * 0.6);
     m = mix(0.93, t, fade);
     // rain streaks down from the courses
     m *= 0.88 + 0.12 * kitHash(vec2(floor(p.x * 1.7), 3.0));
@@ -279,7 +285,7 @@ export function kilnYardsNearJobs({ ground = () => 0 } = {}) {
     for (const which of ['shell', 'foot']) {
       jobs.push(() => {
         const g0 = ground(t.x, t.z) - 1.2;
-        const parts = towerNear(t, i * 1.7 + 0.4, which);
+        const parts = towerNear(t, i * 1.7 + 0.4, which, (lx, lz) => ground(t.x + lx, t.z + lz) - g0);
         for (const g of parts) g.translate(t.x, g0, t.z);
         return { parts, glow: [] };
       });

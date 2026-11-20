@@ -10,7 +10,9 @@ import { probe as lens } from './camera-probe-page.mjs';
 /* (M3 wave 2 fix round 1, MP2 "no tile repeat under 20 m") on F56 only: 40 m orthographic top-down captures of the
  * Malpais' ground term at an aa site and a pahoehoe site (Node chose them: 85-100 % one zone over the square), the material
  * alone (meadow-page.mjs topDown: no shadow, sky or skyline), returned as 8-bit luma for tools/perf/autocorr.mjs */
-export const TOPDOWN = Object.freeze({ frame: 'F56', span: 40, px: 512, sites: Object.freeze([{ id: 'aa', x: 300, z: 140 }, { id: 'pahoehoe', x: 190, z: 125 }]) });
+/* (wave 2b, MP7 "the cone face not a large repeating pattern") and Rust Cone's scree: a square on its south-west flank,
+ * 17 m from its axis (the cone's weight 1 over all of it) */
+export const TOPDOWN = Object.freeze({ frame: 'F56', span: 40, px: 512, sites: Object.freeze([{ id: 'aa', x: 300, z: 140 }, { id: 'pahoehoe', x: 190, z: 125 }, { id: 'scree', x: 270, z: 112 }]) });
 
 export async function probe(f) {
   const out = lens(f);

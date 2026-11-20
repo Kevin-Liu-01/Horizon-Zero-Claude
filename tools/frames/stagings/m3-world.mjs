@@ -11,7 +11,12 @@
  *            changes in wave 2), Rust Cone, the Yards' towers and stacks (to 29 m over the shelf), the hornitos and their
  *            steam (to 20 m), the tube shelter's crust.
  */
-import { HORNITOS } from '../../../src/world/sites/malpais-layout.js';
+import { HORNITOS, TUBE_SHELTER, STEAM } from '../../../src/world/sites/malpais-layout.js';
+import { heightAt } from '../../../src/world/island/recipe.js';
+
+/* (M3 wave 2b, MP4) the steam as counted subjects: each plume a column of air over its foot, from 0.5 m over the rim or
+ * the vent to 0.8 of its rise (the recipe's ground in Node; the page's drawn ground differs by centimetres) */
+const steamShapes = (ids = null) => STEAM.filter((s) => !ids || ids.includes(s.id)).map((s) => ({ id: s.id, kind: 'cylinder', x: s.x, z: s.z, r: 2, h: s.h * 0.8, y0: +(heightAt(s.x, s.z) + s.base + 0.5).toFixed(2) }));
 
 export const lane = 'm3-world';
 
@@ -31,15 +36,23 @@ export const FRAMES = Object.freeze([
      * lens looks down Rust Cone's scree past the hornito field to the flow's sea front: Malpais ground 47 % of the rays
      * (Rust Cone's flank 27 %, the lava past 60 m 21 %), the sea 26 %, sky 21 %, the Scar 0 % (the subject check's Node
      * half: Malpais ground 51.5 % of the frame, 7 of 7 hornitos in the safe area: PASS) */
-    at: { en: [250, -130] }, bearing: 160, camera: { mode: 'eye', eye: 1.7, pitch: -20, fov: 55 }, state: { pose: 'idle', hud: false },
+    /* M3 wave 2b (MP7: "F56 closer to its KEY 'Malpais' strip crop than the grey blockout was"): turned 18 deg right to 178
+     * and up 1 deg to -19 (was 160 and -20). At 160 Rust Cone's own flank filled the left 40 % of the frame up close, its
+     * scree a large repeating red pattern (the review at 9d1acc3: "further from its crop"). At 178 the cone's flank is 9 %
+     * of the rays and the frame looks down over the spire field below the cone's foot (malpais-rocks.js SPIRE_FIELDS
+     * 'cone-foot', 60-90 m out) and the steaming hornito field to the flow's sea front (Node ray count, 48 x 27 rays: Malpais
+     * ground 38 %, the sea 38 %, sky 17 %, the Holds' coast 8 %; 55 spires' tops in the safe area and over the ground; the
+     * subject check's Node half: Malpais ground 41.9 %, 5 of 7 hornitos, 7 of 11 plumes) */
+    at: { en: [250, -130] }, bearing: 178, camera: { mode: 'eye', eye: 1.7, pitch: -19, fov: 55 }, state: { pose: 'idle', hud: false },
     /* its own subjects (rule 17; tools/frames/subjects.mjs's F56 row asks for Rust Cone's TOP in the lens, which no lens at
      * R2's point can hold without looking 57 deg up the cone's own flank: the top stands 69 m over the lens, 44 m off). R2's
-     * frame: the Malpais ground (the table's own bar) and the hornito field below it */
+     * frame: the Malpais ground (the table's own bar), the hornito field below it, and (wave 2b, MP4) >= 3 steam sources */
     subjects: [
       { name: 'the Malpais ground', kind: 'ground', region: 'malpais', minShare: 0.25 },
       { name: 'the hornito field (>= 5 cones)', kind: 'shapes', min: 5, minPx: 12, shapes: HORNITOS.map((h) => ({ id: h.id, kind: 'cone', x: h.x, z: h.z, r: h.r, rTop: h.r * 0.3, h: h.h })) },
+      { name: 'the steam (>= 3 sources)', kind: 'shapes', min: 3, minPx: 20, shapes: steamShapes() },
     ],
-    ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 2: Rust Cone's red scree in the foreground, the aa's clinker and spires and the pahoehoe's sheets below toward the hornito field and the sea; no lava, nothing glowing. Wave 3: >= 3 steam sources (MP1, MP2, MP4)" },
+    ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 2b: from Rust Cone's south-west foot down over a field of dark spires, the aa's clinker and the pahoehoe's sheets toward the steaming hornito field and the sea; >= 3 steam sources; no lava, nothing glowing (MP1, MP2, MP4)" },
   },
   {
     /* M3 wave 2 fix round 1 (MP1's night half, "no terrain pixel brighter than the sky"): F56's lens at 22:30, the region
@@ -68,9 +81,20 @@ export const FRAMES = Object.freeze([
     ref: { crops: ['board-kilnyards'], written: "the BOARD Kiln Yards panel. Wave 1 blockout: from the apron's south-east corner looking north-west and up: the four wellheads' caps along the bench's lower edge, the manifold rack, the four flue stacks with their tops in frame, the two tower stubs whole on the shelf; only the wellheads' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)" },
   },
   {
-    id: 'F58', subject: "the hornito field and the tube shelter's mouth (blockout)", in: 'M3', hour: 17.75, weather: 'trade',
-    at: { en: [262, -188] }, bearing: 150, camera: { mode: 'eye', eye: 2.2, pitch: -6, fov: 55 }, state: { pose: 'idle', hud: false },
-    ref: { written: "wave 1 blockout: the hornito field from its north-west edge (B6's ground): seven grey spatter cones of 3-6 m on the lava flat. The tube shelter's mouth is at the Yards (its own lens comes with its look). Wave 3: >= 5 hornitos of 3-6 m, >= 3 steaming; the shelter's Brazier unlit; a dormant Peg nest inside (MP4, MP6)" },
+    id: 'F58', subject: "the hornito field and the tube shelter's mouth", in: 'M3', hour: 17.75, weather: 'trade',
+    /* M3 wave 2b (R9, provisional: "the tube shelter moves to the hornito field (hornitos stand on lava tubes), so F58 can
+     * hold both"): from the field's north-east rim, 21 m NNE of the tube's mouth, looking SSW down over the field and the
+     * mouth (was (262, -188) facing 150 from B6's ground, where the mouth, then at the Yards, was behind the lens). The sun at
+     * 17:45 stands at 258, 52 deg right of the lens (out of the frame): the cones are lit from the side, the steam against the
+     * sea's light. Node (subject-math, the hornitos as cones and the tube's crust as occluders, the terrain): 7 of 7
+     * hornitos pass (56-158 px, 95 % or more unoccluded), the mouth 192 px, all in the safe area */
+    at: { en: [313.5, -177.3] }, bearing: 206, camera: { mode: 'eye', eye: 2.0, pitch: -8, fov: 55 }, state: { pose: 'idle', hud: false },
+    subjects: [
+      { name: 'the hornitos (>= 5 of 3-6 m)', kind: 'shapes', min: 5, minPx: 20, shapes: HORNITOS.map((h) => ({ id: h.id, kind: 'cone', x: h.x, z: h.z, r: h.r, rTop: h.r * 0.3, h: h.h })) },
+      { name: 'the tube shelter\'s mouth', kind: 'shapes', minPx: 30, shapes: [{ id: 'tube-mouth', kind: 'cylinder', x: TUBE_SHELTER.mouth.x, z: TUBE_SHELTER.mouth.z, r: TUBE_SHELTER.half, h: TUBE_SHELTER.height }] },
+      { name: 'the steam (>= 3 of the hornitos steaming)', kind: 'shapes', min: 3, minPx: 20, shapes: steamShapes(HORNITOS.filter((h) => h.steam).map((h) => `steam-${h.id}`)) },
+    ],
+    ref: { written: "the hornito field from its west rim: seven spatter chimneys of 3-6 m on the lava flat, four of them steaming; the tube shelter's mouth at the field's east edge, its crust running away down the flow; the shelter's Brazier unlit, a dormant Peg nest inside (MP4, MP6)" },
   },
 ]);
 

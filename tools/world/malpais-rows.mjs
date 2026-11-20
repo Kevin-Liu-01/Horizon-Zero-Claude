@@ -29,7 +29,7 @@ import { groundSpeedAt, malpaisZoneAt } from '../../src/world/sites/malpais-zone
 import { REGIONS } from '../../src/core/regions.js';
 import { statSync } from 'node:fs';
 import { buildKilnYardsNear } from '../../src/world/sites/kilnyards-near.js';
-import { clinkerPlan, pinnaclePlan, clastGeometry, pinnacleGeometry, hornitoGeometry } from '../../src/world/sites/malpais-rocks.js';
+import { clinkerPlan, pinnaclePlan, ridgePlan, clastGeometry, pinnacleGeometry, hornitoGeometry, pinnacleColliders, ridgeColliders } from '../../src/world/sites/malpais-rocks.js';
 import { MALPAIS_LAYERS, MALPAIS_FILES } from '../../src/world/sites/malpais-files.js';
 import { MALPAIS_TERM, MALPAIS_ROCK_COLOR } from '../../src/world/sites/malpais-shader.js';
 
@@ -99,11 +99,12 @@ let apronNear = Infinity;
 for (let u = -K.APRON.halfLen; u <= K.APRON.halfLen; u += 0.5) for (const v of [-K.APRON.halfWid, K.APRON.halfWid]) { const p = K.apronPoint(u, v); apronNear = Math.min(apronNear, Math.hypot(p.e - sa.e, p.n - sa.n)); }
 for (let v = -K.APRON.halfWid; v <= K.APRON.halfWid; v += 0.5) for (const u of [-K.APRON.halfLen, K.APRON.halfLen]) { const p = K.apronPoint(u, v); apronNear = Math.min(apronNear, Math.hypot(p.e - sa.e, p.n - sa.n)); }
 say(`  the Scar's upper end (${sa.e}, ${sa.n}) at ${r1(G(sa.e, sa.n))} m: ${r1(apronNear)} m from the apron's nearest edge and ${r1(K.APRON.h - G(sa.e, sa.n))} m below it (the plan's 35 m was centre to centre). Both exist: the Scar's spoil apron meets the Yards' fill batter on the slope between them; the walk from one to the other is in MP9`);
-// the tube shelter
+// the tube shelter (M3 wave 2b, R9: at the hornito field, on its floor; no cut)
 const T = M.TUBE_SHELTER;
-const crust = [];
-for (let v = T.v0 + T.lip; v <= T.v1; v += 2) { const p = K.apronPoint(T.u + T.half + T.wallBlend + 0.6, v), q = K.apronPoint(T.u - T.half - T.wallBlend - 0.6, v); crust.push(Math.max(G(p.e, p.n), G(q.e, q.n)) - (M.tubeFloor(v) + T.height)); }
-say(`  the tube shelter (the bible gives no place; chosen): mouth (${T.mouth.e}, ${T.mouth.n}) in the apron's north batter, ${T.v1 - T.v0} m north into the shelf, floor ${T.floor0}-${T.floor1} m, ${T.half * 2} m wide, ${T.height} m headroom, the crust ${r1(Math.min(...crust))}-${r1(Math.max(...crust))} m thick over it; ${r1(Math.hypot(T.mouth.e - sa.e, T.mouth.n - sa.n))} m from the Scar's upper end`);
+const crust = [T.crust];
+const tubeFall = (() => { let lo = Infinity, hi = -Infinity; for (let sv = 0; sv <= T.len; sv += 1) { const q = M.tubeEN(sv, 0); const h = G(q.e, q.n); lo = Math.min(lo, h); hi = Math.max(hi, h); } return hi - lo; })();
+const tubeToHornito = Math.min(...M.HORNITOS.map((h) => { let d = Infinity; for (let sv = 0; sv <= T.len; sv += 0.5) for (const l of [-T.foot, 0, T.foot]) { const q = M.tubeEN(sv, l); d = Math.min(d, Math.hypot(q.e - h.e, q.n - h.n) - h.r); } return d; }));
+say(`  the tube shelter (the bible gives no place; R9: at the hornito field): mouth (${T.mouth.e}, ${T.mouth.n}) along the field's east edge, running ${T.len} m on bearing ${T.bearing} down the flow, its floor the field's own ground (${r1(tubeFall)} m of fall), ${T.half * 2} m wide, ${T.height} m headroom, the crust ${T.crust} m thick over it; its foot ${r1(tubeToHornito)} m from the nearest hornito's foot; ${r1(Math.hypot(T.mouth.e - b6.e, T.mouth.n - b6.n))} m from B6`);
 say('  the fishing hut (the first net): on the Pans, not this area\'s paths in wave 1; not placed');
 // four wellheads, each with a Kiln's room
 const inApron = (e, n, m) => { const q = K.apronUV(e, n); return Math.abs(q.u) <= K.APRON.halfLen - m && Math.abs(q.v) <= K.APRON.halfWid - m; };
@@ -124,7 +125,9 @@ rec.rows.MP0 = { ok: true, siteH: r2(G(ky.e, ky.n)), apron: { ...K.APRON, drawnM
 
 /* ======================================================================== the blockers, the game's own */
 const C = new Collision({});
-const cols = [...K.yardsColliders(ground), ...M.malpaisColliders(ground)];
+// (M3 wave 2b) and the rock's: the spires (with the two spire fields) and the pressure ridges, as the region registers them
+const pins0 = pinnaclePlan(ground);
+const cols = [...K.yardsColliders(ground), ...M.malpaisColliders(ground), ...pinnacleColliders(pins0), ...ridgeColliders(ridgePlan(ground, pins0), ground)];
 for (const d of cols) C.register({ kind: d.kind, shape: d.shape, blocking: d.blocking !== false, camera: d.camera ?? (d.blocking !== false) });
 
 /* sight rays (A-trig-pillars' ten): none may pass through a Yards or Malpais blocker */
@@ -238,6 +241,7 @@ const legs = [
   ['Ninewalls -> B6', nw, b6],
   ['the apron -> T3', apronC, { e: t3.e, n: t3.n }],
   ['the apron -> B6 (the hornito field)', apronC, b6],
+  ['B6 -> the tube shelter\'s back (the nest, through its mouth)', b6, M.tubeEN(T.len - 2.5, -1.8)],
 ];
 const walks = [];
 let holes = 0;
@@ -256,7 +260,7 @@ const from = { x: west.e, z: -west.n };
 const goals = [
   ...K.WELLHEADS.map((w) => [`${w.id} (a step south of it)`, K.apronPoint(K.apronUV(w.e, w.n).u, -6.5)]),
   ...K.WELLHEADS.map((w) => [`${w.id}'s Kiln room`, { e: w.kilnStand.e, n: w.kilnStand.n }]),
-  ['B5', b5], ['the tube shelter\'s Brazier', T.brazier], ['the tube shelter\'s back (the nest)', K.apronPoint(T.u - 1.8, T.v1 - 2.5)],
+  ['B5', b5],
 ];
 const grid = [];
 let gridMiss = 0;
@@ -281,8 +285,8 @@ rec.rows.scarToYards = { firstOpen, walk: scarWalk ? { len: r1(scarWalk.len), cl
 row('MP9', holes === 0 && gridMiss === 0, `0 holes on ${legs.length - holes} of ${legs.length} walks; the Yards' walk grid reaches ${grid.length - gridMiss} of ${grid.length} goals. The zones are data (malpais-zones.js: aa ${aaShare.aa} of ${aaShare.n} Malpais cells at 4 m, groundSpeedAt ${r2(groundSpeedAt(200, 25))}-${0.8} on aa); the player does not read groundSpeedAt yet (hero-anim's locomotion): the slow-ground half is UNMEASURED on the page`, { walks, grid, shutByCollider });
 
 /* ======================================================================== MP6 */
-const shelterOk = grid.find((g) => /Brazier/.test(g.name))?.ok && grid.find((g) => /back/.test(g.name))?.ok && Math.min(...crust) >= 1.0;
-row('MP6', shelterOk ? null : false, `the tube shelter: walkable to its Brazier spot and its back (walk grid), headroom ${T.height} m, crust >= ${r1(Math.min(...crust))} m; the Brazier spot, the dormant nest and the salt cache are data (malpais-layout.js TUBE_SHELTER). The Brazier that kindles, the nest's Pegs (0 of 10 wake) and the cache's pickup are other areas' (settlements' Brazier system, instruments, systems): UNMEASURED`, { crustMin: r1(Math.min(...crust)) });
+const shelterOk = walks.find((g) => /Brazier/.test(g.name))?.ok && walks.find((g) => /tube shelter's back/.test(g.name))?.ok && Math.min(...crust) >= 1.0;
+row('MP6', shelterOk ? null : false, `the tube shelter (R9: at the hornito field): walkable to its Brazier spot and its back (the 2 m nav walks, its walls stamped), headroom ${T.height} m, crust >= ${r1(Math.min(...crust))} m; the Brazier spot, the dormant nest and the salt cache are data (malpais-layout.js TUBE_SHELTER). The Brazier that kindles, the nest's Pegs (0 of 10 wake) and the cache's pickup are other areas' (settlements' Brazier system, instruments, systems): UNMEASURED`, { crustMin: r1(Math.min(...crust)) });
 
 /* ======================================================================== MP1 (the materials' half) */
 // (M3 wave 2) the near form: the Malpais' ground term and rock (src/world/sites/malpais-shader.js), the Yards' near form

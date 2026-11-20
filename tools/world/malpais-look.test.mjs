@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { heightAt, fbm } from '../../src/world/island/recipe.js';
+import * as THREE from 'three';
+import { heightAt, fbm, biomesAt } from '../../src/world/island/recipe.js';
 import { malpaisSheet } from '../../src/world/island/bake.js';
 import { MALPAIS_LAYERS, MALPAIS_FILES } from '../../src/world/sites/malpais-files.js';
 import { MALPAIS_TERM, MALPAIS_ROCK_COLOR, MALPAIS_PARS } from '../../src/world/sites/malpais-shader.js';
@@ -131,4 +132,51 @@ test('the zone map reads the zones\' law: the sheet\'s cut of the stored field i
     worst = Math.max(worst, Math.abs(ss(0.50, 0.58, stored) - malpaisSheet(x, z)));
   }
   assert.ok(worst < 0.06, `the 8-bit field's cut is within ${worst.toFixed(3)} of malpaisSheet`);
+});
+
+/* ---- M3 wave 2b, area A: the steam (MP4) and the tube shelter at the hornito field (R9) ---- */
+test('MP4 data: >= 3 steaming hornitos and >= 3 vents; every plume inside its computed mask\'s headroom; no emissive; one draw a group', async () => {
+  const { STEAM, VENTS } = await import('../../src/world/sites/malpais-layout.js');
+  const { buildSteam } = await import('../../src/world/sites/malpais-steam.js');
+  const { MASKS } = await import('../frames/stagings/m3-world.mjs');
+  const kinds = (k) => STEAM.filter((s) => s.kind === k);
+  assert.ok(kinds('hornito').length >= 3 && kinds('vent').length >= 3, `${kinds('hornito').length} hornitos, ${kinds('vent').length} vents`);
+  const room = { hornito: MASKS.region.hornitos.headroom, vent: MASKS.region.malpais, stack: MASKS.region.yards.headroom };
+  for (const s of STEAM) assert.ok(s.base + s.h * 1.15 <= room[s.kind], `${s.id}: plume top ${(s.base + s.h * 1.15).toFixed(1)} m over its ground > ${room[s.kind]}`);
+  const g = (x, z) => heightAt(x, z);
+  for (const v of VENTS) assert.ok(aaShareOk(v), `${v.id} off the Malpais`);
+  const st = buildSteam(STEAM, g);
+  assert.equal(st.counts.draws, 2);
+  for (const m of st.materials) assert.equal(m.emissive.getHex(), 0, `${m.name} emissive`);
+  const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.lambert.vertexShader, fragmentShader: THREE.ShaderLib.lambert.fragmentShader };
+  st.materials[0].onBeforeCompile(sh);
+  for (const k of ['#include <project_vertex>', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>']) assert.ok(!sh.vertexShader.includes(k), `${k} not replaced`);
+  assert.ok(sh.fragmentShader.includes('diffuseColor.a *= a'), 'the puff\'s cover not applied');
+  st.dispose();
+  function aaShareOk(v) { const w = new Float64Array(6); biomesAt(v.x, v.z, w); return w[2] > 0.5; }
+});
+
+test('R9: the tube shelter lies at the hornito field, clear of every hornito and B6; its spots inside its vault; its geometry closed and finite', async () => {
+  const L = await import('../../src/world/sites/malpais-layout.js');
+  const { tubeGeometry } = await import('../../src/world/sites/malpais-rocks.js');
+  const T = L.TUBE_SHELTER;
+  for (const h of HORNITOS) for (let sv = 0; sv <= T.len; sv += 0.5) for (const l of [-T.foot, 0, T.foot]) {
+    const q = L.tubeEN(sv, l);
+    assert.ok(Math.hypot(q.e - h.e, q.n - h.n) - h.r >= 1.5, `the tube at s ${sv} on ${h.id}`);
+  }
+  assert.ok(Math.hypot(T.mouth.e - L.BENCH_B6.e, T.mouth.n - L.BENCH_B6.n) > 10, 'the mouth by B6');
+  // the hornito field is within 40 m of the mouth (BIBLE: "the hornito field"; R9)
+  assert.ok(Math.min(...HORNITOS.map((h) => Math.hypot(h.e - T.mouth.e, h.n - T.mouth.n))) < 40);
+  for (const p of [T.brazier, T.nest, T.cache]) {
+    const q = L.tubeSL(p.x, p.z);
+    assert.ok(q.s > 0 && q.s < T.len && Math.abs(q.l) < T.half, `${p.id} outside the vault (s ${q.s.toFixed(1)}, l ${q.l.toFixed(1)})`);
+  }
+  const geo = tubeGeometry((x, z) => heightAt(x, z)), p = geo.attributes.position;
+  assert.ok(p.count / 3 > 600 && p.count / 3 < 4000, `${p.count / 3} triangles`);
+  for (let i = 0; i < p.count; i++) assert.ok(Number.isFinite(p.getX(i) + p.getY(i) + p.getZ(i)));
+  // the walls and the back are blockers, the crust is not
+  const boxes = L.tubeBoxes((x, z) => heightAt(x, z));
+  assert.equal(boxes.filter((b) => b.blocking).length, 9);
+  assert.equal(boxes.filter((b) => !b.blocking).length, 4);
+  geo.dispose();
 });

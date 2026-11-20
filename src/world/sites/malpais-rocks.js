@@ -3,7 +3,8 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { rng, fbm, biomesAt } from '../island/recipe.js';
 import { malpaisSheet, malpaisCinder } from '../island/bake.js';
 import { YARDS_WALK, APRON, apronUV } from './kilnyards-layout.js';
-import { HORNITOS, TUBE_SHELTER, RUST_CONE, BENCH_B6 } from './malpais-layout.js';
+import { HORNITOS, TUBE_SHELTER, RUST_CONE, BENCH_B6, VENTS, tubeSL, tubeEN } from './malpais-layout.js';
+import { ISLAND_SCALE as S } from '../island/extent.js';
 
 /**
  * THE MALPAIS' ROCK (Milestone 3 wave 2, area A: the look; BIBLE §3.3; the KEY Malpais strip for form only). Three forms,
@@ -37,7 +38,7 @@ export const CLINKER = Object.freeze({
 
 const D2R = Math.PI / 180;
 const _w = new Float64Array(6);
-const _uv = { u: 0, v: 0 };
+const _uv = { u: 0, v: 0 }, _sl = { s: 0, l: 0 };
 
 /** Is (x, z) kept clear of rubble and spires: the Yards' walk grid, the apron and its batter, the tube, the hornitos, B6. */
 function clearOf(x, z, pad = 0) {
@@ -45,7 +46,10 @@ function clearOf(x, z, pad = 0) {
   if (x > W.x0 - pad && x < W.x1 + pad && z > W.z0 - pad && z < W.z1 + pad) return true;
   apronUV(x, -z, _uv);
   if (Math.abs(_uv.u) < APRON.halfLen + APRON.batter + 4 + pad && Math.abs(_uv.v) < APRON.halfWid + APRON.batter + 4 + pad) return true;
-  if (Math.abs(_uv.u - TUBE_SHELTER.u) < TUBE_SHELTER.half + 5 + pad && _uv.v > TUBE_SHELTER.v0 - 4 && _uv.v < TUBE_SHELTER.v1 + 5) return true;
+  // (R9) the tube shelter on the hornito field: its foot and 2 m round it, and 6 m in front of its mouth
+  tubeSL(x, z, _sl);
+  if (_sl.s > -6 - pad && _sl.s < TUBE_SHELTER.len + 3 + pad && Math.abs(_sl.l) < TUBE_SHELTER.foot + 2 + pad) return true;
+  for (const v of VENTS) if (Math.hypot(x - v.x, z - v.z) < 3 + pad) return true;
   for (const h of HORNITOS) if (Math.hypot(x - h.x, z - h.z) < h.r + 2.5 + pad) return true;
   if (Math.hypot(x - BENCH_B6.x, z - BENCH_B6.z) < 4 + pad) return true;
   return false;
@@ -134,8 +138,30 @@ export function pinnaclePlan(ground) {
       tryAt(x + Math.cos(a) * d, z + Math.sin(a) * d, R() * 0.6, R(), R(), R(), out[out.length - 1].h * 0.8);
     }
   }
+  // (M3 wave 2b, MP7: "a field of spires", the KEY strip's for form only) two fields where the spires stand close, below
+  // F56's lens on Rust Cone's south-west foot and past the hornito field toward the sea front: slimmer spires 4.5 m apart
+  for (const F of SPIRE_FIELDS) {
+    const RF = rng(F.seed);
+    let made = 0;
+    for (let k = 0; k < 900 && made < F.n; k++) {
+      const a = RF() * Math.PI * 2, d = F.r * Math.sqrt(RF()), hR = RF(), rR = RF(), lR = RF(), yR = RF();
+      const x = F.x + Math.cos(a) * d, z = F.z + Math.sin(a) * d, h0 = ground(x, z);
+      if (h0 < 4 || aaShare(x, z, h0) < 0.6 || clearOf(x, z, 4)) continue;
+      if (out.some((p) => Math.hypot(p.x - x, p.z - z) < F.gap)) continue;
+      const gx = ground(x + 2, z) - ground(x - 2, z), gz = ground(x, z + 2) - ground(x, z - 2);
+      if (Math.hypot(gx, gz) / 4 > 0.65) continue;
+      const h = F.h[0] + (F.h[1] - F.h[0]) * Math.pow(hR, 1.2);
+      out.push({ id: `pinnacle-${out.length + 1}`, x: +x.toFixed(2), z: +z.toFixed(2), y: +h0.toFixed(2), h: +h.toFixed(2), r: +(0.45 + h * 0.085 + rR * 0.35).toFixed(2), lean: (lR - 0.5) * 0.2, yaw: yR * Math.PI * 2, field: F.id });
+      made++;
+    }
+  }
   return out;
 }
+/** The spire fields (engine x, z; r the field's radius, n spires at most, gap between them, h their heights). */
+export const SPIRE_FIELDS = Object.freeze([
+  Object.freeze({ id: 'cone-foot', x: 238.7, z: 194, r: 24, n: 26, gap: 4.5, h: Object.freeze([5, 15]), seed: 0x51f1 }),
+  Object.freeze({ id: 'sea-front', x: 312.5, z: 238.3, r: 26, n: 26, gap: 4.5, h: Object.freeze([5, 14]), seed: 0x51f2 }),
+]);
 
 /**
  * The pressure ridges and tumuli: { id, x, z, y, len, wid, h, yaw } (engine; yaw turns the long axis), on Malpais ground
@@ -329,6 +355,76 @@ export function hornitoGeometry(ground) {
   });
   const g = mergeGeometries(parts);
   for (const q of parts) q.dispose();
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
+
+/**
+ * The tube shelter (M3 wave 2b, R9; ./malpais-layout.js TUBE_SHELTER): a pahoehoe tube lying on the hornito field's floor
+ * under its own proud crust, broken open at its upslope end (the mouth) and closed at the back, where the crust rounds
+ * down into the flow. Built as rings along its axis every metre: the outer crust (a flattened arch over a skirt sunk
+ * into the ground) and the inner vault (the headroom over the floor, its walls sunk below it), joined at the broken rim
+ * of the mouth and by the back wall. Lumpy and a little sinuous; flat-faced, as the rest of the Malpais' rock.
+ * `ground(x, z)` the drawn terrain (engine frame). About 1,500 triangles.
+ */
+export function tubeGeometry(ground) {
+  const T = TUBE_SHELTER, R = rng(0x7b0e);
+  const K = 15, p = 2.4, ds = 1;
+  const arch = (W, H, th) => { const c = Math.cos(th), sn = Math.sin(th); return [W * Math.sign(c) * Math.pow(Math.abs(c), 2 / p), H * Math.pow(Math.abs(sn), 2 / p)]; };
+  const at = (sv, l, dy) => { const q = tubeEN(sv, l), x = q.e * S, z = -q.n * S; return [x, ground(x, z) + dy, z]; };
+  const floorAt = (sv) => { const q = tubeEN(sv, 0); return ground(q.e * S, -q.n * S); };
+  const N = Math.round(T.len / ds);
+  const outer = [], inner = [];
+  const lump = [R() * 6, R() * 6, R() * 6, R() * 6];
+  for (let i = 0; i <= N + 2; i++) {
+    // past the back the crust rounds down into the ground over 3.5 m
+    const tail = i > N ? (i === N + 1 ? 0.62 : 0.2) : 1;
+    const sv = Math.min(T.len + 3.5, i * ds + (i > N ? (i - N) * 1.6 : 0));
+    const sway = 0.6 * Math.sin(sv * 0.23 + lump[0]), hk = 1 + 0.08 * Math.sin(sv * 0.41 + lump[1]);
+    const f = floorAt(Math.min(sv, T.len));
+    const ro = [], ri = [];
+    // the outer crust: the skirt's foot (sunk), the arch, the other foot; the rim at the mouth broken back by up to 1.3 m
+    const Wo = (T.half + T.wall) * (tail < 1 ? 0.6 + 0.4 * tail : 1), Ho = (T.height + T.crust) * hk * tail;
+    ro.push(at(sv, sway + T.foot * (tail < 1 ? 0.75 : 1), -1.0));
+    for (let k = 0; k < K; k++) {
+      const th = (k / (K - 1)) * Math.PI;
+      const [l, y] = arch(Wo, Ho, th);
+      const n = 1 + 0.07 * Math.sin(th * 5 + sv * 0.9 + lump[2]) + (R() - 0.5) * 0.08;
+      const sOff = i === 0 && k > 1 && k < K - 2 ? R() * 1.3 : 0;
+      const q = tubeEN(sv + sOff, sway + l * n);
+      ro.push([q.e * S, f + Math.max(-0.4, y * n), -q.n * S]);
+    }
+    ro.push(at(sv, sway - T.foot * (tail < 1 ? 0.75 : 1), -1.0));
+    outer.push(ro);
+    if (i <= N) {
+      // the vault: from the left floor up and over to the right floor (wound to face in), its feet 0.4 m under the floor
+      for (let k = K - 1; k >= 0; k--) {
+        const th = (k / (K - 1)) * Math.PI;
+        const [l, y] = arch(T.half, T.height * hk, th);
+        const n = 1 + (R() - 0.5) * 0.06;
+        const sOff = i === 0 && k > 1 && k < K - 2 ? R() * 0.5 : 0;
+        const q = tubeEN(sv + sOff, sway + l * n);
+        ri.push([q.e * S, f + (k === 0 || k === K - 1 ? -0.4 : y * n), -q.n * S]);
+      }
+      inner.push(ri);
+    }
+  }
+  const pos = [];
+  const tri = (a, b, c) => pos.push(...a, ...b, ...c);
+  const strip = (A, B, flip) => { for (let k = 0; k < A.length - 1; k++) { const a = A[k], b = A[k + 1], c = B[k], d = B[k + 1]; if (flip) { tri(a, b, c); tri(b, d, c); } else { tri(a, c, b); tri(b, c, d); } } };
+  for (let i = 0; i < outer.length - 1; i++) strip(outer[i], outer[i + 1], false);
+  for (let i = 0; i < inner.length - 1; i++) strip(inner[i], inner[i + 1], false);
+  // the mouth's broken rim: the outer arch to the vault (the crust's thickness showing)
+  { const o = outer[0].slice(1, K + 1), v = inner[0].slice().reverse(); strip(o, v, true); }
+  // the back wall: a fan over the vault's last ring, its centre at mid-height
+  { const v = inner[N], f = floorAt(T.len), q = tubeEN(T.len + 0.3, 0.6 * Math.sin(T.len * 0.23 + lump[0])), c = [q.e * S, f + T.height * 0.45, -q.n * S];
+    for (let k = 0; k < v.length - 1; k++) tri(v[k], c, v[k + 1]); }
+  // the dome's last ring closed to a point on the ground
+  { const o = outer[outer.length - 1], q = tubeEN(T.len + 4.2, 0), c = [q.e * S, floorAt(T.len) - 0.6, -q.n * S];
+    for (let k = 0; k < o.length - 1; k++) tri(o[k], c, o[k + 1]); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
