@@ -49,16 +49,55 @@ export const KITE = Object.freeze({
   safeLandVs: 3,
   /** m/s of sink the flare holds in the last `landAglM` (under safeLandVs) */
   flareSink: 1.0,
-  /** grounded mid-air (calima or squall arrives): down inside this many s* (KF5), never faster than `downMaxVs` */
+  /** grounded mid-air (calima or squall arrives, KF5: down inside 5 s*): the kite no longer holds her, so she goes down
+   *  no faster than she would fall (`downAcc`, the player's gravity) to at most `downMaxVs`, and the kite brakes her at
+   *  `downBrake` into the flare. The bar's 5 s is met up to 80 m over the ground (closed form below,
+   *  `groundedDownTime`); from higher it cannot be met without falling faster than a fall (275 m in 5 s IS a free fall at
+   *  22 m/s^2, ending at 110 m/s): a ruling (M3-B fix round 1) */
   groundedDownS: 5,
-  downMaxVs: 14,
+  downAcc: 22,
+  downMaxVs: 24,
+  downBrake: 16,
+  /** m over the ground at which the brought-down descent holds the flare's sink */
+  groundedFlareM: 1.5,
   /** m/s of sink in the brought-down flare (under safeLandVs) */
   groundedFlareSink: 2.5,
   /** rad/s of turn at full bank */
   turnRate: 0.9,
   /** the water contour past which a landing is refused (BIBLE: wading to 1.2 m; the current turns her at 1.1) */
   waterContourM: 1.1,
+  /** m over deep water under which she turns for the last ground she crossed at or inside the contour */
+  waterTurnAglM: 8,
+  /** m/s the current carries her toward that ground if she still comes down on deep water */
+  waterCarryMs: 2.5,
+  /** the player's jump (src/entities/player.js GRAVITY 22 m/s^2, JUMP_PEAK 1.5 m): where she is when Space may open
+   *  the kite, `openAirborneS` after a jump off a top. A step off a 4 m pillar is 2.65 m over its foot at 0.35 s, under
+   *  the 3 m of clearance, so a pillar is launched from with a jump (`openHeightOffTop`) */
+  gravity: 22,
+  jumpPeakM: 1.5,
 });
+
+/** The height (m) the kite opens at off a top at `topY`: a jump, then Space at `KITE.openAirborneS` (the one launch
+ *  height area A's lift rows and area B's row 0 both read). */
+export function openHeightOffTop(/** @type {number} */ topY) {
+  const v0 = Math.sqrt(2 * KITE.gravity * KITE.jumpPeakM), t = KITE.openAirborneS;
+  return topY + v0 * t - 0.5 * KITE.gravity * t * t;
+}
+
+/**
+ * The brought-down descent's time (s) from `agl` m over flat ground (KF5), in closed form: accelerate at `downAcc` to at
+ * most `downMaxVs`, brake at `downBrake` to the flare's sink at `groundedFlareM`, then the flare. The Node rows step the
+ * law and compare.
+ * @param {number} agl
+ * @param {number} [v0] m/s of sink when the weather arrives (the glide's)
+ */
+export function groundedDownTime(agl, v0 = KITE.sink) {
+  const a = KITE.downAcc, b = KITE.downBrake, vf = KITE.groundedFlareSink, h = Math.max(0, agl - KITE.groundedFlareM);
+  // peak speed reached with no cruise: h = (v^2 - v0^2)/2a + (v^2 - vf^2)/2b
+  const vPk = Math.min(KITE.downMaxVs, Math.sqrt(Math.max(vf * vf, (h + v0 * v0 / (2 * a) + vf * vf / (2 * b)) / (1 / (2 * a) + 1 / (2 * b)))));
+  const dA = Math.max(0, (vPk * vPk - v0 * v0) / (2 * a)), dB = Math.max(0, (vPk * vPk - vf * vf) / (2 * b)), cruise = Math.max(0, h - dA - dB);
+  return Math.max(0, vPk - v0) / a + Math.max(0, vPk - vf) / b + cruise / vPk + Math.min(agl, KITE.groundedFlareM) / vf;
+}
 
 /** Weather states that ground the kite (BIBLE §3.2: calima and squall). */
 export const GROUNDING_WEATHER = Object.freeze(['calima', 'squall']);
@@ -73,10 +112,11 @@ export function flyableIn(weather) {
 }
 
 /**
- * The bible's field note when an open is refused because the weather grounds the kite. The words live in
- * src/game/text/ once the writing area lands them; this is the blockout's line.
+ * The field note when an open is refused because the weather grounds the kite: the bible's own words (BIBLE §3.2's
+ * weather table, "grounds the Survey Kite", and §16's Survey Kite row, "Calima and squalls ground it"). The strings
+ * move to src/game/text/ when the writing area (W3) lands the kite's lines; the words stay the bible's.
  */
-export const GROUNDED_NOTE = Object.freeze({ calima: 'Calima. The air will not hold the kite.', squall: 'Squall. The air will not hold the kite.' });
+export const GROUNDED_NOTE = Object.freeze({ calima: 'Calima grounds the Survey Kite.', squall: 'A squall grounds the Survey Kite.' });
 
 /**
  * @typedef {object} FlightBody
@@ -98,12 +138,19 @@ export const GROUNDED_NOTE = Object.freeze({ calima: 'Calima. The air will not h
  * @property {number} landDamage hp taken at the last touchdown (0 at or under KITE.safeLandVs)
  * @property {boolean} refusedWater the last landing was turned back from water past the contour
  * @property {number} downFromY height at the moment the weather grounded it
+ * @property {number} downT     s since the weather grounded it
+ * @property {boolean} hasShore she has crossed ground at or inside the water contour on this flight
+ * @property {number} shoreX    engine x of the last such ground (m)
+ * @property {number} shoreZ    engine z of the last such ground (m)
+ * @property {boolean} waterTurn this step she was turned for that ground (low over water past the contour)
+ * @property {boolean} carried  the current is carrying her toward that ground after a touchdown on deep water
  */
 
 /** @returns {FlightBody} */
 export function createFlightBody() {
   return { x: 0, y: 0, z: 0, heading: 0, vx: 0, vy: 0, vz: 0, agl: 0, launchY: 0, t: 0, lift: 0, windOver: 0, windBearing: 45,
-    grounded: false, landVs: 0, landDamage: 0, refusedWater: false, downFromY: 0 };
+    grounded: false, landVs: 0, landDamage: 0, refusedWater: false, downFromY: 0, downT: 0,
+    hasShore: false, shoreX: 0, shoreZ: 0, waterTurn: false, carried: false };
 }
 
 /**
@@ -149,7 +196,9 @@ export const dirBearing = (/** @type {number} */ x, /** @type {number} */ z) => 
 export function openAt(f, { x, y, z, headingDeg, groundY }) {
   f.x = x; f.y = y; f.z = z; f.heading = headingDeg * Math.PI / 180;
   f.vx = 0; f.vy = 0; f.vz = 0; f.agl = y - groundY; f.launchY = y; f.t = 0; f.lift = 0;
-  f.grounded = false; f.landVs = 0; f.landDamage = 0; f.refusedWater = false; f.downFromY = 0;
+  f.grounded = false; f.landVs = 0; f.landDamage = 0; f.refusedWater = false; f.downFromY = 0; f.downT = 0;
+  // the shore she knows: the first step reads the ground she opened over (integrate)
+  f.hasShore = false; f.shoreX = x; f.shoreZ = z; f.waterTurn = false; f.carried = false;
   return 'opening';
 }
 
@@ -188,7 +237,7 @@ export function stepFlight(state, f, input, world, dt) {
     // the kite leaves the case and fills; she keeps her jump's fall (the page's own physics) until the sling takes her
     // weight: the law moves her at the glide's still-air numbers from the request so the open has no hitch in Node
     integrate(f, input, world, dt, true);
-    if (!world.flyable()) { f.grounded = true; f.downFromY = f.y; }
+    if (!f.grounded && !world.flyable()) { f.grounded = true; f.downFromY = f.y; f.downT = 0; }
     if (f.t >= KITE.openS) { f.t = 0; return 'gliding'; }
     return 'opening';
   }
@@ -198,38 +247,60 @@ export function stepFlight(state, f, input, world, dt) {
     return 'folding';
   }
   if (state === 'landing') {
-    // feet down: the run-out
+    if (f.carried) {
+      // down on water past the contour: the current carries her to the last ground she crossed inside it
+      const dx = f.shoreX - f.x, dz = f.shoreZ - f.z, d = Math.hypot(dx, dz), step = Math.min(d, KITE.waterCarryMs * dt);
+      f.vx = d > 1e-6 ? dx / d * KITE.waterCarryMs : 0; f.vz = d > 1e-6 ? dz / d * KITE.waterCarryMs : 0; f.vy = 0;
+      if (d > 1e-6) { f.x += dx / d * step; f.z += dz / d * step; }
+      f.y = floorAt(world, f.x, f.z); f.agl = 0; f.t = 0;
+      if (depthAt(world, f.x, f.z) <= KITE.waterContourM || d <= 1e-6) { f.carried = false; f.vx = 0; f.vz = 0; }
+      return 'landing';
+    }
+    // feet down: the run-out (it stops at the contour: the current turns her)
     const k = Math.max(0, 1 - dt * 6);
     f.vx *= k; f.vz *= k; f.vy = 0;
-    f.x += f.vx * dt; f.z += f.vz * dt; f.y = floorAt(world, f.x, f.z); f.agl = 0;
+    const nx = f.x + f.vx * dt, nz = f.z + f.vz * dt;
+    if (depthAt(world, nx, nz) <= KITE.waterContourM) { f.x = nx; f.z = nz; } else { f.vx = 0; f.vz = 0; }
+    f.y = floorAt(world, f.x, f.z); f.agl = 0;
     if (f.t >= KITE.landS) { f.t = 0; return 'none'; }
     return 'landing';
   }
   // gliding
   if (input.fold) { f.t = 0; return 'folding'; }
-  if (!f.grounded && !world.flyable()) { f.grounded = true; f.downFromY = f.y; f.t = 0; }
+  if (!f.grounded && !world.flyable()) { f.grounded = true; f.downFromY = f.y; f.downT = 0; f.t = 0; }
   integrate(f, input, world, dt, true);
   if (f.agl <= 0) {
     // touchdown
     f.landVs = -Math.min(0, f.vy);
-    const water = world.waterDepthAt ? world.waterDepthAt(f.x, f.z) : 0;
-    if (water > KITE.waterContourM) {
-      // the current turns her: she is put back up the slope she came from at the contour and lands there
-      f.refusedWater = true;
-      f.heading += Math.PI;
-    }
     f.landDamage = landingDamage(f.landVs);
+    if (depthAt(world, f.x, f.z) > KITE.waterContourM) {
+      // past the contour: no landing here. The current carries her to the last ground she crossed inside it
+      f.refusedWater = true;
+      f.carried = f.hasShore;
+    }
     f.y = floorAt(world, f.x, f.z); f.agl = 0; f.t = 0;
     return 'landing';
   }
   return 'gliding';
 }
 
+/** m of water over the ground (0 on land). @param {FlightWorld} world @param {number} x @param {number} z */
+const depthAt = (world, x, z) => (world.waterDepthAt ? world.waterDepthAt(x, z) : 0);
+
 /**
  * @param {FlightBody} f @param {FlightInput} input @param {FlightWorld} world @param {number} dt @param {boolean} flying
  */
 function integrate(f, input, world, dt, flying) {
-  const bank = Math.max(-1, Math.min(1, input.bank || 0));
+  if (depthAt(world, f.x, f.z) <= KITE.waterContourM) { f.hasShore = true; f.shoreX = f.x; f.shoreZ = f.z; }
+  let bank = Math.max(-1, Math.min(1, input.bank || 0));
+  // low over water past the contour she turns for the last ground she crossed inside it (her hand on the bar is
+  // overruled: the bible's "the current turns her" starts in the air, so she comes down where she may land)
+  f.waterTurn = false;
+  if (flying && f.hasShore && f.y - floorAt(world, f.x, f.z) < KITE.waterTurnAglM && depthAt(world, f.x, f.z) > KITE.waterContourM) {
+    const want = Math.atan2(f.shoreX - f.x, -(f.shoreZ - f.z));
+    let d = want - f.heading; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+    bank = Math.max(-1, Math.min(1, d * 3)); f.waterTurn = true;
+  }
   f.heading += bank * KITE.turnRate * dt;
   const hx = Math.sin(f.heading), hz = -Math.cos(f.heading);
   const ws = world.windAt(f.x, f.z, _w);
@@ -252,18 +323,21 @@ function integrate(f, input, world, dt, flying) {
     // the flare: in the last metres over the ground the sink is held under the safe landing speed
     if (f.y - g0 < KITE.landAglM && vy < -KITE.flareSink) vy = -KITE.flareSink;
   } else if (f.grounded) {
-    // brought down: a steep descent that reaches the ground inside KITE.groundedDownS of the weather arriving, then the
-    // flare (lift is ignored: the air will not hold the kite)
-    const agl = f.y - g0;
-    const left = Math.max(0.3, KITE.groundedDownS - 0.8 - f.t);
-    vy = -Math.min(KITE.downMaxVs, Math.max(KITE.sink, agl / left));
-    if (agl < KITE.landAglM + 0.3) vy = -KITE.groundedFlareSink;
+    // brought down (lift is ignored: the air will not hold the kite): she gains sink no faster than a fall, to at most
+    // downMaxVs, and the kite brakes her at downBrake so she meets the flare's height at the flare's sink
+    f.downT += dt;
+    const agl = f.y - g0, vf = KITE.groundedFlareSink;
+    const want = agl <= KITE.groundedFlareM ? vf
+      : Math.min(KITE.downMaxVs, Math.sqrt(vf * vf + 2 * KITE.downBrake * (agl - KITE.groundedFlareM)));
+    const now = -f.vy;
+    vy = -(want >= now ? Math.min(want, now + KITE.downAcc * dt) : Math.max(want, now - KITE.downBrake * dt));
   }
   if (!flying && !f.grounded) vy = -KITE.sink * 1.6;   // folding: the fill goes out of it
   f.lift = +lift.toFixed(3);
   f.vy = vy;
   f.x += f.vx * dt; f.z += f.vz * dt; f.y += f.vy * dt;
   f.agl = f.y - floorAt(world, f.x, f.z);
+  if (depthAt(world, f.x, f.z) <= KITE.waterContourM) { f.hasShore = true; f.shoreX = f.x; f.shoreZ = f.z; }
 }
 
 /**
@@ -276,7 +350,26 @@ export function readOut(f) {
 }
 
 /**
- * Glide ratio over the ground for a steady flight on a bearing in a steady wind (no lift): ground speed / sink.
+ * Holding a GROUND TRACK on a bearing in a steady wind (no lift): she crabs into the cross-wind so the 0.4 x wind's
+ * share across the track is cancelled, and her ground speed is what is left along it (area A's lift rows read the
+ * same). Returns the glide ratio over the ground, the ground speed, the heading she flies and the crab angle; null
+ * when the cross-wind is stronger than her air speed.
+ * @param {number} trackDeg @param {number} windMs @param {number} [windFromDeg]
+ */
+export function trackGlide(trackDeg, windMs, windFromDeg = 45) {
+  const t = bearingDir(trackDeg), w = bearingDir(windFromDeg + 180);
+  const wx = KITE.windK * windMs * w.x, wz = KITE.windK * windMs * w.z;
+  const along = wx * t.x + wz * t.z, across = wx * -t.z + wz * t.x;   // across: + to the track's left
+  const s = -across / KITE.air;
+  if (Math.abs(s) >= 1) return null;
+  const crab = Math.asin(s), ground = KITE.air * Math.cos(crab) + along;
+  const hx = t.x * Math.cos(crab) - t.z * Math.sin(crab), hz = t.z * Math.cos(crab) + t.x * Math.sin(crab);
+  return { ratio: ground / KITE.sink, groundMs: ground, headingDeg: dirBearing(hx, hz), crabDeg: crab * 180 / Math.PI };
+}
+
+/**
+ * Glide ratio over the ground for a steady flight on a HEADING in a steady wind (no lift): ground speed / sink. The wind
+ * sets her off that heading's line; `trackGlide` is the ratio holding a track.
  * @param {number} headingDeg @param {number} windMs @param {number} windFromDeg
  */
 export function glideRatio(headingDeg, windMs, windFromDeg = 45) {
@@ -287,9 +380,12 @@ export function glideRatio(headingDeg, windMs, windFromDeg = 45) {
 
 /**
  * KF8, the seam's two reads for other lanes: an Instrument that sees by sight (a Plumb, a Sonde) sees a GLIDING Brea at
- * double range, and at x1.0 the step she lands; no weapon verb answers while the flight state is not 'none'.
+ * double range, and at x1.0 in every other state (the brief §3.2: "doubles Plumb and Sonde range while `gliding`";
+ * area C's src/instruments/kinds/sonde/rules.js reads 'gliding' alone; this is the seam's one definition, for it to
+ * import). No weapon verb answers while the flight state is not 'none' (combat reads it when the kite opens in play,
+ * wave 3: nothing opens it before then).
  * @param {FlightState} state
  */
-export const sightRangeMul = (state) => (state === 'gliding' || state === 'opening' || state === 'folding' ? 2.0 : 1.0);
+export const sightRangeMul = (state) => (state === 'gliding' ? 2.0 : 1.0);
 /** @param {FlightState} state */
 export const weaponVerbsAllowed = (state) => state === 'none';
