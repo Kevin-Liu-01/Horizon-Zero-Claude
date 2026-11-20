@@ -133,6 +133,8 @@ async function main() {
         author: 'CALIMA project (synthesized, no third-party audio)',
         // the load phase (src/audio/m2/cues.js `load`): 'late' rows are fetched after control, nearest place first
         ...(c.load === 'late' ? { load: 'late', place: c.place } : {}),
+        // a tell (a blow's warning): boot, and first in the boot load (src/audio/bank.js load `first`)
+        ...(c.tell ? { tell: true } : {}),
       });
       report.push({ file: rel, bytes, dur: +dur.toFixed(3), ...meta });
     }

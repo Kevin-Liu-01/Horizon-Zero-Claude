@@ -7,6 +7,7 @@
  *   late-tells        every tell is boot: each row marked `tell`, every set the attack table plays on a wind-up
  *                     (../../../src/audio/slice/director.js ATTACK_CUES) and the Screed's charge (a Continue at 'seal-1'
  *                     or 'seal-2' can hear it on its first frame of play, before any late row is fetched)
+ *   boot-first        the boot load fetches the tells first (bank.load `first`: GameAudio passes the tell sets)
  *   late-ledger       the shipped ledger's deferred set (tools/tier0/budgets.mjs deferredFiles, read through
  *                     budgets.json shipped.deferred) is the manifest's list, file for file (one source of truth), plus
  *                     the Holds people the game streams by her distance (holds.js HOLDS_CAST less ids.js ARCHETYPE_IDS
@@ -63,6 +64,7 @@ test('late-tells: every tell loads before control', () => {
   const late = [...tells].filter((s) => !boot.has(s));
   assert.deepEqual(late, [], 'a tell in the late bank');
   for (const s of ['tiller/trample', 'screed/charge']) assert.ok(tells.has(s) && boot.has(s), `${s} is a boot tell`);
+  for (const c of M2_CUES.filter((x) => x.tell)) assert.ok(MANIFEST.filter((r) => r.set === c.set).every((r) => r.tell === true), `${c.set}: the manifest marks the tell`);
   console.log(`# late-tells: ${tells.size} tells, all boot: ${[...tells].sort().join(', ')}`);
 });
 
@@ -151,5 +153,15 @@ test('late-rank: a machine kind near her first, then her place, its beds before 
     const where = { holds: 0, ninewalls: 0.2, scar: 0, malpais: 0 };
     await S.bank.loadLate(S.ac, { rank: (r) => lateRank(r, new Set(['screed']), (p) => where[p] ?? 0), concurrency: 1 });
     assert.deepEqual(S.fetched, ['screed/stall.ogg', 'screed/idle.ogg', 'amb/ninewalls.ogg', 'holds/hoe.ogg', 'amb/holds.ogg', 'tiller/step.ogg']);
+  } finally { S.restore(); }
+});
+
+test('boot-first: the boot load fetches the tells before the rest', async () => {
+  const row = (set, o = {}) => ({ id: set, set, file: `${set}.ogg`, bytes: 100, dur: 1, ch: 1, gain: 1, loop: false, tags: [], license: 'CC0-1.0', ...o });
+  const man = [row('music/a'), row('foot/gravel'), row('screed/charge', { tell: true }), row('plumb/bob'), row('holds/hoe', { load: 'late', place: 'holds' })];
+  const S = standIn(man);
+  try {
+    await S.bank.load(S.ac, { first: new Set(['screed/charge', 'plumb/bob']), concurrency: 1 });
+    assert.deepEqual(S.fetched, ['screed/charge.ogg', 'plumb/bob.ogg', 'music/a.ogg', 'foot/gravel.ogg']);
   } finally { S.restore(); }
 });

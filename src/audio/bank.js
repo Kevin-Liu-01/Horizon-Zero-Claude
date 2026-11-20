@@ -126,12 +126,14 @@ export class SampleBank {
 
   /**
    * Fetch + decode the boot rows (everything not marked late). Idempotent: repeated calls return the same promise.
-   * `concurrency` keeps the fetch burst off the first frame.
+   * `concurrency` keeps the fetch burst off the first frame; `first` (a Set of set ids) is fetched before the rest.
    */
-  load(ac, { concurrency = 8, onProgress = null, timeoutMs = 20000 } = {}) {
+  load(ac, { concurrency = 8, onProgress = null, timeoutMs = 20000, first = null } = {}) {
     if (this.ready) return this.ready;
     this.loading = true;
-    const rows = this._licensed(this.manifest.filter((e) => !isLate(e)));
+    const all = this._licensed(this.manifest.filter((e) => !isLate(e)));
+    // `first` (set ids, the tells): fetched before the rest, in the manifest's order otherwise
+    const rows = first && first.size ? [...all.filter((e) => first.has(e.set)), ...all.filter((e) => !first.has(e.set))] : all;
     let i = 0;
     this.ready = this._fetch(ac, rows.length, () => (i < rows.length ? rows[i++] : null), { concurrency, onProgress, timeoutMs }).then(() => {
       this.loading = false;

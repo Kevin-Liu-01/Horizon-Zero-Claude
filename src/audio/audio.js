@@ -33,7 +33,7 @@ import { SpatialPool, SpatialChain, LoopEmitter, syncListener } from './spatial.
 import { probeSpatial, probeBuffer, bandDistance, beatGrid } from './probe.js';
 import { MusicDirector, BEAT } from './music.js';
 import { ZoneEmitters } from './zones.js';
-import { SliceAudio } from './slice/director.js';
+import { SliceAudio, ATTACK_CUES } from './slice/director.js';
 import { HourAudio } from './m2/director.js';
 import { FOLEY, cappedGain } from './slice/mix.js';
 
@@ -285,8 +285,12 @@ export class GameAudio {
     ctx.events.on('game-start', arm);
     // Browsers only allow audio after a gesture; keep listeners persistent so
     // a later click can still resume a suspended context.
-    window.addEventListener('pointerdown', arm);
-    window.addEventListener('keydown', arm);
+    // Capture phase, registered before the menus' (main.js builds GameAudio first): the title's own key handler consumes
+    // its keys (src/ui/menu.js _consume: stopImmediatePropagation), so a bubbling listener never heard the title's first
+    // key and the boot bank waited for the first click (CONTINUE's): a Continue at 'seal-1' then had control before the
+    // boot bank was in (tools/perf/boot-transfer.mjs at a26ac81: the Screed charged, no cue).
+    window.addEventListener('pointerdown', arm, true);
+    window.addEventListener('keydown', arm, true);
 
     this._bindEvents();
   }
@@ -339,16 +343,20 @@ export class GameAudio {
     // until its buffer lands, so nothing is ever silent while it downloads.
     // Only the boot rows load here (the title's first key or click); the late rows (the first hour's bank) load after
     // control (update -> _startLate), so the first load carries none of them.
-    this.bankReady = this.bank.load(ac).then((b) => {
+    // Milestone 2: the rest of the first hour (the zones on the regions seam, the calima, the Holds, the kit, the Screed);
+    // its listeners bind now, before the boot bank lands (a Continue's first frame can carry a Screed's charge), its beds
+    // come up as the late bank lands
+    this.hour = new HourAudio(this);
+    this.hour.start();
+    // the tells first (a blow's warning: the manifest's `tell` rows and every wind-up in the attack table), then the rest
+    const first = new Set(this.bank.manifest.filter((e) => e.tell).map((e) => e.set));
+    for (const v of Object.values(ATTACK_CUES)) for (const [ph, set] of (Array.isArray(v[0]) ? v : [v])) if (ph === 'windup') first.add(set);
+    this.bankReady = this.bank.load(ac, { first }).then((b) => {
       this._startBeds();
       // BUILD M1.6k: the slice's places, Instruments, work and lamp chirps
       this.slice = new SliceAudio(this);
       this.slice.start();
       this.zones = new ZoneEmitters(ac, buses, this.bank);
-      // Milestone 2: the rest of the first hour (the zones on the regions seam, the calima, the Holds, the kit, the Screed);
-      // its listeners bind now, its beds come up as the late bank lands
-      this.hour = new HourAudio(this);
-      this.hour.start();
       // audio-01 — the composed score replaces the procedural one the moment
       // its stems are decoded. If any stem is missing the director reports
       // `available: false` and the legacy drone/pluck/percussion layers keep
