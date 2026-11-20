@@ -5,16 +5,21 @@
  *
  *   node tools/world/lift-rows.mjs [--json <file>]
  *
- * The flight is BIBLE §12's numbers (KF2): 7.5 m/s through the air, 1.5 m/s of sink in still air; the trade adds 0.4 x
- * its speed along its bearing. The kite's own flight law is area B's (src/entities/anim/kite/**, not in this tree at
- * wave 1's start): when it lands, this row imports it instead (rule 21: a twin imports the game's module).
- * The line-posts are area B's to place (src/world/props/**): the three wind roads are read on the bible's lines.
+ * The flight is area B's own law (src/game/kite/flight.js stepFlight; rule 21: a twin imports the game's module), stepped
+ * on this lift field, the recipe's ground and the trade (5.5 m/s from 045, environment.js's mean; its gusts aside), with
+ * a steering hand that holds the ground track on the goal. Where the law is absent (an older tree) BIBLE §12's numbers
+ * stand in (KF2: 7.5 m/s through the air, 1.5 m/s of sink, the wind adding 0.4 x its speed).
+ * The line-posts are area B's (src/game/kite/roads.js WIND_ROADS): each is read by its own `streams()`; the bible's
+ * lines are read too, for the ruling.
  */
 import { writeFileSync } from 'node:fs';
 import { ensureMacro, heightAt } from '../../src/world/island/recipe.js';
 import { TRIG, TRIG_TOP, SCAR, siteById } from '../../src/world/island/sites.js';
 import { liftAt, faceAt, strengthOf, LIFT, TRADE } from '../../src/world/island/lift.js';
 import { SCAR_LINE, scarPoint, scarFloor } from '../../src/world/holds/blockout.js';
+let FL = null, ROADS = null;
+try { FL = await import('../../src/game/kite/flight.js'); } catch { /* area B's law is not in this tree */ }
+try { ROADS = await import('../../src/game/kite/roads.js'); } catch { /* nor its posts */ }
 
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -69,8 +74,28 @@ const need = (d - 17) / gv.speed * KITE.sink;          // still-air sink over th
 say('KF0 (a)  the test flight: T1 as built to the Sounding Ring, the trade from 045 at 5.5 m/s');
 say(`  T1 (${t1.e}, ${t1.n}): ground ${r2(t1g)} m, top ${r2(t1top)} m (TRIG_TOP ${TRIG_TOP}); the kite opens at the earliest ${KITE.open.airborne} s off the top, ${r2(fall)} m down: ${r2(openY)} m, ${r2(openY - t1g)} m over the pillar's foot (bar >= ${KITE.open.clear}: ${openY - t1g >= KITE.open.clear ? 'clear' : 'NOT clear'})`);
 say(`  the Ring (${ring.e}, ${ring.n}) on its rise at ${r2(ringTop)} m: ${r1(d)} m on bearing ${r1(brg)}; over the ground ${r2(gv.speed)} m/s, so ${r1((d - 17) / gv.speed)} s and ${r1(need)} m of sink to its near rim: the flight needs ${r1(ringTop + need)} m at the open and has ${r2(openY)} m`);
-const straight = glide({ e: t1.e, n: t1.n, y: openY }, { e: ring.e, n: ring.n }, t1top);
-say(`  a straight glide by the law (lift where the face below gives it): ${straight.arrived ? `ARRIVES ${straight.over} m over the rise` : `lands at (${straight.e}, ${straight.n}) after ${straight.t} s, ${straight.distLeft} m short of the Ring's centre`}; lift met on the way ${straight.liftGain} m (the most ${straight.maxLift} m/s)`);
+/** Area B's law, stepped: open at (from) on the goal's bearing, a hand on the bar holding the ground track on the goal. */
+function flyLaw(from, goal) {
+  const f = FL.createFlightBody(), gAt = (x, z) => Math.max(0, heightAt(x, z));
+  const world = { windAt: (x, z, out) => { out.x = TRADE.x; out.z = TRADE.z; return Math.hypot(TRADE.x, TRADE.z); }, liftAt: (x, y, z) => liftAt(x, y, z), groundAt: gAt, flyable: () => true };
+  let st = FL.openAt(f, { x: from.e, y: from.y, z: -from.n, headingDeg: (Math.atan2(goal.e - from.e, goal.n - from.n) / D2R + 360) % 360, groundY: gAt(from.e, -from.n) });
+  let liftS = 0, maxLift = 0, t = 0;
+  const dt = 1 / 60;
+  for (; t < 120 && st !== 'none'; t += dt) {
+    // the hand: turn the ground track (the velocity's bearing) toward the goal
+    const want = Math.atan2(goal.e - f.x, goal.n + f.z), have = Math.atan2(f.vx, -f.vz);
+    let err = want - have; while (err > Math.PI) err -= 2 * Math.PI; while (err < -Math.PI) err += 2 * Math.PI;
+    const before = st;
+    st = FL.stepFlight(st, f, { bank: (f.vx || f.vz) ? Math.max(-1, Math.min(1, err * 3)) : 0 }, world, dt);
+    liftS += Math.max(0, f.lift) * dt; maxLift = Math.max(maxLift, f.lift);
+    if (Math.hypot(goal.e - f.x, goal.n + f.z) <= 17 && st === 'gliding') return { arrived: true, e: r1(f.x), n: r1(-f.z), y: r1(f.y), over: r1(f.agl), t: r1(t), liftGain: r1(liftS), maxLift: r2(maxLift), law: 'src/game/kite/flight.js' };
+    if (before === 'gliding' && st === 'landing') return { arrived: false, e: r1(f.x), n: r1(-f.z), t: r1(t), distLeft: r1(Math.hypot(goal.e - f.x, goal.n + f.z)), landVs: r2(f.landVs), liftGain: r1(liftS), maxLift: r2(maxLift), law: 'src/game/kite/flight.js' };
+  }
+  return { arrived: false, t: r1(t), law: 'src/game/kite/flight.js' };
+}
+const straight = FL ? flyLaw({ e: t1.e, n: t1.n, y: openY }, { e: ring.e, n: ring.n }) : glide({ e: t1.e, n: t1.n, y: openY }, { e: ring.e, n: ring.n }, t1top);
+if (!FL) straight.law = 'BIBLE §12 numbers (no flight law in this tree)';
+say(`  a glide by ${straight.law} (the hand holding the track on the Ring; lift where the face below gives it): ${straight.arrived ? `ARRIVES ${straight.over} m over the rise` : `lands at (${straight.e}, ${straight.n}) after ${straight.t} s, ${straight.distLeft} m short of the Ring's centre`}; lift met on the way ${straight.liftGain} m (the most ${straight.maxLift} m/s)`);
 // the ridge-lift road near T1: the windward faces (>= 25 deg, facing the trade) of the Organ Shelf within 120 m of T1
 let cells = 0, best = null;
 const near = [];
@@ -148,6 +173,15 @@ for (let k = 0; k < 6; k++) {
 }
 const caldRoad = road('the caldera\'s windward wall (6, the strongest face on bearings 15-75 from the caldera)', caldPosts);
 rec.rows.roads = { scar: scarRoad, scarDrop: r1(drop), scarNeed: r1(need74), shelf: shelfRoad, caldera: caldRoad };
+if (ROADS) {
+  const gAt = (x, z) => heightAt(x, z);
+  const per = {};
+  for (const [road, list] of Object.entries(ROADS.WIND_ROADS)) {
+    per[road] = list.map((p) => ({ id: p.id, e: p.e, n: p.n, streams: ROADS.streams(p, liftAt, gAt), lift: r2(liftAt(p.x, gAt(p.x, p.z) + p.heightM, p.z)), slope: r1(faceAt(p.x, p.z).slopeDeg) }));
+    say(`  area B's posts (src/game/kite/roads.js), ${road}: ${per[road].filter((q) => q.streams).length} of ${list.length} stream; lift at each post's top ${per[road].map((q) => q.lift).join(', ')} (slopes ${per[road].map((q) => q.slope).join(', ')} deg)`);
+  }
+  rec.rows.posts = per;
+}
 
 /* ======================================================================== KF3's laws, read on the island */
 let flatLift = 0, seaLift = 0, leeLift = 0, n = 0, maxS = 0, minS = Infinity;
