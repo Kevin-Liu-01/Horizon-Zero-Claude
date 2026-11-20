@@ -6,7 +6,7 @@
  *
  * A walking kiln: a beehive dome on four stumpy legs, a tall chimney-mortar on a trunnion to 5.5 m, the firebox door
  * at the front (an oxblood surround in the art wave; the ONE place a hull glows, and only behind the door), four
- * canisters on the flanks (vials), the vent hose coiled on a reel carried at the stern and run forward along the right
+ * canisters on the flanks (vials), the vent hose coiled on a reel snug on the stern and run forward along the right
  * flank to its coupling, low on the right flank: the wellheads seam stands a Kiln with its wellhead off a FLANK (area A,
  * src/world/sites/kilnyards-layout.js `kilnStand`: the head 4.9 m from the body's centre, the hose's run 3.2 m), so the
  * coupling faces the well and the hose is seen on it (F59). Its one lamp sits in a drum on the
@@ -36,7 +36,9 @@ const LEGS = [];
 for (const [side, sx] of [['R', 1], ['L', -1]]) {
   for (const [end, sz] of [['F', 1], ['H', -1]]) {
     const x = sx * 1.30;
-    const hip = [x, 1.15, sz * 0.95], knee = [x, 0.80, sz > 0 ? 1.58 : -1.42], foot = [x, 0.13, sz > 0 ? 2.10 : -1.78];
+    // the stance splays to the roster's 5.0 m length on the feet (front and hind alike), so nothing hangs off the
+    // stern to make it: a drum on a stalk behind read as a tail in the side silhouette (fix round 1, c8062b9)
+    const hip = [x, 1.15, sz * 0.95], knee = [x, 0.80, sz * 1.62], foot = [x, 0.13, sz * 2.22];
     LEGS.push(
       box(`hipBracket${side}${end}`, [sx * 1.12, 1.15, sz * 0.95], [0.42, 0.22, 0.30], { tone: 'joint' }),
       strut(`thigh${side}${end}`, hip, knee, 0.15, { tone: 'joint' }),
@@ -70,12 +72,10 @@ export const KILN_PARTS = Object.freeze([
     cyl(`canister${i + 1}`, [sx * 1.52, 1.85, z], 0.18, 0.75, 'y', { vial: true, hit: `canister${i + 1}` }),
     box(`canisterBracket${i + 1}`, [sx * 1.36, 1.85, z], [0.16, 0.10, 0.12], { tone: 'brass' }),
   ]),
-  // the vent hose: its reel carried on a frame at the stern, the hose run forward along the right flank to the coupling
-  // low on the right flank (it faces the wellhead the seam stands it beside)
-  strut('reelFrameR', [0.26, 1.30, -1.20], [0.36, 1.30, -2.26], 0.05, { tone: 'joint' }),
-  strut('reelFrameL', [-0.26, 1.30, -1.20], [-0.36, 1.30, -2.26], 0.05, { tone: 'joint' }),
-  cyl('hoseReel', [0, 1.30, -2.26], 0.36, 0.62, 'x', { tone: 'joint' }),
-  strut('hoseRun', [0.40, 1.26, -2.18], [1.50, 1.30, -1.05], 0.13, { tone: 'joint' }),
+  // the vent hose: its reel snug on the stern (inside the hind feet), the hose run forward along the right flank to the
+  // coupling low on the right flank (it faces the wellhead the seam stands it beside)
+  cyl('hoseReel', [0, 1.30, -1.62], 0.40, 0.62, 'x', { tone: 'joint' }),
+  strut('hoseRun', [0.36, 1.26, -1.62], [1.50, 1.30, -1.05], 0.13, { tone: 'joint' }),
   strut('hose', [1.50, 1.30, -1.05], [1.56, 1.12, -0.10], 0.13, { hit: 'hose', tone: 'joint' }),
   cyl('hoseCoupling', [1.68, 1.12, -0.10], 0.16, 0.12, 'x', { tone: 'brass' }),
   ...LEGS,
