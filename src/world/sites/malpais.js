@@ -16,7 +16,8 @@ import { HORNITOS, TUBE_SHELTER, malpaisColliders, tubeBoxes } from './malpais-l
  * The plant's own forms are the far form's (src/world/island/kilnyards.js), read from the same layout. One material,
  * one draw; no light, nothing emissive (BIBLE §3.3: zero emissive terrain; the wellheads' caps are the far form's).
  *
- *   const m = new MalpaisBlockout(ctx, parent, ground)    ground(x, z): the drawn terrain (terrain.getHeight)
+ *   const m = new MalpaisBlockout(ctx, parent, ground, { hornitos })    ground(x, z): the drawn terrain (terrain.getHeight)
+ * M3 wave 2: built on the Malpais' approach by ./malpais-region.js (never at boot), with the hornitos left to the rock.
  *   m.update()            colliders and the walk grid, once each, when the world can take them
  *   m.stats               { tris, draws, colliders, walkGrid }
  *   m.dispose()
@@ -30,9 +31,9 @@ function paint(geo, c) {
   return geo;
 }
 
-export function malpaisGeometry(ground) {
+export function malpaisGeometry(ground, { hornitos = true } = {}) {
   const parts = [];
-  for (const h of HORNITOS) {
+  if (hornitos) for (const h of HORNITOS) {
     const g = ground(h.x, h.z);
     const geo = new THREE.CylinderGeometry(h.r * 0.3, h.r, h.h + 0.5, 12, 2, false);
     geo.translate(h.x, g - 0.5 + (h.h + 0.5) / 2, h.z);
@@ -57,12 +58,13 @@ export function malpaisGeometry(ground) {
 }
 
 export class MalpaisBlockout {
-  constructor(ctx, parent, ground) {
+  /** `hornitos: false` (M3 wave 2): the hornitos are drawn as spatter by ./malpais-rocks.js; their colliders stay here */
+  constructor(ctx, parent, ground, { hornitos = true } = {}) {
     this.ctx = ctx;
     this._ground = ground;
     this.stats = { tris: 0, draws: 0, colliders: 0, walkGrid: false };
     this._colliderIds = null;
-    const geo = malpaisGeometry(ground);
+    const geo = malpaisGeometry(ground, { hornitos });
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
     mat.name = 'malpais-blockout';
     // the island's far air on it, as on the ground and the Yards' far form (island/aerial.js)

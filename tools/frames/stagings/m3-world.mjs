@@ -21,15 +21,15 @@ export const FRAMES = Object.freeze([
     ref: { written: "lane frame (area A, wave 1): the world's cost from the flight frame's height before the kite exists; the Sounding Ring 22 deg left of centre, Saltrow 32 deg right, the salt field below. Measured only (GPU ms by the back-to-back readback), never judged" },
   },
   {
-    id: 'F56', subject: "the Malpais from the Scar's upper end (blockout)", in: 'M3', hour: 17.75, weather: 'trade',
-    // fix round 1: back on the written place (the Scar's upper end, 251, -43; 108 m, at Rust Cone's north-west foot) with
-    // the bearing turned, not the lens moved (9c6a57e stood it 23 m west-north-west on the Yards' batter, unruled). Facing
-    // 145 from here the cone's flank filled the lens (42 % of rays struck ground within 30 m in Node, its top out of
-    // frame); facing 180 and pitched up 8 deg its top stands in the frame's upper left (Node: x -0.55, y +0.83 of the
-    // half-frame) and the flow falls away south to the sea: 0 % of rays strike ground within 30 m, 38 % the Malpais'
-    // ground, 9 % the sea, 48 % sky
-    at: { en: [251, -43] }, bearing: 180, camera: { mode: 'eye', eye: 1.7, pitch: 8, fov: 55 }, state: { pose: 'idle', hud: false },
-    ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 1 blockout: from the Scar's upper end looking south: Rust Cone's flank and top on the left, the lava falling away toward the hornito field and the sea. Wave 2-3: aa and pahoehoe both present, cinder bands, Rust Cone; 0 emissive ground texels, >= 3 steam sources (MP1, MP2, MP4)" },
+    id: 'F56', subject: "the Malpais from Rust Cone's south-west flank, above the hornito field (R2)", in: 'M3', hour: 17.75, weather: 'trade',
+    /* M3 wave 2 (the orchestrator's ruling R2, provisional: "F56's lens moves to (250, -130) so Malpais ground shows; the
+     * Scar is not in it"; the old text: "the Malpais from the Scar's upper end"). From (250, -130) the Scar's planed floor
+     * runs 86 m west of the lens on bearings 233-360: every west-looking bearing shows it (Node ray count from the recipe,
+     * 32 x 18 rays, fov 55: bearing 270 pitch 0 -> Malpais 54 %, the Scar 25 %). Facing 155 and pitched down 15 deg the
+     * lens looks down Rust Cone's scree past the hornito field to the flow's sea front: Malpais ground 45 % of the rays
+     * (Rust Cone's flank 29 %, the lava below 16 %), the sea 26 %, sky 25 %, the Scar 0 % */
+    at: { en: [250, -130] }, bearing: 155, camera: { mode: 'eye', eye: 1.7, pitch: -15, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 2: Rust Cone's red scree in the foreground, the aa's clinker and spires and the pahoehoe's sheets below toward the hornito field and the sea; no lava, nothing glowing. Wave 3: >= 3 steam sources (MP1, MP2, MP4)" },
   },
   {
     id: 'F57', subject: 'the Kiln Yards from the apron, dusk (blockout)', in: 'M3', hour: 19.5, weather: 'trade',
@@ -48,8 +48,21 @@ export const FRAMES = Object.freeze([
   },
 ]);
 
-/** No moving subject at blockout: every lens is fixed. */
-export const STAGINGS = Object.freeze({});
+/**
+ * M3 wave 2: the Malpais is built on the region's approach (src/world/sites/malpais-region.js), never at boot. A frame in
+ * the Malpais asks for it, waits until it is in the scene (20 s at most, else a stand-in), and lets it go after the shot,
+ * so every film of these frames builds it from cold as play does. Every lens is fixed.
+ */
+const malpaisBuilt = {
+  async world(f, api) {
+    const M = api.C?.terrain?.malpais;
+    if (!M?.ensure) { api.standIn('no Malpais region on the terrain (the blockout drawn at boot)'); return; }
+    const ok = await Promise.race([M.ensure(), api.sleep(20000).then(() => 'timeout')]);
+    if (ok !== true) api.standIn(`the Malpais was not built (${ok === 'timeout' ? '20 s' : M.state}${M.stats?.error ? ': ' + M.stats.error : ''})`);
+    api.undo(() => M.release());
+  },
+};
+export const STAGINGS = Object.freeze({ F56: malpaisBuilt, F57: malpaisBuilt, F58: malpaisBuilt });
 
 /**
  * The accepted frames the Malpais can be seen in, by their computed masks (tools/world/skyline-masks.mjs --region m3,

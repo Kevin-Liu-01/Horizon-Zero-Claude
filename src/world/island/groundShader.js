@@ -25,6 +25,8 @@
  * crater alone: at 69544b6 it banded every tinted steep face, the caldera's flank above the Holds in F33 among them.
  */
 import { SCAR } from './sites.js';
+/* (M3 wave 2, area A: the smallest change here) the Malpais' term, compiled only under CAL_G_MALPAIS (sites/malpais-region.js) */
+import { MALPAIS_PARS, MALPAIS_TERM } from '../sites/malpais-shader.js';
 const _sl = Math.hypot(SCAR.b.x - SCAR.a.x, SCAR.b.z - SCAR.a.z);
 /** The Scar's line, engine xz, unit: along (toward its south-west end); for the blade's grooves on its floor. */
 const SCAR_DIR = `vec2(${((SCAR.b.x - SCAR.a.x) / _sl).toFixed(6)}, ${((SCAR.b.z - SCAR.a.z) / _sl).toFixed(6)})`;
@@ -135,6 +137,9 @@ uniform float uSea;
 uniform vec2 uSunXZ;       // unit, toward the light
 uniform vec2 uFieldU;      // the salt field's long axis (the rake runs along it), unit, engine xz
 uniform float uStrata;     // the crater's bedding strength (terrain.setStrataStrength)
+#ifdef CAL_G_MALPAIS
+${MALPAIS_PARS}
+#endif
 /** The pan texture through a cubic B-spline (4 bilinear taps): its 0.5 contour is a smooth curve,
  * where the bilinear one stepped along every diagonal cell edge at 0.48 m a texel (V32). */
 vec4 gPanCubic(vec2 uv) {
@@ -893,6 +898,9 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
     gSunVis *= mix(1.0, smoothstep(0.1, 0.72, behind), smoothstep(70.0, 110.0, dCam));
   }
 
+  #ifdef CAL_G_MALPAIS
+  ${MALPAIS_TERM}
+  #endif
   /* -- rain (world-sky's calWeather.x): the flats darken and shine ----------- */
   #ifdef USE_FOG
   {

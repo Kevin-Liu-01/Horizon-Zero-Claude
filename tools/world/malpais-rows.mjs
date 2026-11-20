@@ -27,6 +27,11 @@ import { malpaisGeometry } from '../../src/world/sites/malpais.js';
 import { buildKilnYards, kilnLayout } from '../../src/world/island/kilnyards.js';
 import { groundSpeedAt, malpaisZoneAt } from '../../src/world/sites/malpais-zones.js';
 import { REGIONS } from '../../src/core/regions.js';
+import { statSync } from 'node:fs';
+import { buildKilnYardsNear } from '../../src/world/sites/kilnyards-near.js';
+import { clinkerPlan, pinnaclePlan, clastGeometry, pinnacleGeometry, hornitoGeometry } from '../../src/world/sites/malpais-rocks.js';
+import { MALPAIS_LAYERS, MALPAIS_FILES } from '../../src/world/sites/malpais-files.js';
+import { MALPAIS_TERM, MALPAIS_ROCK_COLOR } from '../../src/world/sites/malpais-shader.js';
 
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
@@ -280,18 +285,26 @@ const shelterOk = grid.find((g) => /Brazier/.test(g.name))?.ok && grid.find((g) 
 row('MP6', shelterOk ? null : false, `the tube shelter: walkable to its Brazier spot and its back (walk grid), headroom ${T.height} m, crust >= ${r1(Math.min(...crust))} m; the Brazier spot, the dormant nest and the salt cache are data (malpais-layout.js TUBE_SHELTER). The Brazier that kindles, the nest's Pegs (0 of 10 wake) and the cache's pickup are other areas' (settlements' Brazier system, instruments, systems): UNMEASURED`, { crustMin: r1(Math.min(...crust)) });
 
 /* ======================================================================== MP1 (the materials' half) */
-const geo = malpaisGeometry(ground);
-const tris = geo.attributes.position.count / 3;
+// (M3 wave 2) the near form: the Malpais' ground term and rock (src/world/sites/malpais-shader.js), the Yards' near form
+const geo = malpaisGeometry(ground, { hornitos: false });
 const farB = buildKilnYards({ x: ky.x, z: ky.z, ground });
-const emissive = farB.materials.map((m) => ({ name: m.name, emissive: m.emissive.getHex(), k: m.emissiveIntensity }));
+const nearB = buildKilnYardsNear({ ground });
+const emissive = [...farB.materials, ...nearB.materials].map((m) => ({ name: m.name, emissive: m.emissive.getHex(), k: m.emissiveIntensity }));
 const glowing = emissive.filter((m) => m.emissive !== 0 && m.k > 0).map((m) => m.name);
-row('MP1', null, `the materials: the Malpais blockout (malpais-blockout) and the Yards' ruin carry no emissive; the one glowing material is ${glowing.join(', ')} (the wellheads' caps, #F2EAD3). The ground's material and the night film of F56: UNMEASURED (wave 2, A-cold-ground)`, { emissive });
-farB.dispose();
+const termCold = !/emissive/i.test(MALPAIS_TERM) && !/emissive/i.test(MALPAIS_ROCK_COLOR);
+row('MP1', null, `the materials: the ground's Malpais term and the rock write albedo, normal, roughness and AO only (${termCold ? 'no emissive in either' : 'EMISSIVE FOUND'}); the Yards' far and near ruins carry none; the glowing materials are ${glowing.join(', ')} (the wellheads' caps, #F2EAD3). The layers' albedo: tools/world/malpais-look.test.mjs (every texel <= linear 0.30). The night film of F56 (no terrain pixel brighter than the sky): UNMEASURED`, { emissive, termCold });
 
 /* ======================================================================== MP11 */
 const malp = REGIONS.find((r) => r.id === 'malpais');
-const bytes = (geo.attributes.position.array.byteLength + geo.attributes.normal.array.byteLength + geo.attributes.color.array.byteLength);
-row('MP11', true, `the blockout ships no file: the Malpais' meshes are built from code at boot (${tris} triangles, ${r2(bytes / 1048576)} MB of vertex arrays; the Yards' far form ${far.counts.triangles} triangles), 0 textures; 0 Malpais bytes in the first load (the region's files ${malp.files.join(', ')} do not exist yet)`, { tris, bytes });
+const shipped = MALPAIS_FILES.reduce((s, f) => s + statSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../public', f)).size, 0);
+const residentT = 2 * MALPAIS_LAYERS.ids.length * MALPAIS_LAYERS.size ** 2 * (4 / 3);
+const cl = clinkerPlan(ground), pins = pinnaclePlan(ground);
+const clastTris = clastGeometry().attributes.position.count / 3, pinTris = pinnacleGeometry(pins).attributes.position.count / 3, hornTris = hornitoGeometry(ground).attributes.position.count / 3;
+const tris = Math.round(cl.n * clastTris + pinTris + hornTris + geo.attributes.position.count / 3 + nearB.counts.triangles);
+const vbytes = cl.n * 64 + (pinTris + hornTris) * 3 * 24 + nearB.mesh.geometry.attributes.position.count * 56;
+const zoneBytes = Math.ceil((512 - 40) / 2.5) * Math.ceil((448 + 376) / 2.5) * 4;
+row('MP11', shipped <= 14e6 && residentT + zoneBytes + vbytes <= 16 * 2 ** 20, `shipped ${r2(shipped / 1e6)} MB in ${MALPAIS_FILES.length} files (${MALPAIS_FILES.join(', ')}; line 14 MB), fetched on approach('malpais') and in Tier 0's region set, so 0 Malpais bytes in the first load; resident about ${r2((residentT + zoneBytes + vbytes) / 2 ** 20)} MiB (the layers ${r2(residentT / 2 ** 20)} MiB at 8 bits a texel with mips, the zone map ${r2(zoneBytes / 2 ** 20)} MiB, vertex and instance arrays about ${r2(vbytes / 2 ** 20)} MiB; line 16 MiB). Built on approach, never at boot: ${cl.n} clasts (${clastTris} triangles each), ${pins.length} pinnacles, the hornitos, the tube's blockout and the Yards' near form (${nearB.counts.triangles} triangles): ${tris} triangles in all`, { shipped, residentT, zoneBytes, vbytes, tris, clasts: cl.n, pinnacles: pins.length });
+nearB.dispose(); farB.dispose();
 
 /* ======================================================================== the change against a base tree */
 const BASE = flag('--base');

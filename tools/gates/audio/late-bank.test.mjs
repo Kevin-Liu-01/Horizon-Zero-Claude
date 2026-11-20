@@ -80,10 +80,14 @@ test('late-ledger: the ledger defers exactly the files the game loads late (the 
   // the Holds people streamed by her distance: the cast's own GLBs less the archetypes the W1 group stages at boot
   const { HOLDS_CAST } = await import('../../../src/world/npc/people/holds.js');
   const { ARCHETYPE_IDS, SLICE_CAST } = await import('../../../src/world/npc/people/ids.js');
-  const region = [...D.files.keys()].filter((f) => D.when.get(f) === 'region').sort();
+  // (M3 wave 2, area A: the smallest change here) and the Malpais' ground layers, fetched on the region's approach
+  const { MALPAIS_FILES } = await import('../../../src/world/sites/malpais-files.js');
+  const malpais = MALPAIS_FILES.map((f) => `public/${f}`);
+  for (const f of malpais) assert.equal(D.when.get(f), 'region', `${f}: the Malpais' files are fetched by region`);
+  const region = [...D.files.keys()].filter((f) => D.when.get(f) === 'region' && !malpais.includes(f)).sort();
   assert.deepEqual(region, HOLDS_CAST.filter((id) => !ARCHETYPE_IDS.includes(id) && !SLICE_CAST.includes(id)).map((id) => `public/models/npc/${id}.glb`).sort());
   assert.ok(!region.some((f) => /\/(pit-farmer|tiller-follower|cochineal-picker)\.glb$/.test(f)), 'a staged archetype is never deferred');
-  assert.equal(D.files.size, audio.length + region.length, 'nothing else is deferred');
+  assert.equal(D.files.size, audio.length + region.length + malpais.length, 'nothing else is deferred');
   const raw = readFileSync(path.join(ROOT, 'tools/tier0/budgets.mjs'), 'utf8');
   assert.ok(!/audio\/(holds|screed|forge|tiller)\//.test(raw), 'the ledger names no audio file itself');
 });

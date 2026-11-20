@@ -3,7 +3,7 @@ import { AERIAL, AERIAL_B, AERIAL_DOME, AERIAL_PARS, patchAerial, patchDeck } fr
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES, SALT_FIELD, siteById } from './island/sites.js';
 import { buildKilnYards } from './island/kilnyards.js';
-import { MalpaisBlockout } from './sites/malpais.js';
+import { MalpaisRegion } from './sites/malpais-region.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
@@ -394,7 +394,8 @@ export class Terrain {
     // (M2 wave 4, area A, HG6) the Kiln Yards' far form on the Malpais: its own top-level child (two draws), not the ground
     { const ky = siteById('kiln-yards'); this.kilnYards = buildKilnYards({ x: ky.x, z: ky.z, ground: (x, z) => this.getHeight(x, z) }); ctx.scene.add(this.kilnYards.group); for (const m of this.kilnYards.materials) ctx.environment?.registerMaterial?.(m); }
     // (M3 wave 1, area A) the Malpais at blockout: the hornitos, the tube shelter, and the Yards' and the Malpais' blockers
-    this.malpais = new MalpaisBlockout(ctx, ctx.scene, (x, z) => this.getHeight(x, z));
+    // (M3 wave 2, area A: the smallest change here) built on the region's approach, never at boot (sites/malpais-region.js)
+    this.malpais = new MalpaisRegion(ctx, this, { groundAO: GROUND_AO });
 
     /* The sea and the Glass live here so `ctx.terrain` is whole on its own. world-sky's
      * environment.js reaches them through the RiverWater alias or ctx.water (water.js). */
@@ -922,9 +923,21 @@ export class Terrain {
     F.walls = { runs: src.count, ms: +(performance.now() - t0).toFixed(1) };
   }
 
+  /**
+   * (M3 wave 2, area A: the smallest change) the Malpais' ground programs (sites/malpais-region.js): `M` is
+   * { plain, holds, pair, chunks: Set } once the region is built (its programs linked, its textures on the GPU), or null.
+   * A chunk in `M.chunks` draws them in place of the plain and the Holds' programs (the Holds' pattern, by chunk).
+   */
+  setMalpaisGround(M) { this._malpaisGround = M || null; this.updateLod(this.ctx.camera); }
+
   /** (M2 wave 3) the near material(s) for a chunk geometry: plain, the Holds', or both by group ('ground-holds-gate' off: the Holds' for all). */
-  _nearMaterial(g) {
+  _nearMaterial(g, C = null) {
     const sp = g.userData.split;
+    const M = this._malpaisGround;
+    if (M && C && M.chunks.has(C)) {
+      if (!this._holdsGate || sp === 'holds') return M.holds;
+      return sp === 'mixed' ? M.pair : M.plain;
+    }
     if (!this._holdsGate || sp === 'holds') return this.groundHoldsMaterial;
     if (sp === 'mixed') return this._groundPair || (this._groundPair = [this.groundMaterial, this.groundHoldsMaterial]);
     return this.groundMaterial;
@@ -1012,7 +1025,7 @@ export class Terrain {
       }
       hist[k]++;
       if (k !== C.lod) { C.mesh.geometry = this._chunkGeo(C, k); C.lod = k; }
-      const m = far ? F.material : this._nearMaterial(C.mesh.geometry);
+      const m = far ? F.material : this._nearMaterial(C.mesh.geometry, C);
       if (C.mesh.material !== m) C.mesh.material = m;
     }
   }
@@ -1038,6 +1051,7 @@ export class Terrain {
       // (M2 wave 3) off = every near chunk draws the Holds' program, as at 69544b6: on - off is what the gate saves
       { id: 'ground-holds-gate', on: () => { this._holdsGate = true; this.updateLod(cam()); }, off: () => { this._holdsGate = false; this.updateLod(cam()); } },
       ...this.groundTermSwitches(),
+      ...(this.malpais?.perfSwitches?.() || []),
     ];
   }
 
@@ -1465,6 +1479,7 @@ export class Terrain {
     this.water?.dispose?.();
     this.water = null;
     if (this.ctx.water) this.ctx.water = null;
+    this.malpais?.dispose(); this.malpais = null;
     this.kilnYards?.dispose(); this.kilnYards = null;
     const seen = new Set();
     this.group.traverse((o) => {

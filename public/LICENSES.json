@@ -420,6 +420,21 @@
       "attribution": null
     },
     {
+      "id": "malpais-layers",
+      "paths": [
+        "public/textures/malpais/*.ktx2"
+      ],
+      "title": "Malpais ground layers: aa clinker, pahoehoe ropes, cinder, Rust Cone scree (KTX2 texture arrays: ETC1S colour + height, UASTC normal, roughness and AO)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/ground/gen-malpais-layers.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": "encoded to KTX2 by the generator (KTX-Software v4.4.2)",
+      "attribution": null
+    },
+    {
       "id": "mco-fantasy-standard",
       "paths": [
         "models-staging/r5-src/mco/**"
