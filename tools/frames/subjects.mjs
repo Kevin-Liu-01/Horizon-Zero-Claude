@@ -43,10 +43,13 @@ export const KINDS = Object.freeze(['hero', 'object', 'path', 'machines', 'peopl
 /** @type {Readonly<Record<string, ReadonlyArray<object>>>} */
 export const SUBJECTS = Object.freeze({
   // ---- Milestone 2 (rule 17 was written on these: D5)
+  // the fight is a subject the target asks to READ ("on the skyline", with the people "readable as people"): the floors are
+  // the doc's (a figure the frame is of: 40 px for her and a Sickle's 25, the Screed's hull 60). At 79da069 (run
+  // 20261120T113047Z-79da069-ef-w2-partial) floors of 12-20 px passed a fight of 12-35 px that does not read
   'F39-look': [
-    { name: 'the Screed on wall-1', kind: 'machines', machine: 'screed', min: 1, minPx: 20 },
-    { name: 'a Sickle with it', kind: 'machines', machine: 'sickle', min: 1, minPx: 12 },
-    { name: 'Brea at the fight', kind: 'hero', minPx: 12 },
+    { name: 'the Screed on wall-1', kind: 'machines', machine: 'screed', min: 1, minPx: 60 },
+    { name: 'a Sickle with it', kind: 'machines', machine: 'sickle', min: 1, minPx: 25 },
+    { name: 'Brea at the fight', kind: 'hero', minPx: 40 },
     { name: 'the Holds people at their doors', kind: 'people', min: 4, minPx: 30 },
   ],
   F44: [
