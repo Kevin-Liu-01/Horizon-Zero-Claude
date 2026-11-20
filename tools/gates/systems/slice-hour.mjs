@@ -628,7 +628,7 @@ async function readyBow(page, K) {
  * and backs out when one closes inside 9 m. Every shot: RMB held, the look steered onto the part, Shift (Steady),
  * LMB drawn for 1.0 s with the look kept on the part, then loosed.
  */
-async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70, near = null, nearR = 0, untilDown = false, whileDown = false, breakOffHp = 0 } = {}) {
+async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, all = false, ammo = 'hunter', backOut = true, drawMs = 1000, tolDeg = 0.35, reach = 70, near = null, nearR = 0, untilDown = false, whileDown = false, breakOffHp = 0, threat = null } = {}) {
   const t0 = Date.now();
   const stage0 = (await page.evaluate(probe)).stage;
   let fired = 0, aimed = false, blocked = 0, stand0 = null, ditchScans = null, unawareMiss = 0;
@@ -646,6 +646,23 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
     for (;;) {
       const s = await page.evaluate(probe);
       if (s.state === 'dead' || s.state === 'death-menu' || s.deathCard) return { ok: false, why: 'died', fired };
+      // (M2 fix wave 2) a caller's THREAT: another kind turned on her within `threat.r` m ({ kind, r }; first-hour's terrace
+      // topple names the Tiller): she stops shooting and the caller gets her out of its reach. At 2944784 chained run 2 a
+      // Tiller shoved and burst her from 4.2-4.8 m eight times in 23 s while she stood drawing on the Plumb (100 hp, dead).
+      // The slice gives none
+      if (threat) {
+        const th = await page.evaluate((k, r) => {
+          const C = window.__CTX__, P = C.player.position;
+          let best = null;
+          for (const m of C.machines?.list || []) {
+            if (!m || m.kind !== k || m.alive === false || m._disposed || (m.state !== 'alert' && m.state !== 'attack')) continue;
+            const d = Math.hypot(m.position.x - P.x, m.position.z - P.z);
+            if (d < r && (!best || d < best.d)) best = { d: +d.toFixed(1), x: m.position.x, z: m.position.z, state: m.state };
+          }
+          return best;
+        }, threat.kind, threat.r);
+        if (th) { await release(); return { ok: false, why: `threat: ${threat.kind} ${th.state} at ${th.d} m`, threat: th, fired, ...(scans.length ? { scans } : {}) }; }
+      }
       // (fix round 1: at ae86348 the topple stage closed on the topple before the loop read the Plumb down, so b-13 was
       // never filmed: the still is taken here too, when the stage that closed is the vial's)
       if (stageDone && s.stage !== stage0) { const toppleShot = untilDown ? await shot(page, 'b-13-topple') : undefined; return { ok: true, fired, ...(toppleShot ? { toppleShot } : {}), ...(scans.length ? { scans } : {}), ...(ditchScans ? { ditchScans } : {}) }; }

@@ -525,16 +525,36 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
     // THE HERD IN THE WAY (M2 fix wave 2): when no stand is clear of the herd she does not give up while she lives. She
     // waits for it to walk on (it walks its line up and back, tiller-herd.js), leaves its way, and after 20 s without a
     // stand walks to another place on the Plumb's far side from it; each wait is up to 60 s, and she waits again
-    let noStandFrom = null, movedAt = 0;
+    let noStandFrom = null, movedAt = 0, threats = 0;
     for (;;) {
       if (await page.evaluate(() => !!window.__CTX__.quests['the-scar'].report().reached.includes('plumb-2'))) { out.ok = true; break; }
       const st = await page.evaluate(where);
       if (st.dead || st.state === 'dead') { out.ok = false; out.why = 'died'; break; }
       if (T() > maxS) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd)`; break; }
-      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220 });
+      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 11 } });
       out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
       if (f.ok) { out.ok = true; break; }
       if (f.why === 'died') { out.ok = false; out.why = 'died'; break; }
+      if (f.threat) {
+        // a Tiller turned on her: out of its reach (its trample ploughs ~7 m past a 0.6 s wind-up, its shove 4 m) to a
+        // point 20-34 m from it on her side of it, sprinting, then on with the topple; a drink on the way out when low
+        threats++;
+        const th = f.threat, far = threats > 3 ? 34 : 22;
+        const pt = await page.evaluate((tx, tz, far) => {
+          const C = window.__CTX__, P = C.player.position;
+          const base = Math.atan2(P.x - tx, P.z - tz);
+          for (const off of [0, 25, -25, 50, -50, 80, -80]) for (const d of [far, far - 6]) {
+            const a = base + off * Math.PI / 180, x = tx + Math.sin(a) * d, z = tz + Math.cos(a) * d;
+            if (C.nav?.blockedAt?.(x, z)) continue;
+            return { x, z, off, d };
+          }
+          return null;
+        }, th.x, th.z, far);
+        const w = pt ? await walkTo(page, pt, 2.5, 9) : { ok: false, why: 'no open ground' };
+        out.moves.push({ t: T(), threat: th, to: pt ? { off: pt.off, d: pt.d } : null, ok: w.ok, hp: (await page.evaluate(where)).hp });
+        if ((await page.evaluate(where)).hp < 55) await SH.drink(page, K, 92);
+        continue;
+      }
       if (!/no open stand|masked from every stand|stood up/.test(f.why || '')) { noStandFrom = null; continue; }
       noStandFrom ??= Date.now();
       const waited = (Date.now() - noStandFrom) / 1000;
@@ -550,6 +570,7 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
     if (noStandFrom) out.waits.push({ t: T(), s: +((Date.now() - noStandFrom) / 1000).toFixed(1), open: true });
     out.why ??= null;
     out.fired = out.steps.reduce((a, q) => a + (q.fired || 0), 0);
+    out.threats = threats;
     out.cause = (await page.evaluate(where)).cause;
     out.stands = await page.evaluate(() => window.__standLog || null);
     out.rule = await page.evaluate(() => window.__CTX__.systemsGame?.hour?.terraceRule ?? null);
