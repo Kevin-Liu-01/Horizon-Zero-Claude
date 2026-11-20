@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CALIMA M3 grey line-up</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #8f8a84; overflow: hidden; }
+    canvas { display: block; }
+    .tag { position: fixed; transform: translate(-50%, 0); font: 600 13px/1.25 ui-monospace, Menlo, monospace; color: #1d1b19; text-align: center; white-space: nowrap; }
+    .tag small { display: block; font-weight: 400; font-size: 11px; color: #34312d; }
+    #note { position: fixed; left: 10px; top: 8px; font: 12px/1.35 ui-monospace, Menlo, monospace; color: #1d1b19; max-width: 1100px; }
+    body.sil .tag, body.sil #note { color: #f4f1ea; }
+    body.sil .tag small { color: #d9d4ca; }
+  </style>
+</head>
+<body>
+  <div id="note"></div>
+  <script type="module" src="./lineup.js"></script>
+</body>
+</html>
