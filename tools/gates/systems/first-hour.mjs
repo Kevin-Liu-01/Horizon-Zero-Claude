@@ -569,9 +569,21 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
       if (await page.evaluate(() => !!window.__CTX__.quests['the-scar'].report().reached.includes('plumb-2'))) { out.ok = true; break; }
       const st = await page.evaluate(where);
       if (st.dead || st.state === 'dead') { out.ok = false; out.why = 'died'; break; }
-      if (T() > maxS) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd)`; break; }
-      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 16 } });
-      out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
+      if (T() > maxS + 150 * (out.rests || []).length) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd, ${(out.rests || []).length} rests)`; break; }
+      // (M2 exit, area E, HR8) low with less than a drink in the gourd: she leaves the terrace for her cistern's Brazier,
+      // rests (restIfLow: the gourd fills) and comes back, as a player does, up to twice. At 3fe85a9 chained run 5 the
+      // terrace Plumb kept 5-15 m from her and its Sightline took 5 hp every 5 s with the gourd dry (21 after the first
+      // drink); she fought on at 2 hp and died ('plumb-2', the chain stopped)
+      const gourd = st.hp != null && st.hp < 35 ? (await page.evaluate(SH.probe)).gourd ?? 0 : null;
+      if (gourd != null && gourd < 25 && (out.rests || []).length < 2) {
+        const r = await restIfLow(page, K).catch((e) => ({ error: String(e).slice(0, 160) }));
+        (out.rests ||= []).push({ t: T(), hp: st.hp, gourd, ...(r || {}) });
+        await page.evaluate(herdSafeSrc);
+        continue;
+      }
+      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 16 }, breakOffHp: 35 });
+      out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, brokeOff: f.brokeOff ?? null, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
+      if (f.brokeOff != null) continue;   // under 35 with the gourd low: the rest above
       if (f.ok) { out.ok = true; break; }
       if (f.why === 'died') { out.ok = false; out.why = 'died'; break; }
       if (f.threat) {
