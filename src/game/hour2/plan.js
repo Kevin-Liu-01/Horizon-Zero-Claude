@@ -48,9 +48,10 @@ export const PLACES = Object.freeze({
   // BIBLE §8 B2: "a bronze post standing in the Glass". The code's 'bm-02' is the Jameo benchmark (layout.js), which
   // is the bible's B4: the ids are reconciled by area G at its row 0 (BACKLOG); the run walks to the bible's point
   b2: en(-380, -180),
-  // the fishing hut has no place in the bible or the tree; row 0's default: the head of the black beach by the
-  // Saltrow boat ramp (a proposal, placed by area A at wave 2)
-  fishingHut: Object.freeze({ x: -352, z: 330 }),
+  // the fishing hut has no place in the bible or the tree; row 0's default: the dry head of the black beach, 20 m
+  // west of the beach's site point, 0.9 m over the sea (a proposal, placed by area A at wave 2). (At ed90645 it was
+  // (-352, 330), under the Sounding Ring's arc: seen on leg 6's Continue at 37a7a5e)
+  fishingHut: Object.freeze({ x: -210, z: 400 }),
   oro: Object.freeze({ x: 3.0, z: 206.5 }),
   kilnYards: site('kiln-yards'),
   tubeShelter: Object.freeze({ ...TUBES['malpais-tube'][0] }),
