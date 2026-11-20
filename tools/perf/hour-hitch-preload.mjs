@@ -36,7 +36,7 @@ if (OUT) mkdirSync(OUT, { recursive: true });
 
 /** In the page, before any script. */
 const recorder = (over) => {
-  const R = (window.__hh = { gl: {}, loaf: [], last: 0, sys: null, n: 0, nLong: 0 });
+  const R = (window.__hh = { gl: {}, loaf: [], last: 0, sys: null, n: 0, nLong: 0, slow: [] });
   const P = WebGL2RenderingContext.prototype;
   const WRAP = ['compileShader', 'linkProgram', 'getProgramParameter', 'getShaderParameter', 'getProgramInfoLog', 'getShaderInfoLog',
     'texImage2D', 'texImage3D', 'texSubImage2D', 'texSubImage3D', 'texStorage2D', 'texStorage3D', 'compressedTexImage2D',
@@ -45,7 +45,9 @@ const recorder = (over) => {
   for (const k of WRAP) {
     const f = P[k]; if (typeof f !== 'function') continue;
     const c = (R.gl[k] = { n: 0, ms: 0 });
-    P[k] = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { c.n++; c.ms += performance.now() - t; } };
+    // C5: a program whose first use waited (getProgramInfoLog over 5 ms) is kept for the frame's record (whose it is)
+    const slow = k === 'getProgramInfoLog';
+    P[k] = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { const d = performance.now() - t; c.n++; c.ms += d; if (slow && d > 5 && R.slow.length < 8) R.slow.push([a[0], Math.round(d * 10) / 10]); } };
   }
   try {
     new PerformanceObserver((l) => { for (const e of l.getEntries()) {
@@ -132,11 +134,27 @@ const recorder = (over) => {
             });
           } catch { /* */ }
         }
+        if (R.slow.length) {
+          try {
+            const Pp = E.renderer.properties, nm = (o) => (o ? (o.name || o.type) : '');
+            f.slowPrograms = R.slow.map(([glp, ms]) => {
+              const q = (info.programs || []).find((x) => x.program === glp);
+              const who = [];
+              if (q) E.scene?.traverse?.((o) => {
+                if (who.length >= 3) return;
+                const ms2 = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+                for (const m of ms2) if (Pp.get(m)?.currentProgram === q) { who.push(`${nm(o.parent?.parent)}/${nm(o.parent)}/${nm(o)} ${m.type}${m.name ? ':' + m.name : ''}`); break; }
+              });
+              return { ms, kind: q?.cacheKey?.split(',')[0] ?? (q ? q.name : '?'), who };
+            });
+          } catch { /* */ }
+        }
         if (R.sys) { const top = Object.entries(R.sys).filter(([, v]) => v > 1).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => [k, Math.round(v * 10) / 10]); if (top.length) f.sys = top; }
         pending.push(f);
       }
     }
     if (R.sys) for (const k in R.sys) R.sys[k] = 0;
+    R.slow.length = 0;
     prevGl = g; prevInfo = cur; prevHeap = heap;
     R.last = t;
     requestAnimationFrame(tick);
