@@ -19,12 +19,42 @@
 /** Engine ids (never shown). */
 export const ST = Object.freeze({ lock: 'st.jointlock', burn: 'st.burn', blind: 'st.lampblind' });
 
+/**
+ * THE STATUS SEAM, TYPED (M3 briefs §3.2 "Statuses": Clouded joins Seized and Charred; owner combat, this file; the
+ * Instruments answer each status in their own kind files).
+ * @typedef {'st.jointlock' | 'st.burn' | 'st.lampblind'} StatusId
+ * @typedef {{ parts?: any[], kitParts?: string[], at?: { x: number, y: number, z: number } | null }} StatusOpts
+ * @typedef {object} StatusAware   what a machine may carry for the book to talk to (every field optional)
+ * @property {(id: StatusId, seconds: number, opts: StatusOpts) => void} [onStatus]
+ *           the kind's own answer, called once per apply after the generic effect (the Spindle's ring stops on Dust,
+ *           kinds/spindle/rules.js `SpindleRing.onStatus`; a Sonde in a Dust cloud loses her, kinds/sonde/rules.js)
+ * @property {number} [lampDarkT]   seconds the lamp stays dark (Clouded writes it; lamps.js reads it)
+ * @property {number} [suspicion]   0..1 alert (Clouded resets it to 0: the alert is reset)
+ * @property {{ perception?: { forget?: () => void } }} [ai]   the lock (Clouded breaks it)
+ *
+ * CLOUDED (Dust): lamps blind `seconds` (6); the lock is broken (the perception's `forget()` where the AI has one, and
+ * `_unseenT` set past any search); the alert is reset (`suspicion` to 0). No damage, no multiplier.
+ */
+
 /** The three statuses: the player's word, the element that builds it, its colour (bible §8.3), and its numbers. */
 export const STATUS = Object.freeze({
   [ST.lock]: Object.freeze({ word: 'SEIZED', element: 'brine', colour: '#BDE6E3', seconds: 8, speedK: 0.25, damageK: 1 }),
   [ST.burn]: Object.freeze({ word: 'CHARRED', element: 'cinder', colour: '#FF7A1A', seconds: 8 }),
-  [ST.blind]: Object.freeze({ word: 'CLOUDED', element: 'dust', colour: '#C98B4E', seconds: 6 }),
+  [ST.blind]: Object.freeze({ word: 'CLOUDED', element: 'dust', colour: '#C98B4E', seconds: 6, breaksLock: true, resetsAlert: true, damageK: 1 }),
 });
+
+/**
+ * Clouded's generic half on any machine: the lock broken and the alert reset (the lamp's dark is written by the
+ * caller). Fields a machine does not carry are left alone. Exported for the Node rows.
+ * @param {StatusAware & { _unseenT?: number }} m
+ */
+export function clouded(m) {
+  if (!m) return;
+  const ai = m.ai;
+  if (ai?.perception?.forget) { try { ai.perception.forget(); } catch { /* none */ } }
+  if (typeof m._unseenT === 'number') m._unseenT = Math.max(m._unseenT, 1e3);
+  if (typeof m.suspicion === 'number') m.suspicion = 0;
+}
 
 /** The element each pot carries -> the status it builds. */
 export const ELEMENT_STATUS = Object.freeze({ brine: ST.lock, cinder: ST.burn, dust: ST.blind });
@@ -111,11 +141,12 @@ export class StatusBook {
       // the machine's own burn over time (machine.js: 8 s of damage over time at its own rate)
       if (typeof m._triggerElement === 'function') { try { m._triggerElement('fire', opts.at ?? null); } catch { /* none */ } }
     } else if (id === ST.blind) {
-      // the lamp goes dark (no sight, no Flag: lamps.js reads lampDarkT) and the lock breaks
+      // the lamp goes dark (no sight, no Flag: lamps.js reads lampDarkT), the lock breaks, the alert resets
       m.lampDarkT = Math.max(m.lampDarkT || 0, S.seconds);
-      const ai = m.ai;
-      if (ai?.perception?.forget) { try { ai.perception.forget(); } catch { /* none */ } }
+      clouded(m);
     }
+    // the kind's own answer (the seam above): each kind in its own file
+    if (typeof m.onStatus === 'function') { try { m.onStatus(id, S.seconds, opts); } catch { /* the kind's own rule */ } }
     return true;
   }
 

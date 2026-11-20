@@ -168,3 +168,20 @@ export function levelGlassTick(machine, glows, dt) {
     g.mat.emissiveIntensity = g.k;
   }
 }
+
+/**
+ * TOOLS ON A HULL (M3 briefs §3.2; area C, wave 1, the smallest change here): `reseat(part)` puts a hit part that is
+ * `off` back to `sealed` (the Davit's repair, `kinds/davit/rules.js`, is its one caller). A part is the hit-parts
+ * seam's record `{ state: 'sealed' | 'seized' | 'off', hits? }` (M2 briefs §3.2; `kinds/screed-rules.js` `hitParts`).
+ * Only an `off` part is re-seated: a sealed or seized one is left as it is. Returns true when it re-seated. The live
+ * mesh's return to its bone is the kind's, in its behaviour wave.
+ * @param {{ state: 'sealed' | 'seized' | 'off', hits?: number, seizedT?: number } | null | undefined} part
+ * @returns {boolean}
+ */
+export function reseat(part) {
+  if (!part || part.state !== 'off') return false;
+  part.state = 'sealed';
+  if (typeof part.hits === 'number') part.hits = 0;
+  if (typeof part.seizedT === 'number') part.seizedT = 0;
+  return true;
+}
