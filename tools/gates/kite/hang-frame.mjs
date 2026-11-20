@@ -40,9 +40,13 @@ const LENSES = [
 const HANG_ON = async () => {
   const C = window.__CTX__, p = C.player, an = p.animator, E = C.engine;
   const frame = () => new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); });
+  // stageFrame ends frozen (the 'studio' time scale 0): let the game run 1.2 s with the hang on, then freeze again
+  E.requestTimeScale('studio', null);
   an.setHangPose(true);
   const s0 = E.simTime, w0 = performance.now();
   while (E.simTime - s0 < 1.2 && performance.now() - w0 < 8000) await frame();
+  E.requestTimeScale('studio', 0);
+  if (!an.hangPoseInfo()) throw new Error(`the hang layer never ran (sim ${(E.simTime - s0).toFixed(2)} s in ${Math.round(performance.now() - w0)} ms)`);
   const { buildGreyKite, placeAtBar } = await import('/src/entities/anim/kite/greyKite.js');
   const K = buildGreyKite();
   const root = an.space?.root || p.model;
