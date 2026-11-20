@@ -98,47 +98,47 @@ const beat = (o) => Object.freeze({ ...o, needs: Object.freeze(o.needs) });
 /** The 27 beats, in order. */
 export const BEATS = Object.freeze([
   // ---- leg 4: from the save leg 3 wrote (after the Transit read, calima asked at noon) - "A Line Over the Glass"
-  beat({ id: 'weather-clears', leg: 4, quest: null, event: 'weather', where: { state: 'trade' }, budgetS: 240, place: 'malpaisEdge',
+  beat({ id: 'weather-clears', leg: 4, quest: null, event: 'weather', where: { state: 'trade' }, budgetS: 30, place: 'malpaisEdge',
     needs: ['weather:flyable'], note: 'row 0 default: the ask clears at the first rest; Ansel\'s card never offers the flight in calima' }),
-  beat({ id: 'walk-the-line', leg: 4, quest: GLASS_LINE_ID, event: 'travel-arrived', where: { node: 'guild-stud' }, budgetS: 180, place: 'b1',
+  beat({ id: 'walk-the-line', leg: 4, quest: GLASS_LINE_ID, event: 'travel-arrived', where: { node: 'guild-stud' }, budgetS: 65, place: 'b1',
     needs: ['travel:walk-the-line', 'quest:glass-line'], note: 'refused while Flagged or within 60 m of a wary Instrument' }),
-  beat({ id: 'ansel-kite', leg: 4, quest: GLASS_LINE_ID, event: 'scene-done', where: { scene: 'kite' }, budgetS: 90, place: 'ansel', needs: ['quest:glass-line'] }),
-  beat({ id: 'wreck', leg: 4, quest: GLASS_LINE_ID, event: 'gathered', where: { source: 'wreck', item: 'sailcloth' }, budgetS: 150, place: 'wreck',
+  beat({ id: 'ansel-kite', leg: 4, quest: GLASS_LINE_ID, event: 'scene-done', where: { scene: 'kite' }, budgetS: 20, place: 'ansel', needs: ['quest:glass-line'] }),
+  beat({ id: 'wreck', leg: 4, quest: GLASS_LINE_ID, event: 'gathered', where: { source: 'wreck', item: 'sailcloth' }, budgetS: 50, place: 'wreck',
     needs: ['quest:glass-line', 'site:wreck', 'items:sailcloth-cord'] }),
-  beat({ id: 'cane-cord', leg: 4, quest: GLASS_LINE_ID, event: 'gathered', where: { cane: 8, cord: 4 }, budgetS: 180, place: 'wreck',
+  beat({ id: 'cane-cord', leg: 4, quest: GLASS_LINE_ID, event: 'gathered', where: { cane: 8, cord: 4 }, budgetS: 30, place: 'wreck',
     needs: ['quest:glass-line', 'items:sailcloth-cord'] }),
-  beat({ id: 'rebuild', leg: 4, quest: GLASS_LINE_ID, event: 'kite-rebuilt', budgetS: 150, place: 'guildStud', needs: ['quest:glass-line', 'kite:item'] }),
-  beat({ id: 'tether', leg: 4, quest: GLASS_LINE_ID, event: 'sonde-cut', where: { sonde: 'ring' }, budgetS: 150, place: 'sonde',
+  beat({ id: 'rebuild', leg: 4, quest: GLASS_LINE_ID, event: 'kite-rebuilt', budgetS: 50, place: 'guildStud', needs: ['quest:glass-line', 'kite:item'] }),
+  beat({ id: 'tether', leg: 4, quest: GLASS_LINE_ID, event: 'sonde-cut', where: { sonde: 'ring' }, budgetS: 60, place: 'sonde',
     needs: ['quest:glass-line', 'kind:sonde'], danger: 'tether', note: 'cut BEFORE the flight: a flight with the Sonde moored is Flagged' }),
-  beat({ id: 'launch', leg: 4, quest: GLASS_LINE_ID, event: 'kite:open', where: { from: 'T1' }, budgetS: 120, place: 't1',
+  beat({ id: 'launch', leg: 4, quest: GLASS_LINE_ID, event: 'kite:open', where: { from: 'T1' }, budgetS: 40, place: 't1',
     needs: ['quest:glass-line', 'kite:item', 'kite:flight-state', 'weather:flyable'] }),
-  beat({ id: 'fly', leg: 4, quest: GLASS_LINE_ID, event: 'kite:land', where: { near: 'sounding-ring', maxSpeed: 3 }, budgetS: 120, place: 'ring',
+  beat({ id: 'fly', leg: 4, quest: GLASS_LINE_ID, event: 'kite:land', where: { near: 'sounding-ring', maxSpeed: 3 }, budgetS: 40, place: 'ring',
     needs: ['quest:glass-line', 'kite:flight-state', 'kite:lift', 'weather:wind'], note: 'T1 to the Ring in one flight, landing <= 3 m/s' }),
-  beat({ id: 'kite-given', leg: 4, quest: GLASS_LINE_ID, event: 'quest-rewarded', where: { item: 'survey-kite' }, budgetS: 60, place: 'ansel',
+  beat({ id: 'kite-given', leg: 4, quest: GLASS_LINE_ID, event: 'quest-rewarded', where: { item: 'survey-kite' }, budgetS: 35, place: 'ansel',
     needs: ['quest:glass-line', 'kite:item'] }),
   // ---- leg 5: from leg 4's save - "The Wrong Tide" (area G) and the fishing hut
-  beat({ id: 'gauge-tide', leg: 5, quest: WRONG_TIDE_ID, event: 'tide-followed', budgetS: 300, place: 'gauge', needs: ['quest:wrong-tide', 'kind:gauge-attacks'], danger: 'gauge' }),
-  beat({ id: 'find-b2', leg: 5, quest: WRONG_TIDE_ID, event: 'benchmark-found', where: { id: 'b2' }, budgetS: 120, place: 'b2', needs: ['quest:wrong-tide', 'bm:b2'] }),
-  beat({ id: 'resurvey-b2', leg: 5, quest: WRONG_TIDE_ID, event: 'resurvey-done', where: { benchmark: 'b2' }, budgetS: 120, place: 'b2', needs: ['quest:wrong-tide', 'bm:b2'], danger: 'resurvey-b2' }),
-  beat({ id: 'clock-returns', leg: 5, quest: WRONG_TIDE_ID, event: 'gauge-returned', budgetS: 120, place: 'gauge', needs: ['quest:wrong-tide'] }),
-  beat({ id: 'rung-3', leg: 5, quest: WRONG_TIDE_ID, event: 'rung-made', where: { rung: 'reckoner' }, budgetS: 120, place: 'guildStud', needs: ['quest:wrong-tide', 'rung:3'] }),
-  beat({ id: 'hand-net', leg: 5, quest: null, event: 'item-taken', where: { item: 'hand-net', at: 'fishing-hut' }, budgetS: 150, place: 'fishingHut', needs: ['site:fishing-hut'] }),
+  beat({ id: 'gauge-tide', leg: 5, quest: WRONG_TIDE_ID, event: 'tide-followed', budgetS: 275, place: 'gauge', needs: ['quest:wrong-tide', 'kind:gauge-attacks'], danger: 'gauge' }),
+  beat({ id: 'find-b2', leg: 5, quest: WRONG_TIDE_ID, event: 'benchmark-found', where: { id: 'b2' }, budgetS: 30, place: 'b2', needs: ['quest:wrong-tide', 'bm:b2'] }),
+  beat({ id: 'resurvey-b2', leg: 5, quest: WRONG_TIDE_ID, event: 'resurvey-done', where: { benchmark: 'b2' }, budgetS: 60, place: 'b2', needs: ['quest:wrong-tide', 'bm:b2'], danger: 'resurvey-b2' }),
+  beat({ id: 'clock-returns', leg: 5, quest: WRONG_TIDE_ID, event: 'gauge-returned', budgetS: 60, place: 'gauge', needs: ['quest:wrong-tide'] }),
+  beat({ id: 'rung-3', leg: 5, quest: WRONG_TIDE_ID, event: 'rung-made', where: { rung: 'reckoner' }, budgetS: 40, place: 'guildStud', needs: ['quest:wrong-tide', 'rung:3'] }),
+  beat({ id: 'hand-net', leg: 5, quest: null, event: 'item-taken', where: { item: 'hand-net', at: 'fishing-hut' }, budgetS: 50, place: 'fishingHut', needs: ['site:fishing-hut'] }),
   // ---- leg 6: from leg 5's save - "The Kiln Yards"
-  beat({ id: 'oro-yards', leg: 6, quest: KILN_YARDS_ID, event: 'scene-done', where: { scene: 'yards' }, budgetS: 240, place: 'oro', needs: ['quest:kiln-yards'],
+  beat({ id: 'oro-yards', leg: 6, quest: KILN_YARDS_ID, event: 'scene-done', where: { scene: 'yards' }, budgetS: 72, place: 'oro', needs: ['quest:kiln-yards'],
     note: 'Oro gives it only after "True Ground"' }),
-  beat({ id: 'climb', leg: 6, quest: KILN_YARDS_ID, event: 'region-enter', where: { region: 'malpais' }, budgetS: 180, place: 'kilnYards',
+  beat({ id: 'climb', leg: 6, quest: KILN_YARDS_ID, event: 'region-enter', where: { region: 'malpais' }, budgetS: 75, place: 'kilnYards',
     needs: ['quest:kiln-yards', 'region:malpais'], danger: 'walk-out', note: 'walked: it is upwind' }),
-  beat({ id: 'plugged', leg: 6, quest: KILN_YARDS_ID, event: 'wellhead-reached', where: { unseen: true, plugged: true }, budgetS: 180, place: 'kilnYards',
+  beat({ id: 'plugged', leg: 6, quest: KILN_YARDS_ID, event: 'wellhead-reached', where: { unseen: true, plugged: true }, budgetS: 50, place: 'kilnYards',
     needs: ['quest:kiln-yards', 'site:wellheads', 'kind:kiln'] }),
-  ...[1, 2, 3, 4].map((n) => beat({ id: `quench-${n}`, leg: 6, quest: KILN_YARDS_ID, event: 'wellhead-quenched', where: { n }, budgetS: 150, place: 'kilnYards',
+  ...[1, 2, 3, 4].map((n) => beat({ id: `quench-${n}`, leg: 6, quest: KILN_YARDS_ID, event: 'wellhead-quenched', where: { n }, budgetS: 42, place: 'kilnYards',
     needs: ['quest:kiln-yards', 'site:wellheads', 'kind:kiln', ...(n === 3 ? ['kind:davit'] : []), ...(n === 4 ? ['kind:spindle'] : [])], danger: `wellhead-${n}`,
     note: n === 4 ? 'the Spindle met on the way' : n === 3 ? 'a Davit from the third wellhead (Q4 default)' : undefined })),
-  beat({ id: 'yards-quiet', leg: 6, quest: KILN_YARDS_ID, event: 'yards-quiet', budgetS: 60, place: 'kilnYards', needs: ['quest:kiln-yards', 'site:wellheads'] }),
-  beat({ id: 'tube-rest', leg: 6, quest: KILN_YARDS_ID, event: 'rested', where: { brazier: 'tube-shelter' }, budgetS: 150, place: 'tubeShelter',
+  beat({ id: 'yards-quiet', leg: 6, quest: KILN_YARDS_ID, event: 'yards-quiet', budgetS: 20, place: 'kilnYards', needs: ['quest:kiln-yards', 'site:wellheads'] }),
+  beat({ id: 'tube-rest', leg: 6, quest: KILN_YARDS_ID, event: 'rested', where: { brazier: 'tube-shelter' }, budgetS: 40, place: 'tubeShelter',
     needs: ['quest:kiln-yards', 'site:tube-shelter'], danger: 'walk-out' }),
-  beat({ id: 'scar-flight', leg: 6, quest: KILN_YARDS_ID, event: 'kite:land', where: { near: 'scar-foot' }, budgetS: 180, place: 'scarTop',
+  beat({ id: 'scar-flight', leg: 6, quest: KILN_YARDS_ID, event: 'kite:land', where: { near: 'scar-foot' }, budgetS: 70, place: 'scarTop',
     needs: ['quest:kiln-yards', 'kite:flight-state', 'site:scar-posts', 'weather:wind'], note: 'home down the 7 posts' }),
-  beat({ id: 'rung-7-held', leg: 6, quest: KILN_YARDS_ID, event: 'quest-rewarded', where: { held: 'rung-7' }, budgetS: 120, place: 'oro',
+  beat({ id: 'rung-7-held', leg: 6, quest: KILN_YARDS_ID, event: 'quest-rewarded', where: { held: 'rung-7' }, budgetS: 45, place: 'oro',
     needs: ['quest:kiln-yards', 'card:rung-7-held'], note: 'the card says rung 7 is held at Oro\'s while rung 6 is not owned' }),
 ]);
 
@@ -154,12 +154,57 @@ export const S_PER_GAME_HOUR = DAY_S / 24;   // 75 s (the mean; the golden hours
 /** BIBLE 12, the Survey Kite in numbers: still air 7.5 m/s forward, 1.5 m/s sink (5:1). */
 export const KITE = Object.freeze({ forward: 7.5, sink: 1.5, glide: 5 });
 
-/** The walks of each leg, place to place (straight lines: a LOWER bound; the nav grid's walk is longer). */
+/**
+ * The walks of each leg, place to place (straight lines: a LOWER bound; the nav grid's walk is longer). Leg 4 starts with
+ * WALK THE LINE to B1 (a travel, not a walk: hour.js ctx.travel.walkTheLine sets her at the benchmark), then B1 to the
+ * stud on foot (fix round 1: at ed90645 leg 4 walked the edge to B1 and left out the Ring to Ansel; leg 6 the Scar's foot
+ * to Oro). The flights are apart (`FLIGHTS`, at the kite's still-air 7.5 m/s).
+ */
 export const WALKS = Object.freeze({
-  4: Object.freeze([['malpaisEdge', 'b1'], ['guildStud', 'wreck'], ['wreck', 'guildStud'], ['guildStud', 'sonde'], ['sonde', 't1']]),
+  4: Object.freeze([['b1', 'guildStud'], ['guildStud', 'wreck'], ['wreck', 'guildStud'], ['guildStud', 'sonde'], ['sonde', 't1'], ['ring', 'ansel']]),
   5: Object.freeze([['ring', 'gauge'], ['gauge', 'b2'], ['b2', 'gauge'], ['gauge', 'guildStud'], ['guildStud', 'fishingHut']]),
-  6: Object.freeze([['fishingHut', 'oro'], ['oro', 'kilnYards'], ['kilnYards', 'tubeShelter'], ['tubeShelter', 'scarTop']]),
+  6: Object.freeze([['fishingHut', 'oro'], ['oro', 'kilnYards'], ['kilnYards', 'tubeShelter'], ['tubeShelter', 'scarTop'], ['scarFoot', 'oro']]),
 });
+export const FLIGHTS = Object.freeze({ 4: Object.freeze([['t1', 'ring']]), 5: Object.freeze([]), 6: Object.freeze([['scarTop', 'scarFoot']]) });
+
+/**
+ * The runner's cap per leg (sim seconds of play from the Chrome slot; tools/gates/systems/hour-two.mjs --leg-budget) and
+ * the brief's estimate of each leg's play (M3-BRIEFS §3.6: about 7, 6 and 9 minutes). A leg's beat budgets sum to at
+ * most the cap less a boot (BOOT_S: CONTINUE to playing, 37 s per leg at 3d398ef), so no leg is capped inside its
+ * budgets; the exit pairs two legs per launch under 15 minutes (EXIT_LAUNCH_S).
+ */
+export const LEG_CAP_S = 600;
+export const BOOT_S = 37;
+export const EXIT_LAUNCH_S = 900;
+export const BRIEF_EST_S = Object.freeze({ 4: 420, 5: 360, 6: 540 });
+
+/**
+ * The Gauge's tide (src/instruments/kinds/gauge.js CLOCK, handed in so this module stays free of the kinds): from its
+ * spawn at the open reading to leaving for the Glass and back at Sluice 3, in sim seconds. Leg 5's 'gauge-tide' waits
+ * for the leave and 'clock-returns' for the return.
+ */
+export function gaugeTide(CLOCK, OPEN_PHASE) {
+  const toLeave = (CLOCK.leaveAt - OPEN_PHASE) * CLOCK.period, toReturn = (CLOCK.returnAt - OPEN_PHASE) * CLOCK.period;
+  return { periodS: CLOCK.period, openPhase: +OPEN_PHASE.toFixed(3), spawnToLeaveS: +toLeave.toFixed(1), spawnToReturnS: +toReturn.toFixed(1), awayS: +(toReturn - toLeave).toFixed(1) };
+}
+
+/**
+ * Row 0: is T3 (Rust Cone's pillar) SIGHTED on hour two's path? From each place (her eye 1.6 m over the ground, or
+ * `agl` in the air) to the pillar's top (TRIG_TOP over the cone's ground), the island's ground sampled every 2 m along the
+ * line (`heightAt` handed in): clear or the first blocking point. Sighting T3 closes nothing yet: the Malpais figure
+ * also needs B5 and B6 re-surveyed (BIBLE §8).
+ */
+export function trigSight(heightAt, trig, top, from, { eye = 1.6, step = 2 } = {}) {
+  const y0 = heightAt(from.x, from.z) + eye, y1 = heightAt(trig.x, trig.z) + top;
+  const L = Math.hypot(trig.x - from.x, trig.z - from.z);
+  let worst = Infinity, at = null;
+  for (let s = step; s < L - step; s += step) {
+    const k = s / L, x = from.x + (trig.x - from.x) * k, z = from.z + (trig.z - from.z) * k;
+    const clear = y0 + (y1 - y0) * k - heightAt(x, z);
+    if (clear < worst) { worst = clear; at = { m: +s.toFixed(0), x: +x.toFixed(1), z: +z.toFixed(1) }; }
+  }
+  return { distM: +L.toFixed(1), clear: worst > 0, minClearM: +worst.toFixed(1), at };
+}
 
 const dist = (a, b) => Math.hypot(PLACES[a].x - PLACES[b].x, PLACES[a].z - PLACES[b].z);
 
@@ -167,10 +212,21 @@ const dist = (a, b) => Math.hypot(PLACES[a].x - PLACES[b].x, PLACES[a].z - PLACE
  * beats' game-time budgets. */
 export function legClock(leg) {
   const walks = WALKS[leg].map(([a, b]) => ({ from: a, to: b, m: +dist(a, b).toFixed(1) }));
-  const m = walks.reduce((s, w) => s + w.m, 0);
-  const walkS = m / JOG_MS;
+  const flights = FLIGHTS[leg].map(([a, b]) => ({ from: a, to: b, m: +dist(a, b).toFixed(1) }));
+  const m = walks.reduce((s, w) => s + w.m, 0), fm = flights.reduce((s, w) => s + w.m, 0);
+  const walkS = m / JOG_MS, flyS = fm / KITE.forward, moveS = walkS + flyS;
   const budgetS = beatsOfLeg(leg).reduce((s, b) => s + b.budgetS, 0);
-  return { leg, walks, metres: +m.toFixed(1), walkS: +walkS.toFixed(1), walkGameH: +(walkS / S_PER_GAME_HOUR).toFixed(2), budgetS, budgetGameH: +(budgetS / S_PER_GAME_HOUR).toFixed(2) };
+  return { leg, walks, flights, metres: +m.toFixed(1), walkS: +walkS.toFixed(1), flyS: +flyS.toFixed(1), moveS: +moveS.toFixed(1),
+    walkGameH: +(walkS / S_PER_GAME_HOUR).toFixed(2), budgetS, budgetGameH: +(budgetS / S_PER_GAME_HOUR).toFixed(2),
+    estS: BRIEF_EST_S[leg], capS: LEG_CAP_S, fitsCap: budgetS + BOOT_S <= LEG_CAP_S, budgetOverMoveS: +(budgetS - moveS).toFixed(1) };
+}
+
+/** The exit's launches of two legs (M3-BRIEFS §3.6: legs 1-6 in three launches, none over 15 minutes): legs 5 and 6 at
+ * their budgets and two boots. Legs 1-3 are the first hour's and not counted here. */
+export function exitPairS(a, b) {
+  const sum = (leg) => beatsOfLeg(leg).reduce((s, x) => s + x.budgetS, 0);
+  const s = sum(a) + sum(b) + 2 * BOOT_S;
+  return { legs: [a, b], s, fits: s <= EXIT_LAUNCH_S };
 }
 
 /** The test flight's arithmetic: T1's top to the Ring at 5:1 in still air. `heightAt` is the island's (handed in, so this

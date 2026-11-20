@@ -38,7 +38,7 @@ import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { fixture } from './hour-two-fixtures.mjs';
-import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, beatsOfLeg } from '../../../src/game/hour2/plan.js';
+import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, LEG_CAP_S, beatsOfLeg } from '../../../src/game/hour2/plan.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -47,7 +47,7 @@ const PORT = guardPort(flag('--port'));
 if (PORT === 5173) throw new Error('5173 is never used');
 const LEGS = (flag('--legs', '4,5,6') || '').split(',').map((s) => Number(s.trim())).filter((n) => ALL_LEGS.includes(n));
 const LABEL = flag('--label', 'hour-two');
-const LEG_BUDGET_S = Number(flag('--leg-budget', 600));
+const LEG_BUDGET_S = Number(flag('--leg-budget', LEG_CAP_S));
 const CHAIN = args.includes('--chain');
 const HANDOFF = flag('--handoff');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -194,6 +194,21 @@ async function runLeg(leg, startRec, startName) {
     const T = () => +((Date.now() - tPlay) / 1000).toFixed(1);
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), weather: await page.evaluate(() => window.__CTX__.environment.weather),
       regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), recordAt: rec.position, shot: await shot(page, runDir, `l${leg}-00-continued`) };
+    // row 0 (HT0): is WALK THE LINE offered here (leg 4 starts at 0:55)? The game's own travel seam (hour.js ctx.travel):
+    // its nodes and its answer for B1, and the nearest live Instrument that is alert or attacking (the 60 m refusal)
+    L.travel = await page.evaluate(() => {
+      const C = window.__CTX__, T = C.travel, p = C.player.position;
+      let near = null;
+      for (const m of C.machines?.list || []) {
+        if (!m || m.alive === false || !m.position) continue;
+        const d = Math.hypot(m.position.x - p.x, m.position.z - p.z);
+        if (!near || d < near.m) near = { kind: m.kind, state: m.state, m: +d.toFixed(1) };
+      }
+      const wary = (C.machines?.list || []).filter((m) => m && m.alive !== false && m.position && (m.state === 'alert' || m.state === 'attack'))
+        .map((m) => +Math.hypot(m.position.x - p.x, m.position.z - p.z).toFixed(1)).sort((a, b) => a - b);
+      return { seam: !!T, nodes: T?.nodes?.() ?? null, canWalkB1: T ? (T.canWalk('bm-01') ?? 'offered') : null, nearestInstrument: near, waryWithin60: wary.filter((d) => d < 60).length, nearestWaryM: wary[0] ?? null };
+    }).catch((e) => ({ error: String(e).slice(0, 200) }));
+    log(`leg ${leg} start: WALK THE LINE to B1 ${JSON.stringify(L.travel)}`);
     L.rows.continued = { pass: Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z) < 0.5 && Math.abs(L.start.hour - rec.hour) < 0.05,
       dxz: +Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z).toFixed(3), hour: +L.start.hour.toFixed(3), recordHour: rec.hour };
     let k = 0;

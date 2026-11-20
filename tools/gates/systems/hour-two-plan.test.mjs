@@ -4,7 +4,11 @@
 // Browser-free: node --test tools/gates/systems/hour-two-plan.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BEATS, LEGS, NEEDS, PLACES, HOUR2_QUESTS, beatsOfLeg, legClock, testFlight } from '../../../src/game/hour2/plan.js';
+import { readFileSync } from 'node:fs';
+import { BEATS, LEGS, NEEDS, PLACES, HOUR2_QUESTS, beatsOfLeg, legClock, testFlight, exitPairS, gaugeTide, trigSight, LEG_CAP_S, BOOT_S, BRIEF_EST_S } from '../../../src/game/hour2/plan.js';
+import { TRIG, TRIG_TOP } from '../../../src/world/island/sites.js';
+import { TrueGround } from '../../../src/game/quest/true-ground.js';
+import { fixture } from './hour-two-fixtures.mjs';
 import { heightAt } from '../../../src/world/island/recipe.js';
 import { RegionMap } from '../../../src/core/regions.js';
 
@@ -56,4 +60,57 @@ test('row 0: places by region; the legs\' walks and budgets on the built jog and
   const f = testFlight(heightAt);
   console.log(`  test flight: T1's top ${f.launchM} m, the Ring's ground ${f.landM} m: ${f.dropM} m of drop reaches ${f.stillAirReachM} m at 5:1 in still air against ${f.runM} m (needs ${f.needsDropM} m): ${f.closesInStillAir ? 'closes' : 'does NOT close without lift or wind'}`);
   assert.equal(typeof f.closesInStillAir, 'boolean');
+});
+
+// ---- row 0, fix round 1: what the wave-1 record left out (the judge's HT0 line)
+
+/** The Gauge's tide clock, read from the kind's own source (gauge.js imports the look's JSON, which Node cannot load bare). */
+function gaugeClock() {
+  const src = readFileSync(new URL('../../../src/instruments/kinds/gauge.js', import.meta.url), 'utf8');
+  const blk = /export const CLOCK = Object\.freeze\(\{([\s\S]*?)\}\);/.exec(src)?.[1];
+  assert.ok(blk, 'gauge.js CLOCK');
+  const C = {};
+  for (const k of ['period', 'mean', 'amp', 'openAt', 'leaveAt', 'returnAt']) { const m = new RegExp(`\\b${k}:\\s*([0-9.]+)`).exec(blk); assert.ok(m, k); C[k] = Number(m[1]); }
+  return { CLOCK: C, OPEN_PHASE: Math.acos((C.mean - C.openAt) / C.amp) / (2 * Math.PI) };
+}
+
+test('row 0: every leg\'s beat budgets fit the runner\'s cap with a boot, and cover its walks and flights; the brief\'s estimates and the exit\'s pairs printed', () => {
+  for (const leg of LEGS) {
+    const c = legClock(leg);
+    console.log(`  leg ${leg}: budgets ${c.budgetS} s (+ boot ${BOOT_S} s, cap ${LEG_CAP_S} s): ${c.fitsCap ? 'fits' : 'OVER'}; moving ${c.moveS} s (walks ${c.walkS} s at a jog, flights ${c.flyS} s at 7.5 m/s); the brief's estimate ${BRIEF_EST_S[leg]} s: ${c.budgetS <= BRIEF_EST_S[leg] ? 'within' : `over by ${c.budgetS - BRIEF_EST_S[leg]} s`}`);
+    assert.ok(c.fitsCap, `leg ${leg}: ${c.budgetS} + ${BOOT_S} > ${LEG_CAP_S}`);
+    assert.ok(c.budgetS > c.moveS, `leg ${leg}: budgets ${c.budgetS} s under the moving time ${c.moveS} s`);
+  }
+  for (const [a, b] of [[4, 5], [5, 6]]) { const p = exitPairS(a, b); console.log(`  exit launch legs ${a}+${b} at their budgets: ${p.s} s ${p.fits ? 'fits' : 'does NOT fit'} 900 s`); }
+});
+
+test('row 0: leg 5 follows the Gauge through one tide: its leave and return from its spawn bound gauge-tide and the three beats after', () => {
+  const { CLOCK, OPEN_PHASE } = gaugeClock();
+  const g = gaugeTide(CLOCK, OPEN_PHASE);
+  console.log(`  the Gauge: period ${g.periodS} s; spawned at phase ${g.openPhase}; leaves for the Glass ${g.spawnToLeaveS} s after its spawn, back at Sluice 3 ${g.spawnToReturnS} s after (away ${g.awayS} s)`);
+  const by = Object.fromEntries(beatsOfLeg(5).map((b) => [b.id, b.budgetS]));
+  assert.ok(by['gauge-tide'] >= g.spawnToLeaveS, `gauge-tide ${by['gauge-tide']} s < ${g.spawnToLeaveS} s to its leave`);
+  assert.ok(by['find-b2'] + by['resurvey-b2'] + by['clock-returns'] >= g.awayS, 'the three beats while it is away');
+});
+
+test('row 0: WALK THE LINE at 0:55 (leg 4\'s start): the first hour\'s record makes B1 a travel node; the stud is not one', () => {
+  const rec = fixture(4);
+  const T = new TrueGround().restore(rec.areas.regions);
+  const nodes = T.nodes();
+  console.log(`  travel nodes at 0:55: [${nodes.join(', ')}]; refused while Flagged or with a wary Instrument within 60 m (the page reads canWalk at leg 4's start); the guild-house stud is not a node (TrueGround.nodes() lists re-surveyed benchmarks)`);
+  assert.deepEqual(nodes, ['bm-01']);
+  assert.equal(T.walkRefused({ flagged: false, wary: false }), null);
+  assert.equal(T.walkRefused({ flagged: false, wary: true }), 'wary');
+});
+
+test('row 0: T3 (Rust Cone) is in sight on hour two\'s path; it closes nothing yet', () => {
+  const T3 = TRIG.find((t) => t.id === 'T3');
+  const seen = [];
+  for (const b of BEATS) {
+    const r = trigSight(heightAt, T3, TRIG_TOP, PLACES[b.place]);
+    if (r.clear) seen.push(`${b.leg}:${b.id} ${r.distM} m (clear by ${r.minClearM} m)`);
+  }
+  console.log(`  T3 in a clear line from her eye at: ${seen.join('; ')}`);
+  assert.ok(seen.some((s) => s.startsWith('4:weather-clears')), 'from the Malpais edge at 0:55');
+  assert.ok(seen.some((s) => s.startsWith('6:')), 'from the Kiln Yards');
 });

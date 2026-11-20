@@ -17,7 +17,7 @@
  */
 import { QuestSpine } from '../../../src/game/quest/spine.js';
 import { makeRecord } from '../../../src/game/save/format.js';
-import { TRUE_GROUND_ID, TRUE_GROUND_STAGES, TRUE_GROUND_REWARD, TRANSIT_CARD, ORO_KIT } from '../../../src/game/quest/scar-plan.js';
+import { TRUE_GROUND_ID, TRUE_GROUND_STAGES, TRUE_GROUND_REWARD, TRANSIT_CARD, ORO_KIT, RESURVEY } from '../../../src/game/quest/scar-plan.js';
 import { heightAt } from '../../../src/world/island/recipe.js';
 import { PLACES, BEATS, GLASS_LINE_ID, WRONG_TIDE_ID } from '../../../src/game/hour2/plan.js';
 import { scarDone, fixture as firstHour } from './first-hour-fixtures.mjs';
@@ -59,7 +59,9 @@ function firstHourEnd() {
     areas: {
       kit: { gaff: true, windwall: true, pots: { brine: 1, cinder: 0 }, given: ORO_KIT.map(([id, n]) => [id, n]) },
       walls: WALLS_TRUE,
-      regions: { holds: { true: true, hour: 11.6 } },
+      // the re-survey's own record (hour.js: trueGround.makeTrue('holds', { benchmark: RESURVEY.benchmark })): B1 is the
+      // travel node WALK THE LINE offers at 0:55 (at ed90645 the benchmark was left out, so the fixture offered none)
+      regions: { holds: { true: true, hour: 11.6, benchmark: RESURVEY.benchmark } },
       quests,
       certs: { ...C.serialize(), crossCounted: true },
     },
