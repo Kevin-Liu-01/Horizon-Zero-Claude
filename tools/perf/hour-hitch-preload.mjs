@@ -18,7 +18,9 @@
  *
  * A-late-programs (C5): every program linked while she plays, and every first use that waited over 5 ms, after the
  * boot's warm-up, named by the material build that made it; `run.verdict` (and a line at exit) is FAIL when there is any.
- * `node tools/perf/hour-hitch-preload.mjs --verdict <HH_OUT>` prints that verdict again and exits 1 on FAIL.
+ * `node tools/perf/hour-hitch-preload.mjs --verdict <HH_OUT>` prints that verdict again (every file in the dir: a child
+ * run's too) and exits 1 on FAIL. For first-hour's leg 1 (a child process) pass the preload on as well:
+ * NODE_OPTIONS="--import $PWD/tools/perf/hour-hitch-preload.mjs".
  *
  * HH_PROFILE=1 (C5): V8's sampling profiler runs on every page in HH_PROFILE_S chunks (default 12 s; HH_PROFILE_US, default 250 us a sample; each stop and start holds the page ~0.2 s);
  * each long frame then also carries `cpu`: the functions that held the main thread inside its interval (self ms and
@@ -35,7 +37,13 @@ const PROFILE = process.env.HH_PROFILE === '1';
 const PROFILE_US = Number(process.env.HH_PROFILE_US || 250);
 const PROFILE_S = Number(process.env.HH_PROFILE_S || 12);
 const run = { tool: 'tools/perf/hour-hitch-preload.mjs', commit: process.env.CLEAN_COMMIT || null, over: OVER, argv: process.argv.slice(1), startedAt: new Date().toISOString(), launches: [] };
-const save = () => { if (OUT) { try { writeFileSync(path.join(OUT, 'hour-hitch.json'), JSON.stringify(run, null, 1)); } catch { /* */ } } };
+// a child run (first-hour's leg 1 spawns slice-hour.mjs; NODE_OPTIONS="--import <this file>" carries the preload into
+// it) writes its own file beside the parent's: hour-hitch-child-<pid>.json
+const CHILD = process.env.HH_PRELOADED === '1';
+process.env.HH_PRELOADED = '1';
+const FILE = CHILD ? `hour-hitch-child-${process.pid}.json` : 'hour-hitch.json';
+run.child = CHILD;
+const save = () => { if (OUT) { try { writeFileSync(path.join(OUT, FILE), JSON.stringify(run, null, 1)); } catch { /* */ } } };
 if (OUT) mkdirSync(OUT, { recursive: true });
 
 /** In the page, before any script. */
@@ -412,9 +420,13 @@ if (process.argv[1] && /hour-hitch-preload\.mjs$/.test(process.argv[1]) && proce
   said = true;
   const dir = process.argv[process.argv.indexOf('--verdict') + 1];
   const { readFileSync } = await import('node:fs');
-  const j = JSON.parse(readFileSync(path.join(dir, 'hour-hitch.json'), 'utf8'));
-  const late = (j.launches || []).flatMap((L, i) => (L.late || []).map((e) => ({ launch: i, ...e })));
-  console.log(`A-late-programs at ${j.commit ?? '?'}: ${late.length ? 'FAIL' : 'PASS'} (${late.length} late in ${(j.launches || []).length} launches)`);
+  const { readdirSync } = await import('node:fs');
+  const files = readdirSync(dir).filter((f) => /^hour-hitch(-child-\d+)?\.json$/.test(f)).sort();
+  const runs = files.map((f) => ({ f, j: JSON.parse(readFileSync(path.join(dir, f), 'utf8')) }));
+  const j = runs.find((r) => r.f === 'hour-hitch.json')?.j || runs[0]?.j || {};
+  const late = runs.flatMap(({ f, j: r }) => (r.launches || []).flatMap((L, i) => (L.late || []).map((e) => ({ launch: `${f.replace(/\.json$/, '')}#${i}`, ...e }))));
+  const nL = runs.reduce((n, r) => n + (r.j.launches || []).length, 0);
+  console.log(`A-late-programs at ${j.commit ?? '?'}: ${late.length ? 'FAIL' : 'PASS'} (${late.length} late in ${nL} launches, ${files.length} files)`);
   for (const e of late) console.log(`  launch ${e.launch} ${e.kind} ${e.ms} ms at ${e.at ? `${e.at.x},${e.at.z}` : '?'} hour ${e.hour}: ${e.who ?? '?'} ${e.mat ?? '?'} [${e.key ?? '?'}]`);
   process.exit(late.length ? 1 : 0);
 }
