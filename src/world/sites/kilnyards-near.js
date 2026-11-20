@@ -46,7 +46,8 @@ function paint(geo, fn) {
 const flat = (g) => (g.index ? g.toNonIndexed() : g);
 
 /* ------------------------------------------------------------------ the towers */
-function towerNear(t, seed) {
+/** A tower stub's parts: `which` 'shell' (the double shell and its ring beam) or 'foot' (the colonnade, the fallen tiles). */
+function towerNear(t, seed, which = 'all') {
   const R = rng(0x70e1 + seed * 31);
   const base = 3.4, thick = 0.38, H = t.h;
   // the shell's profile, foot (at the ring beam) to the broken top: it narrows all the way (a stub is the lower shell)
@@ -75,11 +76,14 @@ function towerNear(t, seed) {
       k[0] = KIT.tile; k[1] = a * r; k[2] = y;
     } else { c.copy(SOOT).lerp(TILE_DARK, 0.3 * (y - base) / (H - base)); k[0] = KIT.soot; k[1] = a * r; k[2] = y; }
   });
-  const parts = [shell];
+  const parts = which === 'foot' ? [] : [shell];
+  if (which === 'foot') shell.dispose();
   // the ring beam the shell stands on
   const beam = flat(new THREE.CylinderGeometry(prof(base) + 0.15, prof(base) + 0.25, 0.7, 44, 1, true));
   beam.translate(0, base - 0.25, 0);
   parts.push(paint(beam, (x, y, z, c, k) => { c.copy(CONCRETE).multiplyScalar(0.85); k[0] = KIT.concrete; k[1] = Math.atan2(z, x) * prof(base); k[2] = y; }));
+  if (which === 'shell') return parts;
+  if (which === 'foot') { parts.pop().dispose(); }
   // the colonnade: raking legs in pairs (an X between neighbours), ground to beam
   const legs = 22;
   for (let i = 0; i < legs; i++) {
@@ -272,12 +276,14 @@ const KIT_COLOR = /* glsl */ `
 export function kilnYardsNearJobs({ ground = () => 0 } = {}) {
   const jobs = [];
   YARDS.towers.forEach((t, i) => {
-    jobs.push(() => {
-      const g0 = ground(t.x, t.z) - 1.2;
-      const parts = towerNear(t, i * 1.7 + 0.4);
-      for (const g of parts) g.translate(t.x, g0, t.z);
-      return { parts, glow: [] };
-    });
+    for (const which of ['shell', 'foot']) {
+      jobs.push(() => {
+        const g0 = ground(t.x, t.z) - 1.2;
+        const parts = towerNear(t, i * 1.7 + 0.4, which);
+        for (const g of parts) g.translate(t.x, g0, t.z);
+        return { parts, glow: [] };
+      });
+    }
   });
   YARDS.stacks.forEach((s, i) => jobs.push(() => { const g0 = ground(s.x, s.z) - 0.6; const parts = stackNear(s, i); for (const g of parts) g.translate(s.x, g0, s.z); return { parts, glow: [] }; }));
   for (const r of YARDS.racks) jobs.push(() => ({ parts: rackNear(r, ground), glow: [] }));

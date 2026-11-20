@@ -289,19 +289,28 @@ export class MalpaisRegion {
       for (const m of held.mats) env?.registerMaterial?.(m);
       for (const m of ky.materials) env?.registerMaterial?.(m);
       if (block.material) env?.registerMaterial?.(block.material);
-      const warm = new THREE.Group();
+      // one material at a time, a frame apart (three builds each program's source on the main thread: the ground's is
+      // the island's largest, so two in one frame would pass a slice), each awaited before the next is issued
       const chunk = mchunks.find((Ck) => Ck.mesh?.geometry);
-      if (chunk) { warm.add(new THREE.Mesh(chunk.mesh.geometry, gPlain), new THREE.Mesh(chunk.mesh.geometry, gHolds)); }
-      const moved = [...group.children];
-      for (const o of moved) warm.add(o);
+      const byMat = new Map();
+      if (chunk) { byMat.set(gPlain, [new THREE.Mesh(chunk.mesh.geometry, gPlain)]); byMat.set(gHolds, [new THREE.Mesh(chunk.mesh.geometry, gHolds)]); }
+      const moved = [];
+      group.traverse((o) => { if (o.isMesh) moved.push(o); });
+      for (const o of moved) { const m = o.material; if (!byMat.has(m)) byMat.set(m, []); byMat.get(m).push(o); }
       step('register', now() - tb);
-      let compile = { ms: 0, programs: 0 };
-      if (E?.compileOffFrame) compile = await E.compileOffFrame(warm, { timeoutMs: 8000 });
+      const compile = { ms: 0, programs: 0, materials: byMat.size };
+      for (const [, list] of byMat) {
+        if (!E?.compileOffFrame) break;
+        const warm = new THREE.Group(), parents = list.map((o) => o.parent);
+        for (const o of list) warm.add(o);
+        const r = await E.compileOffFrame(warm, { timeoutMs: 8000 });
+        list.forEach((o, i) => { if (parents[i] && parents[i] !== warm) parents[i].add(o); else warm.remove(o); });
+        compile.ms += r.ms; compile.programs += r.programs;
+        sliceT = now();
+        if (!live()) throw new CancelBuild();
+        await slice();
+      }
       this.stats.compile = compile;
-      for (const o of moved) group.add(o);
-      warm.clear();
-      if (!live()) throw new CancelBuild();
-      await slice();
 
       // 5. UPLOAD, one texture a frame
       tb = now();
