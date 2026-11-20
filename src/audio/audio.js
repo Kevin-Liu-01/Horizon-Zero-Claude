@@ -34,6 +34,7 @@ import { probeSpatial, probeBuffer, bandDistance, beatGrid } from './probe.js';
 import { MusicDirector, BEAT } from './music.js';
 import { ZoneEmitters } from './zones.js';
 import { SliceAudio } from './slice/director.js';
+import { HourAudio } from './m2/director.js';
 import { FOLEY, cappedGain } from './slice/mix.js';
 
 const PENTA = [220.0, 261.63, 293.66, 329.63, 392.0, 440.0]; // A min pentatonic
@@ -322,6 +323,9 @@ export class GameAudio {
       this.slice = new SliceAudio(this);
       this.slice.start();
       this.zones = new ZoneEmitters(ac, buses, this.bank);
+      // Milestone 2: the rest of the first hour (the zones on the regions seam, the calima, the Holds, the kit, the Screed)
+      this.hour = new HourAudio(this);
+      this.hour.start();
       // audio-01 — the composed score replaces the procedural one the moment
       // its stems are decoded. If any stem is missing the director reports
       // `available: false` and the legacy drone/pluck/percussion layers keep
@@ -819,7 +823,8 @@ export class GameAudio {
     const vg = this.ac.createGain();
     // BUILD M1.6k: the near cap (src/audio/slice/mix.js cappedGain): a cue loud enough to carry its range is held to
     // unity after the distance law when it plays close
-    vg.gain.value = cappedGain((opts.volume ?? 1) * (picked.row.gain ?? 1), chain.dist);
+    vg.gain.value = cappedGain((opts.volume ?? 1) * (picked.row.gain ?? 1), chain.dist)
+      * (this.hour ? this.hour.farGain(chain.dist) : 1);   // Milestone 2: in the calima the far sounds drop
     vg.connect(chain.input);
     const src = this.ac.createBufferSource();
     src.buffer = picked.buffer;
@@ -2823,6 +2828,10 @@ export class GameAudio {
       })) {
         at(pos);
         this._machineStep(this._pan, this._att, cls === 'heavy');
+      } else {
+        // Milestone 2: a kind's layer over its step (the Screed's hull over mstep/heavy)
+        const layer = this.slice?.stepLayer?.(m);
+        if (layer) this.playAt(layer, pos, { category: 'inst', volume: 1, priority: PRI.machineStep, rate: 0.95 + Math.random() * 0.1, height: 1.2 });
       }
     }));
 
@@ -3282,7 +3291,10 @@ export class GameAudio {
       rustle += clamp(p.moveSpeed / 8.2, 0, 1) * 0.05;
     }
     this.rustleGain.gain.value = sliceOn ? 0 : rustle;
-    if (sliceOn) this.slice.update(rdt, playing);
+    if (sliceOn) {
+      this.hour?.update(rdt, playing);     // first: the zones' levels the slice's places read
+      this.slice.update(rdt, playing);
+    }
 
     // --- footsteps synced to the animator gait (same formula, one footfall
     //     per half stride cycle): stepLen = clamp(0.5+0.3*v, 0.6, 1.92),

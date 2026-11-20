@@ -46,14 +46,24 @@ export const KIND_CUES = Object.freeze({
   plumb: { step: 'plumb/servo', idle: 'plumb/gyro', weak: 'plumb/vial' },
   peg: { step: 'mstep/light', idle: 'peg/idle', weak: 'bow/hit-weak' },
   gauge: { step: 'gauge/stilt', idle: 'gauge/idle', weak: 'bow/hit-weak' },
+  // Milestone 2 (src/audio/m2/cues.js): the Tiller's own stilt and coring bed; the Screed keeps its weight class's step
+  // (mstep/heavy: the third class A76-footfalls hears) with its hull's clank as a layer over it
+  tiller: { step: 'tiller/step', idle: 'tiller/idle', weak: 'bow/hit-weak' },
+  screed: { step: null, layer: 'screed/step', idle: 'screed/idle', weak: 'bow/hit-weak' },
 });
-/** attack id -> [phase, set] */
+/** attack id -> [phase, set] or a list of them */
 const ATTACK_CUES = Object.freeze({
   mallet: ['strike', 'peg/mallet'],
   'peg-shot': ['strike', 'peg/shot'],
   'swarm-rush': ['windup', 'peg/rush'],
   pendulum: ['windup', 'plumb/bob'],
   'bob-drop': ['windup', 'plumb/bob'],
+  // the Tiller (M2): the trample's tell on its wind-up (heard 1 s or more before contact, src/audio/m2/mix.js TRAMPLE);
+  // its close blows keep the generic wind-up and strike
+  'herd-trample': [['windup', 'tiller/trample'], ['strike', 'inst/strike']],
+  'hopper-burst': [['windup', 'inst/windup'], ['strike', 'inst/strike']],
+  'auger-jab': [['windup', 'inst/windup'], ['strike', 'inst/strike']],
+  'drum-shove': [['windup', 'inst/windup'], ['strike', 'inst/strike']],
 });
 
 const PRI = { amb: 1, work: 3, chirp: 7, inst: 6, big: 8 };
@@ -138,12 +148,17 @@ export class SliceAudio {
     const kind = m?.kind;
     if (!KIND_CUES[kind]) return false;
     const cue = ATTACK_CUES[e.attack || e.kind];
-    if (cue && cue[0] === e.phase) this.at(cue[1], m.position, 'inst', 1, PRI.big, 1);
+    if (cue) {
+      const list = Array.isArray(cue[0]) ? cue : [cue];
+      for (let i = 0; i < list.length; i++) if (list[i][0] === e.phase) this.at(list[i][1], m.position, 'inst', 1, PRI.big, 1);
+    }
     return true;     // a kind of the slice: never the generic voice
   }
 
   /** machine-footfall for a slice kind: its own step. */
   stepSet(m) { return KIND_CUES[m?.kind]?.step || null; }
+  /** A layer played over a kind's footfall (the Screed's hull), or null. */
+  stepLayer(m) { return KIND_CUES[m?.kind]?.layer || null; }
   /** The idle bed for a slice kind. */
   idleSet(m) { return KIND_CUES[m?.kind]?.idle || null; }
   /** An arrow in a weak point. */
@@ -278,10 +293,14 @@ export class SliceAudio {
     const wind = clamp(env?.wind?.strength ?? 0.85, 0.3, 1.4);
     const on = playing ? 1 : 0.5;
     const B = this.beds;
-    if (B.pans) B.pans.volume = on * (1 - 0.8 * town) * B.pans.rowGain;
-    if (B.saltrow) B.saltrow.volume = on * town * B.saltrow.rowGain;
+    // Milestone 2 (src/audio/m2/director.js): the Pans' beds follow the zones on the regions seam, and the trade wind
+    // thins off the Pans and in the calima (src/audio/m2/mix.js bedLevels)
+    const HL = this.game.hour?.ready ? this.game.hour.levels : null;
+    const pansK = HL ? HL.pansK : 1, tradeK = HL ? HL.tradeK : 1;
+    if (B.pans) B.pans.volume = on * (1 - 0.8 * town) * pansK * B.pans.rowGain;
+    if (B.saltrow) B.saltrow.volume = on * town * pansK * B.saltrow.rowGain;
     if (B.shore) B.shore.volume = on * shore * B.shore.rowGain;
-    if (B.trade) B.trade.volume = on * clamp(wind / 0.85, 0.4, 1.4) * (1 - 0.6 * town) * B.trade.rowGain;
+    if (B.trade) B.trade.volume = on * clamp(wind / 0.85, 0.4, 1.4) * (1 - 0.6 * town) * tradeK * B.trade.rowGain;
     // pumps (positional loops while within 90 m) and the lit Braziers (within 35 m)
     const Z = this.game.zones;
     if (Z) {

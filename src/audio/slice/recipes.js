@@ -994,3 +994,12 @@ export const MUSIC = {
     }
   }),
 };
+
+/**
+ * The recipe helpers, for the Milestone 2 bank's recipes (src/audio/m2/recipes.js): the same strike, wood, metal, wind
+ * and loop makers, so the first hour's new cues are built in the slice's own voice. Not a cue group (lower case: the
+ * builder only reads the upper-case groups a cue row names).
+ */
+export const kit = Object.freeze({
+  firm, thump, burst, whoosh, metal, wood, bell, rustle, whistleNote, creakTrain, glass, chirp, tick, windBed, surf, stereoLoop,
+});

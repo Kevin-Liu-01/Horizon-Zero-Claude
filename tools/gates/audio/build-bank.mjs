@@ -17,11 +17,14 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CUES, filesOf, COUNTED } from '../../../src/audio/slice/cues.js';
-import * as R from '../../../src/audio/slice/recipes.js';
+import { CUES, filesOf, COUNTED, M2_COUNTED } from '../../../src/audio/slice/cues.js';
+import * as R1 from '../../../src/audio/slice/recipes.js';
+import { GROUPS as R2 } from '../../../src/audio/m2/recipes.js';
 import { SR } from '../../../src/audio/slice/dsp.js';
 import { integratedLufs, truePeakDb } from './lufs.mjs';
 
+/** The recipe groups: the slice's and the first hour's (src/audio/m2/recipes.js). */
+const R = { ...R1, ...R2 };
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const OUT = path.join(REPO, 'public/audio');
 const args = process.argv.slice(2);
@@ -124,7 +127,7 @@ async function main() {
       }
       rows.push({
         id: k ? `${c.set}#${k + 1}` : c.set, set: c.set, file: rel, bytes, dur: +dur.toFixed(3), ch: c.ch, gain: c.gain, loop: !!c.loop,
-        tags: [c.bus, c.set.split('/')[0]], license: 'CC0-1.0', source: 'synthesized by src/audio/slice/recipes.js',
+        tags: [c.bus, c.set.split('/')[0]], license: 'CC0-1.0', source: `synthesized by src/audio/${c.m2 ? 'm2' : 'slice'}/recipes.js`,
         author: 'CALIMA project (synthesized, no third-party audio)',
       });
       report.push({ file: rel, bytes, dur: +dur.toFixed(3), ...meta });
@@ -156,7 +159,7 @@ export const SETS = MANIFEST.reduce((m, e) => {
 
 export const BANK_BYTES = ${total};
 `;
-  const md = `# Audio bank — the slice (BUILD M1.6k)
+  const md = `# Audio bank — the slice (BUILD M1.6k) and the first hour (Milestone 2)
 
 Every file in \`public/audio/\` is **synthesized by this repository's own code** and released under
 [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/). No recording and no third-party audio is bundled.
@@ -164,11 +167,11 @@ Every file in \`public/audio/\` is **synthesized by this repository's own code**
 | field | value |
 |---|---|
 | files | ${rows.length} |
-| sets | ${new Set(rows.map((r) => r.set)).size} (${COUNTED.length} counted slice cues) |
-| total size | ${(total / 1048576).toFixed(2)} MB (budget 8 MB in Milestone 1) |
+| sets | ${new Set(rows.map((r) => r.set)).size} (${COUNTED.length} counted cues: ${COUNTED.length - M2_COUNTED.length} the slice's, ${M2_COUNTED.length} the first hour's) |
+| total size | ${(total / 1048576).toFixed(2)} MB (budget 8 MB in Milestone 1, 12 MB in Milestone 2) |
 | format | Ogg Opus, 48 kHz (48 kb/s mono point sources, 96 kb/s stereo beds and music) |
-| recipes | \`src/audio/slice/recipes.js\` (deterministic; seeds per set in \`tools/gates/audio/build-bank.mjs\`) |
-| cue list | \`src/audio/slice/cues.js\` (bus, range, place, level) |
+| recipes | \`src/audio/slice/recipes.js\`, \`src/audio/m2/recipes.js\` (deterministic; seeds per set in \`tools/gates/audio/build-bank.mjs\`) |
+| cue list | \`src/audio/slice/cues.js\` with \`src/audio/m2/cues.js\` (bus, range, place, level) |
 | runtime index | \`src/audio/manifest.js\` (generated) |
 
 Brea's breath and effort set (\`brea/\`) is the existing synthesized set, kept until Milestone 3 regenerates it.
@@ -181,7 +184,7 @@ ${rows.map((r) => `| \`${r.file}\` | \`${r.set}\` | ${r.ch} | ${(+r.dur).toFixed
     writeFileSync(path.join(REPO, 'src/audio/manifest.js'), js);
     writeFileSync(path.join(OUT, 'MANIFEST.md'), md);
   }
-  console.log(JSON.stringify({ files: rows.length, sets: new Set(rows.map((r) => r.set)).size, counted: COUNTED.length, megabytes: +(total / 1048576).toFixed(3), seconds: (Date.now() - t0) / 1000, stale }, null, 1));
+  console.log(JSON.stringify({ files: rows.length, sets: new Set(rows.map((r) => r.set)).size, counted: COUNTED.length, m2Counted: M2_COUNTED.length, megabytes: +(total / 1048576).toFixed(3), seconds: (Date.now() - t0) / 1000, stale }, null, 1));
   if (args.includes('--report')) console.log(JSON.stringify(report, null, 1));
 }
 

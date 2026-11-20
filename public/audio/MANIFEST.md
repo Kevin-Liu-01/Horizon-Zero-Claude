@@ -1,16 +1,16 @@
-# Audio bank — the slice (BUILD M1.6k)
+# Audio bank — the slice (BUILD M1.6k) and the first hour (Milestone 2)
 
 Every file in `public/audio/` is **synthesized by this repository's own code** and released under
 [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/). No recording and no third-party audio is bundled.
 
 | field | value |
 |---|---|
-| files | 161 |
-| sets | 92 (77 counted slice cues) |
-| total size | 3.53 MB (budget 8 MB in Milestone 1) |
+| files | 224 |
+| sets | 137 (122 counted cues: 77 the slice's, 45 the first hour's) |
+| total size | 5.02 MB (budget 8 MB in Milestone 1, 12 MB in Milestone 2) |
 | format | Ogg Opus, 48 kHz (48 kb/s mono point sources, 96 kb/s stereo beds and music) |
-| recipes | `src/audio/slice/recipes.js` (deterministic; seeds per set in `tools/gates/audio/build-bank.mjs`) |
-| cue list | `src/audio/slice/cues.js` (bus, range, place, level) |
+| recipes | `src/audio/slice/recipes.js`, `src/audio/m2/recipes.js` (deterministic; seeds per set in `tools/gates/audio/build-bank.mjs`) |
+| cue list | `src/audio/slice/cues.js` with `src/audio/m2/cues.js` (bus, range, place, level) |
 | runtime index | `src/audio/manifest.js` (generated) |
 
 Brea's breath and effort set (`brea/`) is the existing synthesized set, kept until Milestone 3 regenerates it.
@@ -178,3 +178,66 @@ Brea's breath and effort set (`brea/`) is the existing synthesized set, kept unt
 | `brea/effort-hard-2.ogg` | `brea/effort-hard` | 1 | 0.42 s | 3.0 KB | brea |
 | `brea/hurt-1.ogg` | `brea/hurt` | 1 | 0.48 s | 3.4 KB | brea |
 | `brea/hurt-2.ogg` | `brea/hurt` | 1 | 0.48 s | 3.4 KB | brea |
+| `amb/holds.ogg` | `amb/holds` | 2 | 20.00 s | 208.1 KB | ambience |
+| `amb/ninewalls.ogg` | `amb/ninewalls` | 2 | 20.00 s | 209.6 KB | ambience |
+| `amb/scar.ogg` | `amb/scar` | 2 | 16.00 s | 164.3 KB | ambience |
+| `amb/malpais.ogg` | `amb/malpais` | 2 | 20.00 s | 208.9 KB | ambience |
+| `amb/calima.ogg` | `amb/calima` | 2 | 16.00 s | 169.6 KB | ambience |
+| `holds/hoe-1.ogg` | `holds/hoe` | 1 | 0.90 s | 6.5 KB | sfx |
+| `holds/hoe-2.ogg` | `holds/hoe` | 1 | 0.90 s | 6.3 KB | sfx |
+| `holds/hoe-3.ogg` | `holds/hoe` | 1 | 0.90 s | 6.5 KB | sfx |
+| `holds/sow-1.ogg` | `holds/sow` | 1 | 1.00 s | 9.4 KB | sfx |
+| `holds/sow-2.ogg` | `holds/sow` | 1 | 1.00 s | 9.2 KB | sfx |
+| `holds/water-1.ogg` | `holds/water` | 1 | 1.80 s | 10.5 KB | sfx |
+| `holds/water-2.ogg` | `holds/water` | 1 | 1.80 s | 10.5 KB | sfx |
+| `holds/bucket-1.ogg` | `holds/bucket` | 1 | 2.20 s | 11.7 KB | sfx |
+| `holds/bucket-2.ogg` | `holds/bucket` | 1 | 2.20 s | 11.8 KB | sfx |
+| `holds/pick-1.ogg` | `holds/pick` | 1 | 1.10 s | 9.0 KB | sfx |
+| `holds/pick-2.ogg` | `holds/pick` | 1 | 1.10 s | 8.9 KB | sfx |
+| `holds/sort-1.ogg` | `holds/sort` | 1 | 1.20 s | 7.3 KB | sfx |
+| `holds/sort-2.ogg` | `holds/sort` | 1 | 1.20 s | 7.4 KB | sfx |
+| `forge/fire.ogg` | `forge/fire` | 1 | 6.00 s | 35.4 KB | sfx |
+| `forge/bellows.ogg` | `forge/bellows` | 1 | 1.80 s | 12.0 KB | sfx |
+| `forge/anvil-1.ogg` | `forge/anvil` | 1 | 1.60 s | 19.2 KB | sfx |
+| `forge/anvil-2.ogg` | `forge/anvil` | 1 | 1.60 s | 19.2 KB | sfx |
+| `forge/anvil-3.ogg` | `forge/anvil` | 1 | 1.60 s | 18.6 KB | sfx |
+| `forge/quench.ogg` | `forge/quench` | 1 | 2.00 s | 11.4 KB | sfx |
+| `rack/open.ogg` | `rack/open` | 1 | 0.32 s | 1.8 KB | ui |
+| `rack/step.ogg` | `rack/step` | 1 | 0.15 s | 2.1 KB | ui |
+| `rack/take.ogg` | `rack/take` | 1 | 0.30 s | 1.6 KB | ui |
+| `windwall/open.ogg` | `windwall/open` | 1 | 0.55 s | 3.7 KB | brea |
+| `windwall/shut.ogg` | `windwall/shut` | 1 | 0.55 s | 3.4 KB | brea |
+| `windwall/plant.ogg` | `windwall/plant` | 1 | 1.00 s | 4.0 KB | sfx |
+| `windwall/block-1.ogg` | `windwall/block` | 1 | 0.70 s | 5.3 KB | sfx |
+| `windwall/block-2.ogg` | `windwall/block` | 1 | 0.70 s | 5.9 KB | sfx |
+| `windwall/parry.ogg` | `windwall/parry` | 1 | 0.30 s | 2.1 KB | sfx |
+| `windwall/bash-1.ogg` | `windwall/bash` | 1 | 0.80 s | 4.8 KB | sfx |
+| `windwall/bash-2.ogg` | `windwall/bash` | 1 | 0.80 s | 5.0 KB | sfx |
+| `gaff/swing-1.ogg` | `gaff/swing` | 1 | 0.40 s | 2.6 KB | brea |
+| `gaff/swing-2.ogg` | `gaff/swing` | 1 | 0.40 s | 2.6 KB | brea |
+| `gaff/hit-1.ogg` | `gaff/hit` | 1 | 0.80 s | 6.1 KB | sfx |
+| `gaff/hit-2.ogg` | `gaff/hit` | 1 | 0.80 s | 6.6 KB | sfx |
+| `gaff/hook.ogg` | `gaff/hook` | 1 | 0.90 s | 5.2 KB | sfx |
+| `gaff/rip.ogg` | `gaff/rip` | 1 | 1.60 s | 16.3 KB | sfx |
+| `pot/throw.ogg` | `pot/throw` | 1 | 0.60 s | 3.4 KB | brea |
+| `pot/break-1.ogg` | `pot/break` | 1 | 1.40 s | 7.9 KB | sfx |
+| `pot/break-2.ogg` | `pot/break` | 1 | 1.40 s | 7.9 KB | sfx |
+| `pot/cinder.ogg` | `pot/cinder` | 1 | 1.60 s | 9.2 KB | sfx |
+| `pot/seize.ogg` | `pot/seize` | 1 | 1.20 s | 9.8 KB | sfx |
+| `tiller/step-1.ogg` | `tiller/step` | 1 | 0.55 s | 2.7 KB | inst |
+| `tiller/step-2.ogg` | `tiller/step` | 1 | 0.55 s | 2.7 KB | inst |
+| `tiller/step-3.ogg` | `tiller/step` | 1 | 0.55 s | 3.2 KB | inst |
+| `tiller/idle.ogg` | `tiller/idle` | 1 | 4.00 s | 24.3 KB | inst |
+| `tiller/trample.ogg` | `tiller/trample` | 1 | 1.50 s | 14.0 KB | inst |
+| `screed/step-1.ogg` | `screed/step` | 1 | 0.80 s | 5.3 KB | inst |
+| `screed/step-2.ogg` | `screed/step` | 1 | 0.80 s | 5.3 KB | inst |
+| `screed/step-3.ogg` | `screed/step` | 1 | 0.80 s | 5.3 KB | inst |
+| `screed/idle.ogg` | `screed/idle` | 1 | 5.00 s | 28.2 KB | inst |
+| `screed/charge.ogg` | `screed/charge` | 1 | 1.60 s | 14.2 KB | inst |
+| `screed/stall.ogg` | `screed/stall` | 1 | 2.40 s | 15.8 KB | inst |
+| `screed/seal.ogg` | `screed/seal` | 1 | 1.60 s | 9.1 KB | inst |
+| `screed/seize.ogg` | `screed/seize` | 1 | 1.30 s | 9.1 KB | inst |
+| `screed/cut.ogg` | `screed/cut` | 1 | 2.60 s | 14.9 KB | sfx |
+| `alidade/hold.ogg` | `alidade/hold` | 1 | 3.00 s | 24.1 KB | brea |
+| `alidade/mark.ogg` | `alidade/mark` | 1 | 1.10 s | 13.7 KB | brea |
+| `alidade/true.ogg` | `alidade/true` | 1 | 2.80 s | 26.1 KB | brea |

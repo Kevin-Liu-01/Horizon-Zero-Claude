@@ -30,7 +30,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CUES, COUNTED, CUE_BY_SET } from '../../../src/audio/slice/cues.js';
+import { CUES, SLICE_COUNTED, CUE_BY_SET } from '../../../src/audio/slice/cues.js';
 import { MANIFEST, SETS } from '../../../src/audio/manifest.js';
 import { DEFAULT_VOLUMES } from '../../../src/audio/buses.js';
 import {
@@ -71,7 +71,7 @@ export function busGain(bus) {
 }
 
 /* ------------------------------------------------------------------ the mixer */
-class Mixer {
+export class Mixer {
   constructor(sec) {
     this.n = Math.round(sec * SR);
     this.bus = {};
@@ -167,7 +167,7 @@ class Mixer {
 }
 
 /** The DynamicsCompressor as a safety limiter (threshold, ratio; peak-follower with its attack and release). */
-function limit(chs) {
+export function limit(chs) {
   // the node's effective behaviour (src/audio/slice/mix.js LIMITER): unity below the ceiling, limiting above it
   const th = Math.pow(10, LIMITER.ceiling / 20);
   const aK = 1 - Math.exp(-1 / (LIMITER.attack * SR)), rK = 1 - Math.exp(-1 / (LIMITER.release * SR));
@@ -351,7 +351,7 @@ const PLACE_BEDS = {
   shore: [['amb/shore', 1], ['amb/pans', 1], ['amb/trade', 1]],
 };
 /** Octave-band levels (dB) of a set of beds, mono, 8 s, through the ambience bus's fixed gain. */
-function bedBands(list) {
+export function bedBands(list) {
   const sec = 8;
   const n = sec * SR;
   const mono = new Float32Array(n);
@@ -369,7 +369,7 @@ function placeBed(place) { return bedBands(PLACE_BEDS[place]); }
 export function audibility() {
   const beds = { pans: placeBed('pans'), saltrow: placeBed('saltrow'), shore: placeBed('shore') };
   const rows = [];
-  for (const c of COUNTED) {
+  for (const c of SLICE_COUNTED) {   // the slice's own cues (the first hour's are graded by tools/gates/audio/hour-walk.mjs)
     const row = SETS[c.set][0];
     const src = decode(row.file);
     let x = Float32Array.from(src.length > 1 ? src[0].map((v, i) => 0.5 * (v + src[1][i])) : src[0]);
@@ -414,7 +414,7 @@ export function audibility() {
 }
 
 /* ------------------------------------------------------------------ main */
-function wav24(file, chs) {
+export function wav24(file, chs) {
   const n = chs[0].length, c = chs.length;
   const b = Buffer.alloc(44 + n * c * 3);
   b.write('RIFF', 0); b.writeUInt32LE(36 + n * c * 3, 4); b.write('WAVE', 8); b.write('fmt ', 12);
@@ -425,7 +425,7 @@ function wav24(file, chs) {
   writeFileSync(file, b);
 }
 
-function lufsOver(chs, ranges) {
+export function lufsOver(chs, ranges) {
   const parts = [[], []];
   for (const [a, b] of ranges) { parts[0].push(chs[0].subarray(Math.round(a * SR), Math.round(b * SR))); parts[1].push(chs[1].subarray(Math.round(a * SR), Math.round(b * SR))); }
   const cat = (xs) => { const n = xs.reduce((s, x) => s + x.length, 0); const o = new Float32Array(n); let k = 0; for (const x of xs) { o.set(x, k); k += x.length; } return o; };

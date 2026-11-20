@@ -18,10 +18,12 @@
  * The folder names are the slice's own: nothing on disk carries a Round-4 set name (`FOLDERS` is the allowlist the
  * row tools/gates/audio/slice-audio.test.mjs holds the disk to).
  */
+import { M2_CUES, M2_FOLDERS, M2_TECH_RANGES } from '../m2/cues.js';
+
 export const BUSES = ['ambience', 'sfx', 'inst', 'brea', 'ui', 'music'];
 
 /** Every folder public/audio/ may contain (the allowlist the disk is held to). */
-export const FOLDERS = ['amb', 'foot', 'cloth', 'gear', 'make', 'bow', 'lance', 'alidade', 'lamp', 'plumb', 'peg', 'gauge', 'inst', 'mstep', 'saltrow', 'brazier', 'ui', 'music', 'brea'];
+export const FOLDERS = ['amb', 'foot', 'cloth', 'gear', 'make', 'bow', 'lance', 'alidade', 'lamp', 'plumb', 'peg', 'gauge', 'inst', 'mstep', 'saltrow', 'brazier', 'ui', 'music', 'brea', ...M2_FOLDERS];
 
 const P = (o) => Object.assign({ n: 1, ch: 1, loop: false, peak: -1, gain: 1, place: 'pans', counted: true }, o);
 
@@ -31,7 +33,7 @@ const P = (o) => Object.assign({ n: 1, ch: 1, loop: false, peak: -1, gain: 1, pl
  * none. Every other range in this table was CHOSEN by the audio lane and waits for the orchestrator's approval
  * (`RANGE_FROM` 'chosen'); 2D cues (range 0) are heard at the listener and have none.
  */
-export const TECH_RANGES = Object.freeze({ 'foot/': 25, 'lamp/': 40, 'plumb/chime': 80, 'saltrow/bell': 300 });
+export const TECH_RANGES = Object.freeze({ 'foot/': 25, 'lamp/': 40, 'plumb/chime': 80, 'saltrow/bell': 300, ...M2_TECH_RANGES });
 export function rangeFromOf(c) {
   if (c.bed) return c.set === 'amb/shore' ? 'TECH §14 (surf: a bed keyed to the waterline)' : 'bed (no range)';
   if (!c.range) return '2D (heard at the listener)';
@@ -144,14 +146,20 @@ export const CUES = [
   ...['breath-hard', 'breath-in', 'breath-out', 'effort', 'effort-hard', 'hurt'].map((k) => P({
     set: `brea/${k}`, recipe: null, keep: true, bus: 'brea', range: 0, gain: 0.9, counted: false, on: 'Brea\'s breath and efforts (kept set)',
   })),
+  /* Milestone 2: the rest of the first hour (../m2/cues.js; each row `m2: true`) */
+  ...M2_CUES,
 ];
 
 for (const c of CUES) c.rangeFrom = rangeFromOf(c);
 
 export const CUE_BY_SET = new Map(CUES.map((c) => [c.set, c]));
 
-/** The distinct cues the slice counts toward "30 or more". */
+/** The distinct cues counted (the slice's and the first hour's). */
 export const COUNTED = CUES.filter((c) => c.counted);
+/** The slice's own counted cues (M1.6k: "30 or more"; the slice walk's audibility rows). */
+export const SLICE_COUNTED = COUNTED.filter((c) => !c.m2);
+/** The first hour's new counted cues (Milestone 2: "30 or more new cues"). */
+export const M2_COUNTED = COUNTED.filter((c) => c.m2);
 
 /** Files a row ships (`<set>.ogg`, or `<set>-<k>.ogg` for k = 1..n). */
 export function filesOf(c) {

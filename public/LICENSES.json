@@ -549,7 +549,7 @@
       "paths": [
         "public/audio/**"
       ],
-      "title": "The slice's audio bank (BUILD M1.6k): synthesized by src/audio/slice/recipes.js, rendered by tools/gates/audio/build-bank.mjs; Brea's breath and effort set kept from M0.3",
+      "title": "The audio bank: the slice's (BUILD M1.6k) synthesized by src/audio/slice/recipes.js and the first hour's (Milestone 2) by src/audio/m2/recipes.js, rendered by tools/gates/audio/build-bank.mjs; Brea's breath and effort set kept from M0.3; no recording or third-party audio",
       "author": "CALIMA project",
       "source_url": "src/audio/slice/recipes.js",
       "licence": "project-original",
