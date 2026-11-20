@@ -746,10 +746,9 @@ const SEAL_MARGIN = 0.45;
 // a stand's margins are read from her nock and lens carried there; at f5c955a one read 0.71 m and gave 0.45 m once she
 // stood there with the bow raised, so a stand must clear the bar by this much more
 const STAND_SLACK = 0.4;
-/** the draw a seal arrow is loosed at (combat.drawStrength; 62 m/s x 0.80 at 0.55, hunter arrows scale with draw). At
- * 0.75 (da66735, a9598c1) three arrows left in the stall and the fourth at its end; arrows loosed at the Screed moving
- * (backing off or walking on) met its seal 5 times in 11 at 3e576c6..a9598c1, in the stall 23 in 23 */
-const DRAW_FIRE = 0.55;
+/** the draw a seal arrow is loosed at (combat.drawStrength; hunter arrows scale speed with draw). At 0.55 (936878f,
+ * a384337) two stall arrows in six probes met the hull 0.39-0.55 m off the seal they were solved onto; at 0.75 none did */
+const DRAW_FIRE = 0.75;
 const sealGeom = (mi, stand = null) => {
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, cb = C.combat, T = C.terrain;
   if (!m || !m._sealW) return null;
@@ -887,6 +886,9 @@ async function volley(page, K, stage, maxS = 8) {
       const wanted = (S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice()).filter((p) => (S.hits?.[p] ?? 0) + inFlight(p) < 2);
       if (!wanted.length) { await sleep(120); continue; }
       const order = wanted.filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
+      // (M3 fix wave) the string drawn while the look is solved: the nock (0.42 s) and the draw run under the solve, not
+      // after it (at a9598c1 the stall's 3 s held three arrows and the fourth left at its end)
+      if (order.length) await draw();
       let part = null, sol = null;
       for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && q.first === `weak:${p}`) { part = p; sol = q; break; } }
       if (!part) {
@@ -898,7 +900,10 @@ async function volley(page, K, stage, maxS = 8) {
       await draw();
       // (M3 fix wave) loosed at three-quarter draw (a quick shot at 6-9 m; solveShot flies the arrow at the draw it has):
       // nock 0.42 s + draw 0.65 s held the cadence to 1.2-1.3 s, two arrows and a third at the stall's edge
-      while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= DRAW_FIRE && Date.now() - td > 300)) break; }
+      while (Date.now() - td < 1600) {
+        if (sol && sol.ds >= DRAW_FIRE && sol.missM < 0.02 && Date.now() - td > 300) break;   // drawn and on it already
+        sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= DRAW_FIRE && Date.now() - td > 300)) break;
+      }
       // (M3 fix wave) never loosed across a change of its motion: at 3e576c6 chained run 3 an arrow solved on a stalled
       // Screed (missM 0.019) left as the stall ended and it began to back off at 1.2 m/s, and met its hull 0.71 m from the
       // seal; the next, loosed in the back-off, met nothing. Held drawn until the change is past, then solved again
