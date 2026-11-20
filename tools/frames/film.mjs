@@ -24,7 +24,8 @@
  *            --state-probe  each sim-time staging hashes her animator, player and melee fields at the slate's end and
  *                         after the idle (run.json frames[].sim.state), to name what one staging carried into the next
  *            --shoot-unstaged  (M3 rule 17) film a frame whose subject check fails anyway (a diagnosis: run.json still marks
- *                         it notStaged, and it is not judged); --no-subjects skips the check
+ *                         it notStaged, and it is not judged); --diagnose-unstaged refuses it (no frame) but keeps a
+ *                         picture of the refused staging as <id>-not-staged.png; --no-subjects skips the check
  *
  * THE SUBJECT CHECK (M3 rule 17, area F's EF4): a frame that declares subjects (its own `subjects`, or
  * tools/frames/subjects.mjs) is checked on the frozen frame before the shutter (tools/frames/subject-page.mjs). A subject
@@ -88,6 +89,7 @@ const CLIP_PHASES = flag('--clip-phases') ? flag('--clip-phases').split(',').map
 const REPEAT_ONLY = flag('--repeat-only') ? new Set(flag('--repeat-only').split(',').map((s) => s.trim())) : null;
 const STATE_PROBE = args.includes('--state-probe');
 const SHOOT_UNSTAGED = args.includes('--shoot-unstaged');
+const DIAGNOSE_UNSTAGED = args.includes('--diagnose-unstaged');
 const NO_SUBJECTS = args.includes('--no-subjects');
 // --wear <armour id> (M1b systems, M1.6l): after boot she wears this armory variant through her loadout (a deferred row
 // loads), and the rung it belongs to is hers (the Character page shows it worn); every frame of the run is filmed in it
@@ -248,6 +250,12 @@ try {
         const sc = staged.subjectCheck;
         log(`${f.id} subjects: ${sc.pass ? 'PASS' : 'FAIL'} in ${sc.ms ?? '?'} ms (${(sc.subjects || []).map((x) => `${x.name}: ${x.pass ? 'ok' : 'FAIL'}`).join('; ')})`);
         if (!sc.pass && !SHOOT_UNSTAGED) {
+          // --diagnose-unstaged: the refused staging is still photographed, under a name that is not a frame's
+          // (<id>-not-staged.png; the review page never reads it), so the lane can see what the lens held
+          if (DIAGNOSE_UNSTAGED) {
+            const dg = `${f.id}${rep === 1 ? '' : `-r${rep}`}-not-staged.png`;
+            try { writeFileSync(path.join(runDir, dg), await sharp(await page.screenshot({ type: 'png' })).resize(vp.width, vp.height, { fit: 'fill' }).png({ compressionLevel: 8 }).toBuffer()); staged.diagnosisFile = dg; } catch (e) { staged.diagnosisFile = `failed: ${String(e?.message || e).slice(0, 120)}`; }
+          }
           const un = await page.evaluate(unstageFrame);
           run.frames.push({ id: f.id, ...(REPEAT > 1 ? { repeat: rep } : {}), ok: false, notStaged: true, error: sc.refusal, seconds: Math.round((Date.now() - fs0) / 100) / 10, ...staged, unstageErrors: un.errors });
           log(`${f.id} NOT STAGED (refused): ${String(sc.refusal).slice(0, 240)}`);
