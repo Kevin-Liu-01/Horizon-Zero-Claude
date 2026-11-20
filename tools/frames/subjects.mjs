@@ -132,7 +132,9 @@ function M1_AND_LANE() {
     shapes: YARDS.towers.map((t) => cyl(t.id, t.x, t.z, t.r0, t.h, { rTop: t.r1 })) });
   return {
     // the M1 Frame Set (frameset.json)
-    F01: [dom('the title', '.mn-title', 300)],
+    // the title's block (.mn-title: the name, the menu and the save line) is 251 px tall in the 1600 x 900 frame (run
+    // 20261120T131025Z-a6f9b96-ef-fix1-partial); the floor of 300 was a guess at the whole screen
+    F01: [dom('the title', '.mn-title', 200)],
     F02: [hero(80), { name: 'the sun\'s disc', kind: 'sun' }, place('sounding-ring', 25, 6, 4)],
     F03: [hero(150), dom('the HUD\'s bearing strip', '.cal-strip', 20)],
     F04: [{ name: 'the Pans\' ground', kind: 'ground', region: 'pans', minShare: 0.5 }],
