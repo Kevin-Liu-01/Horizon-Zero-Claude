@@ -1305,10 +1305,19 @@ if (IS_MAIN) try {
     } catch { /* no LoAF in this Chrome */ }
     // M1.8c (engine lane, the smallest change): TECH 9.1 counts frames AFTER the Loading sheet closes; frames drawn while
     // BEGIN's or CONTINUE's sheet stands (src/ui/title.js underSheet) are counted apart as 'sheet', with their worst
+    // (M3 fix wave, HR8 "never under 25") her hp on every presented frame in play: the run's lowest and when, the lowest
+    // since the beat before (`beatMin`, reset as each beat's drive begins), frames under 25; a staged death (--death-at)
+    // is the runner's own blow and is counted apart while `staged` is set
+    const HP = (window.__hp = { n: 0, min: Infinity, minT: null, beatMin: Infinity, under25: 0, staged: false, stagedMin: Infinity, t0: performance.now() });
     const tick = (t) => {
       const C = window.__CTX__, L = document.getElementById('loading'), sheet = !!L && !L.classList.contains('hidden');
       if (sheet && C?.state === 'playing' && H.last) { H.sheet = (H.sheet || 0) + 1; H.sheetMax = Math.max(H.sheetMax || 0, t - H.last); }
       const playing = C?.state === 'playing' && !sheet;
+      const hp = playing ? C.player?.health : null;
+      if (typeof hp === 'number' && Number.isFinite(hp)) {
+        if (HP.staged) { if (hp < HP.stagedMin) HP.stagedMin = hp; }
+        else { HP.n++; if (hp < HP.min) { HP.min = hp; HP.minT = +((t - HP.t0) / 1000).toFixed(1); } if (hp < HP.beatMin) HP.beatMin = hp; if (hp < 25) HP.under25++; }
+      }
       if (H.last && playing && H.was) {
         const d = t - H.last;
         if (H.pause || H.skip) { H.tool++; if (d > 33.4) H.toolOver33++; if (!H.pause) H.skip = false; }
@@ -1396,7 +1405,7 @@ if (IS_MAIN) try {
         // she stands up at the Brazier of her last rest at full health (format.js deathRecord), on the stage she died on
         hpFull: post.hp >= post.maxHp - 0.5,
         pass: clicked && post.state === 'playing' && post.idx === pre.idx && post.fromRest != null && post.fromRest < 3 && satchelKept && gourdKept && post.hp >= post.maxHp - 0.5 };
-      if (row.staged) report.rows['death-staged'].played = true;
+      if (row.staged) { report.rows['death-staged'].played = true; await page.evaluate(() => { if (window.__hp) window.__hp.staged = false; }).catch(() => {}); }
       (report.rows['death-rule'] ||= []).push(row);
       log(`death ${deaths} at ${s.stage}: stood up ${post.fromRest} m from ${post.rest}, stage ${pre.stage} -> ${post.stage}`);
       return row;
@@ -1405,6 +1414,7 @@ if (IS_MAIN) try {
   // the respawn are the game's; the cause is a Plumb (the nearest live one, else the kind's own name), sent as an
   // Instrument's blow is ('player-damage' with from), so the card and the HUD name it as they name a real death
   const stageDeath = (at) => page.evaluate((at) => { const C = window.__CTX__, P = C.player, p = P.position;
+    if (window.__hp) window.__hp.staged = true;
     let from = null, bd = Infinity;
     for (const m of (C.machines?.list || [])) { if (m && m.kind === 'plumb' && m.alive !== false) { const d = Math.hypot(m.position.x - p.x, m.position.z - p.z); if (d < bd) { bd = d; from = m; } } }
     if (!from) from = { kind: 'plumb', displayName: C.machines?.instrumentKinds?.plumb?.displayName ?? 'Plumb' };
@@ -1436,9 +1446,11 @@ if (IS_MAIN) try {
     }
     const b0 = Date.now();
     log(`beat ${s.stage} (${s.type})`);
+    await page.evaluate(() => { if (window.__hp) window.__hp.beatMin = Infinity; }).catch(() => {});
     const r = await beat(page, K, s);
     const after = await page.evaluate(probe);
-    const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note, hp: after.hp };
+    const hpMin = await page.evaluate(() => (window.__hp && Number.isFinite(window.__hp.beatMin) ? Math.round(window.__hp.beatMin) : null)).catch(() => null);
+    const row = { stage: s.stage, type: s.type, ok: after.stage !== s.stage, seconds: +((Date.now() - b0) / 1000).toFixed(1), ...r, note: s.note, hp: after.hp, hpMin };
     // (people M1.3h, the smallest change: which of Brea's slice verbs have started so far, and the last refusal of each)
     row.verbs = await page.evaluate(() => { const I = window.__CTX__?.player?.animator?.verbInfo?.(); return I ? { counts: { ...I.counts }, refused: { ...I.refused }, last: I.name } : null; }).catch(() => null);
     if (s.stage === 'cross' && lampsFight) row.lamps = lampsFight;
@@ -1542,6 +1554,10 @@ if (IS_MAIN) try {
   // game, CONTINUE on the title: the same stage, satchel, place and hour
   // (M2 wave 4) the record the run leaves, whole: the first-hour run's leg 2 starts from it with --chain
   report.finalRecord = await page.evaluate(() => { const S = window.__CTX__.progression.saves.store, n = S.continueSlot(); return n ? S.latest(n) : null; }).catch(() => null);
+  // (M3 fix wave) HR8 between the beats, and the late audio bank's log from real play (GameAudio.lateAudit), at the run's end
+  report.hp = await page.evaluate(() => { const P = window.__hp; return P ? { frames: P.n, min: Number.isFinite(P.min) ? Math.round(P.min) : null, minT: P.minT, under25Frames: P.under25, stagedDeathMin: Number.isFinite(P.stagedMin) ? Math.round(P.stagedMin) : null } : null; }).catch(() => null);
+  report.lateAudit = await page.evaluate(() => window.__CTX__.audio?.lateAudit?.() ?? null).catch((e) => ({ error: String(e).slice(0, 200) }));
+  log(`lowest hp in play ${report.hp?.min ?? '?'} (${report.hp?.under25Frames ?? '?'} frames under 25); late bank ${report.lateAudit ? `${report.lateAudit.state}, ${report.lateAudit.asked} asked, ${(report.lateAudit.missed || []).length} missed` : 'not read'}`);
   report.rows['save-continue'] = await reloadContinue(page, 'c');
   await bctx.close();
 } catch (e) {

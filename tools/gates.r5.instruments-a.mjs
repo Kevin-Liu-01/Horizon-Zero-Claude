@@ -1006,6 +1006,8 @@ const A_MOVING_COVER = `(async () => {
   const pl = __M.spawn('plumb', spot.x + rx * 25, spot.z + rz * 25);
   if (!pl) return { pass: null, detail: 'SKIP: could not stand a Plumb' };
   park(pl, Math.atan2(-rx, -rz));
+  // (M3 fix wave, area E) the Plumb's own stand, re-taken before every walk (below)
+  const plStand = pl.position.clone();
   freezeAll([...ms, pl]);
   p.setCrouch?.(true);
   const leeEvents = [];
@@ -1014,8 +1016,21 @@ const A_MOVING_COVER = `(async () => {
   const SIGHT = await import('/src/instruments/lib/sight.js');
   const walks = [];
   const one = async (along, off, label) => {
+    // (M3 fix wave, area E) EVERY WALK STARTS THE SAME: the Plumb back on its stand, calm, its search and its sight's
+    // build-up cleared, facing the middle hull. At ddc31c1 one open walk in the screencast session had 54 ticks and 0 of
+    // them saw her, 0 m of drift: the first open walk had turned it suspicious and it had walked 9 m toward her and turned
+    // (plumbDist 25 -> 15.9 m), while the walks only zeroed its suspicion; and its heading stayed broadside to where the
+    // file had been, while by the open walks (24-48 s of sim) the file had walked on 25-50 m: her point on the sightline
+    // through the hull sat 50-60 deg off its heading, inside its 50 deg cone only when its calm scan (+-25 deg, a 6.5 s
+    // period) swung her way, and past its 12 m peripheral arc. Seen or not then hung on the scan's phase and how far the
+    // Plumb had walked (the run before it: 3 ticks seen at 15.5 m). Now it faces the hull at each walk's start: the IN3
+    // case the Node twin grades (tools/instruments/moving-cover.mjs: the Plumb faces her, its worst case)
+    pl.position.set(plStand.x, hy(plStand.x, plStand.z), plStand.z);
+    park(pl, Math.atan2(mid.position.x - plStand.x, mid.position.z - plStand.z));
     pl.suspicion = 0; if (pl.sc) pl.sc.suspicion = 0; pl._unseenT = 99; if (pl.state !== 'patrol') pl.setState('patrol');
     const per = pl.ai?.perception;
+    if (per) { per.visibleT = 0; per.lastSeenAt = -999; per.lastStimulus = null; per._losValid = false; }
+    const startPose = { plumbHeading: +pl.heading.toFixed(3), toHull: +Math.atan2(mid.position.x - pl.position.x, mid.position.z - pl.position.z).toFixed(3), plumbMoved: +Math.hypot(pl.position.x - plStand.x, pl.position.z - plStand.z).toFixed(3) };
     let ticks = 0, seen = 0, firstSeen = null, maxSus = 0, drift = 0, seenAt = null;
     const t0 = simNow();
     let lastAcc = per ? per.acc : 0, lastSet = null;
@@ -1045,8 +1060,11 @@ const A_MOVING_COVER = `(async () => {
       if (per) lastAcc = per.acc;
       maxSus = Math.max(maxSus, pl.sc ? pl.sc.suspicion : pl.suspicion || 0);
     });
+    // where she sat against its heading at the walk's end (deg; its cone is +-50 about a scan of +-25)
+    const offHeading = Math.atan2(p.position.x - pl.position.x, p.position.z - pl.position.z) - pl.heading;
     walks.push({ label, along, off, ticks, seen, firstSeen, maxSuspicion: +maxSus.toFixed(3), plumbDist: +Math.hypot(pl.position.x - p.position.x, pl.position.z - p.position.z).toFixed(1),
-      driftM: +drift.toFixed(3), seenAt, tillers: ms.map((q) => q.state) });
+      driftM: +drift.toFixed(3), seenAt, tillers: ms.map((q) => q.state), start: startPose, plumbWalkedM: +Math.hypot(pl.position.x - plStand.x, pl.position.z - plStand.z).toFixed(2),
+      offHeadingDeg: +(Math.atan2(Math.sin(offHeading), Math.cos(offHeading)) * 180 / Math.PI).toFixed(1), plumbState: pl.state });
   };
   for (const [along, s] of [[-0.6, 0.6], [0, 0.8], [0.6, 1.0], [0.3, 0.7]]) await one(along, s, 'lee');
   for (const along of [-0.6, 0, 0.6, 0.3]) await one(along, -3, 'open');
