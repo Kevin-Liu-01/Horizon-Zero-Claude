@@ -43,8 +43,14 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 const SETTINGS_KEY = 'cal.audio.v5';
 
-/** Seconds of play after control before the late bank (the first hour's) is fetched (GameAudio._startLate). */
-export const LATE_AFTER_S = 0.3;
+/**
+ * Frames of play after control before the late bank (the first hour's) is fetched (GameAudio._startLate): past the
+ * frame that gives control and the next (a Continue has moved her by then), and early enough that a Continue inside
+ * the Holds has its place's beds decoded before its zones bring them up (at c997201 a 0.3 s wait in the clamped frame
+ * clock started it 0.9-1.0 s after control and the Holds' and Ninewalls' beds were asked for 0.2-0.35 s before they
+ * landed: tools/perf/boot-transfer.mjs).
+ */
+export const LATE_AFTER_FRAMES = 3;
 
 /**
  * Is `v` usable as a WeakMap key? The per-machine cue throttles are WeakMaps so
@@ -1533,7 +1539,7 @@ export class GameAudio {
 
   /**
    * Fetch and decode the late bank (the first hour's Milestone 2 rows), the place she is in first and its beds before
-   * its one-shots. Runs once, LATE_AFTER_S of play after New Game or Continue gave control: a Continue has moved her by
+   * its one-shots. Runs once, LATE_AFTER_FRAMES frames of play after New Game or Continue gave control: a Continue has moved her by
    * then, and the loading sheet's first frames are behind her.
    */
   _startLate() {
@@ -3303,11 +3309,8 @@ export class GameAudio {
     const rdt = clamp((nowMs - this._lastRealMs) / 1000, 0, 0.1);
     this._lastRealMs = nowMs;
 
-    // the late bank: LATE_AFTER_S of play after control, once the boot bank is in
-    if (!this.bankLate && playing && this.bank.loaded) {
-      this._lateWait += rdt;
-      if (this._lateWait >= LATE_AFTER_S) this._startLate();
-    }
+    // the late bank: LATE_AFTER_FRAMES frames of play after control, once the boot bank is in
+    if (!this.bankLate && playing && this.bank.loaded && ++this._lateWait >= LATE_AFTER_FRAMES) this._startLate();
 
     this._updateSpatial(rdt, nowMs, playing);
 
