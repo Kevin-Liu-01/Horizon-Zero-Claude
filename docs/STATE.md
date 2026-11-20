@@ -2587,3 +2587,176 @@ comparison is with the polish-2 check film at 2944784.
 6. Tier 0 and the boot row were not re-run at the final commit 0fac189 (only a live-row tool changed after f0e9c14).
 7. The boot row's stuck fourth page (one browser, four cases) is worked around, not explained.
 8. Still open from polish 2: no kept row covers the Sickle's hulls and sockets.
+
+## The M2 fix wave 2 and exit run 3 (Nov 20 2026)
+
+The fix wave 2 had three lanes in one tree on `r5/int`: area D with hero-anim (the kit), area E (the hour) and the
+engine lane (C5, the first hour's hitches). Polish runs 2 and 3 worked beside it. No commit was pushed.
+
+- **Area D + hero-anim.** F08, F11 and F13 are staged on simulation time, as F14 is (5791da8; ruling 1: in idle the
+  lance layer stops before the head code, and wall-clock idle breaks turned her head between films). The stow's let-go
+  is paced (4e451a2). The elbow-swivel bound stands aside on a step where the lance's arm-hull guard moved the arm
+  (84c381b, A106). The bow unstow's W7 band is 0.30-0.50 s under ruling 2 (08e02d8). The guard's shaft is back at its
+  old angle (6e77e60).
+- **Area E.** The first hour's runner drives the Screed fight and waits out the herd (d674c92 to 2f3150b). Game fixes:
+  "The Scar"'s `barbed` closes on Barbed arrows she already carries (72b3f5e), and the Scar's herd chases her no
+  further than 30 m past its own line (37ca861). The Transit card stays up at the read and the DAWN row reads dawn's
+  weather (d674c92). A Node row covers the fight from inside the walls (`screed-corridor.test.mjs`).
+- **Engine (C5).** The hitch preload names what held each long frame (`tools/perf/hour-hitch-preload.mjs`). Fixes: a
+  skinned mesh's culling sphere from its geometry, dynamic resolution ignoring a single spike and settling after a
+  load, long walk-grid searches with landmarks, resumed and sliced grid rebuilds, the Tillers standing up 0.2 s apart,
+  hull extraction once, a deferred warm-up hull build, people's fade materials cloned without their textures, walls
+  rebuilt only when they change and one wall at a time, the mouth's cavity program warmed (ba48e61 to d2136d6). The
+  skinned shadow-caster warm-up (0e2d2a7) did not work.
+
+Then the exit run measured `r5/int` at **ddc31c1** (its head when the run started) from one clean detached worktree
+(0 tracked files changed) on port 5270, one Chrome at a time. A polish run and another workflow shared the Chrome slot.
+The run made no commit. The owner's page is private.
+
+**Verdict: Milestone 2 does not exit. One condition fails (the hitches), and the frames wait for the owner.**
+The first hour now plays 28 of 28 in all three chained runs.
+
+| # | exit condition | result at ddc31c1 |
+|---|---|---|
+| 1 | `A-first-hour` plays its 28 beats in order, input-driven, no death, three runs | **PASS**: 28/28 in all three chained runs |
+| 2 | the M2 frames accepted; the accepted frames not regressed | awaiting the owner; no regression; F08, F11, F13 closer (ruling 1) |
+| 3 | resident textures <= 175 MB with two peoples and two biomes | PASS: 137.33 MB (the ledger) |
+| 4 | `public/` <= 165 MB | PASS: 59.38 MB (decimal MB) |
+| 5 | the frame bar in the fight frame | PASS in the headless form (F39: GPU 11.3 ms, 1795 frames in 30 s, 0 over 33 ms) |
+| C5 | hitches: 0 over 50 ms, at most 3 over 33 ms per 10 minutes | **FAIL**: run 1 8 and 2 (66.7 ms); run 2 2 and 1 (58.2 ms) |
+
+**The provisional rulings, where they decide a line:**
+- **Ruling 1** (F08, F11, F13 back to their anchors): applied by 5791da8. In the film the three are closer: her head is
+  level and frontal in F08 and F11, and a level profile in F13. A104 passes (shaft 0.151 m). Their pixel share
+  against the anchors rose (F11 14.0 -> 30.7 %, F13 24.4 -> 35.8 %) from framing and the wrap tail, not the head.
+- **Ruling 2** (W3 before W7, at most +100 ms): used once. The bow unstow's band went from 0.30-0.40 to 0.30-0.50 s,
+  and it measures 0.483 s. At a walk (0.533 s) and a jog (0.600 s) it is still over. The lance draw (0.367 s) and stows
+  (0.35 and 0.533 s) are inside their W7 bands, but W3 fails there: a wrist moves 0.173, 0.224 and 0.179 m in a step
+  (bar 0.08). No band was widened for the lance.
+- **Ruling 3** (EN4's sun bar is the built sky's noon peak, >= 45 deg): 47.6-49.8 deg in the window, PASS.
+
+**Tier 0: PASS, 10 of 10.**
+- `vite build` OK, 4.32 MB of code. Name lint 0 hits in 1002 files.
+- Licences: 306 files against 34 rows. Asset budgets: 54 GLBs, 0 over a cap.
+- Import graph 242 modules, 0 broken. 292 Node tests pass in 61 files. Boot 4.2 s, 0 errors.
+- Texture ledger 137.33 MB of 175. Shipped ledger: first load 55.89 MB of 60 (boot set 51.36 MB + code 4.53 MB),
+  total 63.91 MB, `public/` 59.38 MB.
+
+**The frame bar (TECH §9.1)** at 1600 x 900 CSS px, DPR 1.25, quality `high`, headless Chrome on ANGLE Metal.
+Tool: `tools/perf/exit-bar.mjs`. The 1-minute load average was 2.6-3.6.
+
+| line | F02 | F25 | F33 | F39 | F39-people | bar | result |
+|---|---|---|---|---|---|---|---|
+| median GPU, back-to-back readback (7 x 60 frames) | 9.9 | 13.0 | 11.0 | 11.3 | 13.3 | <= 14 ms | PASS |
+| frames presented in 30 s; over 33 ms | 1798; 0 | 1797; 0 | 1798; 0 | 1795; 0 | 1799; 0 | >= 1782; 0 | PASS |
+| p95 presented interval (headless) | 17.5 | 17.3 | 17.6 | 17.6 | 17.3 | <= 16.7 ms headed | not measurable headless (an empty page reads 17.9) |
+| main-thread JS per frame, p95 | 4.0 | 4.2 | 4.0 | 3.9 | 3.9 | <= 8.0 ms | PASS |
+| draws; triangles | 102; 1.62 M | 143; 1.47 M | 118; 1.22 M | 117; 1.08 M | 131; 1.06 M | <= 350; <= 6.5 M | PASS |
+
+- **IN11 (F39-people, the five people in its lens): PASS with 0.7 ms to spare** (13.3 ms against 14).
+- **Load (the built game):** title interactive 4.44 s cold, 4.29 and 4.21 s warm (bar 5 s). New Game to control
+  0.13 s cold, 0.10 and 0.11 s warm. 51.32 MB in 317 requests, the late audio bank included (bar 60 MB).
+
+**The first hour** (`first-hour.mjs --chain`, three runs; the third with a screencast):
+
+| leg | run 1 | run 2 | run 3 (screencast) |
+|---|---|---|---|
+| 1 | 14/14, 127 s, 0 over 33 | 14/14, 103 s, 0 | 14/14, 137 s, 0 |
+| 2 | 8/8, 444 s, 5 over 33 (max 41.7) | 8/8, 284 s, 1 (33.4) | 8/8, 336 s, 2 (41.8) |
+| 3 | 6/6, 138 s, 3 over 33, **2 over 50** (66.7) | 6/6, 139 s, 1 over 33, **1 over 50** (58.2) | 6/6, 140 s, 1 (42.3) |
+| all | **28/28**, about 11.8 min of play | **28/28**, about 8.8 min | **28/28**, about 10.2 min |
+
+- No death in any run. The lowest hp at a beat: 44, 50 and 54. Hp between beats is not sampled.
+- `plumb-2` toppled with 2, 3 and 5 arrows.
+- **The Screed fight ended on its fail-soft branch in all three runs.** It stalled on wall-1 and wall-2, then cut
+  wall-1, wall-2 and wall-3, and both seals came off. Every beat passes. The clean branch (both seals off in the stall,
+  one wall cut) was not played here.
+- The re-survey closed in every run: T1 249.3 (0.005 deg off), T2 76.3 (0.235), the Sounding Ring 263.8 (0.158) in
+  run 1.
+- The rest dialog: REST UNTIL NOON is pre-selected with CALIMA BY NOON. DAWN, GOLDEN, DUSK and NIGHT read TRADE.
+- **The Transit card was on screen at the read** in all three runs (12:19 game time).
+
+**Hitches in the first hour: FAIL.**
+- Run 1 (about 11.8 min): 8 frames over 33 ms and 2 over 50 ms (max 66.7). Run 2 (about 8.8 min): 2 and 1 (58.2).
+  Run 3 (screencast, not graded): 3 and 0 (42.3).
+- The walk into the Holds: 1, 1 and 0 frames over 33 ms, 0 over 50. **The 75 ms frame of exit run 2 is gone.**
+- Every frame over 50 ms falls in leg 3.
+- One run of legs 2 and 3 from their fixtures with the hitch preload (not graded: 5 over 33, 0 over 50, max 42.8)
+  named the long frames. Each is a shader program linked on its first draw:
+  - Benchmark 1 at the start of the re-survey: 9 programs in one frame (41.4 ms);
+  - the Kiln Yards wellheads' material (a 23.9 ms link);
+  - the hand prop at the fade (22.9 ms);
+  - the Transit's far form when calima arrives after the rest (a 35.4 ms link in a 42.8 ms frame);
+  - a depth program on the walk into the Holds (22.9 ms).
+  - One more frame, at Oro, spent 18.2 ms in one object's update.
+
+**Kept-stack rows** (three sessions and A9 alone): 80 rows. **72 action rows pass, 0 fail, 0 pending.**
+- A9-perf-budget was pending in its session (the box was not quiet). Run alone at load 2.7 it passed: 59.9 fps median,
+  133 draws.
+- The 8 visual rows show the same poses as at 02f7125. V3-crouch-stalk's stretched violet panel is not in this film.
+
+**The slice:** 14 of 14, stopped at the reward.
+- Cross 45.9 s, lowest hp 96. Topple 14.0 s. End hp 85.
+- 1 frame over 33 ms (41.7 ms, in the first seconds after New Game) and 0 over 50 ms in 82.7 s.
+- Save rows and the site clock: PASS. Leg 1 of each first-hour run was also 14/14.
+
+**Lane rows (not kept):**
+- A-herd-ripple PASS: flashes nearest-first in 0.55 s; gaps 3.95 and 4.0 m at 4 s.
+- A-moving-cover: **FAIL in the screencast session** (open walks seen 3 of 4; the failed walk had 0 ticks of sight and
+  0 m of drift). Run alone it passed: lee 0 of 4, open 4 of 4. Intermittent.
+- A-screed-fight PASS: one charge, 0 deg of deviation, a 3.008 s stall on wall-1, both seals off, 0 walls cut.
+- A102, A104 (shaft 0.151 m), A105, **A106** and A-stow-clearance PASS.
+- **A100 FAIL, as before.** In the dodge the stowed lance tilts 34.8-87.6 deg, its midpoint is 0.303 m from the
+  upper back, and the blade is -0.47 to 0.81 m over the shoulder.
+- **A101 FAIL.** The guard tip reads 0.582 m (canon 0.35-0.55). The left palm now passes (0.039-0.045 m).
+- **A103 FAIL.** The blade stops 0.507 m short of the hull. On a heavy swing uphill the blade goes 0.02 m into the
+  ground.
+
+**Node benches at ddc31c1:**
+- windwall-bench 8/8, gaff-bench 19/19, pot-bench 7/7. A107: 18 cycles, 0 fail.
+- The handling bench: bow and lance 93 failing clauses in 24 of 26 cases. The gaff in the loop: 15 in 6 of 6.
+- moving-cover: lee 0/10 seen, open 10/10. herd-bearing: beside 0/10, on it 10/10, held within 0 deg over 120 m.
+- calima-rows: EN3 visibility 154.7-168.7 m PASS. EN4 47.6-49.8 deg PASS (ruling 3). EN5 and EN1 PASS.
+- People cloth: worst person 0.0137 ms (bar 0.02). W2 writing: every row passes.
+- `tools/gates/systems` 112/112. Audio and settlements tests 31/31. kit-m2 11/11.
+
+**Frames** (the Frame Set and the lane frames, 64 of 64 filmed, 0 console errors), against the 02f7125 film:
+- **Accepted frames:** 13 of 16 are the same within wind, grass and cloth. **F08, F11 and F13 are closer** (ruling 1).
+  No accepted frame regressed.
+- The M2 frames match the polish runs' films:
+  - F36: five people at work in darker wool.
+  - F42: the Sickle hooked at its hub.
+  - F44: along the Scar's line, the Windwall planted, a Peg on her line. The Alidade is hidden behind her head.
+  - F45: the calima disc in frame.
+  - F45-transit: the far form in the dust.
+  - F39-people: the five sheltering, from above.
+- **F39-look still fails its fight:** the Screed is 19 px and a Sickle 9 px. The near house and well bases hang over
+  the slope.
+- **Weapons and cloth clips** (sim time): 16 handling clips and 6 cloth clips filmed, 0 console errors. In the frames
+  looked at, no hand or arm goes behind her head.
+- One thing seen in play: after the slice's reward she wears a wide straw hat. In the hour's chase camera it covers
+  much of her head and upper back.
+
+**Chrome used:** about 125 minutes over 19 launches, one at a time, between 07:54 and 10:48 UTC; waits for the shared
+slot are not counted. The three chained first-hour runs took 15.5-16.1 minutes each.
+
+---
+
+**What the next wave needs:**
+1. **The first-use shader links in leg 3 (C5, the only failing exit line).** Warm the programs used at Benchmark 1
+   when the re-survey starts (9 in one frame), the Kiln Yards wellheads' material, the hand prop at the fade, and the
+   Transit's far form (its material differs from the hulls only by its program key). Also warm the depth program on
+   the walk into the Holds, where the skinned shadow-caster warm-up did not take. Then re-measure: 0 over 50 ms and
+   at most 3 over 33 ms per 10 minutes, in three chained runs.
+2. **The Screed's clean branch.** All three chained runs ended fail-soft (three walls cut). It passes the beats, but
+   the runner's arrows aimed at the far seal hit the near one. Either the runner aims from a stand where the far seal
+   is clear, or the owner rules that fail-soft is the expected path for a scripted run.
+3. **The owner's word on the frames:** F08, F11 and F13 under ruling 1, the M2 frames, and F39-look (no lens shows
+   both the people and the fight).
+4. **The lance's handling:** A100 (the dodge's holster), A101 (the guard tip, read on the first ready frame while the
+   shaft still settles), A103 (the blade short of the hull). The lance draw and stows still fail W3 inside any band
+   ruling 2 allows. The bow unstow is over its widened band at a walk and a jog.
+5. **A-moving-cover** failed one open walk under a screencast (0 ticks of sight, 0 m of drift). It is intermittent
+   and needs a look at why a walk can stand still.
+6. **Hp between beats is not sampled.** HR8 (never under 25) is read only at the beats.
+7. **The frame bar's literal p95 interval** still needs a headed browser on the display.
