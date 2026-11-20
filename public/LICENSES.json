@@ -330,6 +330,23 @@
       "attribution": null
     },
     {
+      "id": "instrument-m3-art",
+      "paths": [
+        "public/models/instruments/davit.glb",
+        "public/models/instruments/kiln.glb",
+        "public/models/instruments/sonde.glb"
+      ],
+      "title": "The Kiln, the Davit and the Sonde: surfaces on their accepted grey forms (M3 wave 3, generated from src/instruments/kinds/<kind>/form.js)",
+      "author": "CALIMA project",
+      "source_url": "tools/build/instruments/gen-m3-art.mjs",
+      "licence": "project-original",
+      "licence_text": null,
+      "archive_sha256": null,
+      "retrieved": null,
+      "modified": null,
+      "attribution": null
+    },
+    {
       "id": "instrument-gauge",
       "paths": [
         "public/models/instruments/gauge.glb"
