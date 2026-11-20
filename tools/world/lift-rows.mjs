@@ -65,14 +65,17 @@ function glide(from, goal, launchY, stopR = 17) {
 /* ======================================================================== KF0 (a): T1 to the Sounding Ring */
 const t1 = TRIG.find((t) => t.id === 'T1'), ring = siteById('sounding-ring');
 const t1g = H(t1.e, t1.n), t1top = t1g + TRIG_TOP;
-const fall = 0.5 * 9.81 * KITE.open.airborne ** 2;     // she steps off the top: the earliest the kite may open
-const openY = t1top - fall;
+// (area B, M3-B fix round 1, the smallest change here: the one launch height both lanes read, area B's
+//  flight.js openHeightOffTop: a jump off the pillar, Space at 0.35 s, at the game's 22 m/s^2. A step off a 4 m pillar
+//  is 2.65 m over its foot at 0.35 s, under the 3 m clear, so the open is refused; the old line here read 9.81 m/s^2)
+const openY = FL?.openHeightOffTop ? FL.openHeightOffTop(t1top) : t1top - 0.5 * 9.81 * KITE.open.airborne ** 2;
+const fall = t1top - openY;
 const ringTop = H(ring.e, ring.n);
 const d = Math.hypot(ring.e - t1.e, ring.n - t1.n), brg = (Math.atan2(ring.e - t1.e, ring.n - t1.n) / D2R + 360) % 360;
 const gv = groundVel(brg);
 const need = (d - 17) / gv.speed * KITE.sink;          // still-air sink over the track to the Ring's near rim (17 m: half its 34 m)
 say('KF0 (a)  the test flight: T1 as built to the Sounding Ring, the trade from 045 at 5.5 m/s');
-say(`  T1 (${t1.e}, ${t1.n}): ground ${r2(t1g)} m, top ${r2(t1top)} m (TRIG_TOP ${TRIG_TOP}); the kite opens at the earliest ${KITE.open.airborne} s off the top, ${r2(fall)} m down: ${r2(openY)} m, ${r2(openY - t1g)} m over the pillar's foot (bar >= ${KITE.open.clear}: ${openY - t1g >= KITE.open.clear ? 'clear' : 'NOT clear'})`);
+say(`  T1 (${t1.e}, ${t1.n}): ground ${r2(t1g)} m, top ${r2(t1top)} m (TRIG_TOP ${TRIG_TOP}); the kite opens at the earliest ${KITE.open.airborne} s ${fall < 0 ? `after a jump off the top, ${r2(-fall)} m over it` : `off the top, ${r2(fall)} m down`}: ${r2(openY)} m, ${r2(openY - t1g)} m over the pillar's foot (bar >= ${KITE.open.clear}: ${openY - t1g >= KITE.open.clear ? 'clear' : 'NOT clear'})`);
 say(`  the Ring (${ring.e}, ${ring.n}) on its rise at ${r2(ringTop)} m: ${r1(d)} m on bearing ${r1(brg)}; over the ground ${r2(gv.speed)} m/s, so ${r1((d - 17) / gv.speed)} s and ${r1(need)} m of sink to its near rim: the flight needs ${r1(ringTop + need)} m at the open and has ${r2(openY)} m`);
 /** Area B's law, stepped: open at (from) on the goal's bearing, a hand on the bar holding the ground track on the goal. */
 function flyLaw(from, goal) {
