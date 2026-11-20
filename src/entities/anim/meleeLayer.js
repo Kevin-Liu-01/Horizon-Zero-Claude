@@ -301,10 +301,8 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
 /* (M1a weapons round 2, W4's knee clause: the haft now lies on the palm, 0.024 m off the old line, which took the guard's
  *  blade 0.02 m lower, under her knee as her stance settles; the guard's shaft is lifted 2.4 deg: tip 0.43 -> 0.48 m,
  *  inside R2's 0.35-0.55) */
-/* (M2 fix wave 2, A101's ready tip: the page reads the guard on its first ready frames, while the draw's settle still has
- *  the tip 0.552-0.584 m up (canon M7 0.35-0.55; settled 0.48 in Node); the guard's shaft 1 deg lower) */
 const READY = {
-  hand: [-0.24, 1.21, 0.05], shaft: [0.367, -0.436, 0.821],
+  hand: [-0.24, 1.21, 0.05], shaft: [0.37, -0.42, 0.828],
   lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.50, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
 };
 /**
