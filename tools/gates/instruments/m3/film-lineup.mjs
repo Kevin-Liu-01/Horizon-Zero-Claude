@@ -46,8 +46,8 @@ async function takeSlot() {
       try { mkdirSync(SLOT); slotHeld = true; } catch { /* held */ }
       if (slotHeld) { writeFileSync(path.join(SLOT, 'owner.txt'), `int m3-instruments ${process.pid} ${utc()}\n`); log(`slot taken (memory ${m.free} % free, level ${m.level})`); return true; }
     }
-    if (!(said % 6)) { let owner = ''; try { owner = readFileSync(path.join(SLOT, 'owner.txt'), 'utf8').trim(); } catch { /* */ } log(`waiting: memory ${m.free} % free, level ${m.level}${owner ? `, slot held by "${owner}"` : ''}`); }
-    await sleep(10000);
+    if (!(said % 12)) { let owner = ''; try { owner = readFileSync(path.join(SLOT, 'owner.txt'), 'utf8').trim(); } catch { /* */ } log(`waiting: memory ${m.free} % free, level ${m.level}${owner ? `, slot held by "${owner}"` : ''}`); }
+    await sleep(5000);   // the slot protocol's 5 s (a 10 s poll lost the slot to the 5 s pollers for 50 min at c66bf8e)
   }
   return false;
 }
