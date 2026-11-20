@@ -426,7 +426,10 @@ function record(t) {
   // the lance's three sockets on the visible haft (char)
   { const len = SOCKETS.lance.tip[1], d = [r.lanceTip[0] - r.lanceButt[0], r.lanceTip[1] - r.lanceButt[1], r.lanceTip[2] - r.lanceButt[2]];
     const pt = (y) => [r.lanceButt[0] + d[0] * y / len, r.lanceButt[1] + d[1] * y / len, r.lanceButt[2] + d[2] * y / len];
-    r.lanceSockButt = pt(SOCKETS.lance.butt.p[1]); r.lanceSockGrip = pt(SOCKETS.lance.grip.p[1]); r.lanceSockFore = pt(SOCKETS.lance.fore.p[1]); }
+    /* (M2 fix wave 4: the left take's and the right grip's sockets where the handling plans the palm this step,
+     *  meleeLayer `lanceHoldPlan`: the haft slides through her fists on the draw and the stow; the guard's fore is fixed) */
+    const hp = NEW && typeof an.melee?.lanceHoldPlan === 'function' ? an.melee.lanceHoldPlan() : {};
+    r.lanceSockButt = pt(hp.left ?? SOCKETS.lance.butt.p[1]); r.lanceSockGrip = pt(hp.right ?? SOCKETS.lance.grip.p[1]); r.lanceSockFore = pt(SOCKETS.lance.fore.p[1]); }
   // W8: the draw hand to the quiver (char), the arrow on the string (combat's nock), loosable (combat's draw and the rig)
   { const q = an._quivT || an.T?.quiverHip; r.handToQuiver = q ? Math.hypot(r.palmR[0] - q.x, r.palmR[1] - q.y, r.palmR[2] - q.z) : null; }
   r.aiming = !!R.player.aiming; r.nockLanded = !!emu.nockLanded; r.loosable = !!emu.loosable; r.drawS = +(C.drawStrength || 0).toFixed(4);
