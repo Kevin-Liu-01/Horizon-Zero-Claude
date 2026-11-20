@@ -85,6 +85,9 @@ const hs = M.HORNITOS.map((h) => ({ id: h.id, g: r1(G(h.e, h.n)), slope: r1(slop
 say(`  the hornito field: plan (${hf.e}, ${hf.n}) stands on Rust Cone's south foot at ${r1(slopeDeg(hf.e, hf.n))} deg (h ${r1(G(hf.e, hf.n))}); the seven hornitos stand on the lava flat 9-27 m south of it, ground ${Math.min(...hs.map((q) => q.g))}-${Math.max(...hs.map((q) => q.g))} m, slopes ${Math.min(...hs.map((q) => q.slope))}-${Math.max(...hs.map((q) => q.slope))} deg`);
 const b6 = M.BENCH_B6;
 say(`  B6: plan (${b6.plan.e}, ${b6.plan.n}) at ${r1(slopeDeg(b6.plan.e, b6.plan.n))} deg; snapped to (${b6.e}, ${b6.n}), ${r2(Math.hypot(b6.e - b6.plan.e, b6.n - b6.plan.n))} m, ${r1(slopeDeg(b6.e, b6.n))} deg, h ${r1(G(b6.e, b6.n))}: RULING (the nearest ground no steeper than 20 deg over 4 m)`);
+// B6's post stands clear of every hornito's foot (fix round 1: at 3283f5b it stood 1.16 m inside hornito-1's)
+const b6Clear = M.HORNITOS.map((h) => ({ id: h.id, clear: r2(Math.hypot(h.e - b6.e, h.n - b6.n) - h.r) })).sort((a, b) => a.clear - b.clear);
+say(`  B6's post clear of the hornitos' feet: nearest ${b6Clear[0].id} ${b6Clear[0].clear} m outside its foot (bar >= 1 m): ${verdict(b6Clear[0].clear >= 1)}`);
 // the Scar's upper end against the apron
 const sa = { e: SCAR.a.x, n: -SCAR.a.z };
 let apronNear = Infinity;
@@ -111,7 +114,7 @@ for (const r of kilnRects) {
 const gaps = kilnRects.slice(1).map((r, i) => r2(r.u0 - kilnRects[i].u1));
 say(`  four wellheads on the apron, 10 m apart; a ${K.KILN_FOOT.len} x ${K.KILN_FOOT.wid} m Kiln's room uphill of each (hose ${K.WELLHEADS[0].kilnStand.hose} m): rooms inside the apron by >= 0.5 m, ${gaps.join(', ')} m apart, clear of every head and rack post: ${verdict(room)}${roomNotes.length ? ` (${roomNotes.join('; ')})` : ''}`);
 rec.rows.MP0 = { ok: true, siteH: r2(G(ky.e, ky.n)), apron: { ...K.APRON, drawnMin: r2(apronMin), drawnMax: r2(apronMax) }, b5: { e: b5.e, n: b5.n, snap: r2(Math.hypot(b5.e - b5.plan.e, b5.n - b5.plan.n)) },
-  rustCone: { top: r2(top), overSaddle: r1(top - saddle), overLowestFoot: r1(top - ringMin) }, hornitos: hs, b6: { e: b6.e, n: b6.n, snap: r2(Math.hypot(b6.e - b6.plan.e, b6.n - b6.plan.n)) },
+  rustCone: { top: r2(top), overSaddle: r1(top - saddle), overLowestFoot: r1(top - ringMin) }, hornitos: hs, b6: { e: b6.e, n: b6.n, snap: r2(Math.hypot(b6.e - b6.plan.e, b6.n - b6.plan.n)), clearOfHornitos: b6Clear[0] },
   scarHead: { h: r1(G(sa.e, sa.n)), toApron: r1(apronNear), below: r1(K.APRON.h - G(sa.e, sa.n)) }, tube: { crustMin: r1(Math.min(...crust)), crustMax: r1(Math.max(...crust)) }, kilnRoom: room, kilnGaps: gaps };
 
 /* ======================================================================== the blockers, the game's own */

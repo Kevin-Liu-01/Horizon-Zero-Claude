@@ -21,17 +21,25 @@ export const FRAMES = Object.freeze([
     ref: { written: "lane frame (area A, wave 1): the world's cost from the flight frame's height before the kite exists; the Sounding Ring 22 deg left of centre, Saltrow 32 deg right, the salt field below. Measured only (GPU ms by the back-to-back readback), never judged" },
   },
   {
-    id: 'F56', subject: "the Malpais from beside the Scar's upper end (blockout)", in: 'M3', hour: 17.75, weather: 'trade',
-    // restaged at wave 1 (run 20261120T081239Z-3283f5b-m3world-w1): from the Scar's upper end itself (251, -43; 108 m, at Rust
-    // Cone's north-west foot) the cone's flank filled the lens (46 % of rays struck ground within 30 m in Node). The lens
-    // stands 23 m west-north-west of it on the Yards' fill batter's foot, where the cone and the flow beyond are seen whole
-    at: { en: [232, -30] }, bearing: 145, camera: { mode: 'eye', eye: 1.7, pitch: -6, fov: 55 }, state: { pose: 'idle', hud: false },
-    ref: { written: "wave 1 blockout: from beside the Scar's upper end (on the Yards' batter, 23 m from it) looking south-east over the Malpais: Rust Cone whole on the left of centre, the lava falling away toward the hornito field and the sea. Wave 2-3: aa and pahoehoe both present, cinder bands, Rust Cone; 0 emissive ground texels, >= 3 steam sources (MP1, MP2, MP4)" },
+    id: 'F56', subject: "the Malpais from the Scar's upper end (blockout)", in: 'M3', hour: 17.75, weather: 'trade',
+    // fix round 1: back on the written place (the Scar's upper end, 251, -43; 108 m, at Rust Cone's north-west foot) with
+    // the bearing turned, not the lens moved (9c6a57e stood it 23 m west-north-west on the Yards' batter, unruled). Facing
+    // 145 from here the cone's flank filled the lens (42 % of rays struck ground within 30 m in Node, its top out of
+    // frame); facing 180 and pitched up 8 deg its top stands in the frame's upper left (Node: x -0.55, y +0.83 of the
+    // half-frame) and the flow falls away south to the sea: 0 % of rays strike ground within 30 m, 38 % the Malpais'
+    // ground, 9 % the sea, 48 % sky
+    at: { en: [251, -43] }, bearing: 180, camera: { mode: 'eye', eye: 1.7, pitch: 8, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 1 blockout: from the Scar's upper end looking south: Rust Cone's flank and top on the left, the lava falling away toward the hornito field and the sea. Wave 2-3: aa and pahoehoe both present, cinder bands, Rust Cone; 0 emissive ground texels, >= 3 steam sources (MP1, MP2, MP4)" },
   },
   {
     id: 'F57', subject: 'the Kiln Yards from the apron, dusk (blockout)', in: 'M3', hour: 19.5, weather: 'trade',
-    at: { en: [221.4, -29.1] }, bearing: 300, camera: { mode: 'eye', eye: 1.7, pitch: 6, fov: 60 }, state: { pose: 'idle', hud: false },
-    ref: { written: 'wave 1 blockout: from the apron\'s east end looking west-north-west: the four wellheads in a row along the bench, the manifold rack over it, the four flue stacks beyond the cut, the two tower stubs on the shelf; only the wellheads\' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)' },
+    // fix round 1: from the apron's south-east corner (its frame u 23.5, v -9.5), looking north-west and up 24 deg, so both
+    // tower stubs stand whole (their broken rims in frame) and the four stack tops can be counted. At 3283f5b (221.4, -29.1;
+    // bearing 300, pitch 6, fov 60) every stack top and tower-a's rim were above the frame and tower-b stood behind the
+    // stacks, so the stub read as a dark spire. Node, this lens: rims and stack tops at x 0.00-0.63, y 0.16-0.88 of the
+    // half-frame, the four caps at y -0.87, none behind ground
+    at: { en: [224.2, -32.4] }, bearing: 310, camera: { mode: 'eye', eye: 1.7, pitch: 24, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { crops: ['board-kilnyards'], written: "the BOARD Kiln Yards panel. Wave 1 blockout: from the apron's south-east corner looking north-west and up: the four wellheads' caps along the bench's lower edge, the manifold rack, the four flue stacks with their tops in frame, the two tower stubs whole on the shelf; only the wellheads' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)" },
   },
   {
     id: 'F58', subject: "the hornito field and the tube shelter's mouth (blockout)", in: 'M3', hour: 17.75, weather: 'trade',

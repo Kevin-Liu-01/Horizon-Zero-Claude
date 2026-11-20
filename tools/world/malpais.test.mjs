@@ -122,3 +122,11 @@ test('the zones: aa slows her to 0.8, pahoehoe and cinder do not; off the Malpai
   assert.equal(groundSpeedAt(pah.x, pah.z), 1);
   assert.equal(groundSpeedAt(-200, 300), 1);
 });
+
+test('B6\'s post stands at least 1 m outside every hornito\'s foot; no two hornito feet overlap', () => {
+  for (const h of M.HORNITOS) assert.ok(Math.hypot(h.e - M.BENCH_B6.e, h.n - M.BENCH_B6.n) - h.r >= 1, `${h.id}`);
+  for (let i = 0; i < M.HORNITOS.length; i++) for (let j = i + 1; j < M.HORNITOS.length; j++) {
+    const a = M.HORNITOS[i], b = M.HORNITOS[j];
+    assert.ok(Math.hypot(a.e - b.e, a.n - b.n) > a.r + b.r, `${a.id} ${b.id}`);
+  }
+});

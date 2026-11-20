@@ -31,9 +31,13 @@ const rec = (id, e, n, extra = {}) => Object.freeze({ id, e: +e.toFixed(2), n: +
  */
 export const RUST_CONE = Object.freeze({ ...rec('rust-cone', 283, -101), top: 145, tol: 3, trig: 'T3' });
 
-/** The hornitos: { id, e, n, x, z, h (m over its foot), r (its foot's radius), steam }. */
+/**
+ * The hornitos: { id, e, n, x, z, h (m over its foot), r (its foot's radius), steam }. hornito-1 stood at (266, -197) until
+ * fix round 1: B6's post (268, -196) was 2.24 m from its centre, 1.16 m inside its 3.4 m foot (F58 at 3283f5b). It stands
+ * 4.5 m south-west, so the post is 2.43 m outside its foot (malpais-rows.mjs prints B6's clearance from every foot; >= 1 m).
+ */
 export const HORNITOS = Object.freeze([
-  [266, -197, 4.5, 3.4, true], [275, -200, 6.0, 4.2, true], [284, -196, 3.2, 2.6, false], [279, -209, 5.0, 3.6, true],
+  [265, -201, 4.5, 3.4, true], [275, -200, 6.0, 4.2, true], [284, -196, 3.2, 2.6, false], [279, -209, 5.0, 3.6, true],
   [290, -205, 3.8, 3.0, true], [268, -208, 3.0, 2.4, false], [295, -214, 4.2, 3.2, false],
 ].map(([e, n, h, r, steam], i) => rec(`hornito-${i + 1}`, e, n, { h, r, steam })));
 
