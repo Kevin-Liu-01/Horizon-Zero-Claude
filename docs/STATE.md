@@ -2334,3 +2334,108 @@ Tool: `tools/perf/exit-bar.mjs`. The 1-minute load average was 2.5-3.5.
 5. **The head turn in F08, F11 and F13.** The owner rules: keep the new head, or restore the old one in idle and
    portraits.
 6. **The Transit card on screen at the read**, and the DAWN row's forecast.
+
+## Polish run 2: people's wool, the M2 frames, far forms, the first hour's sound (Nov 20 2026)
+
+Three polish lanes worked in the one tree on `r5/int` beside the M2 fix wave 2: people (area B), frames and far forms,
+and audio. A planning lane wrote the Milestone 3 briefs (private). No commit was pushed.
+
+- **People (33852a6, 38f2a93, 85f6042).**
+  - The seven Holds people wear three dye families by trade and age: undyed fleece and black wool, madder rust (the
+    first youth's tunic, the first farmer's vest) and the pickers' cochineal. Pale oatmeal pieces that read as the
+    Pans' linen (the pickers' aprons, the youths' tunics, the kit's sleeves) are fleece now; the palm hats are dark felt.
+    Each person keeps one violet accent.
+  - Oro's waist sash carries a row of gold crescents, horns up, about 2.8 cm across with a dark rim. No text, no numerals.
+  - The lane's look probe (`tools/build/recipes/npc/holds-look-probe-page.mjs`) reads linen as CIE L* >= 60 with
+    chroma <= 40, and each figure's 90th-percentile L*.
+- **Frames and far forms (665de98, 42265b5).**
+  - The Sickle has a value split: a dark upper hull over a bone belly. Its vertex counts rose (17,605 -> 17,770 and
+    5,001 -> 5,061).
+  - The Transit's far form is drawn in the dust: its legs are no paler than the air around them.
+  - F44, F45, F39-people and F42 are re-staged toward their written targets; the lane's frame reads are
+    `tools/frames/stagings/look-probe-page.js` (`film.mjs --probe`).
+  - F45 now stands on the Malpais shelf 59 m north of the Kiln Yards, looking over the rim; F45-trade keeps the old
+    lens for HG6.
+- **Audio (7c3e22f, a776025).** 45 new counted cues, all synthesized in the repo (CC0): the region zones on the
+  regions seam with crossfades (the Pans, the Holds, Ninewalls, the Scar, the Malpais edge), calima at noon, the Holds'
+  work, Oro's forge, the Kit Rack, the Windwall, the gaff, the pots, the Tiller, the Screed and the re-survey's
+  Alidade. `src/audio/m2` (recipes, cues, mix rules, director); the offline walk `tools/gates/audio/hour-walk.mjs`;
+  the live row `A-audio-hour-live` in `tools/gates/audio/live-rows.mjs`.
+
+Then the check lane measured `r5/int` at **2944784** from one clean detached worktree (0 tracked files changed) on
+port 5273, one Chrome at a time, beside the fix wave's lanes (load average 3-5). It changed no repo file.
+
+**Verdict: one regression.** Tier 0 fails on the shipped ledger. Every kept row the polish touched passes, the
+accepted frames are the same, and the lanes' numbers reproduce.
+
+**Tier 0 at 2944784: FAIL, 8 pass and 1 fail** (the Node checks, then the boot run on its own).
+- **shipped-ledger FAIL: 60.94 MB** (`public/` 56.62 MB in 306 files + built code 4.31 MB) against the 60 MB
+  first-load cap. It was 59.46 MB at 02f7125. The audio commit 7c3e22f adds 1.50 MB (`public/audio` 3.54 -> 5.04 MB,
+  162 -> 225 files) and alone takes the total over the cap.
+- `vite build` OK (4.31 MB of code). Name lint 0 hits in 999 files. Licences: 306 files against 34 rows. Asset budgets:
+  54 GLBs, 0 over a cap. Texture ledger 137.33 MB of 175.
+- Import graph 241 modules, 0 broken. 286 Node tests pass in 60 files. Boot 4.3 s, 0 errors. Rendered-page name lint 0.
+
+**Kept-stack rows at 2944784** (one session; `--kept-stack --only` with the rows the polish touched): **13 of 13 pass.**
+- A1, A20b, A6, A44, A44b (worst 0.081 m), A50 (1,483 hulls, 0 from retired geometry), A50b, A58b, A72, A73d, A74
+  (300 m attenuates to 0.0053), A76 (54 live footfalls over 4 kinds) and A78.
+- The per-species rows cover the Gauge, the Peg, the Plumb and the Tiller. No kept row covers the Sickle.
+
+**The audio at 2944784:**
+- The audio lane's live rows: 4 of 4 pass.
+  - `A-audio-hour-live`: 63 bank rows decoded. The crossings fire leave Pans, enter Holds, leave Holds, enter Pans.
+    Inside Ninewalls its bed is 0.999 and the Pans' 0.001; back home the Pans' is 0.997. Under calima the trade wind
+    drops 0.189 -> 0.033 and a far one-shot at 100 m plays at x0.336. 18 of 18 event cues played, 0 silent.
+  - `A-audio-walk-graph`: the slice walk in Chrome -17.37 LUFS. `A-audio-gust-live`: lead median 1.00 s.
+- The first-hour walk (offline model: the slice walk, then legs 2-3, 440 s): **-19.18 LUFS, -2.40 dBTP** (bar -18 +-2,
+  <= -1). ffmpeg's ebur128 on the same render reads -19.2 LUFS and -2.4 dBTP. Legs 2-3 alone: -19.80 LUFS, -3.13 dBTP.
+- 45 of 45 new cues audible at their range in the model (the thinnest: `screed/idle` 4.0 dB at 60 m, `screed/step`
+  4.2 dB at 80 m, `tiller/step` 4.4 dB at 40 m; bar 3 dB).
+- 45 new counted cues in 63 files; 122 counted in all. `public/audio` 5.04 MB (bar 12 MB; plan line 8 MB).
+- This is a script of the hour's events mixed by the game's tables, not a capture of play. The trample tell's 1 s lead
+  holds only while she stands still.
+
+**People at 2944784:**
+- The 20 m line-up, village hidden: the 8 Holds people's 90th-percentile L* is 35.1-47.9 and the 4 Pans' 60.4-69.7.
+  Linen-pixel share: Holds at most 4.4 %, Pans at least 6.1 %. Brea's violet is 39.8x any other figure's (bar 5x).
+- By mean colour, 10 of 12 classify right. The Holds youth in madder rust reads nearer the Pans.
+- Oro at 2 m: the crescents are about 20.9 device px across, with 849 gold pixels in the waist crop.
+- People's cloth (Node): worst person 0.0134 ms (bar 0.02), Oro 0.0109 ms.
+
+**Frames at 2944784** (11 frames in two films, 0 console errors; against the exit run 2 film at 02f7125):
+- **F02, F03 (accepted): the same.** Only her idle and the wrap tail differ (wall-clock idle).
+  - F02 differs from the exit film in 14.0 % of pixels and from its anchor in 22.7 % (the exit film: 20.9 %).
+  - F03 differs from the exit film in 17.4 % and from its anchor in 40.7 % (38.6 %).
+- **F25: the same** (0.1 % of pixels outside her).
+- **F45 (closer):** the calima disc is in frame (centre 201.5 against 166.6 at 5-8 deg, 20.9 % contrast).
+  - The Yards stand dark in the dust: 132,514 px at luminance 120.9 against 154.5 behind.
+  - Visibility 169.4 m (band 120-180).
+- **F45-transit (closer):** the far form's legs read 158.7 against 165.7 behind and 162 around, so they are not paler.
+  The Yards are fogged with the ground.
+- **F42 (closer):** the Sickle reads against the meadow: luminance 90.4 against 105.4, chroma 77.8 against 127.6.
+  She holds the gaff at the ready, not the hook-rip.
+- **F44 (closer):** the Alidade is at her face (tube 0.015 m from her eye).
+  - The planted Windwall reads at her feet: 23,348 px at 95.4 against 125.4.
+  - It stands on the line to a Peg in frame (0.0 m off the line).
+  - The lens looks down the slope to the coast, not along the Scar's line. She stands pressed against the benchmark
+    house, and her sash panels stand out level in the wind.
+- **F39-people:** the five sheltering people are in its lens, so IN11 can be read as written. The lens is an aerial
+  112 m over Ninewalls, and the fight is a speck.
+  - **IN11: PASS, with 0.5 ms to spare** (`tools/perf/exit-bar.mjs`, live and gpu phases). GPU median 13.5 ms (bar 14),
+    0 frames over 33 ms, main-thread JS p95 3.9 ms, 131 draws and 1.06 M triangles. F39 beside it reads 11.4 ms.
+- **F36 (closer):** no linen-pale piece is left on the five (linen share 0.0-0.9 % each). In the cistern's shade they
+  read dark and close in value to the basalt.
+- **F37:** the same at its range. Oro's right shin still reads paler than the left.
+- **F23-sickle:** the same at its range.
+
+**Chrome used:** about 7.6 minutes over 5 launches: the boot 0.2, the rows 3.3, the two films 1.5, the IN11 read 2.6. Most of the session waited for the slot.
+
+---
+
+**Open after this check:**
+1. **The shipped ledger: 60.94 MB against the 60 MB first-load cap** (the audio, 7c3e22f). Fewer or shorter files,
+   streaming the hour's audio after the title, or a ruling on the cap.
+2. No kept row covers the Sickle's hulls and sockets. Its geometry changed in 665de98.
+3. F44's lens cannot stand on her right, so the frame does not look along the Scar's line. F42 does not show the hook-rip.
+4. F39-people frames the people at the cost of the fight. It is a cost frame now, not a look frame.
+5. The audio has a model's loudness only. A capture of real play and a listen are still owed.
