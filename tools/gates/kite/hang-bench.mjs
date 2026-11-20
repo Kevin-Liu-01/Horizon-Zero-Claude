@@ -42,6 +42,29 @@ const info = an.hangPoseInfo();
 const s5 = an._charOf(b.spine5.bone, V());
 const torsoR = M.caps.filter((c) => /^torso/.test(c.name)).reduce((m, c) => Math.max(m, c.r), 0);
 const barFromSpine = info.bar[2] - s5.z, barFromChest = barFromSpine - torsoR;
+// the chest's surface read off the posed meshes (char space): the most forward vertex of the body skin and of the outfit
+// (what she wears over it) within 0.08 m of the bar's centre across and 0.04 m of its height, arm and hand vertices out
+// (the skin under the outfit is masked away on this body, so the skin's band holds only the vertices left at the neck
+// opening: it is reported, the CLOTHED chest is graded, beside the torso capsule the M3-B judge read)
+const chestFront = (() => {
+  const out = { skin: null, outfit: null }, v = V();
+  R.model.updateMatrixWorld(true);
+  R.model.traverse((m) => {
+    if (!m.isSkinnedMesh) return;
+    const kind = m.geometry.getAttribute('_hidemask') ? 'skin' : /outfit/.test(m.userData?.heroPart || '') && m.name !== 'Caster' ? 'outfit' : null;
+    if (!kind) return;
+    const bn = m.skeleton.bones.map((x) => x.name), si = m.geometry.attributes.skinIndex, sw = m.geometry.attributes.skinWeight;
+    for (let i = 0, n = m.geometry.attributes.position.count; i < n; i++) {
+      let arm = 0; for (let k = 0; k < 4; k++) if (/upperarm|lowerarm|hand|index|middle|ring|pinky|thumb|clavicle/.test(bn[si.getComponent(i, k)] || '')) arm += sw.getComponent(i, k);
+      if (arm > 0.2) continue;
+      m.getVertexPosition(i, v); m.localToWorld(v); R.model.worldToLocal(v);
+      if (Math.abs(v.x - info.bar[0]) < 0.08 && Math.abs(v.y - info.bar[1]) < 0.04 && (out[kind] === null || v.z > out[kind])) out[kind] = v.z;
+    }
+  });
+  return out;
+})();
+const clothedFront = Math.max(chestFront.skin ?? -9, chestFront.outfit ?? -9);
+const barFromClothed = info.bar[2] - clothedFront, barFromSkin = chestFront.skin === null ? null : info.bar[2] - chestFront.skin;
 const barK = (info.bar[1] - info.sternY) / (info.chinY - info.sternY);
 
 // the kite on the bar, in the model's space: its lowest point over her crown
@@ -76,7 +99,10 @@ const rows = {
   wristsAtOrBelowHead: { min_belowHeadBone_m: r3(worstBelow), pass: worstBelow >= 0 },
   elbowsBelowShoulders: { max_elbowOverShoulder_m: r3(worstElbow), pass: worstElbow < 0 },
   barSternumToChin: { k: r3(barK), barY: info.bar[1], sternY: info.sternY, chinY: info.chinY, pass: barK >= 0 && barK <= 1 },
-  barInFrontOfChest: { fromSpine05_m: r3(barFromSpine), fromChestSurface_m: r3(barFromChest), torsoCapR: r3(torsoR), passFromSpine: barFromSpine >= 0.3 && barFromSpine <= 0.4, passFromSurface: barFromChest >= 0.3 && barFromChest <= 0.4 },
+  // graded: 0.30-0.40 m from the clothed chest (the outfit's front) AND from the torso capsule's surface (the judge's read)
+  barInFrontOfChest: { fromClothedChest_m: r3(barFromClothed), fromTorsoCapsule_m: r3(barFromChest), fromSkinBand_m: barFromSkin === null ? null : r3(barFromSkin),
+    fromSpine05_m: r3(barFromSpine), torsoCapR: r3(torsoR), chestFrontZ: { skin: chestFront.skin === null ? null : r3(chestFront.skin), outfit: chestFront.outfit === null ? null : r3(chestFront.outfit) },
+    pass: barFromClothed >= 0.3 && barFromClothed <= 0.4 && barFromChest >= 0.3 && barFromChest <= 0.4 },
   kiteClearOfHead: { cellsOverCrown_m: r3(kiteClearM), bridleFromHeadCentre_m: r3(bridleMin), pass: kiteClearM > 0 && bridleMin > 0.15 },
   kiteBudget: { triangles: K.triangles, draws: K.draws, pass: K.triangles <= 6000 && K.draws === 1 },
 };

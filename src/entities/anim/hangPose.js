@@ -12,20 +12,29 @@
  * animator. Nothing allocates per frame.
  */
 import * as THREE from 'three';
-import { X_AXIS, clamp } from './playerCommon.js';
+import { X_AXIS, Y_AXIS, Z_AXIS, clamp } from './playerCommon.js';
 
 const HANG = {
-  /** the bar between the sternum (0) and the chin (1) */
-  barK: 0.45,
-  /** in front of the chest (char z from spine_05) */
-  barFwd: 0.32,
+  /** the bar between the sternum (0) and the chin (1): low in the band, so the bent elbows stay under the shoulders */
+  barK: 0.25,
+  /** in front of spine_05 (char z). BIBLE §12 wants the bar 0.30-0.40 m in front of the CHEST: at the bar's height
+   *  Brea's clothed chest (the Pan I outfit's front) stands 0.156 m ahead of spine_05 and the torso capsule's surface
+   *  0.101 m (tools/gates/kite/hang-bench.mjs reads both off the posed meshes), so 0.48 puts the bar 0.32 m in front of
+   *  the cloth and 0.38 m in front of the capsule (M3 area B fix 1; 0.32 at M1.3f left it 0.17 m and 0.22 m) */
+  barFwd: 0.48,
   /** half the hands' spread on the bar (char x) */
   halfGrip: 0.22,
+  /** the shoulders brought forward to reach the bar (rad about char y at each clavicle; 0.45 moves each shoulder
+   *  joint 0.05 m forward, and the elbows bend 0.05 m under the shoulders at the bar's reach) */
+  protract: 0.45,
   /** the hip and knee bends of a hang (rad): thighs a little forward, shins back under them */
   hip: 0.28, knee: 0.42,
 };
 const _bar = new THREE.Vector3(), _g = new THREE.Vector3(), _pole = new THREE.Vector3();
 const _s5 = new THREE.Vector3(), _nk = new THREE.Vector3(), _hd = new THREE.Vector3();
+const _shL = new THREE.Vector3(), _shR = new THREE.Vector3();
+/** the chest's square-up, shared down the upper spine (spine_03, _04, _05) */
+const SQUARE = [['spine3', 0.3], ['spine4', 0.3], ['spine5', 0.4]];
 
 export class HangPose {
   setHangPose(on) { this._hangOn = !!on; return this._hangOn; }
@@ -43,6 +52,19 @@ export class HangPose {
     if (b.thighR) this._rot(b.thighR, X_AXIS, -HANG.hip * w);
     if (b.calfL) this._rot(b.calfL, X_AXIS, HANG.knee * w);
     if (b.calfR) this._rot(b.calfR, X_AXIS, HANG.knee * w);
+    this.model.updateMatrixWorld(true);
+    // the chest squared to the bar: the body layers under it leave the shoulders yawed (about 18 deg, the left shoulder
+    // forward, at the idle) and rolled; hanging from a bar held in both hands the shoulder line lies along the bar
+    this._charOf(b.upArmL.bone, _shL); this._charOf(b.upArmR.bone, _shR);
+    const dx = _shL.x - _shR.x, yaw = Math.atan2(_shL.z - _shR.z, dx), roll = Math.atan2(_shR.y - _shL.y, dx);
+    for (const [k, share] of SQUARE) if (b[k] && this.space) {
+      this.space.rotChar(b[k], Y_AXIS, yaw * share * w, false);
+      this.space.rotChar(b[k], Z_AXIS, roll * share * w, false);
+    }
+    if (b.clavL && b.clavR && this.space) {
+      this.space.rotChar(b.clavL, Y_AXIS, -HANG.protract * w, false);
+      this.space.rotChar(b.clavR, Y_AXIS, HANG.protract * w, false);
+    }
     this.model.updateMatrixWorld(true);
     this._charOf(b.spine5.bone, _s5);
     this._charOf((b.neck1 || b.spine5).bone, _nk);
