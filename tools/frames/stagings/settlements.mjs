@@ -94,8 +94,10 @@ FRAMES.push({
  * 6 px behind wall-1: neither read. So the lens holds the people: 16 m over the ground at the village's south-west doors
  * (-22.88, 248.72; 21-44 m from the four in frame), fov 46, aimed 0.35 of the way from their middle to the Screed: the
  * people in the foreground at their doors, the Screed on the wall line above them (106 m). Brea and the Sickles are
- * behind wall-1 from here. Readable people AND a readable fight at once needs the people nearer the fight than the game
- * sends them: a staging question for the owner, not a lens. */
+ * behind wall-1 from here. Filmed at 8572260 (run 20261120T033426Z-8572260-frames-p3b-partial-x2): all five in the lens,
+ * 36-92 px tall; the Screed 19 px on the skyline, one Sickle 9 px, Brea not drawn (behind the wall). Readable people AND a
+ * readable fight at once needs the people nearer the fight than the game sends them: a staging question for the owner,
+ * not a lens. */
 FRAMES.push({
   id: 'F39-look', subject: 'the Holds fight with the people sheltering in the village below it (a look frame)', in: 'M2', hour: 16.5, weather: 'trade',
   at: { en: [44.83, -169.9] }, bearing: 321,
