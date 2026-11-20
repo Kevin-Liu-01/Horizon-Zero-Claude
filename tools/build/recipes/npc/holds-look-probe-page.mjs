@@ -7,8 +7,9 @@
  * solo render changes against the render with every figure hidden (all renders in one task, the world frozen, a channel
  * changing by more than 12). Of those pixels:
  *   violetPx   HSV hue 255-335 deg, saturation >= 0.22, value >= 0.12 (the crowd rows' violet)
- *   palePx     the salt-white linen read: value >= 0.55, saturation <= 0.30 (the Pans' cloth in this light; a Holds figure in
- *              dyed and undyed wool should carry little of it)
+ *   palePx     the salt-white linen read: CIE L* >= 60 and chroma <= 40 (the golden light warms and saturates a white shirt, so
+ *              an HSV saturation bound missed every Pan shirt at 33852a6 and 38f2a93); a Holds figure in dyed and undyed wool
+ *              should carry little of it. Also each figure's 90th-percentile L* (`l90`), its brightest cloth
  *   mean       the figure's mean sRGB and CIE L*a*b*
  *
  *   F36   the five the staging stood (ctx.people.holds._staged), each with its rows; a 2.4 m front close-up of each (JPEG)
@@ -30,7 +31,7 @@ const hsv = (r, g, b) => {
   return [h, s, v];
 };
 const VIOLET = (r, g, b) => { const [h, s, v] = hsv(r, g, b); return v >= 0.12 && s >= 0.22 && h >= 255 && h <= 335; };
-const PALE = (r, g, b) => { const [, s, v] = hsv(r, g, b); return v >= 0.55 && s <= 0.30; };
+const PALE = (r, g, b) => { const [L, A, B] = lab([r, g, b]); return L >= 60 && Math.hypot(A, B) <= 40; };
 const GOLD = (r, g, b) => { const [h, s, v] = hsv(r, g, b); return h >= 25 && h <= 55 && s >= 0.3 && v >= 0.35; };
 const lab = (rgb) => {
   const lin = rgb.map((c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
@@ -55,17 +56,19 @@ function readFigures(E, R, figures, grab) {
     E.render(0);
     const px = grab();
     let area = 0, violet = 0, pale = 0, sr = 0, sg = 0, sb = 0, seen = 0;
+    const Ls = [];
     for (let i = 0; i < px.length; i += 4) {
       if (Math.max(Math.abs(px[i] - bg[i]), Math.abs(px[i + 1] - bg[i + 1]), Math.abs(px[i + 2] - bg[i + 2])) <= 12) continue;
       area++;
       sr += px[i]; sg += px[i + 1]; sb += px[i + 2];
       if (VIOLET(px[i], px[i + 1], px[i + 2])) violet++;
       if (PALE(px[i], px[i + 1], px[i + 2])) pale++;
+      if ((area & 3) === 0) Ls.push(lab([px[i], px[i + 1], px[i + 2]])[0]);
       // seen in the full frame (not behind another figure or the world)
       if (all[i] === px[i] && all[i + 1] === px[i + 1] && all[i + 2] === px[i + 2]) seen++;
     }
     const mean = area ? [sr / area, sg / area, sb / area] : [0, 0, 0];
-    rows.push({ id: f.id, faction: f.faction, areaPx: area, seenPx: seen, violetPx: violet, palePx: pale, paleShare: r3(pale / Math.max(1, area)), meanRGB: mean.map(Math.round), lab: lab(mean).map(r1) });
+    rows.push({ id: f.id, faction: f.faction, areaPx: area, seenPx: seen, violetPx: violet, palePx: pale, paleShare: r3(pale / Math.max(1, area)), l90: Ls.length ? r1(Ls.sort((a, b) => a - b)[Math.floor(Ls.length * 0.9)]) : null, meanRGB: mean.map(Math.round), lab: lab(mean).map(r1) });
     f.obj.visible = false;
   }
   figures.forEach((f, i) => { f.obj.visible = vis0[i]; });
