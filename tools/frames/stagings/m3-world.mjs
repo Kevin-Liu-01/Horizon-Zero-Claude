@@ -28,7 +28,13 @@ export const FRAMES = Object.freeze([
     ref: { written: "lane frame (area A, wave 1): the world's cost from the flight frame's height before the kite exists; the Sounding Ring 22 deg left of centre, Saltrow 32 deg right, the salt field below. Measured only (GPU ms by the back-to-back readback), never judged" },
   },
   {
-    id: 'F56', subject: "the Malpais from Rust Cone's south-west flank, above the hornito field (R2)", in: 'M3', hour: 17.75, weather: 'trade',
+    id: 'F56', subject: "the Malpais from Rust Cone's south-west flank, above the hornito field (R2)", in: 'M3', hour: 9.5, weather: 'trade',
+    /* M3 wave 3 (the orchestrator's ruling R11, provisional: "F56 keeps the Malpais fog tint (the bible's value, a kept
+     * gate); stage F56 at a cooler hour (morning, the sun out of the lens) for the brief's cold light"; the old hour 17.75).
+     * 09:30 is the environment's own cool key (horizon #D3D5D8, zenith #5579ad, the fog's horizon #CCD2D6; 17:45's were
+     * #EBA98C, #62679f, #CF9A80). The sun stands at bearing 126, 36 deg up: 56 deg left of the lens's 182, outside its
+     * half-width of 43 deg, so it lights the spires from the left and is not in the frame. The lens is R2's and wave 2b's:
+     * pitched up to -15 or -12 (more sky, as the KEY strip has) the hornito field leaves the safe area (Node: 3 and 0 of 7) */
     /* M3 wave 2 (the orchestrator's ruling R2, provisional: "F56's lens moves to (250, -130) so Malpais ground shows; the
      * Scar is not in it"; the old text: "the Malpais from the Scar's upper end"). From (250, -130) the Scar's planed floor
      * runs 86 m west of the lens on bearings 233-360: every west-looking bearing shows it (Node ray count from the recipe,
@@ -82,7 +88,10 @@ export const FRAMES = Object.freeze([
     ref: { crops: ['board-kilnyards'], written: "the BOARD Kiln Yards panel. Wave 1 blockout: from the apron's south-east corner looking north-west and up: the four wellheads' caps along the bench's lower edge, the manifold rack, the four flue stacks with their tops in frame, the two tower stubs whole on the shelf; only the wellheads' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)" },
   },
   {
-    id: 'F58', subject: "the hornito field and the tube shelter's mouth", in: 'M3', hour: 17.75, weather: 'trade',
+    id: 'F58', subject: "the hornito field and the tube shelter's mouth", in: 'M3', hour: 9.5, weather: 'trade',
+    /* M3 wave 3 (R11's logic, as for F56: the cooler hour, the sun out of the lens): 09:30, the sun at bearing 126, 80 deg
+     * left of the lens's 206 (was 17:45, the sun at 258, 52 deg right, the lens facing the warm sea light). The shelter's
+     * Brazier (unlit) stands 4 m inside the mouth, right of the axis, and is seen through it (MP6) */
     /* M3 wave 2b (R9, provisional: "the tube shelter moves to the hornito field (hornitos stand on lava tubes), so F58 can
      * hold both"): from the field's north-east rim, 21 m NNE of the tube's mouth, looking SSW down over the field and the
      * mouth (was (262, -188) facing 150 from B6's ground, where the mouth, then at the Yards, was behind the lens). The sun at
@@ -95,7 +104,7 @@ export const FRAMES = Object.freeze([
       { name: 'the tube shelter\'s mouth', kind: 'shapes', minPx: 30, shapes: [{ id: 'tube-mouth', kind: 'cylinder', x: TUBE_SHELTER.mouth.x, z: TUBE_SHELTER.mouth.z, r: TUBE_SHELTER.half, h: TUBE_SHELTER.height }] },
       { name: 'the steam (>= 3 of the hornitos steaming)', kind: 'shapes', min: 3, minPx: 20, shapes: steamShapes(HORNITOS.filter((h) => h.steam).map((h) => `steam-${h.id}`)) },
     ],
-    ref: { written: "the hornito field from its west rim: seven spatter chimneys of 3-6 m on the lava flat, four of them steaming; the tube shelter's mouth at the field's east edge, its crust running away down the flow; the shelter's Brazier unlit, a dormant Peg nest inside (MP4, MP6)" },
+    ref: { written: "the hornito field from its north-east rim: seven spatter chimneys of 3-6 m on the lava flat, four of them steaming; the tube shelter's mouth at the field's east edge, a lava tube's crust with a broken lip over its mouth, running away down the flow; the shelter's Brazier unlit just inside the mouth, a dormant Peg nest deeper in; morning light from the left (MP4, MP6, R11)" },
   },
 ]);
 

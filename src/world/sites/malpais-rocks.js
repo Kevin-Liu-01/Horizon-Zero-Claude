@@ -363,68 +363,106 @@ export function hornitoGeometry(ground) {
 /**
  * The tube shelter (M3 wave 2b, R9; ./malpais-layout.js TUBE_SHELTER): a pahoehoe tube lying on the hornito field's floor
  * under its own proud crust, broken open at its upslope end (the mouth) and closed at the back, where the crust rounds
- * down into the flow. Built as rings along its axis every metre: the outer crust (a flattened arch over a skirt sunk
- * into the ground) and the inner vault (the headroom over the floor, its walls sunk below it), joined at the broken rim
- * of the mouth and by the back wall. Lumpy and a little sinuous; flat-faced, as the rest of the Malpais' rock.
- * `ground(x, z)` the drawn terrain (engine frame). About 1,500 triangles.
+ * down into the flow. Built as rings along its axis: the outer crust (a flattened arch over a skirt sunk into the ground)
+ * and the inner vault (the headroom over the floor, its walls sunk below it), joined at the mouth by the crust's lip and
+ * at the back by the vault's end.
+ * (M3 wave 3, MP6: wave 2b's tube read as a faceted blockout arch: one flat normal a triangle, a ring a metre, each rim
+ * vertex pushed by its own random step) Each surface is one welded grid (shared vertices: smooth normals), a ring every
+ * 0.55 m and 25 points an arch, its lumps and the ropy folds of the crust smooth fields of (s, angle). At the mouth the
+ * roof runs out past the opening as a lip, up to LIP m over the floor's edge and thinning to a drooped, rounded edge, as
+ * a tube's crust breaks back where its roof fell in; the walls under it are cut back. `ground(x, z)` the drawn terrain
+ * (engine frame). About 3,000 triangles.
  */
+export const TUBE_LIP = 1.4;
 export function tubeGeometry(ground) {
   const T = TUBE_SHELTER, R = rng(0x7b0e);
-  const K = 15, p = 2.4, ds = 1;
+  const K = 25, p = 2.5, ds = 0.55;
   const arch = (W, H, th) => { const c = Math.cos(th), sn = Math.sin(th); return [W * Math.sign(c) * Math.pow(Math.abs(c), 2 / p), H * Math.pow(Math.abs(sn), 2 / p)]; };
-  const at = (sv, l, dy) => { const q = tubeEN(sv, l), x = q.e * S, z = -q.n * S; return [x, ground(x, z) + dy, z]; };
-  const floorAt = (sv) => { const q = tubeEN(sv, 0); return ground(q.e * S, -q.n * S); };
+  const floorAt = (sv) => { const q = tubeEN(Math.max(-2, Math.min(T.len, sv)), 0); return ground(q.e * S, -q.n * S); };
+  const P = (sv, l, y) => { const q = tubeEN(sv, l); return [q.e * S, y, -q.n * S]; };
   const N = Math.round(T.len / ds);
-  const outer = [], inner = [];
-  const lump = [R() * 6, R() * 6, R() * 6, R() * 6];
-  for (let i = 0; i <= N + 2; i++) {
-    // past the back the crust rounds down into the ground over 3.5 m
-    const tail = i > N ? (i === N + 1 ? 0.62 : 0.2) : 1;
-    const sv = Math.min(T.len + 3.5, i * ds + (i > N ? (i - N) * 1.6 : 0));
-    const sway = 0.6 * Math.sin(sv * 0.23 + lump[0]), hk = 1 + 0.08 * Math.sin(sv * 0.41 + lump[1]);
-    const f = floorAt(Math.min(sv, T.len));
-    const ro = [], ri = [];
-    // the outer crust: the skirt's foot (sunk), the arch, the other foot; the rim at the mouth broken back by up to 1.3 m
+  const lump = [R() * 6, R() * 6, R() * 6, R() * 6, R() * 6, R() * 6];
+  // the crust's own lumps and folds: smooth in s and in the arch's angle (no per-vertex step)
+  const crust = (sv, th) => 1 + 0.055 * Math.sin(th * 4.3 + sv * 0.71 + lump[2]) + 0.035 * Math.sin(th * 9.1 - sv * 0.53 + lump[3])
+    + 0.03 * Math.sin(sv * 1.9 + th * 1.7 + lump[4]) * Math.sin(th);
+  // the lip: how far the roof runs out past the mouth at an arch angle (0 at the feet, LIP over the crown, ragged)
+  const lipAt = (th) => TUBE_LIP * Math.pow(Math.sin(th), 1.6) * (0.75 + 0.25 * Math.sin(th * 3.7 + lump[5]));
+  const sway = (sv) => 0.6 * Math.sin(sv * 0.23 + lump[0]);
+  const hkAt = (sv) => 1 + 0.08 * Math.sin(sv * 0.41 + lump[1]);
+  const pos = [], idx = [];
+  const grid = (rings, flip) => {
+    const base = pos.length / 3, M = rings[0].length;
+    for (const r of rings) for (const v of r) pos.push(v[0], v[1], v[2]);
+    for (let i = 0; i < rings.length - 1; i++) for (let k = 0; k < M - 1; k++) {
+      const a = base + i * M + k, b = a + 1, c = a + M, d = c + 1;
+      if (flip) idx.push(a, b, c, b, d, c); else idx.push(a, c, b, b, c, d);
+    }
+    return base;
+  };
+  // the outer crust: ring 0 is the lip's edge, out past the mouth; then the arch every ds m; then the tail into the ground
+  const outer = [];
+  const outerRing = (sv, tail, lipK) => {
+    const f = floorAt(sv), w = sway(sv), hk = hkAt(sv);
     const Wo = (T.half + T.wall) * (tail < 1 ? 0.6 + 0.4 * tail : 1), Ho = (T.height + T.crust) * hk * tail;
-    ro.push(at(sv, sway + T.foot * (tail < 1 ? 0.75 : 1), -1.0));
+    const r = [P(sv, w + T.foot * (tail < 1 ? 0.75 : 1), f - 1.0)];
     for (let k = 0; k < K; k++) {
-      const th = (k / (K - 1)) * Math.PI;
+      const th = (k / (K - 1)) * Math.PI, n = crust(sv, th);
       const [l, y] = arch(Wo, Ho, th);
-      const n = 1 + 0.07 * Math.sin(th * 5 + sv * 0.9 + lump[2]) + (R() - 0.5) * 0.08;
-      const sOff = i === 0 && k > 1 && k < K - 2 ? R() * 1.3 : 0;
-      const q = tubeEN(sv + sOff, sway + l * n);
-      ro.push([q.e * S, f + Math.max(-0.4, y * n), -q.n * S]);
+      const out = lipK * lipAt(th);
+      r.push(P(sv - out, w + l * n, f + Math.max(-0.4, y * n) - lipK * 0.12 * Math.sin(th)));
     }
-    ro.push(at(sv, sway - T.foot * (tail < 1 ? 0.75 : 1), -1.0));
-    outer.push(ro);
-    if (i <= N) {
-      // the vault: from the left floor up and over to the right floor (wound to face in), its feet 0.4 m under the floor
-      for (let k = K - 1; k >= 0; k--) {
-        const th = (k / (K - 1)) * Math.PI;
-        const [l, y] = arch(T.half, T.height * hk, th);
-        const n = 1 + (R() - 0.5) * 0.06;
-        const sOff = i === 0 && k > 1 && k < K - 2 ? R() * 0.5 : 0;
-        const q = tubeEN(sv + sOff, sway + l * n);
-        ri.push([q.e * S, f + (k === 0 || k === K - 1 ? -0.4 : y * n), -q.n * S]);
-      }
-      inner.push(ri);
+    r.push(P(sv, w - T.foot * (tail < 1 ? 0.75 : 1), f - 1.0));
+    return r;
+  };
+  outer.push(outerRing(0, 1, 1));
+  for (let i = 1; i <= N; i++) outer.push(outerRing(i * ds, 1, 0));
+  for (const [ext, tail] of [[0.9, 0.8], [1.8, 0.55], [2.7, 0.3], [3.4, 0.12]]) outer.push(outerRing(T.len + ext, tail, 0));
+  // the vault: from the left floor up and over to the right floor (wound to face in), its feet 0.4 m under the floor
+  const inner = [];
+  const innerRing = (sv, lipK) => {
+    const f = floorAt(sv), w = sway(sv), hk = hkAt(sv), r = [];
+    for (let k = K - 1; k >= 0; k--) {
+      const th = (k / (K - 1)) * Math.PI;
+      const [l, y] = arch(T.half, T.height * hk, th);
+      const n = 1 + 0.035 * Math.sin(th * 6.1 + sv * 0.83 + lump[3]) + 0.02 * Math.sin(sv * 2.3 + th * 3.1);
+      const out = lipK * lipAt(th) * 0.92;
+      r.push(P(sv - out, w + l * n, f + (k === 0 || k === K - 1 ? -0.4 : y * n) - lipK * 0.05 * Math.sin(th)));
     }
+    return r;
+  };
+  inner.push(innerRing(0, 1));
+  for (let i = 1; i <= N; i++) inner.push(innerRing(i * ds, 0));
+  grid(outer, false);
+  grid(inner, false);
+  // the lip's edge: from the outer crust's first ring (its arch only) over a rounded, drooped edge to the vault's first
+  // ring (reversed to run the same way): its own vertices, so the edge reads crisp against the crust's smooth top
+  {
+    const o = outer[0].slice(1, K + 1), v = inner[0].slice().reverse(), e = [];
+    for (let k = 0; k < K; k++) {
+      const th = (k / (K - 1)) * Math.PI, a = o[k], b = v[k];
+      const q = tubeEN(-0.22 * Math.sin(th), 0), qa = tubeEN(0, 0);
+      const dx = (q.e - qa.e) * S, dz = -(q.n - qa.n) * S;
+      e.push([(a[0] + b[0]) / 2 + dx, (a[1] + b[1]) / 2 - 0.18 * Math.sin(th), (a[2] + b[2]) / 2 + dz]);
+    }
+    grid([o, e, v], true);
   }
-  const pos = [];
-  const tri = (a, b, c) => pos.push(...a, ...b, ...c);
-  const strip = (A, B, flip) => { for (let k = 0; k < A.length - 1; k++) { const a = A[k], b = A[k + 1], c = B[k], d = B[k + 1]; if (flip) { tri(a, b, c); tri(b, d, c); } else { tri(a, c, b); tri(b, c, d); } } };
-  for (let i = 0; i < outer.length - 1; i++) strip(outer[i], outer[i + 1], false);
-  for (let i = 0; i < inner.length - 1; i++) strip(inner[i], inner[i + 1], false);
-  // the mouth's broken rim: the outer arch to the vault (the crust's thickness showing)
-  { const o = outer[0].slice(1, K + 1), v = inner[0].slice().reverse(); strip(o, v, true); }
-  // the back wall: a fan over the vault's last ring, its centre at mid-height
-  { const v = inner[N], f = floorAt(T.len), q = tubeEN(T.len + 0.3, 0.6 * Math.sin(T.len * 0.23 + lump[0])), c = [q.e * S, f + T.height * 0.45, -q.n * S];
-    for (let k = 0; k < v.length - 1; k++) tri(v[k], c, v[k + 1]); }
-  // the dome's last ring closed to a point on the ground
-  { const o = outer[outer.length - 1], q = tubeEN(T.len + 4.2, 0), c = [q.e * S, floorAt(T.len) - 0.6, -q.n * S];
-    for (let k = 0; k < o.length - 1; k++) tri(o[k], c, o[k + 1]); }
+  // the back: the vault's last ring closed on a point in the rock, a little past it and at mid-height
+  {
+    const v = inner[N], f = floorAt(T.len), c = P(T.len + 0.9, sway(T.len), f + T.height * 0.42), cb = pos.length / 3;
+    for (const q of v) pos.push(q[0], q[1], q[2]);
+    pos.push(c[0], c[1], c[2]);
+    for (let k = 0; k < v.length - 1; k++) idx.push(cb + k, cb + v.length, cb + k + 1);
+  }
+  // the crust's last ring closed on a point in the ground
+  {
+    const o = outer[outer.length - 1], c = P(T.len + 4.2, 0, floorAt(T.len) - 0.6), cb = pos.length / 3;
+    for (const q of o) pos.push(q[0], q[1], q[2]);
+    pos.push(c[0], c[1], c[2]);
+    for (let k = 0; k < o.length - 1; k++) idx.push(cb + k, cb + o.length, cb + k + 1);
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;

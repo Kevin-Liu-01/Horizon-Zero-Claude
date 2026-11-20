@@ -6,7 +6,8 @@ import { MalpaisBlockout } from './malpais.js';
 import { MALPAIS_PARS, MALPAIS_ROCK_COLOR } from './malpais-shader.js';
 import { MALPAIS_LAYERS } from './malpais-files.js';
 import { CLINKER, clinkerPlan, pinnaclePlan, ridgePlan, clastGeometry, pinnacleGeometry, ridgeGeometry, hornitoGeometry, tubeGeometry, pinnacleColliders, ridgeColliders, coneWeight } from './malpais-rocks.js';
-import { STEAM } from './malpais-layout.js';
+import { STEAM, TUBE_SHELTER } from './malpais-layout.js';
+import { buildBrazier } from '../settlements/brazier.js';
 import { buildSteam } from './malpais-steam.js';
 import { kilnYardsNearJobs, finishKilnYardsNear } from './kilnyards-near.js';
 
@@ -40,6 +41,7 @@ import { kilnYardsNearJobs, finishKilnYardsNear } from './kilnyards-near.js';
  *   M.state                           'cold' | 'building' | 'ready' | 'failed'
  *   M.stats                           { builds, ms: { step: ms }, totalMs, worstSliceMs, clasts, pinnacles, tris, draws, colliders, textures }
  *   M.perfSwitches()                  [{ id: 'malpais-ground' | 'malpais-rock' | 'malpais-steam' | 'malpais-kit', on, off }] (paired readback, MP4/MP10)
+ *                                     and 'malpais-steam:<source id>' (wave 3: one plume alone against no steam)
  *   M.update()                        each frame (terrain.update): the clinker tiles past CLINKER.far hidden
  */
 export const ZONE_MAP = Object.freeze({ x0: 40, z0: -376, x1: 512, z1: 448, cell: 2.5 });
@@ -266,7 +268,17 @@ export class MalpaisRegion {
       held.geos.push(tgeo);
       const tm = new THREE.Mesh(tgeo, matTube); tm.name = 'malpais-tube'; tm.castShadow = true; tm.receiveShadow = true;
       group.add(tm);
-      tris += tgeo.attributes.position.count / 3;
+      tris += tgeo.index ? tgeo.index.count / 3 : tgeo.attributes.position.count / 3;
+      // (M3 wave 3, MP6) the shelter's Brazier, unlit: the settlements' own Brazier (src/world/settlements/brazier.js, read
+      // only), the bowl on its three stones with its seat stone, no cistern; ash in the bowl, no flame, no pool, no light
+      // (the kindling is the Brazier rules' to wire: a spot that kindles). Two draws
+      const br = buildBrazier({ terrain: T, x: TUBE_SHELTER.brazier.x, z: TUBE_SHELTER.brazier.z, yaw: 0, cistern: false, seed: 23 });
+      br.setState({ kindled: false, burning: false });
+      br.update(0, null, 1);
+      br.group.name = 'malpais-tube-brazier';
+      br.group.traverse((o) => { if (o.isMesh && o.material) { held.mats.push(o.material); if (o.name === 'brazier-cistern-water') o.visible = false; } });
+      held.brazier = br;
+      group.add(br.group);
       // (wave 2b, MP4) the steam: every plume of a group in one instanced draw
       const steam = buildSteam(STEAM, ground);
       held.steam = steam;
@@ -367,7 +379,7 @@ export class MalpaisRegion {
       step('add', now() - tb);
       this.stats.colliders = (block.stats.colliders || 0) + held.colliderIds.length;
       this.stats.tris = Math.round(tris);
-      this.stats.draws = held.tiles.length + 4 + block.stats.draws + 2 + steam.counts.draws;
+      this.stats.draws = held.tiles.length + 4 + block.stats.draws + 2 + steam.counts.draws + 2;   // (wave 3) + the Brazier's stone and ash
       this.stats.totalMs = Math.round(now() - t0);
       this.stats.builds++;
       const ds = now() - sliceT;
@@ -413,6 +425,7 @@ export class MalpaisRegion {
     H.block?.dispose();
     H.kit?.dispose();
     H.steam?.dispose();
+    if (H.brazier) { H.brazier.group.parent?.remove(H.brazier.group); H.brazier.group.traverse((o) => { if (o.isMesh) o.geometry?.dispose(); }); }
     for (const t of H.tiles || []) t.mesh.dispose?.();
     for (const g of H.geos) g.dispose();
     for (const m of H.mats) m.dispose();
@@ -428,6 +441,19 @@ export class MalpaisRegion {
         off: () => { this._switch.rock = false; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges', 'malpais-tube']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = false; } } },
       { id: 'malpais-steam', on: () => { this._switch.steam = true; if (this._held?.steam) this._held.steam.group.visible = true; }, off: () => { this._switch.steam = false; if (this._held?.steam) this._held.steam.group.visible = false; } },
       { id: 'malpais-kit', on: () => { if (this._held?.kit) this._held.kit.group.visible = true; }, off: () => { if (this._held?.kit) this._held.kit.group.visible = false; } },
+      // (M3 wave 3, MP4 "costs <= 0.15 ms* GPU in frame", per source) one plume at a time: 'on' draws that source's plume
+      // alone (steam.solo: the same material, the same clock), 'off' draws no steam; on - off is the source's cost
+      ...STEAM.map((src) => {
+        const only = (id) => {
+          const st = this._held?.steam;
+          if (!st) return;
+          const solo = id ? st.solo(id) : null;
+          st.group.visible = true;
+          for (const m of st.group.children) m.visible = m === solo;
+        };
+        return { id: `malpais-steam:${src.id}`, on: () => only(src.id), off: () => only(null) };
+      }),
+      { id: 'malpais-steam-restore', on: () => { const st = this._held?.steam; if (st) for (const m of st.group.children) m.visible = !m.name.startsWith('malpais-steam-solo-'); }, off: () => {} },
     ];
   }
 

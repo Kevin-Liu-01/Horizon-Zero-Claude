@@ -77,8 +77,10 @@ export const TUBE_SHELTER = Object.freeze({
   foot: +(T.half + T.wall + 0.6).toFixed(2),
   mouth: tp('tube-mouth', 0, 0),
   back: tp('tube-back', T.len, 0),
-  /** the Brazier that kindles (BIBLE §3.4: Braziers at "the Malpais tube shelter") */
-  brazier: tp('tube-brazier', 9, -1.2),
+  /** the Brazier that kindles (BIBLE §3.4: Braziers at "the Malpais tube shelter"). (M3 wave 3, MP6) 4 m in, right of
+   * the axis, under the crust and near the mouth where its smoke leaves (was 9 m in, left: from F58's lens the ray to it
+   * ran into the mouth's left wall; from here it passes 0.9 m left of the axis, 2.2 m up) */
+  brazier: tp('tube-brazier', 4, 1.2),
   /** the dormant Peg nest (area C places its Pegs; 0 wake in 10 visits unless struck, MP6) */
   nest: tp('tube-nest', T.len - 2.5, 0.5),
   /** the salt cache (BIBLE §3.4: "the Malpais tube shelter") in a niche of the left wall */
@@ -152,6 +154,7 @@ export const VENTS = Object.freeze([
 const STEAM_STACKS = Object.freeze({ 'stack-4': 9, 'stack-20': 10 });
 export const STEAM = Object.freeze([
   ...HORNITOS.filter((h) => h.steam).map((h) => Object.freeze({ id: `steam-${h.id}`, kind: 'hornito', x: h.x, z: h.z, base: h.h, h: +Math.min(13, (19.6 - h.h) / 1.15).toFixed(2), r: h.r * 0.45, n: 14 })),
-  ...VENTS.map((v) => Object.freeze({ id: `steam-${v.id}`, kind: 'vent', x: v.x, z: v.z, base: 0.2, h: 9 * v.k, r: 0.8, n: 12 })),
+  // (M3 wave 3, MP4's cost per source) a vent's plume 8 puffs in flight (was 12), its puffs swelling less (malpais-steam.js)
+  ...VENTS.map((v) => Object.freeze({ id: `steam-${v.id}`, kind: 'vent', x: v.x, z: v.z, base: 0.2, h: 9 * v.k, r: 0.8, n: 8 })),
   ...YARDS.stacks.filter((s) => STEAM_STACKS[s.id]).map((s) => Object.freeze({ id: `steam-${s.id}`, kind: 'stack', x: s.x, z: s.z, base: s.h, h: STEAM_STACKS[s.id], r: s.r * 0.8, n: 12 })),
 ]);

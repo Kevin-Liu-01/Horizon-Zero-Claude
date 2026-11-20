@@ -286,7 +286,7 @@ row('MP9', holes === 0 && gridMiss === 0, `0 holes on ${legs.length - holes} of 
 
 /* ======================================================================== MP6 */
 const shelterOk = walks.find((g) => /Brazier/.test(g.name))?.ok && walks.find((g) => /tube shelter's back/.test(g.name))?.ok && Math.min(...crust) >= 1.0;
-row('MP6', shelterOk ? null : false, `the tube shelter (R9: at the hornito field): walkable to its Brazier spot and its back (the 2 m nav walks, its walls stamped), headroom ${T.height} m, crust >= ${r1(Math.min(...crust))} m; the Brazier spot, the dormant nest and the salt cache are data (malpais-layout.js TUBE_SHELTER). The Brazier that kindles, the nest's Pegs (0 of 10 wake) and the cache's pickup are other areas' (settlements' Brazier system, instruments, systems): UNMEASURED`, { crustMin: r1(Math.min(...crust)) });
+row('MP6', shelterOk ? null : false, `the tube shelter (R9: at the hornito field): walkable to its Brazier spot and its back (the 2 m nav walks, its walls stamped), headroom ${T.height} m, crust >= ${r1(Math.min(...crust))} m; the Brazier stands on its spot unlit (wave 3: the settlements' own Brazier, built with the region, 4 m inside the mouth), the dormant nest and the salt cache are data and grey markers (malpais-layout.js TUBE_SHELTER). The Brazier's kindling, the nest's Pegs (0 of 10 wake) and the cache's pickup are other areas' (settlements' Brazier system, instruments, systems): UNMEASURED`, { crustMin: r1(Math.min(...crust)) });
 
 /* ======================================================================== MP1 (the materials' half) */
 // (M3 wave 2) the near form: the Malpais' ground term and rock (src/world/sites/malpais-shader.js), the Yards' near form

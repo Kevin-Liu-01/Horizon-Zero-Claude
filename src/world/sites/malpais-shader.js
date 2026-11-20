@@ -17,7 +17,7 @@
  * every 7 m of height, as malpaisCinder), A Rust Cone's weight. Nothing here is emissive: the term writes the albedo, the
  * normal, the roughness and the AO and nothing else (MP1: 0 emissive ground texels).
  *
- * Needs, from TERRAIN_COLOR: col, pert, gRough, gAO, slope, wn, xz, dCam, hold, macA, vWPos, gNoiseT.
+ * Needs, from TERRAIN_COLOR: col, pert, gRough, gAO, slope, wn, xz, dCam, hold, macA, nMac, vWPos, gNoiseT.
  */
 export const MALPAIS_PARS = /* glsl */ `
 uniform highp sampler2DArray tMalA;   // aa, pahoehoe, cinder, scree: albedo (sRGB data) + height
@@ -29,10 +29,16 @@ uniform vec4 uMalK;                   // x the term's strength (0 = the blockout
 vec4 malA(float i, vec2 uv, vec2 gx, vec2 gy) { return textureGrad(tMalA, vec3(uv, i), gx, gy); }
 vec4 malN(float i, vec2 uv, vec2 gx, vec2 gy) { return textureGrad(tMalN, vec3(uv, i), gx, gy); }
 /* (fix round 1: past 90 m the plain read flat) the flow's large relief as a height field (m): pressure ridges and
- * tumuli, ridged noise in cells of 28 and 14 m, 0 in the troughs to about 4 m on a crest; read once, its slope from the
- * screen derivatives (wave 2b) */
-float malRidge(vec2 p) {
-  vec4 n = gNoiseT(p * 0.018 + 0.61);
+ * tumuli, ridged noise, 0 in the troughs to about 4 m on a crest; read once, its slope from the screen derivatives
+ * (wave 2b).
+ * (M3 wave 3, R11: F56's far plain, about 200 m out, showed rows of yellow rings) one read of the field noise on the
+ * world's axes, ridged, draws a closed crest round every node of its lattice (cells of 6.9 m, in rows), and the low sun
+ * lit each crest's sunward arc. The read is turned 31 deg off the axes and stretched 2.3 times along one of them (a crest
+ * is a long fold 16 m and more, not a ring), and its place pushed up to a cell by the slow field \`warp\` (8-16 m cells),
+ * so no two crests line up. Still one read */
+float malRidge(vec2 p, vec2 warp) {
+  vec2 q = vec2(dot(p, vec2(0.857, 0.515)), dot(p, vec2(-0.515, 0.857)));
+  vec4 n = gNoiseT(q * vec2(0.018, 0.0078) + warp * 0.25 + 0.61);
   float r = 1.0 - abs(2.0 * (0.65 * n.r + 0.35 * n.g) - 1.0);
   return r * r * 4.0;
 }
@@ -67,7 +73,10 @@ export const MALPAIS_TERM = /* glsl */ `
         vec2 u1 = xz * uMalTile.x, u2 = vec2(dot(xz, vec2(0.766, 0.643)), dot(xz, vec2(-0.643, 0.766))) * uMalTile.x * 0.71 + 0.37;
         vec4 a1 = malA(0.0, u1, dx * uMalTile.x, dy * uMalTile.x), a2 = malA(0.0, u2, dx * uMalTile.x * 0.71, dy * uMalTile.x * 0.71);
         vec4 n1 = malN(0.0, u1, dx * uMalTile.x, dy * uMalTile.x), n2 = malN(0.0, u2, dx * uMalTile.x * 0.71, dy * uMalTile.x * 0.71);
-        float b = smoothstep(-0.15, 0.15, nz.r - 0.5 + (a2.a - a1.a) * 0.6);
+        // (wave 3, MP2 at a true aa square) the taller clast of the two reads wins pixel by pixel; the slow field only leans
+        // it, so both repeats (2.6 m, and 3.7 m turned 40 deg) carry about half the ground everywhere (was: whole patches of
+        // one read, its 2.6 m repeat whole)
+        float b = smoothstep(-0.2, 0.2, (nz.r - 0.5) * 0.35 + (a2.a - a1.a) * 0.8);
         vec4 a = mix(a1, a2, b), n = mix(n1, n2, b);
         // the second read is turned 40 deg: its normal turned back into the world frame
         vec2 t1 = n1.xy * 2.0 - 1.0, t2 = n2.xy * 2.0 - 1.0;
@@ -112,7 +121,10 @@ export const MALPAIS_TERM = /* glsl */ `
         vec2 uq = vec2(dot(xz, vec2(-0.259, 0.966)), dot(xz, vec2(-0.966, -0.259))) * uMalTile.w * 0.41 + 0.53;
         vec4 a = malA(3.0, u, dx * uMalTile.w, dy * uMalTile.w), n = malN(3.0, u, dx * uMalTile.w, dy * uMalTile.w);
         vec4 a2 = malA(3.0, uq, dx * uMalTile.w * 0.41, dy * uMalTile.w * 0.41), n2 = malN(3.0, uq, dx * uMalTile.w * 0.41, dy * uMalTile.w * 0.41);
-        vec4 sp = gNoiseT(xz * 0.11 + 0.23);
+        // (M3 wave 3, MP2: the aa's and the scree's top-downs shared one 9.06 m peak, 0.353 and 0.332; both squares lie on
+        // Rust Cone, and the field noise read here at 0.11 / m repeats every 1 / 0.11 = 9.09 m, its fine channels (A, B) in
+        // every patch) one read at 0.0147 / m, turned 37 deg: it repeats every 68 m, its cells 4.3 m (G), 2.1 m (B), 1.1 m (A)
+        vec4 sp = gNoiseT(vec2(dot(xz, vec2(0.799, 0.602)), dot(xz, vec2(-0.602, 0.799))) * 0.0147 + 0.23);
         float b = smoothstep(0.35, 0.65, sp.g + (a2.a - a.a) * 0.4);
         vec2 t = n.xy * 2.0 - 1.0; t = vec2(t.x * 0.906 - t.y * 0.423, t.x * 0.423 + t.y * 0.906);
         vec2 t2 = n2.xy * 2.0 - 1.0; t2 = vec2(-t2.x * 0.259 - t2.y * 0.966, t2.x * 0.966 - t2.y * 0.259);
@@ -137,12 +149,13 @@ export const MALPAIS_TERM = /* glsl */ `
       // (wave 2b, MP10) its slope from the screen derivatives of one read (was two more reads 2 m off): the world gradient
       // solved from d/dx and d/dy of the height and of xz
       {
-        float rH = malRidge(xz);
+        float rH = malRidge(xz, nMac.gb - 0.5);
         vec2 gR = vec2(dFdx(rH), dFdy(rH));
         float det = dx.x * dy.y - dx.y * dy.x;
         vec2 gW = abs(det) > 1e-10 ? vec2(dy.y * gR.x - dx.y * gR.y, dx.x * gR.y - dy.x * gR.x) / det : vec2(0.0);
         gW = clamp(gW, vec2(-1.5), vec2(1.5));
-        float rk = (1.0 - cone) * (1.0 - pah * 0.6);
+        // (wave 3) on the sheets past 110 m the relief goes to a quarter: a sheet is smooth, and its far crests were the rings
+        float rk = (1.0 - cone) * (1.0 - pah * mix(0.6, 0.75, smoothstep(110.0, 190.0, dCam)));
         mp += vec3(-gW.x, 0.0, -gW.y) * 0.55 * rk;
         mc *= mix(1.0, 0.62 + 0.12 * rH, rk);
         mo *= mix(1.0, 0.75 + 0.07 * rH, rk);

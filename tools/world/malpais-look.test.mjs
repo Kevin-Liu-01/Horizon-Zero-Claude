@@ -148,10 +148,21 @@ test('MP4 data: >= 3 steaming hornitos and >= 3 vents; every plume inside its co
   const st = buildSteam(STEAM, g);
   assert.equal(st.counts.draws, 2);
   for (const m of st.materials) assert.equal(m.emissive.getHex(), 0, `${m.name} emissive`);
-  const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.lambert.vertexShader, fragmentShader: THREE.ShaderLib.lambert.fragmentShader };
-  st.materials[0].onBeforeCompile(sh);
-  for (const k of ['#include <project_vertex>', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>']) assert.ok(!sh.vertexShader.includes(k), `${k} not replaced`);
-  assert.ok(sh.fragmentShader.includes('diffuseColor.a *= a'), 'the puff\'s cover not applied');
+  // (wave 3) a standard material (the sky's IBL lights it; a Lambert puff took none of it), one a group, one program
+  assert.equal(st.materials.length, 2);
+  for (const m of st.materials) {
+    assert.ok(m.isMeshStandardMaterial, `${m.name} is not a standard material`);
+    const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
+    m.onBeforeCompile(sh);
+    for (const k of ['#include <project_vertex>', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>']) assert.ok(!sh.vertexShader.includes(k), `${k} not replaced`);
+    assert.ok(sh.fragmentShader.includes('diffuseColor.a *= a'), 'the puff\'s cover not applied');
+    assert.ok(sh.uniforms.uSteamK.value.x > 0 && sh.uniforms.uSteamK.value.x <= 0.6, 'the cover');
+  }
+  assert.equal(new Set(st.materials.map((m) => m.customProgramCacheKey())).size, 1);
+  // the stacks' plumes denser than the flow's
+  assert.ok(STEAM.some((s) => s.kind === 'stack'));
+  // (wave 3, MP4 per source) every source has its solo plume, its puffs that source's only
+  for (const s of STEAM) { const m = st.solo(s.id); assert.ok(m && m.geometry.instanceCount === Math.round(s.n * 2), `${s.id} solo`); }
   st.dispose();
   function aaShareOk(v) { const w = new Float64Array(6); biomesAt(v.x, v.z, w); return w[2] > 0.5; }
 });
@@ -172,8 +183,17 @@ test('R9: the tube shelter lies at the hornito field, clear of every hornito and
     assert.ok(q.s > 0 && q.s < T.len && Math.abs(q.l) < T.half, `${p.id} outside the vault (s ${q.s.toFixed(1)}, l ${q.l.toFixed(1)})`);
   }
   const geo = tubeGeometry((x, z) => heightAt(x, z)), p = geo.attributes.position;
-  assert.ok(p.count / 3 > 600 && p.count / 3 < 4000, `${p.count / 3} triangles`);
+  // (wave 3, MP6) one welded grid a surface: indexed, so its normals are shared (wave 2b's flat triangles read faceted)
+  assert.ok(geo.index, 'the tube is not indexed');
+  const tris = geo.index.count / 3;
+  assert.ok(tris > 1500 && tris < 6000, `${tris} triangles`);
   for (let i = 0; i < p.count; i++) assert.ok(Number.isFinite(p.getX(i) + p.getY(i) + p.getZ(i)));
+  const nn = geo.attributes.normal;
+  for (let i = 0; i < nn.count; i++) assert.ok(Number.isFinite(nn.getX(i) + nn.getY(i) + nn.getZ(i)));
+  // the lip runs out past the mouth over its crown, and no further than TUBE_LIP and its rounded edge
+  { const { TUBE_LIP } = await import('../../src/world/sites/malpais-rocks.js');
+    let minS = Infinity; for (let i = 0; i < p.count; i++) minS = Math.min(minS, L.tubeSL(p.getX(i), p.getZ(i)).s);
+    assert.ok(minS < -0.8 && minS > -(TUBE_LIP + 0.6), `the lip's reach ${minS.toFixed(2)} m`); }
   // the walls and the back are blockers, the crust is not
   const boxes = L.tubeBoxes((x, z) => heightAt(x, z));
   assert.equal(boxes.filter((b) => b.blocking).length, 9);
