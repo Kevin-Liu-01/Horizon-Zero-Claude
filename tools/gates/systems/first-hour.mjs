@@ -1386,7 +1386,11 @@ try {
   for (const leg of LEGS) {
     // (M3 fix wave) a chain whose leg before left no record stops here: at 88c5c4c leg 1 timed out waiting for slot1 and
     // leg 2 would have started from its fixture, a run that only looks chained
-    if (CHAIN && leg !== LEGS[0] && !carry) { log(`leg ${leg}: not run (the leg before left no record)`); report.legs.push({ leg, notRun: 'the leg before left no record', beats: [], passed: `0/${leg === 2 ? SCAR_STAGES.length : TRUE_GROUND_STAGES.length}` }); continue; }
+    // and one whose leg before did not pass all its beats stops too: at ae888fc chained run 1 the slice stopped at 'climb'
+    // and legs 2 and 3 started from its mid-slice record ("not built" on all 14)
+    const before = report.legs.at(-1);
+    const why = !carry ? 'the leg before left no record' : before && (() => { const m = /^(\d+)\/(\d+)/.exec(before.passed || ''); return !m || +m[1] < +m[2]; })() ? `the leg before stopped (${before.passed})` : null;
+    if (CHAIN && leg !== LEGS[0] && why) { log(`leg ${leg}: not run (${why})`); report.legs.push({ leg, notRun: why, beats: [], passed: `0/${leg === 2 ? SCAR_STAGES.length : TRUE_GROUND_STAGES.length}` }); carry = null; continue; }
     log(`leg ${leg}${CHAIN && carry ? ' (from the record the leg before left)' : ''}`);
     const L = leg === 1 ? await runLeg1() : await runLeg(leg, CHAIN ? carry : null);
     carry = L.endRecord ?? null;
