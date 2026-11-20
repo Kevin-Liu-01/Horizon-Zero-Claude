@@ -43,6 +43,7 @@ import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '..
 import { takeMachineSlot, releaseMachineSlot } from '../chrome-slot.mjs';
 import { RUNS, assertOutsideRepo } from '../frames/paths.mjs';
 import { CROSSINGS } from './region-hitch-paths.mjs';
+import { causeOf } from './region-hitch-cause.mjs';
 import { fixture } from '../gates/systems/hour-two-fixtures.mjs';
 import { makeRecord } from '../../src/game/save/format.js';
 import { heightAt } from '../../src/world/island/recipe.js';
@@ -244,24 +245,7 @@ const hold = (at, agl, ms) => new Promise((resolve) => {
   requestAnimationFrame(step);
 });
 
-/** Name a long frame's cause from what fell in it. */
-function causeOf(f, marks, res, loaf) {
-  const gl = f.gl || {};
-  const ms = (ks) => ks.reduce((s, k) => s + (gl[k]?.[1] ?? 0), 0);
-  const compile = ms(['compileShader', 'linkProgram', 'getProgramParameter', 'getProgramInfoLog']);
-  const upload = ms(['texImage2D', 'texImage3D', 'texSubImage2D', 'texSubImage3D', 'texStorage2D', 'texStorage3D', 'compressedTexImage2D', 'compressedTexSubImage2D', 'compressedTexImage3D', 'compressedTexSubImage3D', 'generateMipmap']);
-  const buf = ms(['bufferData', 'bufferSubData']);
-  const lo = f.t - f.d - 2, hi = f.t + 2;
-  const inFrame = marks.filter((m) => m.t >= lo && m.t <= hi).map((m) => m.tag);
-  const fetched = res.filter((r) => r.end >= lo && r.end <= hi).map((r) => r.url);
-  const scripts = loaf.filter((l) => l.t <= hi && l.t + l.d >= lo).flatMap((l) => l.scripts).slice(0, 6);
-  let cause = 'unattributed';
-  if (compile >= 5) cause = 'compile';
-  else if (upload >= 5 || buf >= 5) cause = 'upload';
-  else if (fetched.length || inFrame.some((t) => /load-done|uploaded/.test(t))) cause = 'fetch/decode';
-  else if (scripts.some((s) => /nav|path/i.test(`${s.fn} ${s.url}`))) cause = 'nav';
-  return { cause, compileMs: +compile.toFixed(1), uploadMs: +upload.toFixed(1), bufferMs: +buf.toFixed(1), marks: inFrame, fetched, scripts };
-}
+/* A long frame's cause: tools/perf/region-hitch-cause.mjs (pure; a saved report can be re-read with it). */
 
 /* ------------------------------------------------------------------ main */
 

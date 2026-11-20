@@ -78,3 +78,16 @@ for (const c of CROSSINGS) {
     if (c.to !== 'malpais' && c.from !== 'malpais') assert.ok(!ev.some((e) => e.region === 'malpais'), 'the Malpais is never approached on a crossing that is not its own');
   });
 }
+
+test('(fix round 1) a long frame\'s cause: a program linked in it is a compile even at 0 ms (parallel compile), and the build step open over it is named', async () => {
+  const { causeOf } = await import('./region-hitch-cause.mjs');
+  // the frame of deb74cc's jog (run 20261120T123120Z-deb74cc-region-hitch): 35.3 ms inside the Malpais' compile step
+  const marks = [{ t: 36838, tag: 'malpais:register' }, { t: 37415, tag: 'malpais:compile' }, { t: 37438, tag: 'malpais:add' }];
+  const f = { t: 37118, d: 35.3, gl: { compileShader: [4, 0], linkProgram: [2, 0], getProgramParameter: [2, 0], texSubImage2D: [5, 0.1] } };
+  const c = causeOf(f, marks);
+  assert.equal(c.cause, 'compile'); assert.equal(c.during, 'malpais:compile'); assert.equal(c.links, 2);
+  // nothing in it, nothing open: unattributed (a crossing with one fails)
+  assert.equal(causeOf({ t: 50000, d: 40, gl: {} }, marks).cause, 'unattributed');
+  assert.equal(causeOf({ t: 50000, d: 40, gl: {} }, marks).during, null);
+  assert.equal(causeOf({ t: 900, d: 40, gl: { texImage2D: [1, 7] } }, []).cause, 'upload');
+});
