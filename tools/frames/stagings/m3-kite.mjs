@@ -36,7 +36,8 @@ export const FRAMES = Object.freeze([
   {
     id: 'F52', subject: 'the hang, side-on at 4 m (blockout: the grey kite)', in: 'M3', hour: 18.25, weather: 'trade',
     at: { en: [F51_AT.e, F51_AT.n] }, bearing: F51_AT.headingDeg,
-    camera: { mode: 'orbit', yawRel: 90, dist: 4, height: 2.0, target: { fwd: 0, side: 0, up: 2.0 }, fov: 62, lookAt: 'off' },
+    // (fix round 1: at fov 62 and 2.0 m the kite's top longeron, 2.7 m from the lens, was cut by the frame's top edge)
+    camera: { mode: 'orbit', yawRel: 90, dist: 4, height: 2.3, target: { fwd: 0, side: 0, up: 2.3 }, fov: 72, lookAt: 'off' },
     state: { pose: 'idle', hud: false },
     ref: { written: "Kevin's bars (no reference): the bar at sternum-to-chin height, 0.30-0.40 m in front of the chest, elbows below the shoulders; never a hand behind the head; the whole kite in frame" },
   },
@@ -64,6 +65,9 @@ const hangUnderKite = {
     let heroMesh = null; p.model.traverse((o) => { if (!heroMesh && o.isMesh) heroMesh = o; });
     if (heroMesh) K.mesh.layers.mask = heroMesh.layers.mask;
     root.add(K.group);
+    // the kite's program built and linked before the frame (at f1f8364 F51, the first frame it was ever in, was filmed
+    // with no kite at all: its program was still linking; F52, the second, drew it)
+    try { C.engine.compileAsDrawn?.(K.group, C.camera, C.scene); await C.engine._awaitProgramsReady?.(10000); } catch (e) { api.standIn(`kite program warm: ${e.message}`); }
     an.setHangPose(true);
     p.update = function (dt, t) {
       this.position.set(hold.x, hold.y, hold.z); this.velocity?.set?.(0, 0, 0);
@@ -83,7 +87,7 @@ const hangUnderKite = {
     // the hang settles on the wall clock (the static pose and her chains), then the frame freezes (page.mjs step 9)
     C.engine.requestTimeScale('studio', null);
     const t0 = performance.now();
-    while (performance.now() - t0 < 1500) await api.frames(1);
+    while (performance.now() - t0 < 2000) await api.frames(1);
     // the orbit lens never computes her occlusion fade: drawn whole (as the instruments' line-up frames)
     if ((p._fadeCur ?? 1) < 0.999 || (p.fade ?? 1) < 0.999 || p._fadeApplied !== 1) {
       p.fade = 1; p._fadeCur = 1; p._fadeApplied = -1;
