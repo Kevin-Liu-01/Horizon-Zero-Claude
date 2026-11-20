@@ -746,8 +746,10 @@ const SEAL_MARGIN = 0.45;
 // a stand's margins are read from her nock and lens carried there; at f5c955a one read 0.71 m and gave 0.45 m once she
 // stood there with the bow raised, so a stand must clear the bar by this much more
 const STAND_SLACK = 0.4;
-/** the draw a seal arrow is loosed at (combat.drawStrength) */
-const DRAW_FIRE = 0.75;
+/** the draw a seal arrow is loosed at (combat.drawStrength; 62 m/s x 0.80 at 0.55, hunter arrows scale with draw). At
+ * 0.75 (da66735, a9598c1) three arrows left in the stall and the fourth at its end; arrows loosed at the Screed moving
+ * (backing off or walking on) met its seal 5 times in 11 at 3e576c6..a9598c1, in the stall 23 in 23 */
+const DRAW_FIRE = 0.55;
 const sealGeom = (mi, stand = null) => {
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, cb = C.combat, T = C.terrain;
   if (!m || !m._sealW) return null;
