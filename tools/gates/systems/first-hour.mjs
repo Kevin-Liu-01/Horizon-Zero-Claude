@@ -697,15 +697,16 @@ const screedNow = async () => {
 
 /**
  * in-page (M3 fix wave): is the Screed within 0.45 s of changing its motion (an arrow's release and flight at 8 m), or
- * backing off? The end of a stall (it backs off at once), and the back-off itself until it walks on.
+ * in the first 0.4 s of one? The end of a stall (it backs off at once) and the start and end of the back-off.
  */
 const screedEdge = async (i) => {
-  const R = (await import('/src/instruments/kinds/screed-rules.js')).SCREED_RULES;
+  const SR = await import('/src/instruments/kinds/screed-rules.js'), R = SR.SCREED_RULES, FIGHT = SR.FIGHT;
   const m = window.__CTX__.machines.list[i], b = m?.brain, backT = m?.fightRules?.backT ?? 0;
   if (!b) return false;
   // (a7d1cc3 probe e-stall-p4: an arrow held past the stall's end and solved in the first 0.3 s of the back-off met the
-  // hull 0.62 m off the seal: the whole back-off is held through)
-  return (b.phase === 'stall' && R.stallS - b.phaseT < 0.45) || backT > 0;
+  // hull 0.62 m off the seal: solveShot reads its motion over 8 frames, so the first 0.4 s of the back-off is held too;
+  // holding through the whole back-off (da66735) let its chest come between her and the near seal)
+  return (b.phase === 'stall' && R.stallS - b.phaseT < 0.45) || backT > FIGHT.backS - 0.4 || (backT > 0 && backT < 0.45);
 };
 
 /** in-page: a point at compass bearing b, r m from Ninewalls' centre (the walls seam's polar) */
@@ -873,7 +874,10 @@ async function volley(page, K, stage, maxS = 8) {
       // seal's hit, or once it was off, nothing). No clear line: the volley ends and the drive steps to a stand
       const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
       const G = await page.evaluate((i) => window.__sealGeom(i), S.i);
-      const order = (S.sealsLeft.length === 2 ? [far, near] : S.sealsLeft.slice()).filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
+      // (da66735 probes 6-8: far, far, near in the stall and the near one's second arrow held through the back-off, where
+      // its chest came between them: three fail-soft. Now near, near, far in the stall: the far seal's line only opens
+      // as it backs off, so its second arrow goes in the back-off)
+      const order = (S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice()).filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
       let part = null, sol = null;
       for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && q.first === `weak:${p}`) { part = p; sol = q; break; } }
       if (!part) {
@@ -890,7 +894,7 @@ async function volley(page, K, stage, maxS = 8) {
       // Screed (missM 0.019) left as the stall ended and it began to back off at 1.2 m/s, and met its hull 0.71 m from the
       // seal; the next, loosed in the back-off, met nothing. Held drawn until the change is past, then solved again
       let held = 0;
-      for (; held < 26 && (await page.evaluate(screedEdge, S.i)); held++) await sleep(100);
+      for (; held < 12 && (await page.evaluate(screedEdge, S.i)); held++) await sleep(100);
       if (held) sol = await page.evaluate(SH.solveShot, S.i, part, 0.12);
       const G2 = await page.evaluate((i) => window.__sealGeom(i), S.i);
       const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null,
