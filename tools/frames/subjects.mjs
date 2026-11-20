@@ -105,10 +105,78 @@ export const SUBJECTS = Object.freeze({
       shapes: HORNITOS.map((h) => ({ id: h.id, kind: 'cone', x: h.x, z: h.z, r: h.r, rTop: h.r * 0.3, h: h.h })) },
     { name: 'the tube shelter\'s mouth', kind: 'shapes', minPx: 30, shapes: [cyl('tube-mouth', TUBE_SHELTER.mouth.x, TUBE_SHELTER.mouth.z, TUBE_SHELTER.half, TUBE_SHELTER.height)] },
   ],
+
+  // ---- (M3 fix round 1, EF4: "every staging of §3.3 and of the M2 set declares subjects") the M1 Frame Set and every
+  // lane staging. Floors are the frames' own targets read as sizes (the header's rule): a full figure at a turntable
+  // distance fills most of the frame (>= 500 px, 0.8 of her in the safe area), a figure in a scene >= 60-150 px, a face
+  // close-up is her head (a 0.12 m sphere on the head bone), a screen is its panel's element, a landmark the frame
+  // names is a site's cylinder (counted things >= 20 px; a far landmark >= 4-10 px), a look down at the ground its region
+  ...M1_AND_LANE(),
 });
 
-/** The frames EF4 applies to in M3 wave 2 (the brief's D5 set that has a staging, and §3.3's). */
-export const EF4_FRAMES = Object.freeze(['F39-look', 'F44', 'F45', 'F51', 'F52', 'F53', 'F54', 'F55', 'F56', 'F57', 'F58']);
+/** The frames EF4's wave-2 list named (the brief's D5 set that has a staging, and §3.3's). */
+export const EF4_WAVE2 = Object.freeze(['F39-look', 'F44', 'F45', 'F51', 'F52', 'F53', 'F54', 'F55', 'F56', 'F57', 'F58']);
+/** (fix round 1) EF4's set is every staging: the Frame Set's and every lane's (subjects.test.mjs checks the count). */
+export const EF4_FRAMES = EF4_WAVE2;
+
+function M1_AND_LANE() {
+  const hero = (minPx, extra = {}) => ({ name: 'Brea', kind: 'hero', minPx, ...extra });
+  const whole = (minPx = 500) => hero(minPx, { name: 'Brea, the whole figure', inLens: 0.8 });
+  const kind = (machine, minPx, min = 1, extra = {}) => ({ name: `the ${machine}${min > 1 ? ` (${min})` : ''}`, kind: 'machines', machine, min, minPx, ...extra });
+  const people = (min, minPx, extra = {}) => ({ name: `${min} ${min > 1 ? 'people' : 'person'}`, kind: 'people', min, minPx, ...extra });
+  const face = { name: 'her face (the head bone, 0.12 m)', kind: 'bone', bone: 'head', r: 0.12, minPx: 250 };
+  const dom = (name, selector, minPx) => ({ name, kind: 'dom', selector, minPx });
+  const place = (id, r, h, minPx, extra = {}) => ({ name: `${id}`, kind: 'shapes', minPx, inLens: 0.6, shapes: [site(id, r, h)], ...extra });
+  const hub = (what) => [dom(`the ${what} panel`, '.mn-hub.show', 600)];
+  const towers = (minPx) => ({ name: 'the Kiln Yards\' two tower stubs', kind: 'shapes', min: 2, minPx, inLens: 0.6,
+    shapes: YARDS.towers.map((t) => cyl(t.id, t.x, t.z, t.r0, t.h, { rTop: t.r1 })) });
+  return {
+    // the M1 Frame Set (frameset.json)
+    F01: [dom('the title', '.mn-title', 300)],
+    F02: [hero(80), { name: 'the sun\'s disc', kind: 'sun' }, place('sounding-ring', 25, 6, 4)],
+    F03: [hero(150), dom('the HUD\'s bearing strip', '.cal-strip', 20)],
+    F04: [{ name: 'the Pans\' ground', kind: 'ground', region: 'pans', minShare: 0.5 }],
+    F05: [hero(60)],
+    F06: [hero(80)],
+    F07: [place('saltrow', 45, 10, 30)],
+    F08: [whole()], F09: [whole()], F10: [whole()],
+    F11: [face], F12: [face], F13: [face],
+    F14: [whole(450)], F15: [hero(350)], F16: [hero(400)], F17: [hero(150, { inLens: 0.5 })], F18: [hero(250)], F19: [hero(300)],
+    F20: [hero(300), people(1, 300)],
+    F21: [people(3, 200, { name: 'three faces', inLens: 0.25 })],
+    F22: [people(2, 30)],   // a street inside the town: Saltrow's 45 m cylinder is round the lens (Node: 5 % of it in the lens)
+    'F23-plumb': [hero(200), kind('plumb', 120)], 'F23-peg': [hero(200), kind('peg', 60)], 'F23-gauge': [hero(200), kind('gauge', 120)],
+    F24: [hero(100), kind('plumb', 80)],
+    F25: [hero(100), kind('plumb', 60), kind('peg', 15, 4)],
+    F26: [dom('the Sighting card', '.calf-card', 60), kind('gauge', 60)],
+    F27: hub('map'), F28: hub('Making'), F29: hub('character'),
+    F30: [hero(200)],
+    F31: [hero(80), kind('plumb', 40)],
+    F32: [place('ninewalls', 60, 6, 10)],
+    // lane stagings (tools/frames/stagings/*.mjs)
+    'F45-trade': [hero(100), towers(20)],
+    'F45-transit': [kind('transit', 60)],
+    'F23-tiller': [hero(200), kind('tiller', 120)], 'F23-sickle': [hero(200), kind('sickle', 80)], 'F23-screed': [hero(150), kind('screed', 150)],
+    F38: [hero(150), kind('tiller', 40, 3), kind('plumb', 30)],
+    F39: [kind('screed', 100), kind('sickle', 40, 3), hero(100)],
+    'F39-people': [kind('screed', 20), people(5, 8)],
+    'F42-stowed': [whole(450)], 'F40-stowed': [whole(450)], 'F42-ready': [whole(450)], 'F42-readyfront': [whole(450)],
+    F40: [whole(450)], 'F40-front': [whole(450)], F41: [whole(450)], 'F42-light': [whole(450)],
+    'F40-open': [{ name: 'the Windwall open', kind: 'path', path: 'combat.windwall.prop.group', minPx: 200 }],
+    F42: [hero(300), kind('sickle', 100)],
+    F43: [hero(100), dom('the Kit Rack\'s sectors', '.kr-sec', 20)],
+    // the town spills off the frame's edge at 60 m (Node: 43 % of its 45 m cylinder in the safe area): "Saltrow below" asks
+    // for it in the frame, not whole
+    'F51-cost': [place('sounding-ring', 25, 6, 4), place('saltrow', 45, 10, 6, { inLens: 0.3 })],
+    F34: [place('ninewalls', 60, 6, 20)], F35: [place('ninewalls', 60, 6, 20)],
+    F36: [people(5, 40)],
+    F37: [hero(300), people(1, 300)],
+    F46: [dom('the TRADE panel', '.tr-panel', 200)],
+    F33: [place('ninewalls', 60, 6, 20)],
+    'F33-scar': [{ name: 'the Holds\' ground (the Scar\'s floor)', kind: 'ground', region: 'holds', minShare: 0.2 }],
+    'F33-trig': [place('ninewalls', 60, 6, 6)],
+  };
+}
 
 export function subjectsFor(frame) {
   const s = frame?.subjects ?? SUBJECTS[frame?.id];
@@ -173,7 +241,15 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   const bad = validateSubjects();
   const ids = Object.keys(SUBJECTS);
-  console.log(`subjects: ${ids.length} frames declare them (${ids.join(', ')}); EF4's set ${EF4_FRAMES.filter((id) => SUBJECTS[id]).length} of ${EF4_FRAMES.length}`);
+  console.log(`subjects: ${ids.length} frames declare them (${ids.join(', ')}); EF4's wave-2 list ${EF4_WAVE2.filter((id) => SUBJECTS[id]).length} of ${EF4_WAVE2.length}`);
+  {
+    const { loadLanes } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'stagings/index.mjs')).href);
+    const { loadFrameSet } = await import('./frameset.mjs');
+    const all = [...loadFrameSet().frames, ...(await loadLanes()).frames];
+    const missing = all.filter((f) => !subjectsFor(f)).map((f) => f.id);
+    console.log(`every staging: ${all.length - missing.length} of ${all.length} declare subjects${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`);
+    if (missing.length) bad.push(`${missing.length} stagings declare no subjects`);
+  }
   for (const b of bad) console.log('  FAIL', b);
   const i = args.indexOf('--precheck');
   if (i >= 0) {

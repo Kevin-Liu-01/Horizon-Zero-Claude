@@ -61,6 +61,12 @@ test('every frame EF4 names declares subjects of known kinds, and every lane fra
   const staged = new Set(L2.frames.map((f) => f.id));
   const unstaged = EF4_FRAMES.filter((id) => !staged.has(id));
   console.log(`  EF4: ${EF4_FRAMES.length} frames declare subjects; with no staging in any lane file yet: ${unstaged.join(', ') || 'none'}`);
+  // (fix round 1) EF4's bar: EVERY staging (the Frame Set's and every lane file's) declares subjects
+  const { loadFrameSet } = await import('./frameset.mjs');
+  const all = [...loadFrameSet().frames, ...L2.frames];
+  const missing = all.filter((f) => !subjectsFor(f)).map((f) => f.id);
+  console.log(`  EF4: ${all.length - missing.length} of ${all.length} stagings declare subjects`);
+  assert.deepEqual(missing, []);
   // a frame's own `subjects` wins over the table
   assert.deepEqual(subjectsFor({ id: 'F56', subjects: [{ name: 'x', kind: 'sun' }] }), [{ name: 'x', kind: 'sun' }]);
 });
