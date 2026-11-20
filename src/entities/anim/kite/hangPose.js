@@ -243,6 +243,7 @@ export class HangPose {
     // the reef taken at 0.57 of the open moved her right wrist 0.35 m in one step)
     this._kiteLast = F.state;
     if (F.back && b.spine2) { this._charOf(b.spine2.bone, F.back.p); this._liveW(b.spine2.bone, F.back.q); }
+    F.head = EF.headV || (EF.headV = new THREE.Vector3()); F.head.copy(_hd);
     kiteClipPose(F.state, F.t, F, _bar, P);
     if (this._kiteX && this._kiteX.on) {
       const X = this._kiteX, k = sst(0, XFADE_S, F.t - X.t0);

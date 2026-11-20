@@ -123,6 +123,20 @@ const HIP_R = Object.freeze(new THREE.Vector3(-0.48, 1.05, -0.10));
 /** the right hand's way down from where the open finds it (in front of her head, often out and high from the jump):
  *  down in front of her right hip first, then round it (never behind her within 0.30 m of her head's height) */
 const DOWN_R = Object.freeze(new THREE.Vector3(-0.44, 1.10, 0.20));
+/**
+ * THE FRONT KEYS FOLLOW HER CHEST DOWN (wave 2b, the page's film at 857a2c7): the set, the way down in front of her hip
+ * and the road's front part are written for her chest as it stands upright (the hang's bar, solved from her chest, at or
+ * over BAR_Y). Tucked in the air or bowed, her chest is lower and they come down with it (`_front`): in the page's tucked
+ * fall the set sat under her chin. And the way down keeps in front of her head and 0.36 m under it (`opts.head`).
+ */
+const BAR_Y = 1.355;
+const _front = new THREE.Vector3(), _set = new THREE.Vector3(), _setL = new THREE.Vector3(), _down = new THREE.Vector3(), _readyL = new THREE.Vector3();
+function setFront(bar, head) {
+  _front.set(0, Math.min(0, bar.y - BAR_Y), 0);
+  _set.copy(SET_C).add(_front); _setL.copy(SET_L).add(_front);
+  _down.copy(DOWN_R).add(_front); _readyL.copy(READY_L).add(_front);
+  if (head) { _down.y = Math.min(_down.y, head.y - 0.36); _down.z = Math.max(_down.z, head.z + 0.08); }
+}
 /** a uniform Catmull-Rom through the points of `P` (its first and last doubled: P[0] === P[1], P[n+1] === P[n+2]) */
 const _cr = [null, null, null, null, null, null, null];
 function crWay(P, n, u, out) {
@@ -185,6 +199,7 @@ function roadAt(u, outC, outQ, outG) {
   // (the road's first part rides her back with the mount; the set in front of her is the hang's, in her frame)
   const wb = 1 - ss(0.35, 0.85, t);
   onBack(outG, wb, outG, outQ, outQ);
+  outG.addScaledVector(_front, 1 - wb);
   outC.copy(outG).addScaledVector(_w.set(-TAKE_X, 0, 0).applyQuaternion(outQ), 1);
 }
 /** the right palm's road length (m), for timing the fold as one even run */
@@ -251,8 +266,8 @@ const barLoc = (o, sx, out) => out.set(sx * KITE_RECIPE.grip * (0.97 + 0.03 * o.
  * @param {KitePose} o out
  * @returns {KitePose}
  */
-export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, furl0 = 1, drop0 = 0 } = {}, bar, o) {
-  setBack(back);
+export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, furl0 = 1, drop0 = 0, head = null } = {}, bar, o) {
+  setBack(back); setFront(bar, head);
   const L = o.l, R = o.r;
   L.pole.copy(POLE_BAR_L); R.pole.copy(POLE_BAR_R); L.curl = 1; R.curl = 1;
   L.hold = null; R.hold = null; L.back = false; R.back = false;
@@ -284,7 +299,7 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
     else if (s < OPEN.set) { roadAt(trap((s - OPEN.grip) / (OPEN.set - OPEN.grip), 0.12), o.pos, o.quat, _p); o.furl = 0; }
     else {
       const u = trap((s - OPEN.set) / (1 - OPEN.set), 0.15);
-      o.pos.copy(SET_C).lerp(bar, u);
+      o.pos.copy(_set).lerp(bar, u);
       o.quat.setFromAxisAngle(X_AX, PITCH * ss(OPEN.set, OPEN.set + 0.04, s) * (1 - ss(OPEN.set + 0.08, 1, s)));
       o.furl = ss(OPEN.set, 0.95, s);
     }
@@ -294,7 +309,7 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
     if (s < OPEN.take) {
       localAt(o, ROLL_TAKE, _w);
       // (down in front of her hip, round it wide, behind the quiver, to the take)
-      _cr[0] = _cr[1] = R.hasStart ? R.start : READY_R; _cr[2] = DOWN_R; _cr[3] = onBack(HIP_R, 0.7, _hp); _cr[4] = onBack(ROAD_P[1], 1, _hq); _cr[5] = _cr[6] = _w;
+      _cr[0] = _cr[1] = R.hasStart ? R.start : READY_R; _cr[2] = _down; _cr[3] = onBack(HIP_R, 0.7, _hp); _cr[4] = onBack(ROAD_P[1], 1, _hq); _cr[5] = _cr[6] = _w;
       crWay(_cr, 4, trap(s / OPEN.take, 0.12), R.goal);
       R.pole.copy(POLE_LOW_R).lerp(POLE_BACK_R, ss(0.3 * OPEN.take, OPEN.take, s));
       R.curl = 0.25 + 0.2 * ss(0.6 * OPEN.take, OPEN.take, s);
@@ -314,8 +329,8 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
     // the left hand: held ready low in front of her belly from the first step, then to the roll's left grip where it
     // arrives across her belly, and with it to the hang
     if (s < OPEN.set) {
-      L.goal.copy(READY_L); if (L.hasStart) L.goal.copy(L.start).lerp(READY_L, ss(0, 0.3, s));
-      L.goal.lerp(SET_L, ss(0.55, OPEN.set, s));
+      L.goal.copy(_readyL); if (L.hasStart) L.goal.copy(L.start).lerp(_readyL, ss(0, 0.3, s));
+      L.goal.lerp(_setL, ss(0.55, OPEN.set, s));
       L.pole.copy(POLE_READY_L).lerp(POLE_BAR_L, ss(0.55, OPEN.set, s));
       L.curl = s < OPEN.set - 0.03 ? 0.3 : 1;
     } else { barLoc(o, 1, L.loc); localAt(o, L.loc, L.goal); L.curl = 1; }
@@ -335,7 +350,7 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
   // landing holds the roll across her belly through the crouch and runs the road once she rises.
   let u, ur;
   if (!land) {
-    const Ld = _p.subVectors(bar, SET_C).length(), x = trap(s / B.seat, 0.1), split = Ld / (Ld + ROAD_LEN);
+    const Ld = _p.subVectors(bar, _set).length(), x = trap(s / B.seat, 0.1), split = Ld / (Ld + ROAD_LEN);
     u = Math.min(1, x / split); ur = x <= split ? 0 : (x - split) / (1 - split);
   } else {
     u = trap(s / B.down, 0.25); ur = s <= B.carry ? 0 : trap((s - B.carry) / (B.seat - B.carry), 0.12);
@@ -343,7 +358,7 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
   if (ur <= 0) {
     // the bar drawn down to her belly; the cells fold into the roll round it, the kite pitched forward over her hands
     const b = Math.max(-1, Math.min(1, bank)) * (1 - u);
-    o.pos.copy(bar); o.pos.y -= drop0; o.pos.lerp(SET_C, u); o.pos.x += 0.05 * b;
+    o.pos.copy(bar); o.pos.y -= drop0; o.pos.lerp(_set, u); o.pos.x += 0.05 * b;
     // (the glide's bank goes out of the bar as it comes down: the fold starts from the glide's own pose, no cross-fade)
     // (pitched first, then furled: the cells, still tall, sweep down in front 1.3 m and more off her face and fold
     //  flat out there; furled first, they came down through the column in front of her face)
@@ -373,7 +388,7 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
   else {
     barLoc(o, 1, _v); localAt(o, _v, _p);
     const ul = land ? ss(B.free + 0.02, B.free + 0.3, s) : ss(0.1, 0.45, ur);
-    L.goal.copy(_p).lerp(READY_L, ul); L.pole.copy(POLE_BAR_L).lerp(POLE_READY_L, ul); L.curl = 0.3 + 0.7 * (1 - ul);
+    L.goal.copy(_p).lerp(_readyL, ul); L.pole.copy(POLE_BAR_L).lerp(POLE_READY_L, ul); L.curl = 0.3 + 0.7 * (1 - ul);
   }
   // (held at full weight to the fold's last step; hangPose.js's after-layer hands each arm back to her own pose)
   L.w = 1;

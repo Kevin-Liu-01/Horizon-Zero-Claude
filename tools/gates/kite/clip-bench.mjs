@@ -190,14 +190,14 @@ function read() {
  * stepping: her fall (an airborne fold: the page's gravity, 22 m/s^2, from the height the fold ended at) and her hands'
  * hand-back on the ground, until the kite's layer is off (at most 2.5 s). Every step is recorded and graded.
  */
-function scenario(name, { airborne = true, y = 30, input = () => ({}), weather = () => 'trade', maxS = 20 }) {
+function scenario(name, { airborne = true, y = 30, input = () => ({}), weather = () => 'trade', maxS = 20, preSteps = 21 }) {
   reset(R);
   lastW.L = null; lastW.R = null;
   const f = createFlightBody(), world = flatWorld({ flyable: () => !['calima', 'squall'].includes(weather(tt)) });
   let tt = 0;
   if (airborne) { R.ctx.events?.emit?.('player-jump', { v0: 5 }); p.grounded = false; }
   // the jump's 0.35 s before Space may open it (not the kite's: not graded)
-  for (let i = 0; i < 21; i++) step(R);
+  for (let i = 0; i < preSteps; i++) { if (airborne) p.grounded = false; step(R); }
   p.grounded = false;
   let s = openAt(f, { x: 0, y, z: 0, headingDeg: 0, groundY: 0 });
   const steps = [];
@@ -243,6 +243,8 @@ const S = [
   scenario('fold at 3 m', { y: 3.5, input: (t) => ({ fold: t >= 0.55 }) }),
   scenario('calima mid-glide: the forced fold (R5 reef) to the ground', { y: 25, weather: (t) => (t > 1.2 ? 'calima' : 'trade'), maxS: 12 }),
   scenario('calima mid-open: the forced fold from the open', { y: 25, weather: (t) => (t > 0.25 ? 'calima' : 'trade'), maxS: 12 }),
+  // (wave 2b: opened 1.2 s into a fall, her own pose the fall's tuck, not the jump's rise: the page's film held her so)
+  scenario('open late in a long fall (the fall\'s tuck under it), glide, fold', { preSteps: 72, input: (t) => ({ fold: t >= 2 }) }),
 ];
 
 const CLIPS = ['open', 'glide', 'fold', 'land', 'reef', 'after-air'];

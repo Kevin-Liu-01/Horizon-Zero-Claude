@@ -40,10 +40,12 @@ export const FRAMES = Object.freeze([
     at: { en: [F51_AT.e, F51_AT.n] }, bearing: F51_AT.headingDeg,
     // (fix round 1: at fov 62 and 2.0 m the kite's top longeron, 2.7 m from the lens, was cut by the frame's top edge)
     // (wave 2b, the review at 9d1acc3: "its lens looks from behind her, not side-on". The lens stood square to her side
-    //  (her shoulders and hips are square to the bar in the hang: Node, 0.2 and 0 deg) but 2.3 m up, over her head,
-    //  looking down past her shoulder at the kite. Now at her chest's height, 3.7 m off her left side, square to it:
-    //  her profile, the bar in front of her chest and the whole kite over it)
-    camera: { mode: 'orbit', yawRel: 90, dist: 3.7, height: 1.4, target: { fwd: 0.3, side: 0, up: 1.9 }, fov: 64, lookAt: 'off' },
+    //  (her shoulders and hips are square to the bar in the hang: Node, 0.2 and 0 deg) but 2.3 m over her mark, 1.35 m
+    //  over her chest (the page's hang puts her sternum 0.95 m over the mark: the staging's read at 857a2c7), looking
+    //  down past her shoulder. Now at her chest's height, 4.6 m off her left side, square to it, looking up 13 deg:
+    //  her profile, the bar in front of her chest and the whole kite over it. At 3.7 m and 1.4 m up the kite's near
+    //  wing-tip stood out of the lens's safe area (84 % of the kite in it, the check asks 95: 857a2c7))
+    camera: { mode: 'orbit', yawRel: 90, dist: 4.6, height: 1.05, target: { fwd: 0.3, side: 0, up: 2.1 }, fov: 64, lookAt: 'off' },
     state: { pose: 'idle', hud: false },
     ref: { written: "Kevin's bars (no reference): the bar at sternum-to-chin height, 0.30-0.40 m in front of the chest, elbows below the shoulders; never a hand behind the head; the whole kite in frame" },
   },
