@@ -47,7 +47,7 @@ export const OUTPUTS = ART_KINDS.map((k) => `public/models/instruments/${k}.glb`
 export const TRI_CAP = Object.freeze({ kiln: 80000, davit: 50000, sonde: 25000 });
 
 /** The fire behind the Kiln's door: a coal bed's orange (linear factor; the page and the game scale it by the door). */
-export const FIRE = Object.freeze({ hex: 0xff8a3a });
+export const FIRE = Object.freeze({ hex: 0xff5a14 });
 const SOOT = 0x2a2522;
 
 const P = (r, h, surf, tone) => ({ r, h, surf, tone });
@@ -286,7 +286,7 @@ function kiln() {
     take('hoseReel'); }
   for (const p of F.parts) if (!done.has(p.name)) dressPart(hull, p);
   // weathering: grime low, soot above the firebox's mouth and streaked up the front of the dome
-  weather(hull, { lowY: 0.4, topY: 3.2, k: 0.16 });
+  weather(hull, { lowY: 0.4, topY: 3.2, k: 0.26 });
   soot(hull, (x, y, z) => (z > 0.6 && Math.abs(x) < 0.75 && y > cy + oh / 2 && y < 3.3 ? 0.55 * (1 - Math.abs(x) / 0.75) * Math.min(1, (3.3 - y) / 0.8) : 0));
   const T = F.parts.find((p) => p.name === 'trunnion');
   return {
@@ -325,6 +325,14 @@ function davit() {
     for (let k = 0; k < 6; k++) rivet(hull, V(p.c[0] - p.s[0] / 2 + 0.1 + k * (p.s[0] - 0.2) / 5, p.c[1] + p.s[1] / 2 - 0.06, p.c[2] - p.s[2] / 2), V(0, 0, -1), 0.016);
     for (const s of [-1, 1]) rbox(hull, V(p.c[0] + s * 0.32, p.c[1] - 0.05, p.c[2] - p.s[2] / 2 - 0.001), [0.12, p.s[1] * 0.6, 0.004], 0.001, { surf: 'glaze', tone: C.STAFF, wear: 0.2, segs: 1 });
     take('counterweight'); }
+  // the rack's two rails: open brass frames (a top and a bottom bar, three uprights), not solid sheets
+  for (const n of ['rackRailR', 'rackRailL']) {
+    const p = N.get(n), c = vec(p.c), hy = p.s[1] / 2 - 0.02, hz = p.s[2] / 2 - 0.02;
+    for (const y of [-hy, hy]) strut(hull, V(c.x, c.y + y, c.z - hz), V(c.x, c.y + y, c.z + hz), 0.022, 0.022, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
+    for (const z of [-hz, 0, hz]) strut(hull, V(c.x, c.y - hy, c.z + z), V(c.x, c.y + hy, c.z + z), 0.022, 0.022, { surf: 'bronze', tone: C.BRASS, sides: 8, wear: 0.6 });
+    for (const z of [-hz, hz]) rivet(hull, V(c.x + Math.sign(c.x) * 0.024, c.y + hy, c.z + z), V(Math.sign(c.x), 0, 0), 0.012);
+    take(n);
+  }
   // the derrick's chords: enamel bars with brass collars (the default dress); laces gunmetal (joint)
   // the lamp drum on the cab's right front
   const LD = N.get('lampDrum'), L = N.get('lamp');
@@ -333,7 +341,7 @@ function davit() {
   for (const p of F.parts) if (!done.has(p.name)) dressPart(hull, p);
   // an antenna at the stern's left (the family's spike finial), clear of the derrick
   antenna(hull, V(-0.62, 1.66, -1.30), V(-0.62, 3.15, -1.30), { r: 0.012, finial: 0.12, cross: 0.05 });
-  weather(hull, { lowY: 0.4, topY: 2.4, k: 0.18 });
+  weather(hull, { lowY: 0.4, topY: 2.4, k: 0.26 });
   return {
     hull, sensors: [{ bucket: glass, name: 'r5-davit-glass', emissive: C.ICE }],
     tools: plates.map((b, i) => ({ bucket: b, anchor: N.get(`plate${i + 1}`).c })),
@@ -363,8 +371,7 @@ function sonde() {
     hull.add(tg, { surf: 'bronze', tone: C.BRASS, wear: 0.6, matrix: new THREE.Matrix4().makeTranslation(0, E.c[1], z) }); tg.dispose();
     rivetRing(hull, V(0, E.c[1], z + 0.05), V(0, 0, 1), R + 0.004, 40, 0.01, { radial: true });
   }
-  { const za = z2 + 0.28, zb = z2 + 0.42, ra = R - (R - (EN.r2 ?? 0.02)) * 0.28 / EN.h, rb = R - (R - (EN.r2 ?? 0.02)) * 0.42 / EN.h;
-    lathe(hull, [P(ra * 1.004, za, 'glaze', C.VERM), P(rb * 1.004, zb, 'glaze', C.VERM)], EM, { segs: 72, wear: 0.2 }); }
+  // (no ink ring round the nose: seen nose-on, a ring about the point read as a target, an eye; wave 3's first film)
   // the keel spine under the envelope (the slings hang from it)
   strut(hull, V(0, E.c[1] - R + 0.02, -1.25), V(0, E.c[1] - R + 0.02, 1.35), 0.04, 0.04, { surf: 'graphite', tone: C.GUNMETAL, sides: 8 });
   take('envelope', 'envelopeNose', 'envelopeStern');
@@ -402,7 +409,7 @@ function sonde() {
   strut(hull, V(L.c[0], L.c[1] + L.h / 2 + 0.03, L.c[2]), V(L.c[0], L.c[1] + L.h / 2 + 0.07, L.c[2]), 0.012, 0.004, { surf: 'bronze', tone: C.BRASS, sides: 6 });
   take('lampDrum', 'lamp');
   for (const p of F.parts) if (!done.has(p.name)) dressPart(hull, p);
-  weather(hull, { lowY: 0.8, topY: 2.2, k: 0.14 });
+  weather(hull, { lowY: 0.8, topY: 2.2, k: 0.2 });
   return {
     hull, sensors: [],
     tools: [{ bucket: rotors.R, anchor: N.get('fanHubR').c }, { bucket: rotors.L, anchor: N.get('fanHubL').c }],

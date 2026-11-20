@@ -95,8 +95,11 @@ async function loadKind(kind) {
   for (const [name, anchor] of Object.entries(ex.r5Tools || {})) {
     const node = nodes[name];
     if (!node) continue;
-    const pivot = new THREE.Group(); pivot.name = `${name}-pivot`; pivot.position.set(...anchor);
-    model.add(pivot); pivot.add(node); node.position.set(-anchor[0], -anchor[1], -anchor[2]);
+    // the node keeps its own transform (quantised positions carry their scale and offset on the node): it hangs in a
+    // group at -anchor inside a pivot at +anchor, so turning the pivot turns it about its anchor in the body frame
+    const pivot = new THREE.Group(), inner = new THREE.Group(); pivot.name = `${name}-pivot`; pivot.position.set(...anchor);
+    inner.position.set(-anchor[0], -anchor[1], -anchor[2]);
+    (node.parent || model).add(pivot); pivot.add(inner); inner.add(node);
     tools[name] = pivot;
   }
   let fireMat = null;
@@ -308,10 +311,10 @@ async function kilnView() {
       S.dmg = { before, during, ratio: during / before };
       S.brineResult = r;
       for (const e of B.events.splice(0)) { e.t = r3(S.t); events.push(e); }
-      mist = { field, mesh: new THREE.Mesh(new THREE.SphereGeometry(POTS.brine.radius, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: POTS.brine.colour, transparent: true, opacity: 0.32, roughness: 1, depthWrite: false })) };
+      mist = { field, mesh: new THREE.Mesh(new THREE.SphereGeometry(POTS.brine.radius, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: POTS.brine.colour, transparent: true, opacity: 0.16, roughness: 1, depthWrite: false })) };
       mist.mesh.position.set(field.x, 0, field.z); mist.mesh.scale.y = 0.75; scene.add(mist.mesh);
     }
-    if (mist) { mist.field.step(DT); mist.mesh.material.opacity = 0.32 * Math.max(0, mist.field.left / POTS.brine.lifeS); mist.mesh.visible = mist.field.alive; }
+    if (mist) { mist.field.step(DT); mist.mesh.material.opacity = 0.16 * Math.max(0, mist.field.left / POTS.brine.lifeS); mist.mesh.visible = mist.field.alive; }
     for (const e of events) { if (e.type === 'door-sprung' && S.sprungAt === null) S.sprungAt = e.t; if (e.type === 'door-shut' && S.shutAt === null) S.shutAt = e.t; }
   }
   function draw() {
@@ -324,7 +327,7 @@ async function kilnView() {
     }
     const open = B.door === 'sprung' ? 1 : 0;
     K.tools.door.rotation.y = -THREE.MathUtils.degToRad(108) * open;
-    if (K.fireMat) K.fireMat.emissiveIntensity = open ? 3.2 : 0;
+    if (K.fireMat) K.fireMat.emissiveIntensity = open ? 0.9 : 0;
     K.tools.stack.rotation.x = stackTilt.v;
     // the wellhead's hose while it is plugged (or coupling), from its coupling to the head
     if (hose) { scene.remove(hose); hose.geometry.dispose(); hose = null; }
@@ -359,7 +362,11 @@ async function kilnView() {
     const P = (fa, ra, y) => [B.x + f[0] * fa + r[0] * ra, y, B.z + f[1] * fa + r[1] * ra];
     camera.fov = 30;
     if (name === 'plugged') { camera.position.set(...P(10.5, -7.5, 3.4)); camera.lookAt(...P(0, 1.3, 2.5)); }
-    else if (name === 'wide') { camera.fov = 40; camera.position.set(...P(-11, -9, 11)); camera.lookAt(B.x * 0.45 + BR.x * 0.55, 1.5, B.z * 0.45 + BR.z * 0.55); }
+    else if (name === 'wide') {
+      // side-on to the line from the Kiln to her, 24 m off it: both in the frame and the shells' lobs over them
+      const mx = (B.x + BR.x) / 2, mz = (B.z + BR.z) / 2, dx = BR.x - B.x, dz = BR.z - B.z, L = Math.hypot(dx, dz) || 1;
+      camera.fov = 50; camera.position.set(mx + (dz / L) * 26, 4.5, mz - (dx / L) * 26); camera.lookAt(mx, 4.5, mz);
+    }
     else if (name === 'door') { camera.position.set(...P(8.5, 3.2, 2.4)); camera.lookAt(...P(0.8, 0.2, 1.9)); }
     else { camera.position.set(...P(12, -6, 4)); camera.lookAt(...P(0, 0.6, 2.6)); }
   };
