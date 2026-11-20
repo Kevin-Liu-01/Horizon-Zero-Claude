@@ -541,8 +541,17 @@ export class HitHulls {
     const stride = Math.max(1, Math.ceil(pos.count / this.maxScan));
     const scale = this._worldScaleOf(sk);
 
+    // C5 (engine lane, the smallest change here: the first hour's hitches): each sampled vertex's dominant bone and its
+    // bind-space point are worked out ONCE, in pass 1, and passes 2 and 3 read them back (the same doubles: every hull
+    // comes out as it did). They were worked out three times: 19 ms of the 25 ms frame after the Scar's first Tiller stood
+    // up (first-hour leg 2 at 865e8c6, run hh-c5-865e8c6).
+    const nS = Math.ceil(pos.count / stride);
+    const SB = this._skB && this._skB.length >= nS ? this._skB : (this._skB = new Int32Array(Math.max(nS, 4096)));
+    const SP = this._skP && this._skP.length >= nS * 3 ? this._skP : (this._skP = new Float64Array(Math.max(nS, 4096) * 3));
+
     // pass 1: per-bone bind-space AABB
-    for (let i = 0; i < pos.count; i += stride) {
+    for (let i = 0, k = 0; i < pos.count; i += stride, k++) {
+      SB[k] = -1;
       let bi = si.getX(i), bw = sw.getX(i);
       let v = sw.getY(i); if (v > bw) { bw = v; bi = si.getY(i); }
       v = sw.getZ(i); if (v > bw) { bw = v; bi = si.getZ(i); }
@@ -551,6 +560,7 @@ export class HitHulls {
       const invB = skel.boneInverses[bi];
       if (!invB) continue;
       _p.fromBufferAttribute(pos, i).applyMatrix4(bind).applyMatrix4(invB);
+      SB[k] = bi; SP[k * 3] = _p.x; SP[k * 3 + 1] = _p.y; SP[k * 3 + 2] = _p.z;
       const o = bi * 3;
       if (_p.x < mn[o]) mn[o] = _p.x; if (_p.x > mx[o]) mx[o] = _p.x;
       if (_p.y < mn[o + 1]) mn[o + 1] = _p.y; if (_p.y > mx[o + 1]) mx[o + 1] = _p.y;
@@ -579,15 +589,10 @@ export class HitHulls {
     const cCnt = new Uint32Array(total);
 
     // pass 2: bin every vertex into its bone's cell grid
-    for (let i = 0; i < pos.count; i += stride) {
-      let bi = si.getX(i), bw = sw.getX(i);
-      let v = sw.getY(i); if (v > bw) { bw = v; bi = si.getY(i); }
-      v = sw.getZ(i); if (v > bw) { bw = v; bi = si.getZ(i); }
-      v = sw.getW(i); if (v > bw) { bw = v; bi = si.getW(i); }
-      if (bw < 0.18 || bi < 0 || bi >= nb || cnt[bi] < 3) continue;
-      const invB = skel.boneInverses[bi];
-      if (!invB) continue;
-      _p.fromBufferAttribute(pos, i).applyMatrix4(bind).applyMatrix4(invB);
+    for (let q = 0; q < nS; q++) {
+      const bi = SB[q];
+      if (bi < 0 || cnt[bi] < 3) continue;
+      _p.set(SP[q * 3], SP[q * 3 + 1], SP[q * 3 + 2]);
       const o = bi * 3;
       const nx = nxs[bi], ny = nys[bi], nz = nzs[bi];
       const k = base[bi] + this._cellIndex(_p.x, _p.y, _p.z, mn[o], mn[o + 1], mn[o + 2],
@@ -628,15 +633,10 @@ export class HitHulls {
     // pass 3: tighten every capsule onto its own bind-space point cloud
     if (made) {
       this._tighten(recOf, total, (hit) => {
-        for (let i = 0; i < pos.count; i += stride) {
-          let bi = si.getX(i), bw = sw.getX(i);
-          let v = sw.getY(i); if (v > bw) { bw = v; bi = si.getY(i); }
-          v = sw.getZ(i); if (v > bw) { bw = v; bi = si.getZ(i); }
-          v = sw.getW(i); if (v > bw) { bw = v; bi = si.getW(i); }
-          if (bw < 0.18 || bi < 0 || bi >= nb || cnt[bi] < 3) continue;
-          const invB = skel.boneInverses[bi];
-          if (!invB) continue;
-          _p.fromBufferAttribute(pos, i).applyMatrix4(bind).applyMatrix4(invB);
+        for (let q = 0; q < nS; q++) {
+          const bi = SB[q];
+          if (bi < 0 || cnt[bi] < 3) continue;
+          _p.set(SP[q * 3], SP[q * 3 + 1], SP[q * 3 + 2]);
           const o = bi * 3;
           const nx = nxs[bi], ny = nys[bi], nz = nzs[bi];
           hit(base[bi] + this._cellIndex(_p.x, _p.y, _p.z, mn[o], mn[o + 1], mn[o + 2],
