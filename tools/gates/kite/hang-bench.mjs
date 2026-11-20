@@ -10,7 +10,8 @@ import { writeFileSync } from 'node:fs';
 import { makeBench, step } from '../hero-sweep/bench.mjs';
 import { buildSweep } from '../hero-sweep/measure.mjs';
 import { THREE } from '../hero-sweep/load.mjs';
-import { buildGreyKite, placeAtBar, KITE_DIMS } from '../../../src/entities/anim/kite/greyKite.js';
+import { placeAtBar, KITE_DIMS } from '../../../src/entities/anim/kite/greyKite.js';
+import { buildSurveyKite } from '../../../src/entities/anim/kite/surveyKite.js';
 
 const args = process.argv.slice(2);
 const out = args.includes('--json') ? args[args.indexOf('--json') + 1] : null;
@@ -67,8 +68,9 @@ const clothedFront = Math.max(chestFront.skin ?? -9, chestFront.outfit ?? -9);
 const barFromClothed = info.bar[2] - clothedFront, barFromSkin = chestFront.skin === null ? null : info.bar[2] - chestFront.skin;
 const barK = (info.bar[1] - info.sternY) / (info.chinY - info.sternY);
 
-// the kite on the bar, in the model's space: its lowest point over her crown
-const K = buildGreyKite();
+// the kite on the bar, in the model's space: its lowest point over her crown (wave 2: the Survey Kite's mesh, on wave 1's
+// dimensions)
+const K = buildSurveyKite();
 const root = an.space?.root || R.model;
 root.add(K.group);
 placeAtBar(K.group, root, info.bar);

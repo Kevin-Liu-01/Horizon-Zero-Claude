@@ -26,17 +26,17 @@ export const F51_AT = Object.freeze({ from: 'T2', headingDeg: 218, seconds: 20, 
 /** @type {ReadonlyArray<object>} */
 export const FRAMES = Object.freeze([
   {
-    id: 'F51', subject: 'the flight frame at blockout: Brea under the grey kite, 20 s into a glide off T2, 57 m over the Pans, golden', in: 'M3', hour: 18.25, weather: 'trade',
+    id: 'F51', subject: 'the flight frame: Brea under the Survey Kite (wave 2 mesh), 20 s into a glide off T2, 57 m over the Pans, golden', in: 'M3', hour: 18.25, weather: 'trade',
     at: { en: [F51_AT.e, F51_AT.n] }, bearing: F51_AT.headingDeg,
     // off her left side (bearing 120 from her), looking past her on bearing 300 toward the Ring (288) and Saltrow (311)
     // (fix round 1: at 9 m, 3 m up, the kite was drawn (its 464 triangles x 3 passes counted) and never seen in the shot,
     //  four films running, while F52's 4 m lens showed it; the lens comes in to 6 m and the kite's cloth takes no fog)
     camera: { mode: 'orbit', yawRel: 98, dist: 6, height: 2.5, target: { fwd: 4.2, side: -29.7, up: -5 }, fov: 60, lookAt: 'off' },
     state: { pose: 'idle', hud: false },
-    ref: { written: 'two rectangular cells and at least 6 spars countable; the leading cell orchil-dyed (wave 2: grey here); both wrists in front of the head plane and at or below head height; the Ring and Saltrow below. Wave 1: the grey box-frame kite on the static hang, placed by the flight law 20 s into a real glide (57.4 m over the Pans against the brief\'s 60)' },
+    ref: { written: 'two rectangular cells and at least 6 spars countable; the leading cell orchil-dyed; both wrists in front of the head plane and at or below head height; the Ring and Saltrow below. Wave 2: the Survey Kite\'s mesh (stiff panels; cloth is wave 3) on the hang, placed by the flight law 20 s into a real glide (57.4 m over the Pans: R6 lets it stand against the brief\'s 60)' },
   },
   {
-    id: 'F52', subject: 'the hang, side-on at 4 m (blockout: the grey kite)', in: 'M3', hour: 18.25, weather: 'trade',
+    id: 'F52', subject: 'the hang, side-on at 4 m (the Survey Kite, wave 2 mesh)', in: 'M3', hour: 18.25, weather: 'trade',
     at: { en: [F51_AT.e, F51_AT.n] }, bearing: F51_AT.headingDeg,
     // (fix round 1: at fov 62 and 2.0 m the kite's top longeron, 2.7 m from the lens, was cut by the frame's top edge)
     camera: { mode: 'orbit', yawRel: 90, dist: 4, height: 2.3, target: { fwd: 0, side: 0, up: 2.3 }, fov: 72, lookAt: 'off' },
@@ -51,7 +51,8 @@ const hangUnderKite = {
     const F = await import('/src/game/kite/flight.js');
     const W = await import('/tools/gates/kite/world.mjs');
     const S = await import('/src/world/island/sites.js');
-    const { buildGreyKite, placeAtBar } = await import('/src/entities/anim/kite/greyKite.js');
+    // (wave 2: the Survey Kite's mesh, src/entities/anim/kite/surveyKite.js, on the hang's solve; wave 1 was the grey kite)
+    const { buildSurveyKite, placeKite } = await import('/src/entities/anim/kite/surveyKite.js');
     // the glide, by the law, in the page: the same world the Node rows step
     const T = S.TRIG.find((t) => t.id === 'T2');
     const y0 = F.openHeightOffTop(W.heightAt(T.x, T.z) + S.TRIG_TOP);
@@ -59,10 +60,10 @@ const hangUnderKite = {
     const g = r.f;
     window.__kiteStage = { id: f.id, law: { e: +g.x.toFixed(2), n: +(-g.z).toFixed(2), y: +g.y.toFixed(2), agl: +g.agl.toFixed(2), t: r.t, state: r.state }, terrainY: +C.terrain.getHeight(g.x, g.z).toFixed(2) };
     if (Math.hypot(g.x - p.position.x, g.z - p.position.z) > 1) api.standIn(`F51's mark (${p.position.x.toFixed(1)}, ${(-p.position.z).toFixed(1)}) is not the law's 20 s point (${g.x.toFixed(1)}, ${(-g.z).toFixed(1)})`);
-    api.standIn(`the grey blockout kite on the static M1.3f hang (wave 1): Brea held where the flight law puts her 20 s into the glide off T2, ${g.agl.toFixed(1)} m over the ground`);
+    api.standIn(`the Survey Kite (wave 2 mesh, stiff panels) on the hang: Brea held where the flight law puts her 20 s into the glide off T2, ${g.agl.toFixed(1)} m over the ground`);
     // hold her there: her own update replaced by her lens, her model, her animator and her rig only
     const u0 = p.update, hold = { x: g.x, y: g.y, z: g.z }, grounded0 = p.grounded;
-    const K = buildGreyKite();
+    const K = buildSurveyKite();
     const root = an.space?.root || p.model;
     // (the hero's meshes set no layers: the kite stays on the default layer; and it is never frustum-culled: at
     //  c0f55e7 and 1c26781 F51 showed no kite with its bar on screen at ndc (-0.06, 0.02), F52 showed it)
@@ -80,7 +81,7 @@ const hangUnderKite = {
       this.animator.update(dt, t);
       this.hero?.update(dt);
       const i = this.animator.hangPoseInfo?.();
-      if (i) placeAtBar(K.group, root, i.bar);
+      if (i) placeKite(K, root, i);
     };
     api.undo(() => {
       p.update = u0; p.grounded = grounded0;

@@ -49,15 +49,21 @@ export const KITE = Object.freeze({
   safeLandVs: 3,
   /** m/s of sink the flare holds in the last `landAglM` (under safeLandVs) */
   flareSink: 1.0,
-  /** grounded mid-air (calima or squall arrives, KF5: down inside 5 s*): the kite no longer holds her, so she goes down
-   *  no faster than she would fall (`downAcc`, the player's gravity) to at most `downMaxVs`, and the kite brakes her at
-   *  `downBrake` into the flare. The bar's 5 s is met up to 80 m over the ground (closed form below,
-   *  `groundedDownTime`); from higher it cannot be met without falling faster than a fall (275 m in 5 s IS a free fall at
-   *  22 m/s^2, ending at 110 m/s): a ruling (M3-B fix round 1) */
+  /** grounded mid-air (calima or squall arrives). RULING R5 (the orchestrator's M3 rulings, provisional; KF5 restated):
+   *  "calima or squall forces the fold within 1 s at any height; from 80 m or lower she is on the ground within 5 s; from
+   *  higher, at the law's safe sink (no free fall)". The forced fold is a REEF: the cells are pulled flat and the kite
+   *  rides above her as a drogue, her hands on the bar, until her feet are down (a fold to hands free in the air would
+   *  be a free fall). It begins on the step the weather is read (`forcedFoldS` is the bar: <= 1 s). Reefed, she goes
+   *  down at `downAcc` (0.8 of the player's 22 m/s^2: the reefed kite holds part of her weight at every instant, so
+   *  never a free fall) to at most `downMaxVs` (the law's safe sink), and the kite brakes her at `downBrake` into the
+   *  flare. 80 m over the ground comes down in 4.91 s (closed form below, `groundedDownTime`); from higher she comes
+   *  down at that safe sink, never faster (200 m: 9.9 s; 275 m: 13.0 s). (Wave 1's law fell at the full 22 m/s^2
+   *  and braked at 16: 4.95 s from 80 m) */
   groundedDownS: 5,
-  downAcc: 22,
+  forcedFoldS: 1,
+  downAcc: 17.6,
   downMaxVs: 24,
-  downBrake: 16,
+  downBrake: 22,
   /** m over the ground at which the brought-down descent holds the flare's sink */
   groundedFlareM: 1.5,
   /** m/s of sink in the brought-down flare (under safeLandVs) */
@@ -134,6 +140,7 @@ export const GROUNDED_NOTE = Object.freeze({ calima: 'Calima grounds the Survey 
  * @property {number} windOver  m/s of wind over the ground this step (the read-out's WIND)
  * @property {number} windBearing deg the wind comes FROM, three digits in the read-out
  * @property {boolean} grounded true once calima or squall arrived mid-air: she is being brought down
+ * @property {boolean} forced   the fold now running was forced by the weather (R5: a reef held to the ground)
  * @property {number} landVs    m/s vertical at the last touchdown
  * @property {number} landDamage hp taken at the last touchdown (0 at or under KITE.safeLandVs)
  * @property {boolean} refusedWater the last landing was turned back from water past the contour
@@ -149,7 +156,7 @@ export const GROUNDED_NOTE = Object.freeze({ calima: 'Calima grounds the Survey 
 /** @returns {FlightBody} */
 export function createFlightBody() {
   return { x: 0, y: 0, z: 0, heading: 0, vx: 0, vy: 0, vz: 0, agl: 0, launchY: 0, t: 0, lift: 0, windOver: 0, windBearing: 45,
-    grounded: false, landVs: 0, landDamage: 0, refusedWater: false, downFromY: 0, downT: 0,
+    grounded: false, forced: false, landVs: 0, landDamage: 0, refusedWater: false, downFromY: 0, downT: 0,
     hasShore: false, shoreX: 0, shoreZ: 0, waterTurn: false, carried: false };
 }
 
@@ -196,7 +203,7 @@ export const dirBearing = (/** @type {number} */ x, /** @type {number} */ z) => 
 export function openAt(f, { x, y, z, headingDeg, groundY }) {
   f.x = x; f.y = y; f.z = z; f.heading = headingDeg * Math.PI / 180;
   f.vx = 0; f.vy = 0; f.vz = 0; f.agl = y - groundY; f.launchY = y; f.t = 0; f.lift = 0;
-  f.grounded = false; f.landVs = 0; f.landDamage = 0; f.refusedWater = false; f.downFromY = 0; f.downT = 0;
+  f.grounded = false; f.forced = false; f.landVs = 0; f.landDamage = 0; f.refusedWater = false; f.downFromY = 0; f.downT = 0;
   // the shore she knows: the first step reads the ground she opened over (integrate)
   f.hasShore = false; f.shoreX = x; f.shoreZ = z; f.waterTurn = false; f.carried = false;
   return 'opening';
@@ -237,12 +244,15 @@ export function stepFlight(state, f, input, world, dt) {
     // the kite leaves the case and fills; she keeps her jump's fall (the page's own physics) until the sling takes her
     // weight: the law moves her at the glide's still-air numbers from the request so the open has no hitch in Node
     integrate(f, input, world, dt, true);
-    if (!f.grounded && !world.flyable()) { f.grounded = true; f.downFromY = f.y; f.downT = 0; }
+    // R5: the weather forces the fold (a reef) from the open as from the glide
+    if (!f.grounded && !world.flyable()) { forceFold(f); return 'folding'; }
     if (f.t >= KITE.openS) { f.t = 0; return 'gliding'; }
     return 'opening';
   }
   if (state === 'folding') {
     integrate(f, input, world, dt, false);
+    // the forced fold (R5) is a reef held to the ground: it ends at touchdown, never in the air
+    if (f.forced) return f.agl <= 0 ? touchdown(f, world) : 'folding';
     if (f.t >= KITE.foldS) { f.t = 0; return 'none'; }   // hands free; the page's gravity takes her from here
     return 'folding';
   }
@@ -267,21 +277,31 @@ export function stepFlight(state, f, input, world, dt) {
   }
   // gliding
   if (input.fold) { f.t = 0; return 'folding'; }
-  if (!f.grounded && !world.flyable()) { f.grounded = true; f.downFromY = f.y; f.downT = 0; f.t = 0; }
+  // R5: calima or squall forces the fold on the step it is read (the bar is <= KITE.forcedFoldS)
+  if (!f.grounded && !world.flyable()) { forceFold(f); return 'folding'; }
   integrate(f, input, world, dt, true);
-  if (f.agl <= 0) {
-    // touchdown
-    f.landVs = -Math.min(0, f.vy);
-    f.landDamage = landingDamage(f.landVs);
-    if (depthAt(world, f.x, f.z) > KITE.waterContourM) {
-      // past the contour: no landing here. The current carries her to the last ground she crossed inside it
-      f.refusedWater = true;
-      f.carried = f.hasShore;
-    }
-    f.y = floorAt(world, f.x, f.z); f.agl = 0; f.t = 0;
-    return 'landing';
-  }
+  if (f.agl <= 0) return touchdown(f, world);
   return 'gliding';
+}
+
+/** R5: the weather grounds the kite in the air: the forced fold (the reef) starts now. @param {FlightBody} f */
+function forceFold(f) {
+  f.grounded = true; f.forced = true; f.downFromY = f.y; f.downT = 0; f.t = 0;
+}
+
+/**
+ * Feet down: the touchdown's speed and damage; past the water contour no landing (the current carries her to the last
+ * ground she crossed inside it). @param {FlightBody} f @param {FlightWorld} world @returns {FlightState}
+ */
+function touchdown(f, world) {
+  f.landVs = -Math.min(0, f.vy);
+  f.landDamage = landingDamage(f.landVs);
+  if (depthAt(world, f.x, f.z) > KITE.waterContourM) {
+    f.refusedWater = true;
+    f.carried = f.hasShore;
+  }
+  f.y = floorAt(world, f.x, f.z); f.agl = 0; f.t = 0;
+  return 'landing';
 }
 
 /** m of water over the ground (0 on land). @param {FlightWorld} world @param {number} x @param {number} z */

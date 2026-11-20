@@ -9,8 +9,11 @@ import {
 } from '../../../src/game/kite/flight.js';
 import { readFileSync } from 'node:fs';
 import { liftAt, setLiftSource } from '../../../src/game/kite/lift.js';
-import { WIND_ROADS, ROAD_COUNTS, LINE_POSTS, POST_HEIGHT_M, streams } from '../../../src/game/kite/roads.js';
+import { WIND_ROADS, ROAD_COUNTS, LINE_POSTS, POST_HEIGHT_M, streams, postStreams, ROAD_KIND, ROAD_LAUNCH, POST_PASS_M, TEST_FLIGHT } from '../../../src/game/kite/roads.js';
+import { TRIG, TRIG_TOP } from '../../../src/world/island/sites.js';
+import { Environment } from '../../../src/world/environment.js';
 import { flatWorld, steadyWind, gameWind, islandWorld, islandLift, heightAt, fly, WEATHER, WORLD_LIFT, faceAt, waterDepthAt } from './world.mjs';
+import { flyTestFlight, flyRoad } from './glides.mjs';
 
 const near = (v, want, tol, what) => assert.ok(Math.abs(v - want) <= tol, `${what}: ${v} not within ${want} +- ${tol}`);
 
@@ -120,7 +123,7 @@ test('KF4 the open: 0 of 10 below 0.35 s airborne or under 3 m clear, 10 of 10 a
   assert.equal(s, 'none'); assert.ok(t <= 0.4, `fold ${t}`);
 });
 
-test('KF5 grounded: calima and squall open 0 of 10, with a field note in the bible\'s words; an open kite is down inside 5 s, undamaged, from up to 80 m', () => {
+test('KF5 grounded: calima and squall open 0 of 10, with a field note in the bible\'s words', () => {
   assert.equal(flyableIn('trade'), true); assert.equal(flyableIn('fogbank'), true);
   const bible = readFileSync(new URL('../../../docs/BIBLE.md', import.meta.url), 'utf8');
   // the notes' words are the bible's: §3.2's weather table ("grounds the Survey Kite") and §16's kite row
@@ -132,49 +135,62 @@ test('KF5 grounded: calima and squall open 0 of 10, with a field note in the bib
     for (let i = 0; i < 10; i++) { const r = canOpen({ airborneS: 0.5 + i, clearM: 5 + i * 5, weather: wx }); if (r.ok) opens++; else { assert.equal(r.why, 'weather'); assert.ok(r.note && r.note === GROUNDED_NOTE[wx]); } }
     assert.equal(opens, 0, wx);
   }
-  for (const agl of [3, 10, 25, 40, 60, 70, 80]) {
-    let wx = 'trade';
-    const w = flatWorld({ flyable: () => flyableIn(wx) });
-    const f = createFlightBody();
-    let s = openAt(f, { x: 0, y: agl, z: 0, headingDeg: 0, groundY: 0 });
-    while (s === 'opening') s = stepFlight(s, f, {}, w, 1 / 60);
-    // the climb is not in this world; give her the height back at the moment calima arrives
-    f.y = agl; wx = 'calima';
-    let t = 0;
-    while (s === 'gliding' && t < 30) { s = stepFlight(s, f, {}, w, 1 / 60); t += 1 / 60; }
-    assert.equal(s, 'landing', `${agl} m`);
-    assert.ok(t <= KITE.groundedDownS, `${agl} m AGL: down in ${t.toFixed(2)} s`);
-    assert.ok(f.landVs <= KITE.safeLandVs && f.landDamage === 0, `${agl} m: ${f.landVs} m/s, ${f.landDamage} hp`);
-    near(t, groundedDownTime(agl), 0.12, `${agl} m: stepped against the closed form`);
+});
+
+/**
+ * Bring an open kite down from `agl` over flat ground: the weather arrives `at` ('glide' or 'open', the open's middle).
+ * Returns the seconds to the forced fold and to the touchdown, the fastest sink and the hardest downward acceleration.
+ */
+function bringDown(agl, { wx = 'calima', at = 'glide' } = {}) {
+  let weather = 'trade';
+  const w = flatWorld({ flyable: () => flyableIn(weather) });
+  const f = createFlightBody(), dt = 1 / 60;
+  let s = openAt(f, { x: 0, y: agl, z: 0, headingDeg: 0, groundY: 0 });
+  if (at === 'glide') { while (s === 'opening') s = stepFlight(s, f, {}, w, dt); f.y = agl; }
+  else { for (let i = 0; i < 15; i++) s = stepFlight(s, f, {}, w, dt); f.y = agl; }
+  weather = wx;
+  let t = 0, foldAt = null, maxVs = 0, maxAcc = 0, vPrev = -f.vy, states = new Set();
+  while (s !== 'landing' && t < 90) {
+    s = stepFlight(s, f, {}, w, dt); t += dt; states.add(s);
+    if (foldAt === null && s === 'folding') foldAt = t;
+    const v = -f.vy; maxVs = Math.max(maxVs, v); if (s !== 'landing') maxAcc = Math.max(maxAcc, (v - vPrev) / dt); vPrev = v;
+  }
+  return { s, t, f, foldAt, maxVs, maxAcc, states: [...states] };
+}
+const KF5_HEIGHTS_LOW = [3, 10, 25, 40, 60, 70, 80], KF5_HEIGHTS_HIGH = [100, 130, 160, 200, 207, 240, 275];
+
+// KF5 as the brief wrote it (kept): "a kite already open when calima arrives is brought down inside 5 s* without damage".
+// RULING R5 (the orchestrator's M3 rulings, provisional): "calima or squall forces the fold within 1 s at any height; from
+// 80 m or lower she is on the ground within 5 s; from higher, at the law's safe sink (no free fall)". The rows below
+// are R5's three clauses; wave 1's failing row (inside 5 s from 200 m: 9.9 s) is superseded by its third.
+test('KF5 (R5) calima or squall forces the fold within 1 s at any height (3-275 m), from the glide and from the open', () => {
+  for (const wx of ['calima', 'squall']) for (const at of ['glide', 'open']) for (const agl of [...KF5_HEIGHTS_LOW, ...KF5_HEIGHTS_HIGH]) {
+    const r = bringDown(agl, { wx, at });
+    assert.ok(r.foldAt !== null && r.foldAt <= KITE.forcedFoldS, `${wx} ${at} ${agl} m: the fold at ${r.foldAt}`);
+    assert.ok(!r.states.includes('gliding') && !r.states.includes('none'), `${wx} ${at} ${agl} m: ${r.states}`);
+    assert.equal(r.s, 'landing', `${wx} ${at} ${agl} m`);
   }
 });
 
-/** Bring an open kite down from `agl` over flat ground: the seconds and the touchdown. */
-function bringDown(agl) {
-  let wx = 'trade';
-  const w = flatWorld({ flyable: () => flyableIn(wx) });
-  const f = createFlightBody();
-  let s = openAt(f, { x: 0, y: agl, z: 0, headingDeg: 0, groundY: 0 });
-  while (s === 'opening') s = stepFlight(s, f, {}, w, 1 / 60);
-  f.y = agl; wx = 'calima';
-  let t = 0, maxVs = 0;
-  while (s === 'gliding' && t < 60) { s = stepFlight(s, f, {}, w, 1 / 60); t += 1 / 60; maxVs = Math.max(maxVs, -f.vy); }
-  return { s, t, f, maxVs };
-}
+test('KF5 (R5) from 80 m or lower she is on the ground within 5 s, undamaged', () => {
+  for (const agl of KF5_HEIGHTS_LOW) {
+    const r = bringDown(agl);
+    assert.ok(r.t <= KITE.groundedDownS, `${agl} m: down in ${r.t.toFixed(2)} s`);
+    assert.ok(r.f.landVs <= KITE.safeLandVs && r.f.landDamage === 0, `${agl} m: ${r.f.landVs} m/s, ${r.f.landDamage} hp`);
+    near(r.t, groundedDownTime(agl), 0.12, `${agl} m: stepped against the closed form`);
+  }
+});
 
-test('KF5 grounded from every height the island allows (to 275 m: its highest ground, a pillar, the jump and the lift cap): down undamaged, no faster than a fall', () => {
-  for (const agl of [100, 130, 160, 200, 207, 240, 275]) {
+test('KF5 (R5) from higher (to 275 m: the island\'s highest ground, a pillar, the jump and the lift cap) at the law\'s safe sink: never faster than it, never a free fall, down undamaged', () => {
+  const g = KITE.gravity;
+  for (const agl of KF5_HEIGHTS_HIGH) {
     const r = bringDown(agl);
     assert.equal(r.s, 'landing', `${agl} m`);
     assert.ok(r.f.landVs <= KITE.safeLandVs && r.f.landDamage === 0, `${agl} m: ${r.f.landVs} m/s`);
     assert.ok(r.maxVs <= KITE.downMaxVs + 1e-9, `${agl} m: ${r.maxVs} m/s`);
+    assert.ok(r.maxAcc < g - 1e-6, `${agl} m: a downward acceleration of ${r.maxAcc.toFixed(2)} m/s^2 is a free fall (g ${g})`);
     near(r.t, groundedDownTime(agl), 0.12, `${agl} m`);
   }
-});
-
-test('KF5 grounded from 200 m or more inside 5 s', { todo: 'FAIL, RULING: 5 s from 200 m needs a 40 m/s mean descent (275 m in 5 s is a free fall at the game\'s 22 m/s^2, landing at 110 m/s); the law brings her down in 9.9 s from 200 m, 13.0 s from 275 m (5 s is met to 80 m)' }, () => {
-  const r = bringDown(200);
-  assert.ok(r.t <= 5, `200 m: ${r.t.toFixed(2)} s`);
 });
 
 test('KF6 landing: a glide lands at <= 3 m/s with 0 damage; above it the existing fall rule; no landing past the 1.1 m contour', () => {
@@ -250,19 +266,50 @@ test('KF7 the cloth streams iff liftAt > 0 at the post\'s TOP, on the ground und
   }
 });
 
-test('KF7 the Organ Shelf road: all 5 posts stream', { todo: 'FAIL, RULING (KF0 (a)): by area A\'s lift law no face of the Organ Shelf lifts in the trade (its steep faces look N, NW, W and S); 0 of 5 stream' }, () => {
-  const on = WIND_ROADS['organ-shelf'].filter((p) => streams(p, islandLift, heightAt));
-  assert.equal(on.length, 5, on.map((p) => p.id).join());
+// KF7 as the brief wrote it (kept): "the cloth streams iff liftAt > 0 at the post (or by MP0's ruling for the Scar); the
+// first two are flown end to end by the driver in 10 of 10". Wave 1 read the Organ Shelf 0 of 5 and the Scar 0 of 7 on
+// lift. RULING R4: the Scar road and the Organ Shelf road are GLIDE roads: their posts mark a downwind line, not lift;
+// KF7 for them reads "a glide along the posts from the road's launch reaches its last post"; the caldera keeps its lift
+// road (6/6). One lift law; no terrain cut to make lift.
+test('KF7 (R4) the roads\' kinds and launches: Organ Shelf and Scar glide from T1 and T3; the caldera lifts', () => {
+  assert.deepEqual({ ...ROAD_KIND }, { 'organ-shelf': 'glide', scar: 'glide', caldera: 'lift' });
+  for (const [road, id] of Object.entries(ROAD_LAUNCH)) if (id) assert.ok(TRIG.some((t) => t.id === id), `${road} launches from ${id}`);
+  // a glide road's cloth streams whenever the kite may fly, and hangs in calima; a lift road's only on lift
+  for (const p of [...WIND_ROADS['organ-shelf'], ...WIND_ROADS.scar]) { assert.equal(postStreams(p, () => 0, heightAt), true, p.id); assert.equal(postStreams(p, () => 1, heightAt, false), false, p.id); }
+  for (const p of WIND_ROADS.caldera) assert.equal(postStreams(p, () => 0, heightAt), false, p.id);
 });
+
+for (const road of ['organ-shelf', 'scar']) {
+  test(`KF7 (R4) the ${road === 'scar' ? 'Scar' : 'Organ Shelf'} road: a glide along the posts from the road's launch reaches its last post, 10 of 10`, () => {
+    for (let k = 0; k < 10; k++) {
+      const r = flyRoad(road, k);
+      assert.equal(r.passed.length, WIND_ROADS[road].length, `trial ${k}: passed ${r.passed.map((p) => p.id).join()} (${r.end})`);
+      for (const p of r.passed) assert.ok(p.agl > 0 && p.d <= POST_PASS_M, `trial ${k} ${p.id}: ${JSON.stringify(p)}`);
+    }
+  });
+}
 
 test('KF7 the caldera road: all 6 posts stream (the caldera is not built: blockout ground)', () => {
   const on = WIND_ROADS.caldera.filter((p) => streams(p, islandLift, heightAt));
   assert.equal(on.length, 6, on.map((p) => p.id).join());
 });
 
-test('KF7 the Scar road: its 7 posts stream', { todo: 'FAIL, RULING (MP0, KF0 (b)): the Scar runs on bearing 225, straight downwind; its lip faces across the wind and makes no lift by the one law (brief §1)' }, () => {
-  const on = WIND_ROADS.scar.filter((p) => streams(p, islandLift, heightAt));
-  assert.equal(on.length, 7, `${on.length} of 7 stream`);
+// KF0 (a) as the brief wrote it (kept): "T1 as built to the Ring ... if it is short, the Organ Shelf's 5 posts must supply
+// the rest". RULING R3: the T1 test flight is a glide test: open at T1, glide, land on a marked field within reach below
+// (the law's own glide from T1's built height); it does not need the Ring's rise.
+test('T1 (R3) the test flight: a jump off T1, open at 0.35 s, glide and land inside the marked field, 10 of 10, at <= 3 m/s, dry', () => {
+  for (let k = 0; k < 10; k++) {
+    const r = flyTestFlight(k);
+    assert.equal(r.state, 'landing', `trial ${k}`);
+    assert.ok(r.fromCentreM <= TEST_FLIGHT.field.r, `trial ${k}: ${r.fromCentreM} m from the field's centre (r ${TEST_FLIGHT.field.r})`);
+    assert.ok(r.landVs <= KITE.safeLandVs && r.landDamage === 0, `trial ${k}: ${r.landVs} m/s`);
+    assert.equal(r.depth, 0, `trial ${k}: ${r.depth} m of water`);
+    assert.ok(r.minAgl > 0, `trial ${k}: touched ground on the way (${r.minAgl})`);
+  }
+  // the field: dry, and flat within 0.25 m over its radius
+  const F = TEST_FLIGHT.field; let lo = Infinity, hi = -Infinity;
+  for (let dx = -F.r; dx <= F.r; dx += 2) for (let dz = -F.r; dz <= F.r; dz += 2) if (dx * dx + dz * dz <= F.r * F.r) { const g = heightAt(F.x + dx, F.z + dz); lo = Math.min(lo, g); hi = Math.max(hi, g); assert.equal(waterDepthAt(F.x + dx, F.z + dz), 0); }
+  assert.ok(hi - lo <= 0.25, `field relief ${hi - lo}`);
 });
 
 test('KF8 seen and disarmed: sight x2.0 while gliding (the seam: brief 3.2, as area C reads it), x1.0 the step she lands; no weapon verb unless flight is none', () => {
