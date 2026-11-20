@@ -9,6 +9,7 @@ import { installSpatial } from '../core/collision.js';
 import { REST } from '../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
 import { createFlightBody } from '../game/kite/flight.js';
+import { installKiteFlight } from '../hero/kiteFlight.js';   // (M3 wave 3, area B: flight on the page, the smallest change)
 
 const REST_POS = new THREE.Vector3(REST.x, 0, REST.z);
 
@@ -1370,6 +1371,8 @@ export class Player {
       for (const e of this._mats) ctx.environment?.registerMaterial?.(e.mat);
     });
     this.animator = new PlayerAnimator(ctx, this.model);
+    /** (M3 wave 3, area B) the Survey Kite flown by input: src/hero/kiteFlight.js */
+    this.kitePilot = installKiteFlight(this);
 
     ctx.input.onDown('Space', () => this.jump());
     ctx.input.onDown('KeyE', () => { if (this._ride) this.endRide('input'); });
@@ -1640,6 +1643,8 @@ void main() {
     const ctx = this.ctx;
     if (ctx.state !== 'playing' && !ctx.params.has('shot')) return;
     if (this._ride) { ctx.input.consume('Space'); this.endRide('input'); return; }
+    // (M3 wave 3, area B) Space again in the air opens the Survey Kite (src/hero/kiteFlight.js)
+    if (this.kitePilot?.onSpace()) { ctx.input.consume('Space'); return; }
     // a slide is exited on input: a short hop off the face (A-slide: <= 0.3 s)
     if (this.sliding && this.grounded) { ctx.input.consume('Space'); this._slideHop(); return; }
     // buffered: served by _tryJump on the first frame it becomes legal
@@ -2022,6 +2027,8 @@ void main() {
       this._finishFrame(dt, t, realDt);
       return;
     }
+    // (M3 wave 3, area B) in flight the kite's law moves her (src/hero/kiteFlight.js)
+    if (this.flight !== 'none' && this.kitePilot?.active) { this.kitePilot.step(dt, t, realDt); return; }
     // (M2 area D, the smallest change: RMB is the Windwall's guard while the gaff is out, src/combat/kitverbs.js)
     this.aiming = input.mouseDown(2) && !this.dodging && !this.mantling && !this.ctx.combat?.rmbGuard;
     this.crouchAim = this.crouching && this.aiming;
