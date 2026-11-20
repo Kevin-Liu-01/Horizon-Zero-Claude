@@ -724,7 +724,12 @@ const mayShoot = (S) => {
  * in-page: per seal, where it is, its state, and those two margins from where she stands now (or from `stand`, her
  * nock and lens carried there as they sit about her now, turned to face the seal).
  */
-const SEAL_MARGIN = 0.55;
+// 0.45 m: the near seal's hit counts within 0.266 m of its centre, and at ddc31c1 the real arrow strayed up to about
+// 0.2 m from the solved line beside it; at f5c955a (probe e-stall-p1) lines of 1.18-1.31 m all struck the far seal
+const SEAL_MARGIN = 0.45;
+// a stand's margins are read from her nock and lens carried there; at f5c955a one read 0.71 m and gave 0.45 m once she
+// stood there with the bow raised, so a stand must clear the bar by this much more
+const STAND_SLACK = 0.4;
 const sealGeom = (mi, stand = null) => {
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, cb = C.combat, T = C.terrain;
   if (!m || !m._sealW) return null;
@@ -766,11 +771,11 @@ const sealGeom = (mi, stand = null) => {
  * in-page: A STAND WITH A CLEAR LINE to one of `parts` (the seals still on), as a player steps round for a better
  * angle: points 2.4-7 m to either side of the Screed and 1-8 m ahead of its centre, on her side of every wall (whole
  * or cut: the walk there and the line from there to the Screed cross none), on ground within 1.5 m of hers, clear of
- * its body and its blade box, never where mayShoot holds the bow (in its cone, 0.8 rad, beyond 5.5 m while it walks), each
- * line passing the other seal by SEAL_MARGIN + 0.15 (sealGeom's margins, carried to the stand); the nearest walk wins.
+ * its body and its blade box, never where mayShoot holds the bow (in its cone, 0.8 rad, beyond 5.5 m while it walks, or
+ * not facing it), each line passing the other seal by SEAL_MARGIN + STAND_SLACK (sealGeom's margins, carried to the stand); the nearest walk wins.
  * Returns { stand, part, margin, d, n (candidates), why } or { stand: null, best (the widest margin seen), n, why }.
  */
-const sealStand = async (mi, parts, margin) => {
+const sealStand = async (mi, parts, margin, slack) => {
   const W = await import('/src/world/settlements/ninewalls-layout.js');
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, T = C.terrain;
   if (!m) return { stand: null, why: 'no Screed' };
@@ -805,11 +810,13 @@ const sealStand = async (mi, parts, margin) => {
         const d = Math.hypot(x - m.position.x, z - m.position.z), ang = Math.abs(Math.atan2(s, a));
         // (mayShoot's own 'chargeable': no arrow is loosed there while it walks)
         if (walking && d > 5.5 && ang < 0.8) { why.cone++; continue; }
+        // and mayShoot's 'facing': in front of it, within 1.2 rad of its heading while it walks (1.6 stalled or backing)
+        if (!(a > 0.5 && ang < (walking ? 1.2 : 1.6))) { why.facing = (why.facing || 0) + 1; continue; }
         const g = geom(mi, { x, z });
         for (const p of parts) {
           const mg = g?.[p]?.margin ?? 0;
           if (!bestSeen || mg > bestSeen.margin) bestSeen = { part: p, margin: mg, a, s, at: [+x.toFixed(1), +z.toFixed(1)] };
-          if (mg < margin + 0.15) { why.margin++; continue; }
+          if (mg < margin + slack) { why.margin++; continue; }
           // the straight line from there meets that seal's own sphere first (the moldboard stands 1.4 m tall in front of
           // the seals at 1.34 m; the flight's drop over 8 m is 2 cm), and the lens's line meets no hull short of it
           if (!lineTo(g, p)) { why.line++; continue; }
@@ -974,7 +981,7 @@ async function driveScreed(page, K, stage, maxS = 120) {
         // (M3 fix wave) no clear line to a seal still on from here: a stand that has one, if a player can reach it
         const S2 = await page.evaluate(screedNow);
         if (S2 && S2.sealsLeft.length) {
-          const st = await page.evaluate(sealStand, S2.i, S2.sealsLeft, SEAL_MARGIN);
+          const st = await page.evaluate(sealStand, S2.i, S2.sealsLeft, SEAL_MARGIN, STAND_SLACK);
           const rec = { t: T(), stand: st.stand ? { part: st.part, margin: +st.margin.toFixed(3), d: st.d, a: st.a, s: st.s } : null, best: st.best ?? null, why: st.why, phase: S2.phase, backT: S2.backT };
           standLog.push(rec);
           if (st.stand) { rec.walk = await walkTo(page, st.stand, 0.5, 3, { sprint: st.d > 3 }); continue; }
@@ -983,6 +990,15 @@ async function driveScreed(page, K, stage, maxS = 120) {
         if (S2 && (S2.phase === 'stall' || S2.backT > 0)) { await sleep(150); continue; }
       } else if (!v.shots.some((q) => q.fired)) await sleep(150);
       if (!v.needStand) continue;
+    }
+    // (M3 fix wave) after the seal stall, while it walks: a stand with a clear line (out of its cone, facing it) before the
+    // ambush. At f5c955a (probe e-stall-p1) the far seal took one arrow as it backed off; when its line closed she went
+    // back to the ambush point, it walked on and cut wall-2 and wall-3
+    if (S.stalls >= 2 && S.phase === 'walk' && !S.between) {
+      const st = await page.evaluate(sealStand, S.i, S.sealsLeft, SEAL_MARGIN, STAND_SLACK);
+      const rec = { t: T(), stand: st.stand ? { part: st.part, margin: +st.margin.toFixed(3), d: st.d, a: st.a, s: st.s } : null, best: st.best ?? null, why: st.why, phase: S.phase, backT: S.backT, walking: true };
+      standLog.push(rec);
+      if (st.stand) { rec.walk = await walkTo(page, st.stand, 0.5, 3, { sprint: st.d > 3 }); continue; }
     }
     // the ambush point: 10 m in front of it and 5 m to one side, kept on corridor 1/2's floor while it is outside or in it
     const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
