@@ -246,6 +246,29 @@ const BIBLE_STATES = Object.freeze(['trade', 'calima', 'fogbank', 'squall']);
 const ALIAS = Object.freeze({ clear: 'trade', rain: 'squall', storm: 'squall' });
 
 /**
+ * (Milestone 3, the wind and lift seam: `flyable()`.) The weather states that ground the Survey Kite (BIBLE §3.2's table:
+ * calima "grounds the Survey Kite"; §16: "Calima and squalls ground it"). A state is grounding the moment it is SET
+ * (`setWeather` names it at once; the orchestrator's KF5 ruling: the fold is forced within 1 s), and a cross-fade out of
+ * one keeps the kite down while the dust or the rain is still the larger part of the sky (`GROUNDED_WEIGHT`).
+ */
+export const GROUNDING_WEATHER = Object.freeze(['calima', 'squall']);
+/** The resolved weather record's own weights past which the sky still grounds the kite in a fade out (calima's `calima`
+ * weight; a squall has no weight of its own, so its `rain` share of 0.8: half of it). */
+export const GROUNDED_WEIGHT = Object.freeze({ calima: 0.5, rain: 0.4 });
+/**
+ * Does the kite fly in this sky? Pure (Node reads it: src/world/environment.flyable.test.mjs).
+ * @param {string | null | undefined} state  the weather state (aliases as setWeather takes them; none reads as trade)
+ * @param {{ calima?: number, rain?: number } | null} [w]  the resolved, cross-faded weather record (`weatherParams`)
+ * @returns {boolean} false in calima and squall, and while a fade out of either is still over GROUNDED_WEIGHT
+ */
+export function flyableIn(state, w = null) {
+  const id = ALIAS[state] || state || 'trade';
+  if (GROUNDING_WEATHER.includes(id)) return false;
+  if (w && ((w.calima ?? 0) > GROUNDED_WEIGHT.calima || (w.rain ?? 0) > GROUNDED_WEIGHT.rain)) return false;
+  return true;
+}
+
+/**
  * Lighting by biome (bible §9.3), driven by the biome weights at the camera. Fog
  * colours are applied as a tint relative to the Pans' fog (#CFD8DE, which equals the
  * noon key), so the hour keys hold exactly in the Pans and every other biome shifts
@@ -1060,6 +1083,14 @@ export class Environment {
       off: () => { this._cloudShadowOff = true; this.u.calCloudA.value.z = 0; this._lightDirty = true; this._applyTime(0, true); },
     }];
   }
+
+  /**
+   * (Milestone 3, the wind and lift seam) Does the Survey Kite fly now? False in calima and squall (from the moment the
+   * state is set) and while a fade out of either still holds the sky (`flyableIn`). The flight law (src/game/kite/flight.js)
+   * and the hour-two runner read it; nobody else decides it.
+   * @returns {boolean}
+   */
+  flyable() { return flyableIn(this.weather, this.w); }
 
   get weatherStates() { return BIBLE_STATES.slice(); }
   get states() { return WEATHER; }
