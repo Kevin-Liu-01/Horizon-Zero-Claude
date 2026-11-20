@@ -254,7 +254,8 @@ puppeteer.launch = async (opts) => {
   const close0 = browser.close.bind(browser);
   browser.close = async (...a) => {
     for (const p of pages) {
-      try { L.summary = await p.evaluate(() => ({ frames: window.__hh?.n ?? null, long: window.__hh?.nLong ?? null, hitch: window.__hitch ? { n: window.__hitch.n, over33: window.__hitch.over33, over50: window.__hitch.over50, max: +window.__hitch.max.toFixed(1) } : null })); } catch { /* */ }
+      try { L.summary = await p.evaluate(() => ({ frames: window.__hh?.n ?? null, long: window.__hh?.nLong ?? null, hitch: window.__hitch ? { n: window.__hitch.n, over33: window.__hitch.over33, over50: window.__hitch.over50, max: +window.__hitch.max.toFixed(1) } : null,
+        walk: (window.__CTX__?.nav?._walk || []).map((w) => ({ id: w.id, cells: w.open?.length ?? null, paths: w.stats.paths, misses: w.stats.misses, long: w.stats.long || 0, alt: w.stats.alt || 0, landmarks: w.stats.landmarks || null, lmReady: !!w._lm?.ready })) })); } catch { /* */ }
     }
     L.closedAt = new Date().toISOString(); save();
     return close0(...a);
