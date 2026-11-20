@@ -127,8 +127,11 @@ export const MALPAIS_TERM = /* glsl */ `
       // (e664972: the pahoehoe's glassy ropes glinted in a grid at 100 m, the tile's repeat) the relief and the gloss fade
       // with range, where the texel's detail is under a pixel anyway
       float farK = smoothstep(20.0, 90.0, dCam);
-      mp *= 1.0 - 0.65 * farK;
-      mr = mix(mr, max(mr, 0.82), farK);
+      // (wave 2b, F56 at dde7982: past 100 m the sheets still glinted in rows of yellow rings, the rope tile's normals
+      // catching the low sun) on the sheets the relief and the gloss go almost wholly with range
+      float pahK = wPa / max(ws, 1e-4);
+      mp *= 1.0 - mix(0.65, 0.95, pahK) * farK;
+      mr = mix(mr, max(mr, mix(0.82, 0.96, pahK)), farK);
       // (fix round 1) the flow's large relief, off Rust Cone and kept at every range: the ridges' slope bends the normal
       // and their troughs darken, so the plain reads as ridged rock to 300 m where the texel detail has faded out
       // (wave 2b, MP10) its slope from the screen derivatives of one read (was two more reads 2 m off): the world gradient
