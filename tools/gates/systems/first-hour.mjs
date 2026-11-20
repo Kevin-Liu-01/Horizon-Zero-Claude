@@ -263,6 +263,24 @@ async function walkRoad(page, target, radius, maxS = 150) {
   return { ...r, road: true, of: pts.length, s: +((Date.now() - t0) / 1000).toFixed(1) };
 }
 
+/**
+ * (M2 fix wave 2) A walk that tries again, as a player who walked into a corner turns round: up to three tries from
+ * wherever the last one stopped (the nav grid, then the village's road and the grid, then the grid), a drink under 50
+ * between them (`K` given). At bff2a10 a 60 s walk from Benchmark 1 to the Ninewalls Brazier stopped 60.2 m short and
+ * leg 3 stopped at 'rest-noon'; at 4fe5177 the walk to Oro stopped 51.5 m short.
+ */
+async function walkSure(page, target, radius, maxS, K = null) {
+  const tries = [];
+  let w = null;
+  for (let i = 0; i < 3; i++) {
+    if (K && (await page.evaluate(where)).hp < 50) await SH.drink(page, K, 92);
+    w = i === 1 ? await walkRoad(page, target, radius, maxS) : await walkPath(page, target, radius, maxS);
+    tries.push({ ok: w.ok, why: w.why ?? null, s: w.s ?? null });
+    if (w.ok || w.why === 'died' || /left play/.test(w.why || '')) break;
+  }
+  return { ...w, tries };
+}
+
 async function shot(page, name) {
   try {
     await page.evaluate(() => { if (window.__hitch) window.__hitch.pause++; });
@@ -486,6 +504,7 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
   await page.evaluate(herdSafeSrc);
   const out = { steps: [], waits: [], moves: [] };
   const t0 = Date.now(), T = () => +((Date.now() - t0) / 1000).toFixed(1);
+  const shot0 = SH.shotLog().length;
   // out of the herd's way: the nearest point (rings of 6-26 m round her) clear of every hull and its bearing
   const away = () => page.evaluate(() => {
     const C = window.__CTX__, P = C.player.position;
@@ -571,6 +590,8 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
     out.why ??= null;
     out.fired = out.steps.reduce((a, q) => a + (q.fired || 0), 0);
     out.threats = threats;
+    // every arrow of this topple as fight() logged it: range, the Plumb's state, the predicted first hit, the vial's count
+    out.shots = SH.shotLog().slice(shot0).map((q) => ({ part: q.part, state: q.state ?? null, d: q.d, blocked: !!q.blocked, first: q.predicted?.first ?? null, missM: q.predicted?.missM ?? null, vial: q.vialHits ?? null, still: q.still ?? null }));
     out.cause = (await page.evaluate(where)).cause;
     out.stands = await page.evaluate(() => window.__standLog || null);
     out.rule = await page.evaluate(() => window.__CTX__.systemsGame?.hour?.terraceRule ?? null);
@@ -602,14 +623,8 @@ async function driveOro(page, K) {
   // (M2 fix wave 2) up to three tries, the village's road on the second, a drink under 50 between them: at 4fe5177
   // chained run 1 the one 60 s walk from the terrace stopped 51.5 m short while the stood-up terrace Plumb's Sightline
   // took her 75 -> 25, and the leg stopped at 'oro'
-  let w = null;
-  const tries = [];
-  for (let i = 0; i < 3; i++) {
-    if ((await page.evaluate(where)).hp < 50) await SH.drink(page, K, 92);
-    w = i === 1 ? await walkRoad(page, A, 2.4, 70) : await walkPath(page, A, 2.4, 60);
-    tries.push({ ok: w.ok, why: w.why ?? null, s: w.s ?? null });
-    if (w.ok || w.why === 'died') break;
-  }
+  const w = await walkSure(page, A, 2.4, 60, K);
+  const tries = w.tries;
   await sleep(400);
   await SH.holdE(page, K, 500);
   await sleep(400);
@@ -764,13 +779,9 @@ async function driveScreed(page, K, stage, maxS = 120) {
       // out of the village and into corridor 1/2 by its east mouth, then along it to 4 deg past the Screed's bearing
       if (!approach) {
         approach = { mouth: await page.evaluate(polarNW, (C12.end + C12.end2) / 2, rMid), tries: [] };
-        // (M2 fix wave 2) a second try from where the first stopped, a drink under 50 first
-        for (let i = 0; i < 2; i++) {
-          if ((await page.evaluate(where)).hp < 50) await SH.drink(page, K, 92);
-          approach.walk = await walkPath(page, approach.mouth, 3, 90);
-          approach.tries.push({ ok: approach.walk.ok, why: approach.walk.why ?? null });
-          if (approach.walk.ok || approach.walk.why === 'died') break;
-        }
+        // (M2 fix wave 2) tried again from where a try stopped (walkSure), a drink under 50 first
+        approach.walk = await walkSure(page, approach.mouth, 3, 90, K);
+        approach.tries = approach.walk.tries;
         approach.at = { t: T(), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1) };
         const S2 = await page.evaluate(screedNow);
         note(S2, { mouth: true, walk: approach.walk.ok });
@@ -837,8 +848,8 @@ async function driveRest(page, K) {
   // on their loop): she does not fight them on the way. At fa45e47 run 2 putting their lamps out cost 31 -> 4 hp here
   out.lookers = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).map((m) => ({ state: m.state, docile: !!m.docile })));
   // to the bowl itself (its prompt's radius is 2.6 m; f2a7b10 stopped by the seat 3 m off with no prompt up)
-  const w = await walkPath(page, A, 1.3, 60);
-  out.walk = { ok: w.ok, why: w.why ?? null };
+  const w = await walkSure(page, A, 1.3, 60, K);
+  out.walk = { ok: w.ok, why: w.why ?? null, tries: w.tries };
   await sleep(300);
   const prompt = () => page.evaluate(() => window.__CTX__.interactables?.current?.label ?? null);
   out.prompt0 = await prompt();
@@ -885,7 +896,7 @@ async function driveCross(page) {
   const at = await page.evaluate(() => { const H = window.__CTX__.systemsGame?.hour; H?._malpaisEdge?.(); return window.__CTX__.systemsGame.A['malpais-edge'] ?? null; });
   if (!at) return { ...out, ok: false, why: 'no Malpais edge anchor' };
   out.anchor = at;
-  out.walk = await walkPath(page, at, 4, 120);
+  out.walk = await walkSure(page, at, 4, 120);
   out.reached = await waitReached(page, TRUE_GROUND_ID, 'calima-cross', 6000);
   out.calimaW = await page.evaluate(() => +(window.__CTX__.environment.weatherParams?.calima ?? 0).toFixed(2));
   out.shot = await shot(page, 'l3-calima-edge');
@@ -1002,7 +1013,7 @@ async function runLeg(leg, startRec = null) {
         played.enterHolds = enter ? { t: enter.t, depth: enter.depth } : null;
         played.approachHolds = played.regionEvents.find((e) => e.k === 'approach' && e.region === 'holds')?.t ?? null;
       } else if (st.id === 'scar') {
-        played.walk = await walkPath(page, PLACES.b1, 4, 90);
+        played.walk = await walkSure(page, PLACES.b1, 4, 90, K);
       } else if (st.id === 'herd') {
         played.lee = await driveLee(page, 60);
       } else if (st.id === 'survey') {

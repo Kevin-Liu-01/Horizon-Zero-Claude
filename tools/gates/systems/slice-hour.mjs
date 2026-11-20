@@ -1119,7 +1119,9 @@ async function reloadContinue(page, tag) {
 // (M2 wave 4) importable: tools/gates/systems/first-hour.mjs drives the hour's fights with this file's own drivers (the
 // topple, the shot solve); the run below starts only when this file is the one node was asked to run
 const IS_MAIN = !!process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-export { probe, targetsOf, aimPoint, solveShot, scanStands, waitStill, walkTo, walkPath, playScene, holdE, drink, fight, readyBow, keys, kiteFrom, face };
+// (M2 fix wave 2) the shot log fight() keeps, for a caller's report (first-hour's terrace topple)
+const shotLog = () => shots;
+export { probe, targetsOf, aimPoint, solveShot, scanStands, waitStill, walkTo, walkPath, playScene, holdE, drink, fight, readyBow, keys, kiteFrom, face, shotLog };
 
 if (IS_MAIN) try {
   mkdirSync(runDir, { recursive: true });
