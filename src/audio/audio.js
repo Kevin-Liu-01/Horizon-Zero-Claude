@@ -281,7 +281,19 @@ export class GameAudio {
     this._lateWait = 0;
     /** @type {Promise<import('./bank.js').SampleBank>|null} */
     this.bankLate = null;
-    ctx.events.on('game-start', () => { if (this._controlAt == null) this._controlAt = performance.now(); });
+    /** null: no game-start seen (a frames page, a harness); false: counting frames from it; true: the late bank may start */
+    this._lateArmed = null;
+    ctx.events.on('game-start', () => {
+      if (this._controlAt == null) this._controlAt = performance.now();
+      if (this._lateArmed != null) return;
+      // counted in presented frames from game-start itself, not in update() calls: at 04ca02f, with the boot bank already
+      // in (it loads from the title's first key), three updates with the state 'playing' fell 7-14 ms before the second
+      // frame after game-start (tools/perf/boot-transfer.mjs's control) and four late files were asked for before it
+      this._lateArmed = false;
+      let n = 0;
+      const tick = () => { if (++n >= LATE_AFTER_FRAMES) this._lateArmed = true; else requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    });
     ctx.events.on('game-start', arm);
     // Browsers only allow audio after a gesture; keep listeners persistent so
     // a later click can still resume a suspended context.
@@ -3335,7 +3347,11 @@ export class GameAudio {
     this._lastRealMs = nowMs;
 
     // the late bank: LATE_AFTER_FRAMES frames of play after control, once the boot bank is in
-    if (!this.bankLate && playing && this.bank.loaded && ++this._lateWait >= LATE_AFTER_FRAMES) this._startLate();
+    // (after a game-start: LATE_AFTER_FRAMES presented frames after it; with none, as on a frames page: that many updates)
+    if (!this.bankLate && playing && this.bank.loaded) {
+      this._lateWait++;
+      if (this._lateArmed === true || (this._lateArmed === null && this._lateWait >= LATE_AFTER_FRAMES)) this._startLate();
+    }
 
     this._updateSpatial(rdt, nowMs, playing);
 

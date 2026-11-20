@@ -382,11 +382,15 @@ try {
   installProfileCleanup();
   const tC = Date.now();
   const profile = profileDir(PORT);
-  const browser = await puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 240000,
+  // one browser per case, each in a fresh profile: at 20679b6 and 04ca02f the fourth page of one browser stuck on the
+  // title (titleStage 'idle' under the loading sheet for 180 s) while the same case alone in its own browser ran
+  const launch = () => puppeteer.launch({ headless: 'new', userDataDir: profile, protocolTimeout: 240000,
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940',
       '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'] });
+  let browser = null;
   try {
     for (const c of [...(args.includes('--no-new-game') ? [] : [['new-game', null]]), ...CONTINUES.map((f) => ['continue', f])]) {
+      browser = await launch();
       try {
         const rec = await oneCase(browser, c[0], c[1]);
         run.cases.push(rec);
@@ -397,9 +401,12 @@ try {
         log(`${c.join(':')}: ${e} (at ${stopped?.step}: ${JSON.stringify(stopped).slice(0, 300)})`);
       }
       save();
+      try { await browser.close(); } catch { /* */ }
+      browser = null;
+      disposeProfile(profile);
     }
   } finally {
-    try { await browser.close(); } catch { /* */ }
+    if (browser) { try { await browser.close(); } catch { /* */ } }
     disposeProfile(profile);
     releaseMachineSlot(log);
     run.chromeS = Math.round((Date.now() - tC) / 1000);
