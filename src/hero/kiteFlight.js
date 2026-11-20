@@ -32,6 +32,7 @@ import { SEA_LEVEL, GLASS_LEVEL } from '../world/island/recipe.js';
 import { TRIG } from '../world/island/sites.js';
 import { buildSurveyKite, placeKite } from '../entities/anim/kite/surveyKite.js';
 import { kiteClipPose, createKitePose } from '../entities/anim/kite/kiteClips.js';
+import { installGlassLine } from '../game/hour2/glass-line.js';
 
 const WATER_LEVEL = Math.max(SEA_LEVEL, GLASS_LEVEL);
 /** m: an open within this of a trig pillar's centre is "from" it (the quest's 'launch' beat: T1's top) */
@@ -68,6 +69,8 @@ export function installKiteFlight(player) {
     t0: 0,
     last: { open: null, land: null, refused: null },
     pose: createKitePose(),
+    /** "A Line Over the Glass" (src/game/hour2/glass-line.js), once installed */
+    quest: null,
     give() { this.owned = true; return true; },
 
     /** the mesh, built on first need (0 bytes shipped: built from code) */
@@ -159,6 +162,9 @@ export function installKiteFlight(player) {
 
     /** after every animator update (flying or not): the kite placed from the hang's solve, or furled on its mount */
     _afterAnim() {
+      // "A Line Over the Glass" registers itself beside the hour-two hub the first frame the hub stands (./index.js says
+      // the kite quest registers its own part)
+      if (!this.quest && ctx.hour2) { try { this.quest = installGlassLine(ctx); } catch (e) { this.quest = { error: String(e?.message || e) }; console.error('[kite] glass-line', e); } }
       if (!this.owned) { if (this.K) this.K.group.visible = false; return; }
       const K = this._kite(), an = player.animator, root = an.space?.root || player.model;
       K.group.visible = true;

@@ -48,6 +48,7 @@ import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '..
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { fixture } from './hour-two-fixtures.mjs';
 import * as SH from './slice-hour.mjs';
+import { DRIVE4 } from '../kite/glass-line-drive.mjs';   // (M3 wave 3, area B: leg 4's drivers, the smallest change)
 import { WELLHEADS, apronPoint } from '../../../src/world/sites/kilnyards-layout.js';
 import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, LEG_CAP_S, beatsOfLeg } from '../../../src/game/hour2/plan.js';
 
@@ -213,6 +214,9 @@ for (const n of [1, 2, 3, 4]) {
     return { casts, fills };
   };
 }
+
+// (M3 wave 3, area B) leg 4, "A Line Over the Glass": tools/gates/kite/glass-line-drive.mjs
+Object.assign(DRIVE, DRIVE4);
 
 /** Presented-frame intervals while playing with the loading sheet closed; screenshots apart (first-hour.mjs's). */
 function installHitch() {

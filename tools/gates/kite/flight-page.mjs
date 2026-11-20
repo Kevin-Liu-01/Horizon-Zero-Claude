@@ -2,7 +2,7 @@
 // nice -n 10), the machine guard and slot1 (tools/chrome-slot.mjs), torn down on every exit path. The game's own input
 // (key events on the window, as a keyboard sends them: W, Space, A, D, C) flies the Survey Kite through the player's own
 // update (src/hero/kiteFlight.js); nothing here moves her or poses her. Two flights:
-//   1. T1 (the test flight, R3): she stands on T1's top (the one staged thing: her place and facing, the hour and the
+//   1. T1 (the test flight, R3): she stands on T1's drum deck, 3 m up (the one staged thing: her place and facing, the hour and the
 //      weather), runs off it with W, jumps (Space), opens the kite (Space again after 0.42 s), banks right then left (D, A),
 //      then holds the track to the marked field by A and D, and lands on her feet; then a second launch that is folded by
 //      C at about 3 m over the ground (KF1's "fold at 3 m").
@@ -96,7 +96,7 @@ const INSTALL = () => {
 
 /** Stage a start: hour, weather, her place (x, z, y over the ground at `top`), her facing (a bearing) and the chase lens
  *  behind her. Nothing of the flight is staged. */
-const START = async ({ x, z, top = null, bearing, hour = 17.75 }) => {
+const START = async ({ x, z, top = null, bearing, hour = 17.75, back = 0, side = 0 }) => {
   const C = window.__CTX__, p = C.player, E = C.engine, env = C.environment, K = window.__KF;
   for (const c of ['KeyW', 'KeyA', 'KeyD', 'KeyC', 'Space']) K.key(c, false);
   C.input.keys.clear();
@@ -105,7 +105,11 @@ const START = async ({ x, z, top = null, bearing, hour = 17.75 }) => {
   env.setWeather('trade', 0); env.setTime(hour);
   try { E.setLookHour?.(hour, 'trade', null, { ev: false }); } catch (e) { /* */ }
   p.kitePilot.owned = true;
-  const g = C.terrain.getHeight(x, z), y = top != null ? g + top : g;
+  // (a pillar: she stands on the drum's deck, `back` m behind its centre along the bearing and `side` m to its right,
+  //  clear of the centring plate's head in the middle)
+  const br = bearing * Math.PI / 180, dx = Math.sin(br), dz = -Math.cos(br);
+  x = x - dx * back - dz * side; z = z - dz * back + dx * side;
+  const g = C.terrain.getHeight(x, z), y = top != null ? C.terrain.getHeight(x + dx * back + dz * side, z + dz * back - dx * side) + top : g;
   p.position.set(x, y + 0.05, z); p.velocity.set(0, 0, 0);
   p._prevPos?.copy?.(p.position);
   p._snapToGround?.(y + 0.6);
@@ -270,9 +274,9 @@ try {
   if (ONLY.includes('t1')) {
     const F = (out.flights.t1 = {});
     // a step back from the pillar's centre so the run-off is the jump's own (the pillar is a 4 m cylinder)
-    F.start = await page.evaluate(START, { x: S.T1.x, z: S.T1.z, top: S.T1.top, bearing: S.bearing });
+    F.start = await page.evaluate(START, { x: S.T1.x, z: S.T1.z, top: 3, bearing: S.bearing, back: 1.0, side: 0.8 });
     log(`t1 start ${JSON.stringify(F.start)}`);
-    F.launch = await page.evaluate(LAUNCH, { runS: 0.1, openAfter: 0.42 });
+    F.launch = await page.evaluate(LAUNCH, { runS: 0.3, openAfter: 0.42 });
     log(`t1 launch ${JSON.stringify(F.launch)}`);
     if (F.launch.flight !== 'none') {
       await page.evaluate(AT, { state: 'opening', t: 0.27 }); await shot('t1-open-045-front', L.front);
@@ -295,8 +299,8 @@ try {
   }
   if (ONLY.includes('fold') && (Date.now() - t0) / 1000 < BUDGET_S - 200) {
     const F = (out.flights.fold = {});
-    F.start = await page.evaluate(START, { x: S.T1.x, z: S.T1.z, top: S.T1.top, bearing: S.bearing });
-    F.launch = await page.evaluate(LAUNCH, { runS: 0.1, openAfter: 0.42 });
+    F.start = await page.evaluate(START, { x: S.T1.x, z: S.T1.z, top: 3, bearing: S.bearing, back: 1.0, side: 0.8 });
+    F.launch = await page.evaluate(LAUNCH, { runS: 0.3, openAfter: 0.42 });
     if (F.launch.flight !== 'none') {
       await page.evaluate(AT, { state: 'gliding', t: 0.3 });
       // fold when 3-3.5 m over the ground (KF1's "fold at 3 m")
