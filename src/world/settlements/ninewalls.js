@@ -53,7 +53,11 @@ export class Ninewalls {
     import('../../instruments/lib/sight.js').then((m) => { this._sight = m; }).catch(() => {});
   }
 
+  /** C5: the walls as they stand (each wall's state and paint), to tell a change from a load that changed nothing. */
+  _wallsSig() { const W = L.wallsSave().get(); return Object.keys(W).map((k) => `${k}:${W[k].state}:${W[k].painted ? 1 : 0}`).join(','); }
+
   _buildWalls() {
+    this._builtSig = this._wallsSig();
     const soup = wallsGeometry(this._ground, (id) => L.wallState(id));
     const geo = soup.geometry();
     this.stats.wallTris = soup.tris;
@@ -114,6 +118,11 @@ export class Ninewalls {
       if (!this._near && d < NEAR_M) { this._near = true; this._registerOccluders(); }
       else if (this._near && d > NEAR_M + 40) { this._near = false; this._sight.clearOccluders('ninewalls:'); this._occluderSlots = []; this.stats.occluders = 0; }
     }
+    // C5 (engine lane, the smallest change here: the first hour's hitches): a load that leaves every wall as it stands (every
+    // CONTINUE before the seals: the save's walls field tells every listener) rebuilds nothing. It rebuilt the walls (24 ms
+    // in one frame at 865e8c6, run hh-c5-865e8c6) and registered their colliders again, which marked every walk grid dirty:
+    // Ninewalls' (35-45 ms) was then built again by the first route the Holds people asked for, on the walk into the Holds
+    if (this._dirty && this._wallsSig() === this._builtSig) { this._dirty = false; this.stats.unchanged = (this.stats.unchanged || 0) + 1; }
     if (this._dirty) {
       this._dirty = false;
       this.stats.rebuilds++;
