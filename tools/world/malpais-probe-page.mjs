@@ -36,6 +36,15 @@ export async function probe(f) {
     out.malpais = M ? { state: M.state, stats: JSON.parse(JSON.stringify(M.stats)) } : null;
     if (M?._held?.tiles) { let on = 0, inst = 0; for (const t of M._held.tiles) if (t.mesh.visible) { on++; inst += t.mesh.count; } out.malpais.clinkerShown = { tiles: on, of: M._held.tiles.length, clasts: inst }; }
   } catch (e) { out.malpais = { error: String(e) }; }
+  // (wave 2b, MP4) the steam's draws: each group's mesh, whether the frame drew it (visible, in the frustum, not size-culled)
+  try {
+    const M = C?.terrain?.malpais, st = M?._held?.steam;
+    if (st) {
+      const T = await import('three');
+      const cam = C.camera, fr = new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+      out.steam = { counts: st.counts, t: st.uniforms.uSteamT.value, wind: [st.uniforms.uSteamWind.value.x, st.uniforms.uSteamWind.value.y], meshes: st.group.children.map((m) => ({ name: m.name, visible: m.visible, parentVisible: st.group.visible, inScene: !!m.parent?.parent?.parent, sizeCulled: m.userData.__sizeCulled === true, inFrustum: fr.intersectsObject(m), puffs: m.geometry.instanceCount, renderOrder: m.renderOrder, programs: m.material.version })) };
+    }
+  } catch (e) { out.steam = { error: String(e?.message || e).slice(0, 300) }; }
   try {
     const progs = {};
     for (const Ck of C?.terrain?._chunks || []) {

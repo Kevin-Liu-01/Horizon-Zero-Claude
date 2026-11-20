@@ -19,7 +19,7 @@ import { patchAerial, patchDeck } from '../island/aerial.js';
  *   st.counts                              { sources, puffs, draws, triangles }
  */
 /** Fumarole white (sRGB), and the plume's look: the most a puff covers, its life (s) by kind, how far the wind carries it. */
-export const STEAM_LOOK = Object.freeze({ color: 0xe4e8e8, opacity: 0.42, life: Object.freeze({ hornito: 9, vent: 7, stack: 8 }), carry: 0.32 });
+export const STEAM_LOOK = Object.freeze({ color: 0xe4e8e8, opacity: 0.3, life: Object.freeze({ hornito: 9, vent: 7, stack: 8 }), carry: 0.32, grow: 4.0, puffs: 2.0 });
 
 const VERT_PARS = /* glsl */ `
 #include <common>
@@ -41,7 +41,7 @@ const VERT_PROJECT = /* glsl */ `
   vec2 drift = uSteamWind * age * age * stLife * ${STEAM_LOOK.carry.toFixed(3)};
   vec2 wob = vec2(sin(age * 6.0 + sd * 13.0), cos(age * 5.0 + sd * 7.0)) * (0.2 + age * 1.1);
   vec3 stWorld = vec3(iSrc.x + drift.x + wob.x, iSrc.y + rise, iSrc.z + drift.y + wob.y);
-  float stSize = iPar.y * (1.0 + age * 3.0);
+  float stSize = iPar.y * (1.0 + age * ${STEAM_LOOK.grow.toFixed(2)});
   vec4 mvPosition = viewMatrix * vec4(stWorld, 1.0);
   float ang = sd * 6.2832 + age * 0.7;
   vec2 q = vec2(position.x * cos(ang) - position.y * sin(ang), position.x * sin(ang) + position.y * cos(ang));
@@ -64,10 +64,13 @@ float stN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
 const FRAG_COLOR = /* glsl */ `
 #include <color_fragment>
 {
+  // (wave 2b, after the film at d6d482e: the puffs read as round cotton balls) a soft core and a torn edge: the cover
+  // falls off from the centre all the way out, and two octaves of noise eat into it, so neighbours merge into a plume
   float r = length(vSt) * 2.0;
   vec2 o = vec2(vStSeed, vStSeed * 1.7);
-  float n = 0.65 * stN(vSt * 3.1 + o) + 0.35 * stN(vSt * 7.3 + o * 2.3);
-  float a = smoothstep(1.0, 0.2, r + (n - 0.5) * 0.7) * vStA * uSteamK.x;
+  float n = 0.6 * stN(vSt * 2.3 + o) + 0.4 * stN(vSt * 5.9 + o * 2.3);
+  float core = 1.0 - smoothstep(0.0, 1.0, r);
+  float a = core * core * smoothstep(0.15, 0.75, n + 0.35 * core) * vStA * uSteamK.x;
   // a puff's underside a little in its own shade
   diffuseColor.rgb *= 0.82 + 0.18 * clamp(vSt.y + 0.5, 0.0, 1.0);
   diffuseColor.a *= a;
@@ -114,7 +117,7 @@ export function buildSteam(sources, ground) {
   const geos = [], feet = [];
   let puffs = 0;
   for (const [k, list] of groups) {
-    const n = list.reduce((a, s) => a + s.n, 0);
+    const n = list.reduce((a, s) => a + Math.round(s.n * STEAM_LOOK.puffs), 0);
     const src = new Float32Array(n * 4), par = new Float32Array(n * 4);
     let i = 0;
     const lo = new THREE.Vector3(Infinity, Infinity, Infinity), hi = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
@@ -122,8 +125,9 @@ export function buildSteam(sources, ground) {
       const R = seq(Math.floor(s.x * 73 + s.z * 31));
       const y0 = ground(s.x, s.z) + s.base, life = STEAM_LOOK.life[s.kind] || 8;
       feet.push({ x: s.x, z: s.z });
-      for (let j = 0; j < s.n; j++, i++) {
-        src.set([s.x, y0, s.z, (j + R() * 0.6) / s.n], i * 4);
+      const ns = Math.round(s.n * STEAM_LOOK.puffs);
+      for (let j = 0; j < ns; j++, i++) {
+        src.set([s.x, y0, s.z, (j + R() * 0.6) / ns], i * 4);
         par.set([s.h * (0.85 + 0.3 * R()), s.r * (0.8 + 0.4 * R()), R(), life * (0.85 + 0.3 * R())], i * 4);
       }
       lo.min(new THREE.Vector3(s.x - 30, y0 - 2, s.z - 30)); hi.max(new THREE.Vector3(s.x + 30, y0 + s.h + 6, s.z + 30));
@@ -138,7 +142,11 @@ export function buildSteam(sources, ground) {
     const m = new THREE.Mesh(g, mat);
     m.name = `malpais-steam-${k}`;
     m.castShadow = false; m.receiveShadow = false;
-    m.renderOrder = 2;
+    // its origin is not where it stands (the puffs are placed in the shader): the engine's small-mesh cull reads the origin
+    m.userData.noSizeCull = true;
+    // after the sky dome (environment.js draws it last, renderOrder 1000, over every pixel with no depth): the puffs write
+    // no depth, so drawn before it they vanished wherever sky stood behind them (the Yards' stacks in F57 at d6d482e)
+    m.renderOrder = 1001;
     group.add(m);
     geos.push(g);
     puffs += n;

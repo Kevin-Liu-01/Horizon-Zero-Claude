@@ -36,14 +36,15 @@ export const FRAMES = Object.freeze([
      * lens looks down Rust Cone's scree past the hornito field to the flow's sea front: Malpais ground 47 % of the rays
      * (Rust Cone's flank 27 %, the lava past 60 m 21 %), the sea 26 %, sky 21 %, the Scar 0 % (the subject check's Node
      * half: Malpais ground 51.5 % of the frame, 7 of 7 hornitos in the safe area: PASS) */
-    /* M3 wave 2b (MP7: "F56 closer to its KEY 'Malpais' strip crop than the grey blockout was"): turned 18 deg right to 178
+    /* M3 wave 2b (MP7: "F56 closer to its KEY 'Malpais' strip crop than the grey blockout was"): turned 22 deg right to 182
      * and up 1 deg to -19 (was 160 and -20). At 160 Rust Cone's own flank filled the left 40 % of the frame up close, its
-     * scree a large repeating red pattern (the review at 9d1acc3: "further from its crop"). At 178 the cone's flank is 9 %
+     * scree a large repeating red pattern (the review at 9d1acc3: "further from its crop"). At 182 the cone's flank is 7 %
      * of the rays and the frame looks down over the spire field below the cone's foot (malpais-rocks.js SPIRE_FIELDS
      * 'cone-foot', 60-90 m out) and the steaming hornito field to the flow's sea front (Node ray count, 48 x 27 rays: Malpais
-     * ground 38 %, the sea 38 %, sky 17 %, the Holds' coast 8 %; 55 spires' tops in the safe area and over the ground; the
-     * subject check's Node half: Malpais ground 41.9 %, 5 of 7 hornitos, 7 of 11 plumes) */
-    at: { en: [250, -130] }, bearing: 178, camera: { mode: 'eye', eye: 1.7, pitch: -19, fov: 55 }, state: { pose: 'idle', hud: false },
+     * ground 35 %, the sea 36 %, sky 19 %, the Holds' coast 9 %; 62 spires' tops in the safe area and over the ground; the
+     * subject check's Node half: Malpais ground 41.9 %, 5 of 7 hornitos, 6 of 11 plumes). 178 at d6d482e still showed the
+     * cone's red foot in the lower-left fifth */
+    at: { en: [250, -130] }, bearing: 182, camera: { mode: 'eye', eye: 1.7, pitch: -19, fov: 55 }, state: { pose: 'idle', hud: false },
     /* its own subjects (rule 17; tools/frames/subjects.mjs's F56 row asks for Rust Cone's TOP in the lens, which no lens at
      * R2's point can hold without looking 57 deg up the cone's own flank: the top stands 69 m over the lens, 44 m off). R2's
      * frame: the Malpais ground (the table's own bar), the hornito field below it, and (wave 2b, MP4) >= 3 steam sources */
