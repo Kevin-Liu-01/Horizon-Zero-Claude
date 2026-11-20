@@ -1839,10 +1839,10 @@ export class MeleeLayer {
     else this._settleT = SETTLE_T;
     /* (M1a weapons step 2: the draw's own settle out of its overshoot, `DRAW_OVER`; a swing parks it) */
     if (stance === 'draw') this._drawSettleT = 0;
-    // (M2 fix wave 4: the draw's pull's own clock, from the take)
-    if (stance === 'draw' && this._held) this._pullT = (this._pullT || 0) + dt; else if (stance !== 'draw') this._pullT = 0;
     else if (stance === 'ready') this._drawSettleT = Math.min(DRAW_SETTLE_T, this._drawSettleT + dt);
     else this._drawSettleT = DRAW_SETTLE_T;
+    // (M2 fix wave 4: the draw's pull's own clock, from the take)
+    if (stance === 'draw' && this._held) this._pullT = (this._pullT || 0) + dt; else if (stance !== 'draw') this._pullT = 0;
 
     /* --- how much of the upper body does melee own this frame? --- */
     /* ROUND 6: the draw takes the arm faster (it starts from the arm's own
