@@ -60,4 +60,18 @@ export const SOCKETS = Object.freeze({
     /** the keeper: the furled roll leaves the case's lower flap down its own axis (its -x end first, her right) */
     keeperAxis: Object.freeze([-1, 0, 0]),
   }),
+  /**
+   * M3 (brief §3.2, "Props in the hands"): THE HAND NET, the `heldNet` slot. Typed and EMPTY on purpose: committed at
+   * M3 wave 2b by area C as the smallest change in hero-anim's file (the seam's owner was not in the wave), as wave 1's
+   * seams were committed (empty but typed). Its sockets are hero-anim's and area D's to fill, in the mesh space of the
+   * net's own GLB (tools/build/recipes/weapons/net-hand.mjs, not built), and the net enters `handling.js` only once D3
+   * closes (the M3 brief: no new hand prop until the gaff in the loop reads 0 and A100-A106 pass on the page). Callers
+   * (combat's cast, armory's lumbar stow) read `SOCKETS.heldNet.grip` and must treat its absence as "not built".
+   * @type {Readonly<{
+   *   grip?: Readonly<{ p: number[], axis: number[], r: number }>,   // the right fist on the bundle's throat
+   *   spin?: Readonly<{ p: number[], axis: number[], r: number }>,   // where the spin is taken (hip height, NT1's bars)
+   *   keeperAxis?: Readonly<number[]>,                               // the lumbar stow (BIBLE §5.2): the bundle leaves along it
+   * }>}
+   */
+  heldNet: Object.freeze({}),
 });
