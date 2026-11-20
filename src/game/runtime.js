@@ -9,6 +9,7 @@ import { SiteClock } from './sites/clock.js';
 import { SiteRefill, HourMeter } from './sites/refill.js';
 import { saveFieldsOf } from './save/fields.js';
 import { FirstHour } from './hour.js';
+import { installHourTwo } from './hour2/index.js';
 import { REST, TRIG, TRIG_TOP, siteById } from '../world/island/sites.js';
 import { DITCH } from '../world/island/reedmask.js';
 import { SLOT } from '../core/save.js';
@@ -572,5 +573,7 @@ export function installGame(ctx) {
   saveFieldsOf(ctx);   // the save seam (src/game/save/fields.js): areas register their { get, set } pairs on it
   const sys = new SystemsGame(ctx);
   ctx.game?.systems?.push?.(sys);
+  // Milestone 3 (area E): hour two's quests and its save field, beside the first hour (src/game/hour2/index.js)
+  installHourTwo(ctx, sys);
   return sys;
 }

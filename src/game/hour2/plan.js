@@ -111,7 +111,8 @@ export const NEEDS = Object.freeze({
   'region:malpais': { what: 'the Malpais built as a region (regions.js built: true; world\'s ground)', probe: `!!C.engine?.regions?.map?.regions?.find?.((r) => r.id === 'malpais' && r.built)` },
   'site:tube-shelter': { what: 'the Malpais tube shelter and its Brazier (world, systems)', probe: `!!C.braziers?.byId?.('tube-shelter')` },
   'site:scar-posts': { what: 'the Scar\'s 7 line-posts (world, area B)', probe: `(C.world?.linePosts?.scar?.length ?? 0) === 7` },
-  'card:rung-7-held': { what: 'the reward card that holds rung 7 at Oro\'s (writing, W3)', probe: `false` },
+  // M3 wave 3 (area E): W3's held card ('rung-held', src/game/text/cards/hour-two-w3.json) as the live quest reads it
+  'card:rung-7-held': { what: 'the reward card that holds rung 7 at Oro\'s (writing, W3)', probe: `!!C.hour2?.kilnYards?.S?.card?.('rung-held')` },
   // R8 (wired at M3 wave 2b): the two new pieces the shorter route needs. The rest's hook follows the noon rest's
   // (braziers.js `noonFor`, set by the runtime): the cistern's dialog offers the Gauge's turn of the tide as a stop
   'brazier:tide-rest': { what: 'R8: the cistern Brazier\'s rest offers the Gauge\'s turn of the tide as a stop, and the Gauge\'s tide clock is carried through it (systems: braziers ctx.braziers.tideFor, as noonFor; instruments: gauge.js reads the rest; writing: the row\'s words, W3)', probe: `typeof C.braziers?.tideFor === 'function'` },

@@ -23,6 +23,15 @@
  * a stage; the fixture goes into localStorage before the title boots, as a save on disk does, and CONTINUE is pressed.
  * Every presented frame over 33 and 50 ms is counted per leg (screenshots apart), as first-hour.mjs counts them.
  *
+ * M3 WAVE 3 (area E): LEG 6's DRIVERS, by input only (keys held and released, the look turned as a mouse turns it; the
+ * runner never writes a position, a stage or a count): 'oro-yards' (the walk to Oro on the nav grid, E, the scene played
+ * through), 'climb' (the walk up to the Yards' south-west corner), 'plugged' (to 5 m south of the wellhead a Kiln is
+ * plugged into, out of the shelf's eye; back off and again if seen), 'quench-1'..'quench-4' (the belt filled at the quench
+ * tank when it is empty, 6 m south of the plugged head, the look on the head's foot, F: a Brine Pot's pendulum cast; up to
+ * four casts a head) and 'yards-quiet' (wait). Every other beat has no driver and fails by name. A beat reached while a
+ * need is missing (the Yards' Kilns and Spindle are grey stand-ins until area C's kinds stand there) is a PASS with its
+ * missing needs listed and `standIn` set.
+ *
  * Output: <review>/runs/<utc>-<commit>-<label>/report.json (never the repo): per leg its start, its beats
  *   { leg, beat, ok, why, missing, hp, t, hour, weather, at {x, z}, region, budgetS, numbers }, its end record, and
  *   `beats: "passed/of"` per leg and for the run.
@@ -38,6 +47,8 @@ import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { fixture } from './hour-two-fixtures.mjs';
+import * as SH from './slice-hour.mjs';
+import { WELLHEADS, apronPoint } from '../../../src/world/sites/kilnyards-layout.js';
 import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, LEG_CAP_S, beatsOfLeg } from '../../../src/game/hour2/plan.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -69,7 +80,7 @@ const handoffs = (() => {
 })();
 
 const report = {
-  row: 'A-hour-two', wave: 1, chain: CHAIN, handoff: HANDOFF, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(),
+  row: 'A-hour-two', wave: 3, chain: CHAIN, handoff: HANDOFF, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(),
   legs: [], beats: null, places: PLACES,
 };
 
@@ -110,6 +121,98 @@ const beatProbe = (b, needs) => {
     quests: Object.keys(C.quests || {}),
   };
 };
+
+/* ------------------------------------------------------------------ leg 6's drivers (M3 wave 3) */
+
+const enp = (p) => ({ x: +p.e.toFixed(2), z: +(-p.n).toFixed(2) });
+const YARDS_SW = enp(apronPoint(-21, -7.5));
+const TANK = enp(apronPoint(-22.5, -6.5));
+const WELL_AT = Object.fromEntries(WELLHEADS.map((w) => [w.id, { x: w.x, z: w.z }]));
+/** n m south of a wellhead, across the bench (the apron's -v: engine (+0.0872, +0.9962)) */
+const southOf = (id, n) => ({ x: WELL_AT[id].x + 0.0872 * n, z: WELL_AT[id].z + 0.9962 * n });
+
+const yardsNow = () => {
+  const C = window.__CTX__, Q = C.hour2?.kilnYards, r = Q?.report?.(), K = C.combat?.pots, P = C.player.position;
+  return { stage: Q?.spine?.current?.()?.id ?? null, reached: Q?.spine?.report?.().reached ?? [], yards: r?.yards ?? null, quenched: r?.quenched ?? 0,
+    brine: K?.belt?.count?.brine ?? 0, potsOwned: !!K?.belt?.owned, casting: !!(K?.casting || K?.flying), p: { x: +P.x.toFixed(1), z: +P.z.toFixed(1) },
+    hp: Math.round(C.player.health ?? 0), busy: !!C.systemsGame?.present?.busy, state: C.state, stats: r?.stats ?? null };
+};
+const reachedIn = (page, id) => page.evaluate((i) => !!window.__CTX__.quests?.['kiln-yards']?.report?.().reached?.includes(i), id);
+async function waitUntil(page, test, ms, every = 250) {
+  const t0 = Date.now();
+  for (;;) { const v = await test(); if (v) return v; if (Date.now() - t0 > ms) return null; await sleep(every); }
+}
+const pluggedWell = (st) => (st.yards?.wells || []).find((w) => w.plugged && w.state === 'hot')?.id ?? null;
+
+async function fillAtTank(page, K) {
+  const w = await SH.walkPath(page, K, TANK, 2.2, { maxS: 60 });
+  await SH.holdE(page, K, 500);
+  await sleep(400);
+  return { walk: w.ok, brine: (await page.evaluate(yardsNow)).brine };
+}
+
+/** One cast of the selected pot (Brine first) at the foot of wellhead `id`, from where she stands. */
+async function castAt(page, K, id) {
+  const at = WELL_AT[id];
+  const y = await page.evaluate((x, z) => window.__CTX__.terrain?.getHeight?.(x, z) ?? 143, at.x, at.z);
+  const aim = await page.evaluate(SH.aimPoint, at.x, y, at.z, 0.4);
+  await K.tap('KeyF', 90);
+  const before = (await page.evaluate(yardsNow)).quenched;
+  const landed = await waitUntil(page, async () => { const s = await page.evaluate(yardsNow); return !s.casting && s.quenched >= before ? s : null; }, 4000, 200);
+  await sleep(300);
+  return { aim, landed: !!landed };
+}
+
+const DRIVE = {
+  'oro-yards': async (page, K, b, maxS) => {
+    const A = await page.evaluate(() => window.__CTX__.systemsGame?.A?.oro ?? null);
+    if (!A) return { ok: false, why: 'no Oro anchor (systemsGame.A.oro)' };
+    const w = await SH.walkPath(page, K, A, 2.4, { maxS });
+    await sleep(300);
+    await SH.holdE(page, K, 500);
+    await sleep(500);
+    const played = await SH.playScene(page, K, 60);
+    return { walk: { ok: w.ok, why: w.why ?? null, d: w.d ?? null }, played };
+  },
+  climb: async (page, K, b, maxS) => {
+    const w = await SH.walkPath(page, K, YARDS_SW, 3, { maxS });
+    return { walk: { ok: w.ok, why: w.why ?? null, d: w.d ?? null }, at: (await page.evaluate(yardsNow)).p };
+  },
+  plugged: async (page, K, b, maxS) => {
+    const t0 = Date.now(), tries = [];
+    while ((Date.now() - t0) / 1000 < maxS && !(await reachedIn(page, 'plugged'))) {
+      const st = await page.evaluate(yardsNow);
+      const id = pluggedWell(st);
+      if (!id) { await sleep(1000); continue; }
+      const w = await SH.walkTo(page, K, southOf(id, 5), 1.2, { maxS: 30, sprint: false });
+      await sleep(1200);
+      const after = await page.evaluate(yardsNow);
+      tries.push({ well: id, walk: w.ok, seen: after.yards?.seen ?? null, by: after.yards?.seenBy ?? null });
+      if (!(await reachedIn(page, 'plugged')) && after.yards?.seen) { await SH.walkTo(page, K, YARDS_SW, 3, { maxS: 30 }); await sleep(4000); }
+    }
+    return { tries };
+  },
+  'yards-quiet': async (page) => ({ waited: !!(await waitUntil(page, () => reachedIn(page, 'yards-quiet'), 30000)) }),
+};
+for (const n of [1, 2, 3, 4]) {
+  DRIVE[`quench-${n}`] = async (page, K, b, maxS) => {
+    const t0 = Date.now(), casts = [], fills = [];
+    while ((Date.now() - t0) / 1000 < maxS && !(await reachedIn(page, `quench-${n}`))) {
+      let st = await page.evaluate(yardsNow);
+      if (st.brine < 1) { fills.push(await fillAtTank(page, K)); st = await page.evaluate(yardsNow); if (st.brine < 1) return { casts, fills, why: 'no Brine after the tank' }; }
+      const id = await waitUntil(page, async () => pluggedWell(await page.evaluate(yardsNow)), 60000, 500);
+      if (!id) return { casts, fills, why: 'no Kiln plugged in within 60 s' };
+      const tries = casts.filter((c) => c.well === id).length;
+      await SH.walkTo(page, K, southOf(id, tries >= 2 ? 4 : 6), 1.0, { maxS: 40, sprint: false });
+      await sleep(400);
+      const c = await castAt(page, K, id);
+      const s2 = await page.evaluate(yardsNow);
+      casts.push({ well: id, from: s2.p, ...c, quenched: s2.quenched, miss: s2.stats?.brineMisses?.at(-1) ?? null });
+      if (casts.length > 8) break;
+    }
+    return { casts, fills };
+  };
+}
 
 /** Presented-frame intervals while playing with the loading sheet closed; screenshots apart (first-hour.mjs's). */
 function installHitch() {
@@ -191,6 +294,7 @@ async function runLeg(leg, startRec, startName) {
     const rec = { ...startRec, savedAt: Date.now() };
     await boot(page, rec);
     const tPlay = Date.now();
+    const K = SH.keys(page);
     const T = () => +((Date.now() - tPlay) / 1000).toFixed(1);
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), weather: await page.evaluate(() => window.__CTX__.environment.weather),
       regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), recordAt: rec.position, shot: await shot(page, runDir, `l${leg}-00-continued`) };
@@ -215,12 +319,22 @@ async function runLeg(leg, startRec, startName) {
     for (const b of beatsOfLeg(leg)) {
       if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: b.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const needs = b.needs.map((id) => [id, NEEDS[id].probe]);
+      let driven = null;
+      if (DRIVE[b.id]) {
+        const maxS = Math.max(60, b.budgetS * 2);
+        const tD = Date.now();
+        try { driven = await DRIVE[b.id](page, K, b, maxS); } catch (e) { driven = { error: String(e?.message || e).slice(0, 300) }; }
+        driven.s = +((Date.now() - tD) / 1000).toFixed(1);
+        log(`leg ${leg} ${b.id}: driven in ${driven.s} s ${JSON.stringify(driven).slice(0, 300)}`);
+      }
       const pr = await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs);
       // wave 1: no beat has a driver. A beat whose needs are all there and that is not reached fails "no driver" (rule 14)
-      const why = pr.ok ? null : pr.missing.length ? `not built: ${NEEDS[pr.missing[0]].what}` : `no driver: every need is there, the beat is not driven yet (rule 14)`;
+      const why = pr.ok ? null : pr.missing.length ? `not built: ${NEEDS[pr.missing[0]].what}`
+        : driven ? `driven, not reached: ${JSON.stringify(driven).slice(0, 200)}` : `no driver: every need is there, the beat is not driven yet (rule 14)`;
       const row = { leg, beat: b.id, ok: pr.ok, why, missing: pr.missing, hp: pr.hp, t: T(), hour: pr.hour, weather: pr.weather, at: pr.at, region: pr.region,
-        budgetS: b.budgetS, danger: b.danger ?? null, numbers: { ...pr.numbers, quests: pr.quests } };
-      if (k === 0 || !pr.ok) row.shot = k === 0 ? await shot(page, runDir, `l${leg}-01-${b.id}`) : null;
+        budgetS: b.budgetS, danger: b.danger ?? null, numbers: { ...pr.numbers, quests: pr.quests, ...(driven ? { driven } : {}), ...(pr.ok && pr.missing.length ? { standIn: true } : {}) } };
+      if (driven) row.numbers.yards = await page.evaluate(yardsNow).catch(() => null);
+      if (k === 0 || driven) row.shot = await shot(page, runDir, `l${leg}-${String(k + 1).padStart(2, '0')}-${b.id}`);
       k++;
       L.beats.push(row);
       log(`leg ${leg} ${b.id}: ${row.ok ? 'PASS' : 'FAIL'} hp ${row.hp} ${row.why ? `(${row.why.slice(0, 140)})` : ''}`);

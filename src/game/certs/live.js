@@ -1,4 +1,4 @@
-import { CertRules, PERKS, actsFromQuests, RANK_AT } from './rules.js';
+import { CertRules, PERKS, actsFromQuests, RANK_AT, actsOfEvent } from './rules.js';
 import { saveFieldsOf } from '../save/fields.js';
 import { fill } from '../strings.js';
 
@@ -78,6 +78,28 @@ export class Certifications {
       const p = this.ctx.player?.position;
       if (p && Math.hypot(e.point.x - p.x, e.point.z - p.z) >= VIAL_M) this.count('vial', 'plumb');
     });
+    // M3 wave 3 (area E, HT6): the counted-acts seam (./rules.js COUNTED_EVENTS) for the acts no M2 listener above counts.
+    // A seam event for an act one of them already counts is left to it, so no act is counted twice: the Plumb's lamp
+    // ('plumb-dark') and its vial ('arrow-hit'), a Pry ('part-torn'), a pot made ('ammo-crafted'), a re-survey
+    // ('benchmark-resurveyed', 'resurvey-done') and a triangle ('triangle-closed'). combat's own 'undercut' {machine,
+    // killed} carries no part and counts nothing (actsOfEvent): an Undercut that kills is a kill.
+    const carry = this._seamCarry = { reed: 0 };
+    const seam = (name, skip = null) => on(name, (e) => {
+      if (skip?.(e)) return;
+      for (const a of actsOfEvent(name, e, carry)) this.countN(a.act, a.n, a.at);
+    });
+    seam('transect:crossed');
+    seam('reed:metres');
+    seam('undercut');
+    seam('lamp:dark', (e) => e.kind === 'plumb');
+    seam('vial:30m', (e) => e.kind === 'plumb');
+  }
+
+  /** Count `n` of one act at once (the reed's 25 m steps); grant what they earn. Returns the grants. */
+  countN(act, n = 1, at = null) {
+    const g = this.rules.count(act, { n, at });
+    for (const r of g) this._grant(r);
+    return g;
   }
 
   /** Count one act; grant what it earns. Returns the grants. */
@@ -151,7 +173,7 @@ export class Certifications {
     if (!c.flagged && !c.seen) this.count('unseen', 'peg-line');
   }
 
-  newGame() { this.rules.reset(); this.perks = {}; this.cards = []; this._torn = new WeakMap(); this._crossCounted = false; this._derive = false; }
+  newGame() { this.rules.reset(); this.perks = {}; this.cards = []; this._torn = new WeakMap(); this._crossCounted = false; this._derive = false; if (this._seamCarry) this._seamCarry.reed = 0; }
 
   of(cert) { return this.rules.of(cert); }
 
