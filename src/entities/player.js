@@ -8,6 +8,7 @@ import { playerNoise } from './machines/ai/perception.js';
 import { installSpatial } from '../core/collision.js';
 import { REST } from '../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../world/island/extent.js';
+import { createFlightBody } from '../game/kite/flight.js';
 
 const REST_POS = new THREE.Vector3(REST.x, 0, REST.z);
 
@@ -1129,6 +1130,17 @@ export class Player {
     this._jumpBuffered = -1;
     this._dodgeQueued = -1;
     this._launchY = 0;
+    /**
+     * M3 area B, THE FLIGHT-STATE SEAM (M3 briefs §3.2; hero-anim owns it, every other lane only reads it):
+     * 'none' | 'opening' | 'gliding' | 'folding' | 'landing' (src/game/kite/flight.js FLIGHT_STATES). Combat answers no
+     * weapon verb and save writes nothing while it is not 'none'; instruments see her at x2 while 'gliding'.
+     * Wave 1 (blockout): nothing in play opens the kite yet, so it stays 'none'.
+     * @type {import('../game/kite/flight.js').FlightState}
+     */
+    this.flight = 'none';
+    /** The kite's numbers under the seam: altitude over ground (`agl`), launch height (`launchY`), the read-out's two.
+     *  @type {import('../game/kite/flight.js').FlightBody} */
+    this.kite = createFlightBody();
     /**
      * Last completed airborne arc, measured in SIMULATION time — peak above the
      * launch height, seconds of air, and the error between where she landed and
