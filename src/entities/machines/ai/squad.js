@@ -416,6 +416,7 @@ export class Squads {
       const i = h.members ? h.members.indexOf(machine) : -1;
       if (i >= 0) h.members.splice(i, 1);
       if (h.rearguard === machine) h.rearguard = null;
+      h.file?.forget?.(machine);   // the Tiller herd's file (tiller-herd.js HerdFile): its leader and order
     }
     for (const c of this.convoys) {
       const i = c.members.indexOf(machine);
