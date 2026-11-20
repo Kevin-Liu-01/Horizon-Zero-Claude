@@ -1,4 +1,5 @@
-import { KILN_DOOR } from './form.js';
+import { KILN_DOOR, KILN_COUPLING, KILN_COUPLING_SIDE } from './form.js';
+import { KILN_CUES } from './cues.js';
 
 /**
  * THE KILN'S RULES (M3 wave 1, area C; bible §7.4 #10, §8.3; rows IK2, IK3, IK4 of the M3 brief). Simulation time,
@@ -22,9 +23,10 @@ import { KILN_DOOR } from './form.js';
  * idle. The door is hot while it is coupling or plugged and for `coolS` after.
  *
  * THE MORTAR (IK4). `planVolley` lays three shells at a target 25-60 m off; each shell lobs over a top of at least
- * `lobTopMinM`, so its shadow and whistle (from the top) lead its impact by at least `warnS`. No shell lands inside a
- * dwelling ring or within `personR` of a person: a landing that would is pushed out past the ring, else dropped; and a
- * Kiln never shells a target standing inside a dwelling ring.
+ * `lobTopMinM`, so its shadow and whistle (`shellWarning`: from the top to the impact) lead its impact by at least
+ * `warnS`. No shell lands inside a dwelling ring or within `personR` of a person: a landing that would is pushed out
+ * past the ring or re-aimed (up to `reaimTries` scatter draws); if any of the three still cannot land clear, the Kiln
+ * HOLDS FIRE (no volley: a volley is always three shells). It never shells a target standing inside a dwelling ring.
  *
  * THE YARDS' SPAWNS (IK3). `KilnSpawner` puts one Kiln on the site every `respawnH` site-clock hours while fewer than
  * `cap` live and any wellhead is hot: four quenched, none.
@@ -32,13 +34,17 @@ import { KILN_DOOR } from './form.js';
 
 export const KILN_RULES = Object.freeze({
   walk: 1.1, turnRate: 0.45,            // m/s; rad/s
-  standM: 4.0,                          // * its centre this far from the wellhead when it couples
+  standM: 4.85,                         // * its centre this far from the wellhead when it couples (no seam stand): the
+                                        //   seam's own 4.9 m (hose 3.2 m plus half its 3.4 m width), less the stop's 5 cm
+  hoseM: 3.2,                           // the seam's hose run (kilnStand.hose): the coupling stands within it of the head
   coupleS: 1.5, unplugS: 1.5,           // *
   plugMinS: 120,                        // * IK3: it stands at least this long plugged in
   coolS: 30,                            // * the door stays hot this long after it unplugs
   staggerS: 2.0, damageK: 1.0,          // IK2
   doorFrontPad: 0.25,                   // a mist centre up to this far behind the door's plane still reaches its face
-  mortar: Object.freeze({ minR: 25, maxR: 60, shells: 3, gapS: 0.6, scatterM: 3.0, lobTopMinM: 10, lobTopK: 0.35, warnS: 1.2, personR: 2.0, ringPadM: 1.0 }),
+  mortar: Object.freeze({ minR: 25, maxR: 60, shells: 3, gapS: 0.6, scatterM: 3.0, lobTopMinM: 10, lobTopK: 0.35, warnS: 1.2, personR: 2.0, ringPadM: 1.0,
+    reaimTries: 8,                      // * scatter draws per shell before it holds fire
+    shadowR0: 2.4, shadowR1: 0.7 }),    // * the landing shadow's radius at the top and at impact (m)
   respawnH: 6, cap: 2,                  // * site-clock hours; live Kilns at the Yards (Q4's default: two, one awake)
   g: 9.81,
 });
@@ -81,8 +87,9 @@ export class KilnBrain {
     this.events = [];
   }
 
-  _ev(type, p) { this.events.push(p ? { type, ...p } : { type }); }
-  _set(s) { this.state = s; this.stateT = 0; }
+  /** Every event carries its cue id (./cues.js: the Cues seam; IK8), and every state change is an event. */
+  _ev(type, p) { this.events.push({ type, ...(p || {}), cue: KILN_CUES.event[type] ?? null }); }
+  _set(s) { const from = this.state; this.state = s; this.stateT = 0; if (from !== s) this.events.push({ type: 'state', from, to: s, cue: KILN_CUES.state[s] ?? null }); }
 
   get staggered() { return this.staggerT > 0; }
   get plugged() { return this.state === 'plugged'; }
@@ -133,6 +140,7 @@ export class KilnBrain {
     this.door = 'sprung';
     this.staggerT = KILN_RULES.staggerS;
     this._ev('door-sprung', { by: hit.kind });
+    this._ev('stagger', { s: this.staggerT });
     return { stagger: true, why: 'the hot door sprang' };
   }
 
@@ -151,18 +159,28 @@ export class KilnBrain {
     this.well = null; this.stand = null;
   }
 
-  /** Where it stands for wellhead `w` (the seam's kilnStand, else standM short of it on its own side) and its heading. */
+  /**
+   * Where it stands for wellhead `w` and its heading: the seam's kilnStand (its length along the stand's u), else
+   * `standM` from the head on its own side. Of the two headings along the stand it takes the one that turns its
+   * coupling's flank (body +x: world (cos h, -sin h)) to the wellhead, so the hose's run is the seam's 3.2 m.
+   */
   _standFor(w) {
     const S = w.kilnStand;
+    let x, z, h0;
     if (S) {
       // the seam's box puts the body's length along local +x, which goes to world (cos yaw, sin yaw): the Kiln's +z
-      const h0 = Math.PI / 2 - (S.yaw ?? 0), h1 = h0 + Math.PI;
-      const near = (h) => Math.abs(Math.atan2(Math.sin(h - this.heading), Math.cos(h - this.heading)));
-      return { x: S.x, z: S.z, heading: near(h0) <= near(h1) ? h0 : h1 };
+      x = S.x; z = S.z; h0 = Math.PI / 2 - (S.yaw ?? 0);
+    } else {
+      const dx = this.x - w.x, dz = this.z - w.z, d = Math.hypot(dx, dz) || 1;
+      x = w.x + (dx / d) * KILN_RULES.standM; z = w.z + (dz / d) * KILN_RULES.standM;
+      h0 = Math.atan2(dz, -dx);                 // forward (sin h, cos h) square to the line to the head
     }
-    const dx = this.x - w.x, dz = this.z - w.z, d = Math.hypot(dx, dz) || 1;
-    return { x: w.x + (dx / d) * KILN_RULES.standM, z: w.z + (dz / d) * KILN_RULES.standM, heading: Math.atan2(w.x - this.x, w.z - this.z) };
+    const side = (h) => KILN_COUPLING_SIDE * (Math.cos(h) * (w.x - x) - Math.sin(h) * (w.z - z));
+    return { x, z, heading: side(h0) >= side(h0 + Math.PI) ? h0 : h0 + Math.PI };
   }
+
+  /** The hose coupling's outer face in the world (where the hose meets the wellhead's). */
+  couplingWorld(out) { return bodyToWorld(this.x, this.y, this.z, this.heading, KILN_COUPLING, out); }
 
   _turnTo(want, dt) {
     let e = want - this.heading; e = Math.atan2(Math.sin(e), Math.cos(e));
@@ -229,6 +247,16 @@ export class KilnBrain {
   }
 }
 
+/**
+ * IK2's damage half: the live kind's `takeDamage` (its behaviour wave) is this call: the game's own damage path
+ * (src/entities/machines/machine.js Machine#takeDamage, through `machine.takeDamage`) with the impact taken at the
+ * brain's `damageK()`. The door is a stagger point, never a damage weak point (bible §8.3): its window multiplies
+ * nothing, so a hit in the window does exactly what the same hit does out of it.
+ */
+export function kilnDamage(machine, brain, hit) {
+  return machine.takeDamage({ ...hit, impact: (hit?.impact ?? 0) * brain.damageK() });
+}
+
 /** A seeded generator (the rows replay; the live kind passes its own). */
 export function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
@@ -239,6 +267,7 @@ export function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 
 export function planVolley(from, target, places = {}, rand = Math.random, { plugged = false } = {}) {
   const M = KILN_RULES.mortar, g = KILN_RULES.g;
   const out = { ok: false, why: '', shells: [] };
+  out.cue = KILN_CUES.event['held-fire'];
   if (plugged) { out.why = 'plugged in: it must unplug first'; return out; }
   const d = Math.hypot(target.x - from.x, target.z - from.z);
   if (d < M.minR || d > M.maxR) { out.why = `out of band (${d.toFixed(1)} m; ${M.minR}-${M.maxR})`; return out; }
@@ -246,26 +275,52 @@ export function planVolley(from, target, places = {}, rand = Math.random, { plug
   const inRing = (x, z, pad = 0) => rings.find((r) => Math.hypot(x - r.x, z - r.z) < r.r + pad) || null;
   if (inRing(target.x, target.z)) { out.why = 'she is inside a dwelling ring'; return out; }
   const nearPerson = (x, z) => people.some((p) => Math.hypot(x - p.x, z - p.z) < M.personR);
-  for (let i = 0; i < M.shells; i++) {
-    const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * M.scatterM;
-    let x = target.x + Math.cos(a) * r, z = target.z + Math.sin(a) * r;
-    const ring = inRing(x, z, M.ringPadM);
-    if (ring) {
-      // pushed out past the ring along the line from its centre
-      const ux = x - ring.x, uz = z - ring.z, L = Math.hypot(ux, uz) || 1;
-      x = ring.x + (ux / L) * (ring.r + M.ringPadM); z = ring.z + (uz / L) * (ring.r + M.ringPadM);
-      if (inRing(x, z)) continue;
+  /** A clear landing near the target: a scatter draw, pushed out of a ring; re-drawn while it is not clear. */
+  const landing = () => {
+    for (let k = 0; k < M.reaimTries; k++) {
+      const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * M.scatterM;
+      let x = target.x + Math.cos(a) * r, z = target.z + Math.sin(a) * r;
+      const ring = inRing(x, z, M.ringPadM);
+      if (ring) {
+        // pushed out past the ring along the line from its centre
+        const ux = x - ring.x, uz = z - ring.z, L = Math.hypot(ux, uz) || 1;
+        x = ring.x + (ux / L) * (ring.r + M.ringPadM); z = ring.z + (uz / L) * (ring.r + M.ringPadM);
+        if (inRing(x, z)) continue;
+      }
+      if (nearPerson(x, z)) continue;         // never on a person: re-aimed
+      return { x, z, tries: k + 1 };
     }
-    if (nearPerson(x, z)) continue;           // never on a person: the shell is not fired
+    return null;
+  };
+  let tries = 0;
+  for (let i = 0; i < M.shells; i++) {
+    const L = landing();
+    if (!L) { out.shells.length = 0; out.why = 'holds fire: a shell cannot land clear of a person or a dwelling ring'; out.held = true; return out; }
+    tries += L.tries;
+    const { x, z } = L;
     const range = Math.hypot(x - from.x, z - from.z);
     const top = Math.max(M.lobTopMinM, range * M.lobTopK);
     const tUp = Math.sqrt((2 * top) / g), tDown = tUp;   // a lob between grounds of one height (the Yards' apron)
     const fireT = i * M.gapS;
     out.shells.push({ x, z, fireT, warnT: fireT + tUp, impactT: fireT + tUp + tDown, top, lead: tDown });
   }
-  out.ok = out.shells.length > 0;
-  out.why = out.ok ? `${out.shells.length} shell(s) at ${d.toFixed(1)} m` : 'every shell would land on a person or in a ring';
+  out.ok = out.shells.length === M.shells;
+  out.cue = KILN_CUES.event.volley;
+  out.reaimed = tries - M.shells;
+  out.why = `${out.shells.length} shells at ${d.toFixed(1)} m${out.reaimed ? ` (${out.reaimed} re-aimed)` : ''}`;
   return out;
+}
+
+/**
+ * IK4's warning, per shell at time `t` (the volley's clock): from the top of its lob (`warnT`) to its impact, a shadow
+ * on its landing (radius `shadowR0` shrinking to `shadowR1`, darkness 0.35 to 1) and its whistle (cue `kiln/whistle`,
+ * ./cues.js). Before the top and after the impact: none. Returns { shadow: { x, z, r, k } | null, whistle }.
+ */
+export function shellWarning(shell, t) {
+  const M = KILN_RULES.mortar;
+  if (!shell || t < shell.warnT || t >= shell.impactT) return { shadow: null, whistle: false, cue: null };
+  const u = (t - shell.warnT) / Math.max(1e-6, shell.impactT - shell.warnT);
+  return { shadow: { x: shell.x, z: shell.z, r: M.shadowR0 + (M.shadowR1 - M.shadowR0) * u, k: 0.35 + 0.65 * u }, whistle: true, cue: KILN_CUES.event.whistle };
 }
 
 /** IK3: the Yards' spawns on the site clock. */

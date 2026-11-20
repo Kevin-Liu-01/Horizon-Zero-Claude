@@ -1,5 +1,6 @@
 import { ST, STATUS } from '../../../combat/status.js';
 import { SPINDLE_STAFF_M } from './form.js';
+import { SPINDLE_CUES } from './cues.js';
 
 /**
  * THE SPINDLE'S RULES (M3 wave 1, area C; bible §7.4 #6; row IK5 of the M3 brief). Simulation time, no three and no
@@ -36,7 +37,15 @@ const DEG = Math.PI / 180;
 
 /** The ring's spin and its answer to Brine and Dust. */
 export class SpindleRing {
-  constructor() { this.slowT = 0; this.stopT = 0; this.speedK = 1; this.angle = 0; this.stops = 0; }
+  constructor() { this.slowT = 0; this.stopT = 0; this.speedK = 1; this.angle = 0; this.stops = 0; this.state = 'spinning'; this.events = []; }
+
+  /** Its state ('spinning' | 'slowed' | 'stopped'); each change is an event with its cue id (./cues.js, IK8). */
+  _to(st) {
+    if (st === this.state) return;
+    this.events.push({ type: 'state', from: this.state, to: st, cue: SPINDLE_CUES.state[st] ?? null });
+    this.state = st;
+    if (st === 'stopped') this.events.push({ type: 'bearing-exposed', cue: SPINDLE_CUES.event['bearing-exposed'] });
+  }
 
   get spinning() { return this.speedK > 0; }
   /** IK5: the hub bearing is exposed exactly while the ring is stopped by Dust. */
@@ -44,14 +53,15 @@ export class SpindleRing {
 
   /** The status seam (src/combat/status.js StatusAware.onStatus): Brine slows, Dust stops. */
   onStatus(id, seconds) {
-    if (id === ST.blind) { this.stopT = SPINDLE_RULES.dustStopS; this.stops++; this.speedK = 0; }
-    else if (id === ST.lock) { this.slowT = Math.max(this.slowT, seconds ?? STATUS[ST.lock].seconds); if (this.stopT <= 0) this.speedK = SPINDLE_RULES.brineK; }
+    if (id === ST.blind) { this.stopT = SPINDLE_RULES.dustStopS; this.stops++; this.speedK = 0; this._to('stopped'); }
+    else if (id === ST.lock) { this.slowT = Math.max(this.slowT, seconds ?? STATUS[ST.lock].seconds); if (this.stopT <= 0) { this.speedK = SPINDLE_RULES.brineK; this._to('slowed'); } }
   }
 
   step(dt) {
     if (this.stopT > 0) this.stopT = Math.max(0, this.stopT - dt);
     if (this.slowT > 0) this.slowT = Math.max(0, this.slowT - dt);
     this.speedK = this.stopT > 0 ? 0 : this.slowT > 0 ? SPINDLE_RULES.brineK : 1;
+    this._to(this.stopT > 0 ? 'stopped' : this.slowT > 0 ? 'slowed' : 'spinning');
     this.angle += this.speedK * SPINDLE_RULES.spinRps * 2 * Math.PI * dt;
   }
 
@@ -67,11 +77,13 @@ export class SpindleRing {
 
 /** The staff thrust on sim time: `start(x, z, heading)`, `step(dt)`, `tip()`, `struck(px, pz)`. */
 export class SpindleThrust {
-  constructor() { this.phase = null; this.t = 0; this.x0 = 0; this.z0 = 0; this.heading = 0; this.dashed = 0; this._hit = false; }
+  constructor() { this.phase = null; this.t = 0; this.x0 = 0; this.z0 = 0; this.heading = 0; this.dashed = 0; this._hit = false; this.events = []; }
   get busy() { return this.phase !== null; }
+  /** Each phase it enters is an event with its cue id (./cues.js, IK8); back to rest is 'rest'. */
+  _phase(p) { this.events.push({ type: 'state', from: this.phase ?? 'rest', to: p ?? 'rest', cue: SPINDLE_CUES.state[p ?? 'rest'] ?? null }); this.phase = p; }
   start(x, z, heading) {
     if (this.phase) return false;
-    this.phase = 'windup'; this.t = 0; this.x0 = x; this.z0 = z; this.heading = heading; this.dashed = 0; this._hit = false;
+    this._phase('windup'); this.t = 0; this.x0 = x; this.z0 = z; this.heading = heading; this.dashed = 0; this._hit = false;
     return true;
   }
   /** The body's place (along the locked heading). */
@@ -82,13 +94,13 @@ export class SpindleThrust {
     const R = SPINDLE_RULES;
     if (!this.phase) return null;
     this.t += dt;
-    if (this.phase === 'windup') { if (this.t >= R.thrustWindupS) { this.phase = 'dash'; this.t = 0; return 'dash'; } return null; }
+    if (this.phase === 'windup') { if (this.t >= R.thrustWindupS) { this._phase('dash'); this.t = 0; return 'dash'; } return null; }
     if (this.phase === 'dash') {
       this.dashed = Math.min(R.thrustDashM, this.dashed + (R.thrustDashM / R.thrustDashS) * dt);
-      if (this.dashed >= R.thrustDashM - 1e-9) { this.phase = 'recover'; this.t = 0; return 'reach'; }
+      if (this.dashed >= R.thrustDashM - 1e-9) { this._phase('recover'); this.t = 0; return 'reach'; }
       return null;
     }
-    if (this.phase === 'recover' && this.t >= 0.5) { this.phase = null; return 'done'; }
+    if (this.phase === 'recover' && this.t >= 0.5) { this._phase(null); return 'done'; }
     return null;
   }
   /**
@@ -102,6 +114,7 @@ export class SpindleThrust {
     const along = dx * s + dz * c, across = Math.abs(dx * c - dz * s);
     if (along < 0 || along - bodyR > tp.reach + 1e-9 || across > hr + bodyR) return false;
     this._hit = true;
+    this.events.push({ type: 'thrust-hit', cue: SPINDLE_CUES.event['thrust-hit'] });
     return true;
   }
 }

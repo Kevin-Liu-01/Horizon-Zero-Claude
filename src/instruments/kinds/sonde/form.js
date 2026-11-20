@@ -54,6 +54,14 @@ export const SONDE_KEEL = Object.freeze([0, 0.23, 0.30]);
 /** The anchor post (a line-up and Sounding Ring prop; world frame from its foot). */
 export const SONDE_POST = Object.freeze({ r: 0.12, h: 1.30, base: 0.30 });
 
+/**
+ * Where it is moored (a proposal for the Ring's staging, areas A and E; row 0 measures it): a post on the Sounding
+ * Ring's rise, `offsetM` from the Ring's site on `bearingDeg` (the SW, downwind of the trade: the Sonde leans away from
+ * the Ring and a cut tether drifts it clear). tools/gates/instruments/m3/sonde-mooring.mjs checks it against every
+ * probed lens and the bow.
+ */
+export const SONDE_MOORING = Object.freeze({ site: 'sounding-ring', bearingDeg: 225, offsetM: 14 });
+
 /** The tether's bands: alternating vermilion and staff-white, one metre each (the family mark, flat ink). */
 export const SONDE_TETHER = Object.freeze({ lengthM: 18, bandM: 1.0, r: 0.025, colours: Object.freeze(['#D2452E', '#E6DCC8']) });
 

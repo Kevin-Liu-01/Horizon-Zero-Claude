@@ -6,7 +6,10 @@
  *
  * A walking kiln: a beehive dome on four stumpy legs, a tall chimney-mortar on a trunnion to 5.5 m, the firebox door
  * at the front (an oxblood surround in the art wave; the ONE place a hull glows, and only behind the door), four
- * canisters on the flanks (vials), the vent hose coiled on a reel at the stern. Its one lamp sits in a drum on the
+ * canisters on the flanks (vials), the vent hose coiled on a reel carried at the stern and run forward along the right
+ * flank to its coupling, low on the right flank: the wellheads seam stands a Kiln with its wellhead off a FLANK (area A,
+ * src/world/sites/kilnyards-layout.js `kilnStand`: the head 4.9 m from the body's centre, the hose's run 3.2 m), so the
+ * coupling faces the well and the hose is seen on it (F59). Its one lamp sits in a drum on the
  * chimney's yoke (the working end is the mortar), beside the chimney and high: never above the door, so the door
  * and the lamp never read as a mouth and an eye. No head, no neck, no eye, no face, no tail.
  *
@@ -67,10 +70,14 @@ export const KILN_PARTS = Object.freeze([
     cyl(`canister${i + 1}`, [sx * 1.52, 1.85, z], 0.18, 0.75, 'y', { vial: true, hit: `canister${i + 1}` }),
     box(`canisterBracket${i + 1}`, [sx * 1.36, 1.85, z], [0.16, 0.10, 0.12], { tone: 'brass' }),
   ]),
-  // the vent hose on its reel at the stern, its coupling out behind (it plugs into a wellhead)
-  cyl('hoseReel', [0, 1.40, -1.55], 0.36, 0.62, 'x', { tone: 'joint' }),
-  cyl('hose', [0, 1.05, -2.08], 0.13, 0.90, 'z', { hit: 'hose', tone: 'joint' }),
-  cyl('hoseCoupling', [0, 1.05, -2.50], 0.16, 0.10, 'z', { tone: 'brass' }),
+  // the vent hose: its reel carried on a frame at the stern, the hose run forward along the right flank to the coupling
+  // low on the right flank (it faces the wellhead the seam stands it beside)
+  strut('reelFrameR', [0.26, 1.30, -1.20], [0.36, 1.30, -2.26], 0.05, { tone: 'joint' }),
+  strut('reelFrameL', [-0.26, 1.30, -1.20], [-0.36, 1.30, -2.26], 0.05, { tone: 'joint' }),
+  cyl('hoseReel', [0, 1.30, -2.26], 0.36, 0.62, 'x', { tone: 'joint' }),
+  strut('hoseRun', [0.40, 1.26, -2.18], [1.50, 1.30, -1.05], 0.13, { tone: 'joint' }),
+  strut('hose', [1.50, 1.30, -1.05], [1.56, 1.12, -0.10], 0.13, { hit: 'hose', tone: 'joint' }),
+  cyl('hoseCoupling', [1.68, 1.12, -0.10], 0.16, 0.12, 'x', { tone: 'brass' }),
   ...LEGS,
 ]);
 
@@ -95,5 +102,7 @@ export const KILN_HIT = Object.freeze({
 /** The firebox door in the body frame: its centre, half sizes, and the way it faces (+z). */
 export const KILN_DOOR = Object.freeze({ c: [0, 1.55, 1.51], half: [0.40, 0.40, 0.03], normal: [0, 0, 1] });
 
-/** The hose's coupling in the body frame (where it meets a wellhead). */
-export const KILN_COUPLING = Object.freeze([0, 1.05, -2.55]);
+/** The hose's coupling in the body frame (its outer face, where it meets a wellhead's hose): low on the RIGHT flank. */
+export const KILN_COUPLING = Object.freeze([1.74, 1.12, -0.10]);
+/** The flank the coupling is on: body +x (a Kiln at a wellhead turns this flank to it). */
+export const KILN_COUPLING_SIDE = 1;

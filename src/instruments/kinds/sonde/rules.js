@@ -1,4 +1,5 @@
 import { SONDE_ROSTER, SONDE_KEEL, SONDE_POST } from './form.js';
+import { SONDE_CUES } from './cues.js';
 
 /**
  * THE SONDE'S RULES (M3 wave 1, area C; bible §7.4 #8; row IK7 of the M3 brief). Simulation time, no scene: the Node
@@ -6,9 +7,12 @@ import { SONDE_ROSTER, SONDE_KEEL, SONDE_POST } from './form.js';
  * values.
  *
  * MOORED. It holds within `tetherM` (18 m) of its post, measured as the tether runs: from the shackle on the post's top
- * to the keel ring under the gondola. Its keel stands `hoverAltM` over the shackle and it leans
- * downwind as the wind rises, its fans holding it at `fanMps`; the tether never stretches (a pull past 18 m is taken
- * back to 18). In calima it drops to `calimaAltM` (6 m) and hunts by sound (the behaviour wave's).
+ * to the keel ring under the gondola. The envelope's lift keeps the tether TAUT (judge, d695cc9: a 16 m run drawn
+ * straight on an 18 m tether left 2 m of slack unaccounted): its keel rides the sphere of `tautM` round the shackle,
+ * straight up in still air and blown down toward `minAltM` over the shackle as the wind reaches `leanMps`, its fans
+ * holding its place at `fanMps` and its nose into the wind (`heading`); the tether never stretches (a pull past 18 m
+ * is taken back to 18). In calima its gondola winch reels the tether in to `calimaAltM` (6 m), still taut, and it
+ * hunts by sound (the behaviour wave's).
  * BROUGHT DOWN. Three punctures of the envelope, or Cinder on it (it burns), bring it down at `fallMps`. A net that
  * fouls its fans sinks it: it reaches the ground `fanSinkS` (6 s) after the foul.
  * CUT LOOSE. A cut tether sets it adrift: it goes with the wind (downwind, `driftK` of the wind's speed) and sinks at
@@ -25,10 +29,11 @@ import { SONDE_ROSTER, SONDE_KEEL, SONDE_POST } from './form.js';
 
 export const SONDE_RULES = Object.freeze({
   tetherM: SONDE_ROSTER.tetherM,
-  hoverAltM: 15,                // * its keel over the post's shackle
-  calimaAltM: 6,                // IK7* (the keel over the shackle)
+  tautM: SONDE_ROSTER.tetherM - 0.05,   // the run it holds: the tether taut, 5 cm short of its length
+  minAltM: 10,                  // * the keel over the shackle when blown down at `leanMps` or more
+  calimaAltM: 6,                // IK7* (the keel over the shackle; the winch reels the line in, still taut)
   fanMps: 2.0,                  // * how fast its fans move it to its moored place
-  leanMps: 8,                   // * wind speed at which it leans its whole free tether downwind
+  leanMps: 8,                   // * wind speed at which it is blown down to minAltM
   punctures: 3,
   fallMps: 4.0,                 // * brought down
   fanSinkS: 6,                  // IK7*
@@ -49,6 +54,17 @@ export function downwind(wind) {
 /** Compass bearing (deg, 0..360) of the offset (dx, dz). */
 export const bearingOf = (dx, dz) => ((Math.atan2(dx, -dz) * 180 / Math.PI) + 360) % 360;
 
+/**
+ * Where it moors for a wind (the keel's offset from the shackle: up, and downwind) on its taut tether. Still air: straight
+ * up at `tautM`; at `leanMps` and over: blown down to `minAltM`. In calima: the line reeled in to `calimaAltM` up.
+ */
+export function mooredOffset(wind, calima = false) {
+  const R = SONDE_RULES, k = Math.min(1, (wind?.speed ?? 0) / R.leanMps);
+  if (calima) { const lean = R.calimaAltM * 0.5 * k; return { alt: R.calimaAltM, lean, lineM: Math.hypot(R.calimaAltM, lean) }; }
+  const lean = Math.sqrt(R.tautM ** 2 - R.minAltM ** 2) * k;
+  return { alt: Math.sqrt(R.tautM ** 2 - lean ** 2), lean, lineM: R.tautM };
+}
+
 /** The Sonde's sight range given her flight state (IK7 and the flight seam: double while she glides). */
 export function sondeSightM(flight, base = SONDE_RULES.sightM) {
   return flight === 'gliding' ? base * SONDE_RULES.kiteRangeK : base;
@@ -58,7 +74,9 @@ export class SondeBrain {
   /** `post` { x, y, z }: the anchor post's foot. It starts moored over the post at its hover height. */
   constructor({ post = { x: 0, y: 0, z: 0 } } = {}) {
     this.post = { ...post };
-    this.x = post.x; this.z = post.z; this.y = post.y + SONDE_POST.h + SONDE_RULES.hoverAltM - SONDE_KEEL[1];
+    /** yaw (0 faces +z; the page's rotation.y): its nose into the wind, so the keel ring leads toward the post */
+    this.heading = 0;
+    this.x = post.x; this.z = post.z; this.y = post.y + SONDE_POST.h + SONDE_RULES.tautM - SONDE_KEEL[1];
     /** 'moored' | 'adrift' | 'sinking' | 'falling' | 'down' */
     this.state = 'moored';
     this.tethered = true;
@@ -68,15 +86,23 @@ export class SondeBrain {
     this.events = [];
   }
 
-  _ev(type, p) { this.events.push(p ? { type, ...p } : { type }); }
+  /** Every event carries its cue id (./cues.js: the Cues seam; IK8), and every state change is an event. */
+  _ev(type, p) { this.events.push({ type, ...(p || {}), cue: SONDE_CUES.event[type] ?? null }); }
+  _set(s) { if (s === this.state) return; this.events.push({ type: 'state', from: this.state, to: s, cue: SONDE_CUES.state[s] ?? null }); this.state = s; }
   get flying() { return this.state !== 'down'; }
   /** The tether's two ends: the shackle on the post's top and the keel ring (the hull's y is its lowest point). */
   shackle() { return { x: this.post.x, y: this.post.y + SONDE_POST.h, z: this.post.z }; }
   keelY() { return this.y + SONDE_KEEL[1]; }
-  /** The tether's run, shackle to keel (m). */
-  tetherDist() { const s = this.shackle(); return Math.hypot(this.x - s.x, this.keelY() - s.y, this.z - s.z); }
+  /** The keel ring in the world (the tether's hull end), at its heading: the body frame of ./form.js turned by yaw. */
+  keel(out = { x: 0, y: 0, z: 0 }) {
+    const s = Math.sin(this.heading), c = Math.cos(this.heading);
+    out.x = this.x + SONDE_KEEL[0] * c + SONDE_KEEL[2] * s; out.y = this.y + SONDE_KEEL[1]; out.z = this.z - SONDE_KEEL[0] * s + SONDE_KEEL[2] * c;
+    return out;
+  }
+  /** The tether's run, shackle to keel ring (m): a taut tether is drawn straight between these two points. */
+  tetherDist() { const s = this.shackle(), k = this.keel(); return Math.hypot(k.x - s.x, k.y - s.y, k.z - s.z); }
 
-  cutTether() { if (!this.tethered || !this.flying) return false; this.tethered = false; this.cutAt = this.t; if (this.state === 'moored') this.state = 'adrift'; this._ev('tether-cut'); return true; }
+  cutTether() { if (!this.tethered || !this.flying) return false; this.tethered = false; this.cutAt = this.t; if (this.state === 'moored') this._set('adrift'); this._ev('tether-cut'); return true; }
 
   puncture() {
     if (!this.flying) return false;
@@ -92,12 +118,12 @@ export class SondeBrain {
   foulFans(groundY) {
     if (!this.flying || this.fouled) return false;
     this.fouled = true; this.fouledAt = this.t;
-    if (this.state !== 'falling') { this.state = 'sinking'; this._sinkMps = Math.max(0.01, (this.y - (groundY ?? this.post.y)) / SONDE_RULES.fanSinkS); }
+    if (this.state !== 'falling') { this._set('sinking'); this._sinkMps = Math.max(0.01, (this.y - (groundY ?? this.post.y)) / SONDE_RULES.fanSinkS); }
     this._ev('fans-fouled');
     return true;
   }
 
-  _fall(why) { this.state = 'falling'; this._ev('brought-down', { why }); }
+  _fall(why) { this._set('falling'); this._ev('brought-down', { why }); }
 
   /** At night it drops a flare that Flags her for `flareFlagS`; by day none. Returns { flagS } or null. */
   flare(env = {}) {
@@ -112,11 +138,12 @@ export class SondeBrain {
     this.t += dt;
     if (this.state === 'down') return;
     const dw = downwind(env.wind), ws = env.wind?.speed ?? 0;
+    if (ws > 0.05) this.heading = Math.atan2(-dw.x, -dw.z);   // nose into the wind
     if (this.state === 'moored') {
-      const alt = env.calima ? R.calimaAltM : R.hoverAltM;   // the keel over the shackle
-      const free = Math.sqrt(Math.max(0, (R.tetherM - 0.5) ** 2 - alt * alt));
-      const lean = free * Math.min(1, ws / R.leanMps);
-      const tx = this.post.x + dw.x * lean, tz = this.post.z + dw.z * lean, ty = this.post.y + SONDE_POST.h + alt - SONDE_KEEL[1];
+      // where its keel rides on the taut tether, and the hull's origin from that (the keel ring leads by its offset)
+      const m = mooredOffset(env.wind, !!env.calima), s0 = Math.sin(this.heading), c0 = Math.cos(this.heading);
+      const kx = this.post.x + dw.x * m.lean, kz = this.post.z + dw.z * m.lean, ky = this.post.y + SONDE_POST.h + m.alt;
+      const tx = kx - (SONDE_KEEL[0] * c0 + SONDE_KEEL[2] * s0), tz = kz - (-SONDE_KEEL[0] * s0 + SONDE_KEEL[2] * c0), ty = ky - SONDE_KEEL[1];
       const dx = tx - this.x, dy = ty - this.y, dz = tz - this.z, d = Math.hypot(dx, dy, dz);
       if (d > 1e-6) { const s = Math.min(d, R.fanMps * dt); this.x += (dx / d) * s; this.y += (dy / d) * s; this.z += (dz / d) * s; }
     } else if (this.state === 'adrift') {
@@ -129,15 +156,15 @@ export class SondeBrain {
       if (!this.tethered) { this.x += dw.x * ws * R.driftK * 0.5 * dt; this.z += dw.z * ws * R.driftK * 0.5 * dt; }
       this.y -= R.fallMps * dt;
     }
-    // the tether never stretches past its length
+    // the tether never stretches past its length: the keel is taken back onto the 18 m sphere, the hull with it
     if (this.tethered) {
       const d = this.tetherDist();
       if (d > R.tetherM) {
-        const s = this.shackle(), k = R.tetherM / d;
-        this.x = s.x + (this.x - s.x) * k; this.z = s.z + (this.z - s.z) * k; this.y = s.y + (this.keelY() - s.y) * k - SONDE_KEEL[1];
+        const s = this.shackle(), kp = this.keel(), k = R.tetherM / d;
+        this.x += (s.x + (kp.x - s.x) * k) - kp.x; this.y += (s.y + (kp.y - s.y) * k) - kp.y; this.z += (s.z + (kp.z - s.z) * k) - kp.z;
       }
     }
     const g = gy(this.x, this.z);
-    if (this.y <= g + 1e-6) { this.y = g; this.state = 'down'; this.downAt = this.t; this._ev('down', { at: { x: this.x, z: this.z } }); }
+    if (this.y <= g + 1e-6) { this.y = g; this._set('down'); this.downAt = this.t; this._ev('down', { at: { x: this.x, z: this.z } }); }
   }
 }

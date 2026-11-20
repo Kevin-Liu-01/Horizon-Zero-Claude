@@ -6,11 +6,14 @@
  * Two tall jointed stilt legs (knees in the sagittal plane, bending forward) carry a hip block; an arm from the block
  * holds the axle of a 2 m brass ring-wheel standing in the frontal plane, spoked to a brass hub. The hub carries the
  * warm hub lamp at its face, inside the hub bearing's race (the weak point, exposed while the ring is stopped). A mast
- * and spike finial behind the ring make the 3.8 m. The 3 m levelling staff rides raked forward in a clamp on the
- * block's right, as a lance at rest (the thrust is the behaviour wave's). No head, no neck, no torso with arms, no tail.
+ * and spike finial behind the ring make the 3.8 m. The 3 m levelling staff is slung at rest behind the ring, raked
+ * back 24 deg from upright on a trunnion at the hip block's right rear (the thrust swings it level on that trunnion in
+ * the behaviour wave). No bar reaches out from the body to hold it: a horizontal clamp at hip height beside a staff
+ * read as an arm holding a pole on a two-legged figure (line-up judge, d695cc9). No head, no neck, no torso with
+ * arms, no tail.
  *
- * The roster footprint (2.0 x 2.0) is the ring's span (2.0 wide) and the raked staff with the long stilt feet (2.0
- * deep): the ring stands in the frontal plane, as the board draws it, not level (the bible's word; for the owner).
+ * The roster footprint (2.0 x 2.0) is the ring's span (2.0 wide) and the long stilt feet with the slung staff behind
+ * (2.0 deep): the ring stands in the frontal plane, as the board draws it, not level (the bible's word; for the owner).
  */
 
 export const SPINDLE_ROSTER = Object.freeze({ L: 2.0, W: 2.0, H: 3.8, cls: 'medium', triCap: 50000, bones: 30 });
@@ -56,10 +59,10 @@ export const SPINDLE_PARTS = Object.freeze([
   // the mast and finial behind the ring (the height)
   strut('mast', [0, 1.95, -0.52], [0, 3.62, -0.52], 0.035, { tone: 'joint' }),
   cyl('finial', [0, 3.71, -0.52], 0.02, 0.18, 'y', { tone: 'brass' }),
-  // the levelling staff, carried as a lance at rest: raked forward in its clamp on the right, outside the ring's
-  // sweep (0.035 m clear of the rim where it passes the ring's plane), its tip at 3.2 m
-  box('staffClamp', [0.70, 1.50, -0.66], [0.66, 0.12, 0.14], { tone: 'brass' }),
-  strut('staff', [1.03, 0.95, -1.15], [1.03, 3.20, 0.83], 0.035, { hit: 'staff' }),
+  // the levelling staff, slung at rest: on its trunnion at the hip block's right rear, raked back 24 deg behind the
+  // ring (wholly behind the ring's plane: 0.17 m clear of the rim's back face at its nearest), its tip at 3.77 m
+  cyl('staffTrunnion', [0.45, 1.50, -0.42], 0.09, 0.16, 'x', { tone: 'joint' }),
+  strut('staff', [0.45, 1.03, -0.211], [0.45, 3.771, -1.431], 0.035, { hit: 'staff' }),
   ...LEGS,
 ]);
 

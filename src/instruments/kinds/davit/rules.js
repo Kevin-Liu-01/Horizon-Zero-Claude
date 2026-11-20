@@ -1,4 +1,5 @@
 import { reseat } from '../../lib/kindkit.js';
+import { DAVIT_CUES } from './cues.js';
 
 /**
  * THE DAVIT'S RULES (M3 wave 1, area C; bible §7.4 #7; row IK6 of the M3 brief). Simulation time, no scene: the Node
@@ -31,10 +32,14 @@ export class DavitBrain {
     this.winch = { state: 'sealed', hits: 0 };   // the weak point: Pried -> 'off'
     this.job = null;                             // { inst, name, part, t }
     this.repairs = 0;
+    /** 'idle' | 'following' | 'to-repair' | 'reseating' | 'spent' (no plate or the winch Pried) */
+    this.state = 'idle';
     this.events = [];
   }
 
-  _ev(type, p) { this.events.push(p ? { type, ...p } : { type }); }
+  /** Every event carries its cue id (./cues.js: the Cues seam; IK8), and every state change is an event. */
+  _ev(type, p) { this.events.push({ type, ...(p || {}), cue: DAVIT_CUES.event[type] ?? null }); }
+  _set(s) { if (s === this.state) return; this.events.push({ type: 'state', from: this.state, to: s, cue: DAVIT_CUES.state[s] ?? null }); this.state = s; }
 
   /** Can it make a repair now? */
   canRepair() { return this.winch.state !== 'off' && this.plates > 0; }
@@ -59,6 +64,10 @@ export class DavitBrain {
    * record is never in it). Events of the step in `this.events`.
    */
   step(dt, world = {}) {
+    this._set(this._step(dt, world));
+  }
+
+  _step(dt, world) {
     const R = DAVIT_RULES, list = (world.instruments || []).filter((i) => i && i.alive !== false);
     const J = this.job;
     if (J && (!list.includes(J.inst) || J.part.state !== 'off' || !this.canRepair())) this.job = null;
@@ -75,13 +84,13 @@ export class DavitBrain {
     if (this.job) {
       const j = this.job;
       const left = this._walkTo(j.inst.x, j.inst.z, dt, R.reachM);
-      if (left > R.reachM + 1e-6) { j.t = 0; return; }   // out of reach: the 4 s start over
+      if (left > R.reachM + 1e-6) { j.t = 0; return 'to-repair'; }   // out of reach: the 4 s start over
       j.t += dt;
       if (j.t >= R.reseatS - 1e-9) {
         if (reseat(j.part)) { this.plates--; this.repairs++; this._ev('reseated', { kind: j.inst.id, part: j.name, t: +j.t.toFixed(3), plates: this.plates }); }
         this.job = null;
       }
-      return;
+      return this.job ? 'reseating' : (this.canRepair() ? 'idle' : 'spent');
     }
     // no repair: keep followM behind the nearest large kind
     let lead = null, ld = Infinity;
@@ -89,6 +98,8 @@ export class DavitBrain {
     if (lead) {
       const h = lead.heading ?? 0;
       this._walkTo(lead.x - Math.sin(h) * R.followM, lead.z - Math.cos(h) * R.followM, dt, 0.5);
+      return this.canRepair() ? 'following' : 'spent';
     }
+    return this.canRepair() ? 'idle' : 'spent';
   }
 }
