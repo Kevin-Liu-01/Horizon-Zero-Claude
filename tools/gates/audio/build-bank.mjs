@@ -12,6 +12,8 @@
  *
  * It never deletes. It prints the files under public/audio/ that the new bank does not list ("stale"), so they can be
  * removed with `git rm` on that explicit list.
+ *
+ * `--only none` renders nothing and rewrites the index from the files on disk (a manifest field changed, not a sound).
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, statSync, readdirSync, existsSync } from 'node:fs';
@@ -129,11 +131,14 @@ async function main() {
         id: k ? `${c.set}#${k + 1}` : c.set, set: c.set, file: rel, bytes, dur: +dur.toFixed(3), ch: c.ch, gain: c.gain, loop: !!c.loop,
         tags: [c.bus, c.set.split('/')[0]], license: 'CC0-1.0', source: `synthesized by src/audio/${c.m2 ? 'm2' : 'slice'}/recipes.js`,
         author: 'CALIMA project (synthesized, no third-party audio)',
+        // the load phase (src/audio/m2/cues.js `load`): 'late' rows are fetched after control, nearest place first
+        ...(c.load === 'late' ? { load: 'late', place: c.place } : {}),
       });
       report.push({ file: rel, bytes, dur: +dur.toFixed(3), ...meta });
     }
   }
   const total = rows.reduce((a, r) => a + r.bytes, 0);
+  const lateBytes = rows.reduce((a, r) => a + (r.load === 'late' ? r.bytes : 0), 0);
   const listed = new Set(rows.map((r) => r.file));
   const stale = walk(OUT).filter((f) => f !== 'MANIFEST.md' && !listed.has(f));
 
@@ -158,6 +163,17 @@ export const SETS = MANIFEST.reduce((m, e) => {
 }, /** @type {Record<string, typeof MANIFEST>} */({}));
 
 export const BANK_BYTES = ${total};
+
+/**
+ * The load phases. 'boot' rows (every row without \`load: 'late'\`) load when the title first takes a key or a click;
+ * 'late' rows load after New Game or Continue gives her control (src/audio/bank.js loadLate). The shipped ledger
+ * (tools/tier0/budgets.mjs, budgets.json shipped.deferred) reads DEFERRED_FILES from this module: one list, the game's.
+ */
+export const LATE_SETS = new Set(MANIFEST.filter((e) => e.load === 'late').map((e) => e.set));
+export const BOOT_BYTES = ${total - lateBytes};
+export const LATE_BYTES = ${lateBytes};
+/** The deferred files, relative to public/ (what the ledger leaves out of the first load). */
+export const DEFERRED_FILES = MANIFEST.filter((e) => e.load === 'late').map((e) => AUDIO_BASE.slice(1) + e.file);
 `;
   const md = `# Audio bank — the slice (BUILD M1.6k) and the first hour (Milestone 2)
 
@@ -169,6 +185,7 @@ Every file in \`public/audio/\` is **synthesized by this repository's own code**
 | files | ${rows.length} |
 | sets | ${new Set(rows.map((r) => r.set)).size} (${COUNTED.length} counted cues: ${COUNTED.length - M2_COUNTED.length} the slice's, ${M2_COUNTED.length} the first hour's) |
 | total size | ${(total / 1048576).toFixed(2)} MB (budget 8 MB in Milestone 1, 12 MB in Milestone 2) |
+| load | boot ${((total - lateBytes) / 1048576).toFixed(2)} MB (${rows.filter((r) => r.load !== 'late').length} files, before control); late ${(lateBytes / 1048576).toFixed(2)} MB (${rows.filter((r) => r.load === 'late').length} files, after New Game or Continue gives control) |
 | format | Ogg Opus, 48 kHz (48 kb/s mono point sources, 96 kb/s stereo beds and music) |
 | recipes | \`src/audio/slice/recipes.js\`, \`src/audio/m2/recipes.js\` (deterministic; seeds per set in \`tools/gates/audio/build-bank.mjs\`) |
 | cue list | \`src/audio/slice/cues.js\` with \`src/audio/m2/cues.js\` (bus, range, place, level) |
@@ -176,15 +193,16 @@ Every file in \`public/audio/\` is **synthesized by this repository's own code**
 
 Brea's breath and effort set (\`brea/\`) is the existing synthesized set, kept until Milestone 3 regenerates it.
 
-| file | set | ch | duration | size | bus |
-|---|---|---|---|---|---|
-${rows.map((r) => `| \`${r.file}\` | \`${r.set}\` | ${r.ch} | ${(+r.dur).toFixed(2)} s | ${(r.bytes / 1024).toFixed(1)} KB | ${r.tags[0]} |`).join('\n')}
+| file | set | ch | duration | size | bus | load |
+|---|---|---|---|---|---|---|
+${rows.map((r) => `| \`${r.file}\` | \`${r.set}\` | ${r.ch} | ${(+r.dur).toFixed(2)} s | ${(r.bytes / 1024).toFixed(1)} KB | ${r.tags[0]} | ${r.load === 'late' ? `late (${r.place})` : 'boot'} |`).join('\n')}
 `;
   if (!DRY) {
     writeFileSync(path.join(REPO, 'src/audio/manifest.js'), js);
     writeFileSync(path.join(OUT, 'MANIFEST.md'), md);
   }
-  console.log(JSON.stringify({ files: rows.length, sets: new Set(rows.map((r) => r.set)).size, counted: COUNTED.length, m2Counted: M2_COUNTED.length, megabytes: +(total / 1048576).toFixed(3), seconds: (Date.now() - t0) / 1000, stale }, null, 1));
+  console.log(JSON.stringify({ files: rows.length, sets: new Set(rows.map((r) => r.set)).size, counted: COUNTED.length, m2Counted: M2_COUNTED.length, megabytes: +(total / 1048576).toFixed(3),
+    lateMegabytes: +(lateBytes / 1048576).toFixed(3), lateFiles: rows.filter((r) => r.load === 'late').length, seconds: (Date.now() - t0) / 1000, stale }, null, 1));
   if (args.includes('--report')) console.log(JSON.stringify(report, null, 1));
 }
 

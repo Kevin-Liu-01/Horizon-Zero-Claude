@@ -7,10 +7,15 @@
  *            'ninewalls' (inside the walls: the forge, the work, the Screed fight), 'scar' (the cut, Benchmark 1),
  *            'malpais' (the edge). Their beds and levels are ./mix.js PLACE_BEDS.
  *
+ *   load     'late' (the default here): fetched and decoded after New Game or Continue gives her control (GameAudio's late
+ *            load, ../bank.js loadLate), so the first load carries only what the title and the first seconds need; the
+ *            shipped ledger (tools/tier0/budgets.mjs) reads the same field from the manifest. 'boot': with the slice's bank,
+ *            before control (the Kit Rack's UI clicks: the rack can be held open the moment she is under control).
+ *
  * Ranges: TECH §14 names one of them, "Screed blade 150 m" (the charge, the stall and the cut are the blade's); every
  * other range here was CHOSEN by the audio lane and waits for approval (`rangeFrom`), as the slice's did.
  */
-const P = (o) => Object.assign({ n: 1, ch: 1, loop: false, peak: -1, gain: 1, place: 'holds', counted: true, m2: true }, o);
+const P = (o) => Object.assign({ n: 1, ch: 1, loop: false, peak: -1, gain: 1, place: 'holds', counted: true, m2: true, load: 'late' }, o);
 
 /** The folders the first hour adds under public/audio/ (the allowlist ../slice/cues.js FOLDERS extends with). */
 export const M2_FOLDERS = ['holds', 'forge', 'rack', 'windwall', 'gaff', 'pot', 'tiller', 'screed'];
@@ -38,9 +43,9 @@ export const M2_CUES = [
   P({ set: 'forge/anvil', recipe: ['FORGE', 'anvil'], n: 3, bus: 'sfx', range: 80, gain: 4.0, place: 'ninewalls', on: 'Oro at the anvil (act hammer)' }),
   P({ set: 'forge/quench', recipe: ['FORGE', 'quench'], bus: 'sfx', range: 30, gain: 1.6, place: 'ninewalls', on: 'Oro at the trough (act quench)' }),
   /* the Kit Rack (UI) */
-  P({ set: 'rack/open', recipe: ['RACK', 'open'], bus: 'ui', range: 0, gain: 0.32, peak: -3, on: 'the Kit Rack opens (hold Tab)' }),
-  P({ set: 'rack/step', recipe: ['RACK', 'step'], bus: 'ui', range: 0, gain: 0.28, peak: -3, on: 'the selection passes a sector' }),
-  P({ set: 'rack/take', recipe: ['RACK', 'take'], bus: 'ui', range: 0, gain: 0.32, peak: -3, on: 'let go: the sector taken' }),
+  P({ set: 'rack/open', load: 'boot', recipe: ['RACK', 'open'], bus: 'ui', range: 0, gain: 0.32, peak: -3, on: 'the Kit Rack opens (hold Tab)' }),
+  P({ set: 'rack/step', load: 'boot', recipe: ['RACK', 'step'], bus: 'ui', range: 0, gain: 0.28, peak: -3, on: 'the selection passes a sector' }),
+  P({ set: 'rack/take', load: 'boot', recipe: ['RACK', 'take'], bus: 'ui', range: 0, gain: 0.32, peak: -3, on: 'let go: the sector taken' }),
   /* the Windwall */
   P({ set: 'windwall/open', recipe: ['WINDWALL', 'open'], bus: 'brea', range: 12, gain: 0.7, place: 'ninewalls', on: 'the fan opens (the guard comes up)' }),
   P({ set: 'windwall/shut', recipe: ['WINDWALL', 'shut'], bus: 'brea', range: 12, gain: 0.65, place: 'ninewalls', on: 'the fan folds' }),

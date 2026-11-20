@@ -21,7 +21,8 @@
  *                        tools/gates/audio/walk-graph.mjs): integrated loudness -18 LUFS +- 2 and true peak <= -1 dBTP of
  *                        the master after the real DynamicsCompressor, its gain reduction read every step, and the
  *                        Round-4 synthesized voices that still play, by name.
- *   A-audio-hour-live    Milestone 2: the first hour's bank decodes whole in Chrome (every new set, its length as built);
+ *   A-audio-hour-live    Milestone 2: the first hour's bank decodes whole in Chrome (every new set, its length as built),
+ *                        as the late bank GameAudio.update starts by itself after control (src/audio/bank.js loadLate);
  *                        the director's five beds and the re-survey's hold are up; Brea set down inside Ninewalls brings
  *                        Ninewalls' bed up and the Pans' beds down through the regions seam (its enter and leave), and
  *                        back home the Pans return; the calima (environment.setWeather) thins the trade wind under half
@@ -285,6 +286,13 @@ export const GATES = [
       while (!(a.hour && a.hour.ready) && performance.now() - t1 < 4000) await sleep(60);
       const H = a.hour;
       if (!H || !H.ready) return { pass: false, detail: 'the director of the first hour never came up' };
+      // the first hour's bank is the late one: GameAudio.update starts it after control (the first-load cap)
+      const t2 = performance.now();
+      while (!a.bankLate && performance.now() - t2 < 6000) await sleep(60);
+      const lateStarted = !!a.bankLate;
+      if (a.bankLate) { try { await a.bankLate; } catch (e) {} }
+      const LA = a.lateAudit();
+      const late = { started: lateStarted, state: LA.state, rows: LA.rows, decoded: LA.decoded, megabytes: LA.megabytes, startedS: LA.startedS, doneS: LA.doneS, missedBefore: LA.missed.length };
       const { M2_CUES } = await import('/src/audio/m2/cues.js');
       const MAN = (await import('/src/audio/manifest.js')).MANIFEST;
       const m2sets = new Set(M2_CUES.map(c => c.set));
@@ -341,6 +349,7 @@ export const GATES = [
       const played = Object.fromEntries(want.map(s => [s, (c1[s] || 0) - (c0[s] || 0)]));
       const silent = want.filter(s => !(played[s] > 0));
       const checks = {
+        late: late.started && late.state === 'done' && late.decoded === late.rows && late.rows > 0,
         decoded: rows > 0 && decoded === rows && worstMs < 30, beds: Object.keys(H.beds).length === 5 && !!H._hold,
         ninewallsUp: atNine.zone.nine >= 0.9 && atNine.zone.holds + atNine.zone.other >= 0.9 && atNine.beds.ninewalls > 0.1,
         pansDownInNinewalls: atNine.pans <= 0.05 && atHome0.pans > 0.05,
@@ -350,7 +359,7 @@ export const GATES = [
         events: silent.length === 0,
       };
       const failed = Object.keys(checks).filter(k => !checks[k]);
-      return { pass: failed.length === 0, detail: { failed, checks, bank: { rows, decoded, worstMs: +worstMs.toFixed(1) }, atHome0, atNine, atHome1, crossings, calima, played, silent } };
+      return { pass: failed.length === 0, detail: { failed, checks, late, bank: { rows, decoded, worstMs: +worstMs.toFixed(1) }, atHome0, atNine, atHome1, crossings, calima, played, silent } };
     })()`,
   },
 ];

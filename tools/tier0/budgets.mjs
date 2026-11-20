@@ -3,7 +3,10 @@
  * Tier 0 asset budgets, read from files (no browser):
  *   asset-budgets     per-asset caps: Brea as worn, near-tier people, Instruments by class, texture edge
  *   texture-ledger    summed resident texture memory against the cap
- *   shipped-ledger    summed shipped bytes against the first-load cap and the milestone total cap
+ *   shipped-ledger    summed shipped bytes: the first load (the boot set: every public/ file the game does not defer,
+ *                     plus the built code) against the first-load cap, and every file against the milestone total cap.
+ *                     The deferred set is read from the modules the game itself loads late by (budgets.json
+ *                     shipped.deferred: today the audio manifest's DEFERRED_FILES), never from a list kept here.
  *
  *   node tools/tier0/budgets.mjs [--tree <dir>]
  *
@@ -11,6 +14,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { listFiles, sizeOf, mb, MB } from './lib/files.mjs';
 import { inspectGlb, imageSize, residentBytes, isBlockCompressed } from './lib/glb.mjs';
 
@@ -164,6 +168,29 @@ export async function runTextureLedger({ root, assets }) {
 }
 
 /**
+ * The deferred set: the files the game fetches only after she is under control, read from the game's own modules
+ * (budgets.json shipped.deferred: { module, export, under }). Paths come back repo-relative ('public/...').
+ * @param {string} root
+ * @param {{ module: string, export: string, under: string }[]} sources
+ */
+export async function deferredFiles(root, sources = []) {
+  /** @type {Map<string, string>} file -> the module that defers it */
+  const out = new Map();
+  const errors = [];
+  for (const d of sources) {
+    const abs = path.join(root, d.module);
+    if (!existsSync(abs)) { errors.push(`deferred: ${d.module} is missing`); continue; }
+    try {
+      const m = await import(pathToFileURL(abs).href);
+      const list = m[d.export];
+      if (!Array.isArray(list)) { errors.push(`deferred: ${d.module} has no array export ${d.export}`); continue; }
+      for (const f of list) out.set(path.posix.join(d.under, String(f)), d.module);
+    } catch (e) { errors.push(`deferred: ${d.module}: ${String(e).slice(0, 200)}`); }
+  }
+  return { files: out, errors };
+}
+
+/**
  * @param {{ root: string, assets?: ReturnType<typeof readAssets>, dist?: { file: string, bytes: number }[] | null, exit?: string }} o
  * @returns {Promise<import('./lib/files.mjs').CheckResult>}
  */
@@ -175,23 +202,34 @@ export async function runShippedLedger({ root, assets, dist = null, exit }) {
   const A = assets || readAssets(root);
   /** @type {Record<string, number>} */
   const byLine = Object.fromEntries(S.lines.map((/** @type {any} */ l) => [l.id, 0]));
-  let pub = 0;
-  for (const f of A.files) { const b = sizeOf(root, f); pub += b; byLine[lineOf(f, S.lines)] += b; }
+  const D = await deferredFiles(root, S.deferred || []);
+  const failures = [...D.errors];
+  const onDisk = new Set(A.files);
+  for (const f of D.files.keys()) if (!onDisk.has(f)) failures.push(`deferred file ${f} (${D.files.get(f)}) is not shipped in public/`);
+  let pub = 0, late = 0, lateN = 0;
+  for (const f of A.files) {
+    const b = sizeOf(root, f);
+    pub += b; byLine[lineOf(f, S.lines)] += b;
+    if (D.files.has(f)) { late += b; lateN++; }
+  }
   let code = 0;
   for (const d of dist || []) { code += d.bytes; byLine[lineOf(`dist:${d.file}`, S.lines)] += d.bytes; }
   const total = pub + code;
+  const boot = pub - late;
+  const first = boot + code;
   const cap = S.totalCapMb[ex];
-  const failures = [];
-  if (total / MB > S.firstLoadCapMb) failures.push(`first load (static: everything; no streaming yet) ${mb(total)} MB > ${S.firstLoadCapMb} MB`);
+  if (first / MB > S.firstLoadCapMb) failures.push(`first load (the boot set ${mb(boot)} MB + built code ${mb(code)} MB) ${mb(first)} MB > ${S.firstLoadCapMb} MB`);
   if (cap != null && total / MB > cap) failures.push(`total shipped ${mb(total)} MB > ${cap} MB (${ex} exit)`);
   const rows = S.lines.map((/** @type {any} */ l) => `${l.label}: ${mb(byLine[l.id])} MB (plan line ${l.estimateMb} MB)${byLine[l.id] / MB > l.estimateMb && l.estimateMb ? ' OVER LINE' : ''}`);
+  rows.push(`first load: the boot set ${mb(boot)} MB (${A.files.length - lateN} files) + built code ${mb(code)} MB = ${mb(first)} MB of ${S.firstLoadCapMb} MB`);
+  rows.push(`deferred (fetched after control): ${mb(late)} MB in ${lateN} files, from ${[...new Set(D.files.values())].join(', ') || 'no module'}`);
   return {
     id: 'shipped-ledger',
     status: failures.length ? 'FAIL' : dist ? 'PASS' : 'PENDING',
-    summary: `${mb(total)} MB shipped = public/ ${mb(pub)} MB (${A.files.length} files) + built code ${dist ? `${mb(code)} MB` : 'not measured (no build)'}; first-load cap ${S.firstLoadCapMb} MB, ${ex} total cap ${cap} MB`,
+    summary: `first load ${mb(first)} MB of ${S.firstLoadCapMb} (boot set ${mb(boot)} MB in ${A.files.length - lateN} files + built code ${dist ? `${mb(code)} MB` : 'not measured (no build)'}; ${mb(late)} MB in ${lateN} files deferred until control); total ${mb(total)} MB of the ${ex} cap ${cap} MB (public/ ${mb(pub)} MB in ${A.files.length} files)`,
     failures,
     notes: rows,
-    details: { totalMb: mb(total), publicMb: mb(pub), codeMb: mb(code), byLine: Object.fromEntries(Object.entries(byLine).map(([k, v]) => [k, mb(v)])) },
+    details: { firstLoadMb: mb(first), bootMb: mb(boot), bootFiles: A.files.length - lateN, deferredMb: mb(late), deferredFiles: lateN, totalMb: mb(total), publicMb: mb(pub), codeMb: mb(code), byLine: Object.fromEntries(Object.entries(byLine).map(([k, v]) => [k, mb(v)])) },
     ms: Date.now() - t0,
   };
 }

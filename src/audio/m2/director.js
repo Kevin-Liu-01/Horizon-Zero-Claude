@@ -14,6 +14,11 @@
  * Per frame it allocates nothing in steady state: the zones and the work are polled at 4 Hz, the kit every frame
  * (numbers), the beds' levels smoothed every frame.
  *
+ * Its bank loads late (the manifest's `load: 'late'`; ../bank.js loadLate): it starts with the slice's bank, binds its
+ * listeners at once, and builds each bed and the re-survey's hold when that loop's buffer lands. A bed is ASKED for the
+ * first frame its level would be audible (over 0.01); that ask, and every cue it plays, is logged by the bank, so the
+ * rows can read whether anything was wanted before it was decoded (`bank.lateAudit()`).
+ *
  *   game.hour.zone          { pans, holds, other, malpais, nine, scar, edge, calima } (smoothed weights)
  *   game.hour.levels        bedLevels(zone): { pansK, tradeK, holds, ninewalls, scar, malpais, calima }
  *   game.hour.stats()       what the rows read (beds, zone, crossings, counts, trample tells)
@@ -77,28 +82,59 @@ export class HourAudio {
     this.trample = { tells: [], hits: [] };
     this._listeners = [];
     this.calima = 0;
+    this._bedAsked = { holds: false, ninewalls: false, scar: false, malpais: false, calima: false };
+    this._holdAsked = false;
+    this._bedsDone = false;
   }
 
-  /** After the bank has decoded (GameAudio's bankReady): the beds start silent, the listeners bind. */
-  start() {
+  /** Build each bed and the hold whose loop has landed (late bank). Idempotent; cheap once all are up. */
+  _ensureBeds() {
     const g = this.game;
-    if (this.ready || !g.ac || !g.buses) return;
+    if (this._bedsDone || !g.bank || !g.ac || !g.buses) return;
+    let all = true;
     for (const [name, set] of BEDS) {
-      const first = g.bank.first(set);
-      if (!first) continue;
+      if (this.beds[name]) continue;
+      const first = g.bank.peek(set);
+      if (!first) { all = false; continue; }
       const l = new LoopEmitter(g.ac, first.buffer, g.buses.ambBus, { gain: 0, native: true, tau: 0.5 });
       l.rowGain = first.row.gain ?? 1;
       l.start();
       this.beds[name] = l;
     }
-    const h = g.bank.first('alidade/hold');
-    if (h) {
-      this._hold = new LoopEmitter(g.ac, h.buffer, g.buses.breaBus, { gain: 0, native: true, tau: 0.15 });
-      this._hold.rowGain = h.row.gain ?? 1;
-      this._hold.start();
+    if (!this._hold) {
+      const h = g.bank.peek('alidade/hold');
+      if (h) {
+        this._hold = new LoopEmitter(g.ac, h.buffer, g.buses.breaBus, { gain: 0, native: true, tau: 0.15 });
+        this._hold.rowGain = h.row.gain ?? 1;
+        this._hold.start();
+      } else all = false;
     }
+    this._bedsDone = all;
+  }
+
+  /** The late bank has landed (GameAudio): the beds and the hold come up now, not at the next poll. */
+  lateLanded() { if (this.ready) this._ensureBeds(); }
+
+  /** How much she is in a place now (0..1), from the zones' targets: the late load fetches her place's rows first. */
+  placeWeight(place) {
+    const T = this._zt;
+    if (place === 'holds') return Math.min(1, T.holds + T.other);
+    if (place === 'ninewalls') return T.nine;
+    if (place === 'scar') return T.scar;
+    if (place === 'malpais') return Math.max(T.malpais, T.edge);
+    return 0;
+  }
+
+  /**
+   * After the boot bank has decoded (GameAudio's bankReady): the listeners bind; the beds start silent as their loops
+   * land (now, if the late bank is already in; else at the 4 Hz poll or when it lands).
+   */
+  start() {
+    const g = this.game;
+    if (this.ready || !g.ac || !g.buses) return;
     this._bind();
     this.ready = true;
+    this._ensureBeds();
   }
 
   /* ------------------------------------------------------------------ events */
@@ -183,6 +219,7 @@ export class HourAudio {
     for (const l of Object.values(this.beds)) l.dispose();
     this.beds = {};
     this._hold?.dispose(); this._hold = null;
+    this._bedsDone = false;
     this.ready = false;
   }
 
@@ -225,7 +262,7 @@ export class HourAudio {
     const w = ctx.environment?.w;
     this.calima = clamp(w && Number.isFinite(w.calima) ? w.calima : 0, 0, 1);
     this._zoneT -= rdt;
-    if (this._zoneT <= 0) { this._zoneT = 0.25; this._zoneTargets(p); }
+    if (this._zoneT <= 0) { this._zoneT = 0.25; this._zoneTargets(p); this._ensureBeds(); }
     // smooth the weights, then the beds' levels
     const Z = this.zone, T = this._zt;
     const kR = 1 - Math.exp(-rdt / ZONE.tau), kS = 1 - Math.exp(-rdt / ZONE.subTau);
@@ -235,6 +272,15 @@ export class HourAudio {
     const L = bedLevels(Z, this.levels);
     const on = playing ? 1 : 0.5;
     const B = this.beds;
+    // the asks: a bed is wanted the first frame its level would be audible (logged by the bank against its decode)
+    const A = this._bedAsked, bank = this.game.bank;
+    if (bank) {
+    if (!A.holds && on * L.holds > 0.01) { A.holds = true; bank.noteAsk('amb/holds'); }
+    if (!A.ninewalls && on * L.ninewalls > 0.01) { A.ninewalls = true; bank.noteAsk('amb/ninewalls'); }
+    if (!A.scar && on * L.scar > 0.01) { A.scar = true; bank.noteAsk('amb/scar'); }
+    if (!A.malpais && on * L.malpais > 0.01) { A.malpais = true; bank.noteAsk('amb/malpais'); }
+    if (!A.calima && on * L.calima > 0.01) { A.calima = true; bank.noteAsk('amb/calima'); }
+    }
     if (B.holds) B.holds.volume = on * L.holds * B.holds.rowGain;
     if (B.ninewalls) B.ninewalls.volume = on * L.ninewalls * B.ninewalls.rowGain;
     if (B.scar) B.scar.volume = on * L.scar * B.scar.rowGain;
@@ -319,8 +365,9 @@ export class HourAudio {
   /** The re-survey's hold: up while the arc fills on the mark, under it while paused, gone when off or done. */
   _resurvey(rdt) {
     const H = this._hold;
-    if (!H) return;
     const L = this.ctx.systemsGame?.hour?.resurvey;
+    if (!this._holdAsked && L && L.armed && L.running && !L.R?.done) { this._holdAsked = true; this.game.bank?.noteAsk('alidade/hold'); }
+    if (!H) return;
     let want = 0;
     if (L && L.armed && L.running && !L.R?.done) {
       const arc = L.R?.arc ?? 0;

@@ -43,6 +43,9 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 const SETTINGS_KEY = 'cal.audio.v5';
 
+/** Seconds of play after control before the late bank (the first hour's) is fetched (GameAudio._startLate). */
+export const LATE_AFTER_S = 0.3;
+
 /**
  * Is `v` usable as a WeakMap key? The per-machine cue throttles are WeakMaps so
  * a disposed machine is not pinned for the life of the page, and a WeakMap
@@ -262,6 +265,12 @@ export class GameAudio {
     ctx.settings.audio = this.settings;
 
     const arm = () => { this._init(); this.ac?.resume?.().catch(() => {}); };
+    // the first-load cap: the late bank (the first hour's) is fetched after control, timed from this moment
+    this._controlAt = null;
+    this._lateWait = 0;
+    /** @type {Promise<import('./bank.js').SampleBank>|null} */
+    this.bankLate = null;
+    ctx.events.on('game-start', () => { if (this._controlAt == null) this._controlAt = performance.now(); });
     ctx.events.on('game-start', arm);
     // Browsers only allow audio after a gesture; keep listeners persistent so
     // a later click can still resume a suspended context.
@@ -317,13 +326,16 @@ export class GameAudio {
 
     // The bank loads in the background; every cue falls back to synthesis
     // until its buffer lands, so nothing is ever silent while it downloads.
+    // Only the boot rows load here (the title's first key or click); the late rows (the first hour's bank) load after
+    // control (update -> _startLate), so the first load carries none of them.
     this.bankReady = this.bank.load(ac).then((b) => {
       this._startBeds();
       // BUILD M1.6k: the slice's places, Instruments, work and lamp chirps
       this.slice = new SliceAudio(this);
       this.slice.start();
       this.zones = new ZoneEmitters(ac, buses, this.bank);
-      // Milestone 2: the rest of the first hour (the zones on the regions seam, the calima, the Holds, the kit, the Screed)
+      // Milestone 2: the rest of the first hour (the zones on the regions seam, the calima, the Holds, the kit, the Screed);
+      // its listeners bind now, its beds come up as the late bank lands
       this.hour = new HourAudio(this);
       this.hour.start();
       // audio-01 — the composed score replaces the procedural one the moment
@@ -1411,6 +1423,9 @@ export class GameAudio {
       // a stealth approach is actually played on. `machine/servo-loop` stays
       // as the fallback for a kind the bank has no bed for.
       const kindIdle = this.slice?.idleSet(machine);
+      // a species bed in the late bank that has not landed yet: wait for it (the ask is logged) rather than take the
+      // servo for this machine's whole stay
+      if (kindIdle && this.bank.lateSets.has(kindIdle) && !this.bank.first(kindIdle)) return;
       const first = (kindIdle && this.bank.first(kindIdle)) || this.bank.first('inst/servo');
       if (!first) return;
       const chain = this._loopChain();
@@ -1515,6 +1530,25 @@ export class GameAudio {
     this._loopChains.push(c);
     return c;
   }
+
+  /**
+   * Fetch and decode the late bank (the first hour's Milestone 2 rows), the place she is in first and its beds before
+   * its one-shots. Runs once, LATE_AFTER_S of play after New Game or Continue gave control: a Continue has moved her by
+   * then, and the loading sheet's first frames are behind her.
+   */
+  _startLate() {
+    if (this.bankLate || !this.ac) return this.bankLate;
+    const H = this.hour, p = this.ctx.player;
+    if (H && p) H._zoneTargets(p);
+    const rank = (row) => (1 - (H ? H.placeWeight(row.place) : 0)) * 10 + (row.loop && row.ch === 2 ? 0 : 1);
+    this.bankLate = this.bank.loadLate(this.ac, { rank, controlAt: this._controlAt ?? performance.now() })
+      .then((b) => { this.hour?.lateLanded(); return b; })
+      .catch(() => this.bank);
+    return this.bankLate;
+  }
+
+  /** The late bank's log (../bank.js lateAudit): decode and first-ask times after control, the leads, any miss. */
+  lateAudit() { return this.bank.lateAudit(); }
 
   /* --------------------------- gate-facing API -------------------------- */
 
@@ -3268,6 +3302,12 @@ export class GameAudio {
     const nowMs = performance.now();
     const rdt = clamp((nowMs - this._lastRealMs) / 1000, 0, 0.1);
     this._lastRealMs = nowMs;
+
+    // the late bank: LATE_AFTER_S of play after control, once the boot bank is in
+    if (!this.bankLate && playing && this.bank.loaded) {
+      this._lateWait += rdt;
+      if (this._lateWait >= LATE_AFTER_S) this._startLate();
+    }
 
     this._updateSpatial(rdt, nowMs, playing);
 

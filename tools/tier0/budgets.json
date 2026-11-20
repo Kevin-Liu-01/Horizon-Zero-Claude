@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "about": "Tier 0 asset budgets, read from files only (tools/tier0/budgets.mjs). Per-asset caps, the summed resident-texture ledger and the summed shipped-size ledger. Line figures are the plan's estimates; the totals are the caps. Paths are repo-relative prefixes (no globs).",
-  "exit": "M1",
+  "exit": "M2",
   "perAsset": {
     "hero": {
       "about": "Brea as worn: the body plus one outfit or armour rung, LOD 0.",
@@ -43,8 +43,11 @@
     ]
   },
   "shipped": {
-    "about": "Bytes that ship: public/ (tracked + untracked-not-ignored) plus the built JS and CSS. With no region streaming yet, the first load is everything the game can fetch at boot, so the static first-load figure is the whole of it; the boot, when it runs, measures what was actually transferred.",
+    "about": "Bytes that ship: public/ (tracked + untracked-not-ignored) plus the built JS and CSS. The first load is the boot set (every public/ file not in the deferred set) plus the built code, against firstLoadCapMb; the total is every file, against the milestone's totalCapMb. The deferred set is what the game fetches only after she is under control, read from the game's own modules (deferred: module, its array export of paths relative to `under`), so the ledger and the game share one list. tools/perf/boot-transfer.mjs measures what the built game really fetches before control.",
     "firstLoadCapMb": 60,
+    "deferred": [
+      { "about": "the first hour's audio bank (Milestone 2): fetched and decoded after New Game or Continue gives control (src/audio/bank.js loadLate)", "module": "src/audio/manifest.js", "export": "DEFERRED_FILES", "under": "public" }
+    ],
     "totalCapMb": { "M1": 110, "M2": 165, "M3": 220, "M4": 275, "M5": 330 },
     "lines": [
       { "id": "brea", "label": "Brea: model, outfit, clips", "prefixes": ["public/models/hero/brea", "public/models/hero/outfit-"], "estimateMb": 10 },
