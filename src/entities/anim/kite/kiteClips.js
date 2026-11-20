@@ -49,7 +49,10 @@ export const TOGGLE = Object.freeze(new THREE.Vector3(-0.13, 1.0, 0.27));
 /** the left hand's ready place, low in front of her belly, while the right pulls the toggle (it never rides the air
  *  clip's arms up behind her head: it is held in front from the open's first step to the fold's last) */
 export const READY_L = Object.freeze(new THREE.Vector3(0.14, 1.04, 0.33));
-const POLE_READY_L = new THREE.Vector3(0.7, -0.6, -0.3);
+export const POLE_READY_L = Object.freeze(new THREE.Vector3(0.7, -0.6, -0.3));
+/** the right hand's, its mirror (hands free after the fold, while she falls: hangPose.js AFTER) */
+export const READY_R = Object.freeze(new THREE.Vector3(-0.14, 1.04, 0.33));
+export const POLE_READY_R = Object.freeze(new THREE.Vector3(-0.7, -0.6, -0.3));
 
 /** the share of the open at which the hands hold the roll (the last key) */
 const GRAB = ROLL_KEYS[ROLL_KEYS.length - 1][0];
@@ -57,7 +60,13 @@ const GRAB = ROLL_KEYS[ROLL_KEYS.length - 1][0];
 /** the share of the fold at which the right hand lets the roll go (the roll is at her right hip, in front: the open's
  *  key 0.44) */
 const RIDE_FOLD = 0.52;
-const _ride = new THREE.Vector3();
+const _ride = new THREE.Vector3(), _rideL = new THREE.Vector3(), _p2 = new THREE.Vector3();
+const _gq = new THREE.Quaternion();
+/** the grip of side `sx` on the roll where it arrives across her belly (the open's last key; char frame) */
+function rollGripAtGrab(sx, out) {
+  const K = ROLL_KEYS[ROLL_KEYS.length - 1];
+  return out.set(sx * KITE_RECIPE.grip * 0.97, 0, 0).applyQuaternion(_gq.copy(K[2])).add(K[1]);
+}
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _v = new THREE.Vector3();
 
@@ -137,19 +146,22 @@ export function kiteClipPose(state, t, { bank = 0, forced = false } = {}, bar, o
       o.pos.copy(ROLL_KEYS[ROLL_KEYS.length - 1][1]).lerp(bar, u); o.quat.identity();
       o.furl = ss(GRAB, 0.95, s);
     }
-    // the right hand: to the toggle (from where the open found it, brought in front of her head: `start`), then down to
-    // the roll as it comes round her hip, then the bar's right grip
+    // the right hand: to the toggle (from where the open found it, brought in front of her head: `start`), then to the
+    // place the roll ARRIVES in front of her belly (its last key: the hand meets it there, it does not chase the swing),
+    // then the bar's right grip as it rises (fix round 1: the start's move over 0.40 of the open (the left's 0.30), was 0.14, and the take
+    // on the roll's last key: chasing the swing moved a wrist 0.18-0.20 m a step against W1's 0.08)
     R.w = R.hasStart ? 1 : ss(0, 0.12, s);
-    if (s < 0.36) { R.goal.copy(TOGGLE); if (R.hasStart) R.goal.copy(R.start).lerp(TOGGLE, ss(0, 0.14, s)); R.pole.copy(POLE_LOW_R); }
-    else {
-      gripOf(o, -1, _p); const u = ss(0.36, GRAB, s);
-      R.goal.copy(TOGGLE).lerp(_p, u); R.pole.copy(POLE_LOW_R).lerp(POLE_BAR_R, u);
-    }
+    rollGripAtGrab(-1, _p2);
+    if (s < 0.4) { R.goal.copy(TOGGLE); if (R.hasStart) R.goal.copy(R.start).lerp(TOGGLE, ss(0, 0.4, s)); R.pole.copy(POLE_LOW_R); }
+    else if (s < GRAB) { const u = ss(0.4, GRAB, s); R.goal.copy(TOGGLE).lerp(_p2, u); R.pole.copy(POLE_LOW_R).lerp(POLE_BAR_R, u); }
+    else { gripOf(o, -1, R.goal); R.pole.copy(POLE_BAR_R); }
     R.curl = s < 0.12 ? s / 0.12 : s < 0.36 ? 1 : s < GRAB - 0.05 ? 0.4 : 1;
-    // the left hand: held ready low in front of her belly from the first step, then in to the roll's left end as it
+    // the left hand: held ready low in front of her belly from the first step, then in to where the roll's left end
     // arrives across her belly
-    { gripOf(o, 1, _p); const u = ss(0.3, GRAB, s); L.goal.copy(READY_L); if (L.hasStart) L.goal.copy(L.start).lerp(READY_L, ss(0, 0.14, s));
-      L.goal.lerp(_p, u); L.pole.copy(POLE_READY_L).lerp(POLE_BAR_L, u); }
+    rollGripAtGrab(1, _p2);
+    { const u = ss(0.3, GRAB, s); L.goal.copy(READY_L); if (L.hasStart) L.goal.copy(L.start).lerp(READY_L, ss(0, 0.3, s));
+      if (s < GRAB) L.goal.lerp(_p2, u); else gripOf(o, 1, L.goal);
+      L.pole.copy(POLE_READY_L).lerp(POLE_BAR_L, u); }
     L.w = L.hasStart ? 1 : ss(0, 0.12, s); L.curl = s < GRAB - 0.03 ? 0.3 : 1;
     o.body = ss(0.35, 1, s);
     return o;
@@ -172,16 +184,20 @@ export function kiteClipPose(state, t, { bank = 0, forced = false } = {}, bar, o
   //  swings behind her hip)
   if (land) o.pos.z += 0.12 * (1 - ss(0.74, 0.9, s));
   // the left hand lets go of the bar to its ready place in front of her belly, and is freed at the fold's end
-  { gripOf(o, 1, _p); const u = ss(hold, hold + 0.22, s); L.goal.copy(_p).lerp(READY_L, u); L.pole.copy(POLE_BAR_L).lerp(POLE_READY_L, u); }
-  L.w = 1 - ss(0.85, 1, s); L.curl = s < hold + 0.05 ? 1 : 0.3;
+  // (fix round 1: from the place it let go, captured on the last step it held; tracking the roll as it swung back past
+  //  her hip moved the left wrist 0.12-0.30 m a step)
+  { gripOf(o, 1, _p); if (s <= hold) _rideL.copy(_p); const u = ss(hold, hold + 0.3, s); L.goal.copy(s <= hold ? _p : _rideL).lerp(READY_L, u); L.pole.copy(POLE_BAR_L).lerp(POLE_READY_L, u); }
+  // (M3 area B fix round 1: held at full weight to the fold's last step; hangPose.js's after-layer hands the arm back
+  //  to her own pose, never a weight faded over the last 0.14 of the clip: that moved the wrist 0.19-0.24 m a step)
+  L.w = 1; L.curl = s < hold + 0.05 ? 1 : 0.3;
   // the right hand rides the roll round her hip, then lets it go to the flap and comes off by the toggle
   gripOf(o, -1, _p);
   if (s < Math.min(0.72, RIDE_TO)) { R.goal.copy(_p); R.w = 1; R.pole.copy(POLE_BAR_R).lerp(POLE_LOW_R, ss(0.4, 0.72, s)); }
-  else { const u = ss(0.72, 0.86, s); R.goal.copy(_p).lerp(TOGGLE, u); R.w = 1 - ss(0.86, 1, s); R.pole.copy(POLE_LOW_R); }
+  else { const u = ss(0.72, 1, s); R.goal.copy(_p).lerp(TOGGLE, u); R.w = 1; R.pole.copy(POLE_LOW_R); }
   R.curl = s < 0.72 ? 1 : 0.5;
   if (RIDE_TO < 0.72 && s >= RIDE_TO) {
     // (the hand lets the roll go at her right hip, in front, before it swings behind her to the flap)
-    const u = ss(RIDE_TO, RIDE_TO + 0.18, s); gripOf(o, -1, _v); R.goal.copy(_ride).lerp(TOGGLE, u); R.pole.copy(POLE_LOW_R); R.curl = 0.5;
+    const u = ss(RIDE_TO, 1, s); gripOf(o, -1, _v); R.goal.copy(_ride).lerp(TOGGLE, u); R.pole.copy(POLE_LOW_R); R.curl = 0.5;
     if (u <= 0) _ride.copy(_v);
   } else if (s < RIDE_TO) _ride.copy(R.goal);
   o.body = 1 - ss(0.3, 1, s);

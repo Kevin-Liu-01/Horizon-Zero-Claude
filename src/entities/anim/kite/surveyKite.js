@@ -35,8 +35,8 @@ export const KITE_RECIPE = Object.freeze({
   billow: 0.035, hem: 0.03,
   /** the control bar; the grips (half the spread, as hangPose.js HANG.halfGrip) */
   barLen: 0.9, barR: 0.017, grip: 0.22, gripLen: 0.12,
-  /** the bridle's cords */
-  cord: 0.0045,
+  /** the bridle's cords (fix round 1: 4.5 mm broke into dashes at distance on the page; 7 mm holds a line at F52's range) */
+  cord: 0.007,
   /** the furled roll (BIBLE §5.2: 0.95 x 0.12 m) */
   rollLen: 0.95, rollR: 0.06,
   /** sides of a cane's section */
@@ -247,10 +247,12 @@ export function buildSurveyKite({ furl = 1 } = {}) {
     k = Math.min(1, Math.max(0, k));
     if (Math.abs(k - cur) < 1e-4) return;
     cur = k;
-    // the cells rise first and spread fore and aft last: the span opens with k, the height by k = 0.6 and the chord only
-    // from k = 0.45 (so a kite opening or folding over her hands stands up in front of her face, a thin column, and
+    // the cells rise first and spread fore and aft last: the span opens with k, the height by k = 0.55 and the chord from
+    // k = 0.2 (so a kite opening or folding over her hands stands up in front of her face, a thin column, and
     // spreads fore and aft only once it is above her head: the aft cell never sweeps through her head or her chest)
-    const kx = k, ky = sstep(0, 0.6, k), kz = sstep(0.45, 1, k);
+    // (fix round 1: the chord from k = 0.2, was 0.45: half open, the cells stood edge-on and the bare spars and bridle
+    //  read as a triangular frame; now the two cells read as boxes from k = 0.5)
+    const kx = k, ky = sstep(0, 0.55, k), kz = sstep(0.2, 0.9, k);
     for (let i = 0, n3 = count * 3; i < n3; i += 3) {
       pa[i] = fP[i] + (oP[i] - fP[i]) * kx; pa[i + 1] = fP[i + 1] + (oP[i + 1] - fP[i + 1]) * ky; pa[i + 2] = fP[i + 2] + (oP[i + 2] - fP[i + 2]) * kz;
       na[i] = fN[i] + (oN[i] - fN[i]) * k; na[i + 1] = fN[i + 1] + (oN[i + 1] - fN[i + 1]) * k; na[i + 2] = fN[i + 2] + (oN[i + 2] - fN[i + 2]) * k;

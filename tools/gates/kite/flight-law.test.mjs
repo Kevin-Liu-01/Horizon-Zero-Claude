@@ -29,6 +29,15 @@ function glide(world, headingDeg, seconds = 40) {
   return { ratio: d / h, ground: d / seconds, sink: h / seconds, state: s };
 }
 
+test('seam: the kiteBar slot (src/hero/sockets.js) sits on the Survey Kite\'s grips', async () => {
+  const { SOCKETS } = await import('../../../src/hero/sockets.js');
+  const { KITE_RECIPE } = await import('../../../src/entities/anim/kite/surveyKite.js');
+  const K = SOCKETS.kiteBar;
+  assert.ok(K, 'no kiteBar slot');
+  near(K.gripL.p[0], KITE_RECIPE.grip, 1e-9, 'left grip'); near(K.gripR.p[0], -KITE_RECIPE.grip, 1e-9, 'right grip');
+  near(K.gripL.r, KITE_RECIPE.barR * 1.35, 0.0005, 'grip radius'); near(K.gripL.len, KITE_RECIPE.gripLen, 1e-9, 'grip length');
+});
+
 test('seam: the five flight states, in the brief\'s order', () => {
   assert.deepEqual([...FLIGHT_STATES], ['none', 'opening', 'gliding', 'folding', 'landing']);
 });

@@ -36,6 +36,8 @@ const BASE = { hour: 17.75, weather: 'trade', at: 'trig:T1', bearing: 283, state
 const LENSES = [
   { id: 'front3q', ...BASE, camera: { mode: 'orbit', yawRel: 35, dist: 3.4, height: 1.6, target: { fwd: 0, side: 0, up: 1.55 }, fov: 50, lookAt: 'off' } },
   { id: 'side', ...BASE, camera: { mode: 'orbit', yawRel: 95, dist: 3.6, height: 1.7, target: { fwd: 0.2, side: 0, up: 1.6 }, fov: 50, lookAt: 'off' } },
+  // (fix round 1: the whole kite in the lens, its top longeron 2.7 m over the bar: the two close lenses cut it at the top)
+  { id: 'whole', ...BASE, camera: { mode: 'orbit', yawRel: 60, dist: 6.5, height: 2.4, target: { fwd: 0, side: 0, up: 2.5 }, fov: 58, lookAt: 'off' } },
 ];
 /** The poses: [name, state, seconds in it, bank] */
 const POSES = [
