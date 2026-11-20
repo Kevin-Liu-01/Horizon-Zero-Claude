@@ -6,7 +6,7 @@ import { ECOSYSTEM } from './ai/tables.js';
 import { setAiRng, seededRng, aiRngSeeded } from './ai/rng.js';
 import { REST_SITE } from '../../world/island/sites.js';
 import { PLAY_RADIUS, EXTENT } from '../../world/island/extent.js';
-import { _st, stepRootS, normalizeEyeRecords, warmSteering } from './machine.js';
+import { _st, stepRootS, normalizeEyeRecords, warmSteering, beaconWarmMeshes } from './machine.js';
 import { HOT, refreshHot, mutableFromBirth } from '../../instruments/lib/hot.js';
 const REFRESH_ARGS = [null];
 /** The node count `Object3D.traverse` would visit (the object and every descendant), with no callback. */
@@ -90,6 +90,8 @@ export class Machines {
     /** 0 until the navgrid's first ready frame has warmed every live machine's nav steering (update, `_warmNav`) */
     this._navWarm = 0;
     refreshHot(ctx);   // lib/hot.js: valid before the first update (re-copied every frame)
+    // C5 (engine lane, the smallest change here): the loot beacon's programs, linked by the boot's warm-up
+    for (const m of beaconWarmMeshes((mat) => ctx.environment?.registerMaterial?.(mat))) ctx.engine?.addWarmExtra?.(m);
 
     // AI services: stimulus bus, site lifecycle, squad doctrine, perception hooks
     installMachineAI(this);
