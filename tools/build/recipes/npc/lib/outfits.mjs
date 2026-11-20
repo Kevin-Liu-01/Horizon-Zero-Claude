@@ -358,7 +358,7 @@ export const OUTFITS = {
     parts: [
       { part: 'Male_Ranger_Body', dye: HOLDS.rust, target: 2900, collar: { y0: 1.44, push: 0.014 } },
       { part: 'Male_Ranger_Body_Belt', from: 'Male_Ranger_Body', meshes: /Belt/, dye: HOLDS.leather, target: 600 },
-      { part: 'Male_Ranger_Arms', dye: HOLDS.woolDark, target: 1300, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.rustDeep },
+      { part: 'Male_Ranger_Arms', dye: HOLDS.sleeve, target: 1300, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.rustDeep },
       { part: 'Male_Ranger_Legs', dye: HOLDS.lapilli, target: 900, shade: 1.5 },
       { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leather, target: 1500 },
     ],
@@ -412,7 +412,7 @@ export const OUTFITS = {
       // (polish 2: her top the cochineal she picks, dyed in the yard; it was the pale oatmeal wool that read as Pan linen)
       { part: 'Female_Ranger_Body', dye: HOLDS.cochineal, target: 1600 },
       { part: 'Female_Ranger_Body_Belt', from: 'Female_Ranger_Body', meshes: /Belt/, dye: HOLDS.leatherDark, target: 500 },
-      { part: 'Female_Ranger_Arms', dye: HOLDS.woolDark, target: 1300, cutX: 0.40, cuff: HOLDS.woolDark, dropMat: /Regular/ },
+      { part: 'Female_Ranger_Arms', dye: HOLDS.sleeve, target: 1300, cutX: 0.40, cuff: HOLDS.sleeve, dropMat: /Regular/ },
       { part: 'Female_Ranger_Feet', dye: HOLDS.leather, target: 1500, cutTop: 0.3 },
     ],
     legsHidden: 1.0,
@@ -426,7 +426,7 @@ export const OUTFITS = {
         const blot = smooth(0.42, 0.68, noise3(p[0] * 26 + 3, p[1] * 26, 2.5));
         return Math.min(1, (0.85 * wipe + 0.75 * drag) * (0.45 + 0.75 * blot) + 0.18 * blot);
       };
-      // (polish 2: the ash fleece, not the pale oatmeal: at F36 the apron was the whitest thing on her and she read as a Pan)
+      // (polish 2: the dark fleece, not the pale oatmeal: at F36 the apron was the whitest thing on her and she read as a Pan)
       apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.apronWool, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 12, cols: 17, foldN: 3.5, foldAmp: 0.012, hemWave: 0.002, hem: 0.0035, stain: { hex: HOLDS.carmineStain, at: stainAt } });
       for (const s of [1, -1]) strapBuckled(ctx, [[s * 0.11, 1.25, frontZ(ctx, s * 0.11, 1.25) + 0.024], [s * 0.1, 1.38, 0.1], [s * 0.09, 1.47, 0.0], [s * 0.1, 1.38, -0.12], [s * 0.12, 1.12, -0.13]], { width: 0.022, dye: HOLDS.leatherDark, metal: HOLDS.brass, bu: 0.18, along: 14 });
       waistTie(ctx, { y: 1.04, dye: HOLDS.carmine });

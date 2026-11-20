@@ -116,6 +116,8 @@ export async function probe(frame) {
       const staged = (PS?.holds?._staged || []).filter((q) => q.group);
       const figs = staged.map((q) => ({ id: q.archetype || q.id, obj: q.group, faction: 'holds', q }));
       if (p.model?.visible) figs.push({ id: 'brea', obj: p.model, faction: 'brea' });
+      E.render(0);
+      out.render = R.domElement.toDataURL('image/jpeg', 0.9);
       out.rows = readFigures(E, R, figs, grab);
       out.violet = violetBar(out.rows);
       out.closeups = {};
@@ -171,7 +173,7 @@ export async function probe(frame) {
     const fwd = new THREE.Vector3(); cam.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
     const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
     const B = p.position.clone(), iB = order.indexOf('brea');
-    const lensAt = B.clone().addScaledVector(fwd, -20);
+    let lensAt = B.clone().addScaledVector(fwd, -20);
     const faceYaw = (x, z) => Math.atan2(lensAt.x - x, lensAt.z - z);
     const figures = [];
     const others = (PS.list || []).filter((q) => q !== oro);
@@ -184,51 +186,52 @@ export async function probe(frame) {
       let q = id === 'oro' ? oro : null;
       if (!q) { q = await PS.spawn(id, { x: at.x, z: at.z, yaw: 0 }); spawned.push(q); }
       q.setPosition?.(at.x, at.z); q.stopWalk?.();
-      const y = faceYaw(at.x, at.z); q.yaw = y; q.group.rotation.y = y;
-      try { for (const c of q.chains?.chains || []) { c.links.forEach((l, k) => l.quaternion.copy(c.bindQ[k])); c.seeded = false; } } catch (e) { /* */ }
       try { q.play?.('Idle_Loop', { fade: 0, offset: 0.25 }); } catch (e) { /* */ }
       PS.tierAt(q, 1);
       figures.push({ id, obj: q.group, faction: q.spec?.faction || (id.match(/salt|boat|lantern/) ? 'pan' : 'holds'), q });
     }
-    const h0 = p.heading; p.heading = faceYaw(B.x, B.z); undo.push(() => { p.heading = h0; });
-    await sleep(2500);
+    const h0 = p.heading; undo.push(() => { p.heading = h0; });
     const ground = (x, z) => C.terrain?.getHeight?.(x, z) ?? p.position.y;
     const centre = B.clone().addScaledVector(right, ((order.length - 1) / 2 - iB) * 1.15);
-    const putLens = () => {
-      cam.position.set(lensAt.x, ground(lensAt.x, lensAt.z) + 1.6, lensAt.z);
-      cam.lookAt(centre.x, ground(centre.x, centre.z) + 0.95, centre.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
-    };
-    putLens();
-    out.lineup = { lens: { distM: 20, fov: 45, at: [lensAt.x, cam.position.y, lensAt.z].map(r3) }, order, tiers: figures.filter((f) => f.q).map((f) => ({ id: f.id, tier: f.q.tier })) };
-    // in the world as it stands
-    E.render(0);
-    out.lineup.imageWorld = R.domElement.toDataURL('image/jpeg', 0.9);
-    out.lineup.world = readFigures(E, R, figures, grab);
-    // the open read: the village hidden
     const town = [];
     C.scene?.traverse?.((o) => { if (o.name === 'ninewalls' || o.name === 'settlement-host') town.push(o); });
     const town0 = town.map((o) => o.visible);
-    town.forEach((o) => { o.visible = false; });
-    try {
-      E.render(0);
-      out.lineup.imageOpen = R.domElement.toDataURL('image/jpeg', 0.9);
-      out.lineup.open = readFigures(E, R, figures, grab);
-    } finally { town.forEach((o, k) => { o.visible = town0[k]; }); }
-    out.lineup.townHidden = town.map((o) => o.name);
-    out.lineup.classifyOpen = classify(out.lineup.open);
-    out.lineup.classifyWorld = classify(out.lineup.world);
-    out.lineup.violetOpen = violetBar(out.lineup.open);
-    out.lineup.violetWorld = violetBar(out.lineup.world);
-    // a 2x crop of the row (open) to look at
-    {
-      const xs = [], ys = [];
-      for (const f of figures) { const v = f.obj.getWorldPosition(new THREE.Vector3()); for (const dy of [0, 1.9]) { const q = v.clone().add(new THREE.Vector3(0, dy, 0)).project(cam); xs.push((q.x + 1) / 2 * W); ys.push((1 - q.y) / 2 * H); } }
-      town.forEach((o) => { o.visible = false; }); E.render(0);
-      const x0 = Math.max(0, Math.min(...xs) - 40), x1 = Math.min(W, Math.max(...xs) + 40), y0 = Math.max(0, Math.min(...ys) - 30), y1 = Math.min(H, Math.max(...ys) + 30);
-      const cc = document.createElement('canvas'); cc.width = (x1 - x0) * 2; cc.height = (y1 - y0) * 2;
-      const c2 = cc.getContext('2d'); c2.drawImage(R.domElement, x0, y0, x1 - x0, y1 - y0, 0, 0, cc.width, cc.height);
-      out.lineup.cropOpen = cc.toDataURL('image/jpeg', 0.92);
-      town.forEach((o, k) => { o.visible = town0[k]; });
+    out.lineup = { order, townHidden: town.map((o) => o.name), tiers: figures.filter((f) => f.q).map((f) => ({ id: f.id, tier: f.q.tier })) };
+    // the row read from both of its sides: the frame's own side (its lens looks along her heading, toward the low sun at
+    // 17:30: the row stands against the light) and the other (the sun behind the lens: the row lit from the front)
+    for (const [key, sgn] of [['against', -1], ['lit', 1]]) {
+      lensAt = B.clone().addScaledVector(fwd, 20 * sgn);
+      for (const f of figures) {
+        if (!f.q) continue;
+        const q = f.q, at = q.group.position, y = faceYaw(at.x, at.z);
+        q.yaw = y; q.group.rotation.y = y;
+        try { for (const c of q.chains?.chains || []) { c.links.forEach((l, k) => l.quaternion.copy(c.bindQ[k])); c.seeded = false; } } catch (e) { /* */ }
+      }
+      p.heading = faceYaw(B.x, B.z);
+      await sleep(2200);
+      cam.position.set(lensAt.x, ground(lensAt.x, lensAt.z) + 1.6, lensAt.z);
+      cam.lookAt(centre.x, ground(centre.x, centre.z) + 0.95, centre.z); cam.fov = 45; cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+      const side = { lens: { distM: 20, fov: 45, at: [lensAt.x, cam.position.y, lensAt.z].map(r3) } };
+      side.world = readFigures(E, R, figures, grab);
+      town.forEach((o) => { o.visible = false; });
+      try {
+        E.render(0);
+        side.image = R.domElement.toDataURL('image/jpeg', 0.9);
+        side.open = readFigures(E, R, figures, grab);
+        // a 2x crop of the row (open) to look at
+        const xs = [], ys = [];
+        for (const f of figures) { const v = f.obj.getWorldPosition(new THREE.Vector3()); for (const dy of [0, 1.9]) { const q = v.clone().add(new THREE.Vector3(0, dy, 0)).project(cam); xs.push((q.x + 1) / 2 * W); ys.push((1 - q.y) / 2 * H); } }
+        E.render(0);
+        const x0 = Math.max(0, Math.min(...xs) - 40), x1 = Math.min(W, Math.max(...xs) + 40), y0 = Math.max(0, Math.min(...ys) - 30), y1 = Math.min(H, Math.max(...ys) + 30);
+        const cc = document.createElement('canvas'); cc.width = (x1 - x0) * 2; cc.height = (y1 - y0) * 2;
+        cc.getContext('2d').drawImage(R.domElement, x0, y0, x1 - x0, y1 - y0, 0, 0, cc.width, cc.height);
+        side.crop = cc.toDataURL('image/jpeg', 0.92);
+      } finally { town.forEach((o, k) => { o.visible = town0[k]; }); }
+      side.classifyOpen = classify(side.open);
+      side.classifyWorld = classify(side.world.filter((r) => r.areaPx > 0));
+      side.violetOpen = violetBar(side.open);
+      side.violetWorld = violetBar(side.world);
+      out.lineup[key] = side;
     }
   } catch (e) {
     out.error = String(e?.stack || e).slice(0, 600);
