@@ -2482,7 +2482,7 @@ export class MeleeLayer {
     const mel = this.ctx.combat?.melee;
     const hulls = mel && typeof mel.armHulls === 'function' ? mel.armHulls() : null;
     const D = this._dbg;
-    D.armHullPush = 0; D.armHullRoll = 0; D.armHullRetract = 0; D.armHullBack = 0;
+    D.armHullPush = 0; D.armHullRoll = 0; D.armHullRetract = 0; D.armHullBack = 0; D.armHullDeficit = 0;
     if (!hulls || !hulls.length || !this.an.b.handR) return;
     const an = this.an;
     an.model.updateWorldMatrix(true, false);

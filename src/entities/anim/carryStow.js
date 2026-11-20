@@ -207,6 +207,11 @@ export class CarryStow {
   _elbowSwivelLimit(on, dt) {
     const P = this._swv;
     if (!on || !P) return;
+    /* (M2 fix wave 2, A106: nor on a step the lance's arm-hull guard worked on (meleeLayer `_armHullGuard`, which runs
+     *  before this): it rolls and draws the elbows out of a machine on purpose, and held to 16 deg a step the elbow went
+     *  back in: a drawn left fist 0.077 m inside a Plumb's shin on the page at 02f7125, 0.118 m in a Gauge's at cc89130) */
+    const HD = this.melee?._dbg;
+    if (HD && (HD.armHullDeficit > 0 || HD.armHullPush > 0 || HD.armHullRoll > 0 || HD.armHullRetract > 0 || HD.armHullBack > 0 || HD.armHullFull)) return;
     const max = SWIVEL_STEP * Math.min(2, Math.max(0.25, dt * 60));
     for (const s of ['l', 'r']) {
       const pr = P[s];
