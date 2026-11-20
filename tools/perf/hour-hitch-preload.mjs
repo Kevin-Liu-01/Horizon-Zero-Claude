@@ -120,6 +120,16 @@ const recorder = (over) => {
               }
             });
             f.programsOf = who;
+            // and what sets each apart from the nearest program already linked (its cache key, field by field)
+            const all = info.programs.slice(0, prevInfo.p);
+            f.programsKey = fresh.map((q) => {
+              const a = (q.cacheKey || '').split(',');
+              let best = null, bd = Infinity;
+              for (const o of all) { const b = (o.cacheKey || '').split(','); if (b[0] !== a[0]) continue; let d = 0; for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) d++; if (d < bd) { bd = d; best = b; } }
+              const diff = [];
+              if (best) for (let i = 0; i < Math.max(a.length, best.length); i++) if (a[i] !== best[i]) diff.push(`${i}:${(best[i] ?? '').slice(0, 40)}->${(a[i] ?? '').slice(0, 40)}`);
+              return { kind: a[0], fields: a.length, nearest: best ? bd : null, diff: diff.slice(0, 12) };
+            });
           } catch { /* */ }
         }
         if (R.sys) { const top = Object.entries(R.sys).filter(([, v]) => v > 1).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => [k, Math.round(v * 10) / 10]); if (top.length) f.sys = top; }
