@@ -9,7 +9,7 @@
  *      outer wall ('screed-stalled' wall-1) and no blade reaches her.
  *   2. THE SEAL STALL: it cuts the outer wall and comes into the corridor; she waits off its line 10 m in front and 5 m
  *      to one side (on the corridor's floor), steps 5.5 m square out of its line in its wind-up, and its charge meets the
- *      second wall beside her ('screed-stalled' wall-2): no blade hit, she stands within 8 m of it with no wall between,
+ *      second wall beside her ('screed-stalled' wall-2): no blade hit, she stands within 9.5 m of it with no wall between,
  *      and its rams stay on her side of the second wall for at least 5 s (the stall, the back-off and the walk back in).
  *   node --test tools/gates/systems/screed-corridor.test.mjs
  */
@@ -66,7 +66,10 @@ test('from the corridor inside the outer wall: the charge at her stalls on the o
       const onFloor = (q) => { const r = Math.hypot(q.x - C.x, q.z - C.z); return r > rIn + 0.6 && r < rOut - 0.8; };
       let sg = fr.side >= 0 ? 1 : -1;
       if (!onFloor(at(sg)) && onFloor(at(-sg))) sg = -sg;
-      sidestep = { t, from: { ...her }, to: at(sg), sg };
+      // (M3 fix wave) and up to 3 m further along its heading while the corridor's floor goes (first-hour.mjs)
+      const fwd = (q, k) => ({ x: q.x + Math.sin(b.heading) * k, z: q.z + Math.cos(b.heading) * k });
+      const k = [3, 2.5, 2, 1.5, 1, 0.5, 0].find((kk) => onFloor(fwd(at(sg), kk)) && (kk === 0 || onFloor(fwd(at(sg), kk / 2)))) ?? 0;
+      sidestep = { t, from: { ...her }, to: fwd(at(sg), k), sg, k };
     }
     if (sidestep) {
       const u = Math.min(1, (t - sidestep.t) / 0.9);
@@ -89,7 +92,8 @@ test('from the corridor inside the outer wall: the charge at her stalls on the o
   assert.ok(!evs2.some((e) => e.type === 'blade-hit'), 'the blade reached her');
   assert.deepEqual(b.cuts, ['wall-1'], `cuts ${b.cuts}`);
   const d = Math.hypot(her.x - b.x, her.z - b.z);
-  assert.ok(d < 8, `she stands ${d.toFixed(1)} m from it`);
+  // (M3 fix wave: 8 -> 9.5 m, the step on along its line stands her further in front of it; mayShoot reaches 24 m)
+  assert.ok(d < 9.5, `she stands ${d.toFixed(1)} m from it`);
   const between = NW.segmentHitsWall(b.x, b.z, her.x, her.z, 0);
   assert.equal(between, null, `a whole wall between them: ${JSON.stringify(between)} (it at r ${Math.hypot(b.x - C.x, b.z - C.z).toFixed(1)} b ${NW.bearingOf(b.x, b.z).toFixed(1)}, she r ${Math.hypot(her.x - C.x, her.z - C.z).toFixed(1)} b ${NW.bearingOf(her.x, her.z).toFixed(1)})`);
   // the rams (1.5 m behind the blade's face, sim time) stay on her side of the second wall
@@ -97,5 +101,9 @@ test('from the corridor inside the outer wall: the charge at her stalls on the o
   let window = 0;
   for (let i = 0; i < 15 / DT && ramsIn(); i++) { F.fight.step(DT, her.x, her.z); window += DT; }
   assert.ok(window >= 5, `the rams on her side ${window.toFixed(2)} s`);
-  console.log(`# stall 1 at ${stall1.t.toFixed(1)} s on ${stall1.wall}; stall 2 at ${stall2.t.toFixed(1)} s on ${stall2.wall}, she ${d.toFixed(1)} m off; the rams on her side ${window.toFixed(2)} s`);
+  // (M3 fix wave) the far seal's line in the stall: from her (nock 1.45 m up) to the seal across from her (1.6 m ahead of its
+  // centre, 0.95 m to that side), how far it passes the near seal (2D; the runner's bar is 0.45 m)
+  const fr2 = frame(b, her), seal = (sg) => ({ a: 1.6, s: 0.95 * sg }), far = seal(fr2.side >= 0 ? -1 : 1), nearS = seal(fr2.side >= 0 ? 1 : -1);
+  const dx = far.a - fr2.ahead, ds = far.s - fr2.side, L = Math.hypot(dx, ds), farMargin = Math.abs(dx * (nearS.s - fr2.side) - ds * (nearS.a - fr2.ahead)) / L;
+  console.log(`# stall 1 at ${stall1.t.toFixed(1)} s on ${stall1.wall}; stall 2 at ${stall2.t.toFixed(1)} s on ${stall2.wall}, she ${d.toFixed(1)} m off (${fr2.ahead.toFixed(1)} ahead, ${fr2.side.toFixed(1)} to a side, stepped ${sidestep.k} m on); the far seal's line passes the near one by ${farMargin.toFixed(2)} m; the rams on her side ${window.toFixed(2)} s`);
 });

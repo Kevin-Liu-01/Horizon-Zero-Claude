@@ -821,6 +821,7 @@ const sealStand = async (mi, parts, margin, slack) => {
           // the seals at 1.34 m; the flight's drop over 8 m is 2 cm), and the lens's line meets no hull short of it
           if (!lineTo(g, p)) { why.line++; continue; }
           const walk = Math.sqrt(L2);
+          if (walk > 7) { why.far = (why.far || 0) + 1; continue; }
           if (!best || walk < best.d) best = { stand: { x, z }, part: p, margin: mg, d: +walk.toFixed(1), a, s };
         }
       }
@@ -968,8 +969,14 @@ async function driveScreed(page, K, stage, maxS = 120) {
       const onFloor = (q) => { const r = Math.hypot(q.x - C12.cx, q.z - C12.cz); return r > C12.rIn + 0.6 && r < C12.rOut - 0.8; };
       let sgn = S.side >= 0 ? 1 : -1;
       if (S.rP > C12.rIn - 0.5 && S.rP < C12.rOut + 0.5 && !onFloor(at(sgn)) && onFloor(at(-sgn))) sgn = -sgn;
-      await walkTo(page, at(sgn), 0.8, 1.6);
-      note(await page.evaluate(screedNow), { sidestep: true });
+      // (M3 fix wave) and up to 3 m further along its heading, as far as the corridor's floor goes: the charge stops on the
+      // second wall, so the further she stands along its line, the further in front of its seals she is in the stall. At
+      // 2e0a3cd (probe e-stall-p2) she stood 2.8 m ahead of its centre, 5.6 m to a side: the far seal's line passed the near
+      // one by 0.21-0.36 m (a stand 2.8 m further on had 0.89 m), and only one arrow reached it before it walked on
+      const fwd = (q, k) => ({ x: q.x + S.fx * k, z: q.z + S.fz * k });
+      const k = [3, 2.5, 2, 1.5, 1, 0.5, 0].find((kk) => onFloor(fwd(at(sgn), kk)) && (kk === 0 || onFloor(fwd(at(sgn), kk / 2)))) ?? 0;
+      await walkTo(page, fwd(at(sgn), k), 0.8, 2.0);
+      note(await page.evaluate(screedNow), { sidestep: true, fwd: k });
       continue;
     }
     if (!S.sealsLeft.length) { await sleep(200); continue; }
