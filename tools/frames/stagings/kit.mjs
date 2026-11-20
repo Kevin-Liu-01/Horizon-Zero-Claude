@@ -363,12 +363,17 @@ stagings.F42 = {
       const fx = Math.sin(h), fz = Math.cos(h), q = new V3();
       m.root.updateMatrixWorld(true);
       const cands = [];
-      for (const pt of (m.parts || [])) {
-        if (!pt || pt.attached === false || !pt.mesh?.getWorldPosition) continue;
-        pt.mesh.getWorldPosition(q);
+      // the hook-rip's own parts (machine.js addPart); a Sickle carries none, so then its weak points (the hub bearing
+      // between the blades: kitverbs.js resolves a rip on the struck object) and its named meshes (the flask)
+      const src = [];
+      for (const pt of (m.parts || [])) if (pt && pt.attached !== false && pt.mesh?.getWorldPosition) src.push({ name: pt.name, o: pt.mesh, from: 'part' });
+      if (!src.length) for (const w of (m.weakPoints || [])) if (w?.obj) src.push({ name: w.name, o: w.obj, from: 'weak point' });
+      if (!src.length) m.root.traverse((o) => { if (o.isMesh && /flask|blade|hub/i.test(o.name || '')) src.push({ name: o.name, o, from: 'mesh' }); });
+      for (const it of src) {
+        it.o.getWorldPosition(q);
         // on her side of the hull: its offset from the root along her heading is negative (toward her)
         const along = (q.x - m.root.position.x) * fx + (q.z - m.root.position.z) * fz;
-        cands.push({ pt, ox: q.x - m.root.position.x, oz: q.z - m.root.position.z, dy: Math.abs(q.y - tip.y), along, y: q.y });
+        cands.push({ pt: { name: it.name, mesh: it.o }, from: it.from, ox: q.x - m.root.position.x, oz: q.z - m.root.position.z, dy: Math.abs(q.y - tip.y), along, y: q.y });
       }
       const near = cands.filter((c) => c.along < 0.1);
       near.sort((a, b) => a.dy - b.dy);
@@ -383,7 +388,7 @@ stagings.F42 = {
         try { m.seatFeet?.(); } catch { /* */ }
         m.root.updateMatrixWorld(true);
         pick.pt.mesh.getWorldPosition(q);
-        rep.part = pick.pt.name ?? null; rep.parts = cands.length;
+        rep.part = pick.pt.name ?? null; rep.partFrom = pick.from; rep.parts = cands.length; rep.partY = +q.y.toFixed(3);
         rep.tipToPartM = +q.distanceTo(tip).toFixed(3); rep.tipToPartFlatM = +Math.hypot(q.x - tip.x, q.z - tip.z).toFixed(3);
         rep.hullToHerM = +gap.toFixed(2);
         if (gap < 1.15) api.standIn('the Sickle stands ' + gap.toFixed(2) + ' m from her (under 1.15)');

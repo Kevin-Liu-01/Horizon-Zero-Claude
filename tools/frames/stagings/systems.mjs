@@ -25,7 +25,7 @@
  * pressed against the block. Now HER mark is 7 m down the Scar's line from B1 (225 deg from the pad: bible E 7.05,
  * N -286.95, still on the line, on the same 33-degree planed slope), still facing T1 (249); the lens stands 3 m from her
  * on a bearing of 15 (yawRel 234: behind her right shoulder, uphill, 4 m clear of the block, which is behind it), 0.9 m
- * over its own ground, and looks ALONG the Scar (bearing 225) 18 deg down (`camera.look`, turned into the orbit's height
+ * over its own ground, and looks ALONG the Scar (bearing 225) 21 deg down (18 cut her feet at 7827ece) (`camera.look`, turned into the orbit's height
  * and target in `world` from the drawn ground at the lens): her back and right side with the hand and tube at her eye
  * outside her head's outline, the planted fan at her feet, the Scar running down to the sea and the horizon. The Peg that
  * comes up her line is put back ON the line from her new mark through the Windwall (its distance from the pad kept,
@@ -47,7 +47,7 @@ export const frames = [
     at: { en: [7.05, -286.95] }, bearing: 249,
     // (height and target are the recipe's; `world` re-reads them off the drawn ground at the lens, from `look`)
     camera: { mode: 'orbit', yawRel: 234, dist: 3.0, height: 2.56, target: { fwd: 5.19, side: 0.67, up: 0.09 }, fov: 55, lookAt: 'off',
-      look: { bearing: 225, pitch: -18, above: 0.9, k: 8 } },
+      look: { bearing: 225, pitch: -21, above: 0.9, k: 8 } },
     state: { pose: 'idle', hud: false },
     ref: { written: 'the Alidade up in front of her face, the planted Windwall between her and one approaching Instrument, three bearing pips, the 15 s arc; the Scar running to the horizon' },
     note: 'wave 3: the re-survey staged at 10 s of the hold (the arc, the pips, the Pegs coming to look); polish: the Windwall planted on her line to the Peg that comes up the Scar, the Alidade at her right eye (run.json standIns name both); polish 3: she stands 7 m down the Scar from B1, the lens looks along the Scar (225), the Peg on her line from there',
