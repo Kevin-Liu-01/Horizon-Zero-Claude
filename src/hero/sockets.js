@@ -51,6 +51,10 @@ export const SOCKETS = Object.freeze({
    * The keeper is the survey case's lower flap (the roll leaves it down its own axis). The open and the fold run on the
    * hang layer (anim/kite/kiteClips.js) and place the PALM on these sockets; they enter `handling.js`'s tables only once
    * D3 closes (the M3 brief). tools/gates/kite/flight-law.test.mjs checks these against the built mesh.
+   * M3 wave 2b: `rollTake` is the right palm's socket on the FURLED roll while she carries it between its mount at the
+   * small of her back and the bar (kiteClips.js ROLL_TAKE): on the roll's right grip, on its outer surface toward her
+   * right side (0.06 m off its axis: the side away from the stowed kit), so the hand takes it off the mount and carries
+   * it, and the roll is placed from the palm (hangPose.js).
    */
   kiteBar: Object.freeze({
     gripL: Object.freeze({ p: [0.22, 0, 0], axis: [1, 0, 0], r: 0.023, len: 0.12 }),
@@ -59,6 +63,8 @@ export const SOCKETS = Object.freeze({
     furledK: 0.97,
     /** the keeper: the furled roll leaves the case's lower flap down its own axis (its -x end first, her right) */
     keeperAxis: Object.freeze([-1, 0, 0]),
+    /** the right palm on the furled roll as she carries it (wave 2b: kiteClips.js ROLL_TAKE; furled, mesh space) */
+    rollTake: Object.freeze({ p: [-0.19, 0.049, -0.034], r: 0.06 }),
   }),
   /**
    * M3 (brief §3.2, "Props in the hands"): THE HAND NET, the `heldNet` slot. Typed and EMPTY on purpose: committed at

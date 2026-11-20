@@ -20,7 +20,7 @@
  */
 import * as THREE from 'three';
 import { X_AXIS, Y_AXIS, Z_AXIS, clamp } from '../playerCommon.js';
-import { kiteClipPose, createKitePose, READY_L, READY_R, POLE_READY_L, POLE_READY_R } from './kiteClips.js';
+import { kiteClipPose, createKitePose, READY_L, READY_R, POLE_READY_L, POLE_READY_R, AFTER_VIA_R, viaWay, CLIP_S, KITE_BEATS } from './kiteClips.js';
 
 const HANG = {
   /** the bar between the sternum (0) and the chin (1): low in the band, so the bent elbows stay under the shoulders */
@@ -57,12 +57,16 @@ const STATIC = Object.freeze({ state: 'gliding', t: 0, bank: 0, forced: false })
  * and under it (`front`, `under`) and the layer then fades out over `fadeS`. The goal moves from where the fold left it
  * over `goalS` (a smoothstep: the wrist moves at most ~0.03 m a step).
  */
-const AFTER = Object.freeze({ goalS: 0.3, settleS: 0.4, fadeS: 0.5, front: 0.1, under: 0.12 });
+const AFTER = Object.freeze({ goalS: 0.3, viaS: 0.45, settleS: 0.4, fadeS: 0.5, front: 0.1, under: 0.12, lowBehind: 0.31 });
 const _u = new THREE.Vector3();
 /** s: a clip changed mid-way blends from the last clip's pose over this (smoothstep) */
 const XFADE_S = 0.2;
-/** m: the most a wrist's IK goal moves in one step (W1's 0.08, with a margin) */
-const GOAL_STEP = 0.07;
+/** m: the most a wrist's IK goal moves in one step (W1's 0.08, with a margin: handling.js RATE.wristM's 0.075; wave 2b,
+ *  was 0.07: the hand's road to the mount and back is 1.4-1.8 m in the open's 36 steps and the fold's 24) */
+const GOAL_STEP = 0.078;
+const _pl = new THREE.Vector3(), _pr = new THREE.Vector3(), _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3();
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _dq = new THREE.Quaternion(), _qPlan = new THREE.Quaternion();
+const _ua = new THREE.Vector3(), _va = new THREE.Vector3(), _pPlan = new THREE.Vector3(), _ml = new THREE.Vector3();
 const sst = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
 
 export class HangPose {
@@ -81,6 +85,8 @@ export class HangPose {
       const A = this._kiteAfter || (this._kiteAfter = { t: 0, groundT: -1, l: new THREE.Vector3(), r: new THREE.Vector3(), lw: 0, rw: 0 });
       A.t = 0; A.groundT = -1;
       A.l.copy(this._kitePose.l.goal); A.r.copy(this._kitePose.r.goal); A.lw = this._kitePose.l.w; A.rw = this._kitePose.r.w;
+      // (wave 2b: the fold ends with her right hand at the mount, at the small of her back: it comes round her right hip)
+      A.viaR = A.r.z < -0.05;
     } else if (state !== 'none') this._kiteAfter = null;
     F.state = state; F.t = t; F.bank = bank; F.forced = forced;
     // (the next open starts fresh: no cross-fade from a clip that ended before this one)
@@ -115,8 +121,10 @@ export class HangPose {
     const fade = A.groundT < 0 ? 1 : 1 - sst(g0, g0 + AFTER.fadeS, A.t);
     A.w = fade;
     this._charOf(b.head.bone, _hd);
-    const u = sst(0, AFTER.goalS, A.t), own = A.groundT < 0 ? 0 : sst(A.groundT, g0, A.t);
+    const own = A.groundT < 0 ? 0 : sst(A.groundT, g0, A.t);
     for (const s of ['l', 'r']) {
+      // (the right hand's way round her hip from the mount is ~0.9 m: over AFTER.viaS, W1's wrist bar)
+      const u = sst(0, s === 'r' && A.viaR ? AFTER.viaS : AFTER.goalS, A.t);
       // the hand's place: low in front of her belly (in the air), then her own pose's wrist brought in front of her
       // head and under it (on the ground)
       _g.copy(s === 'l' ? READY_L : READY_R);
@@ -125,9 +133,14 @@ export class HangPose {
         _u.z = Math.max(_u.z, _hd.z + AFTER.front); _u.y = Math.min(_u.y, _hd.y - AFTER.under);
         _g.lerp(_u, own);
       }
-      _g.lerp(s === 'l' ? A.l : A.r, 1 - u);
-      // (and always in front of her head and under it: a hard landing's crouch brings her head over her hands)
-      _g.z = Math.max(_g.z, _hd.z + AFTER.front); _g.y = Math.min(_g.y, _hd.y - AFTER.under);
+      if (s === 'r' && A.viaR) { _u.copy(_g); viaWay(A.r, AFTER_VIA_R, _u, u, _g); }
+      else _g.lerp(s === 'l' ? A.l : A.r, 1 - u);
+      // (and always under her head: in front of it, `under`; not in front of it, `lowBehind` (0.31 m: Kevin's bar as the
+      //  clip bench reads it, no wrist behind a head plane within 0.30 m of its height). A hard landing's crouch brings
+      //  her head over her hands. Wave 2b: a hand coming round from the small of her back is held low, never pulled
+      //  through her body to the front: a z clamp there threw the wrist 0.56 m in one step as her head came down)
+      if (_g.z < _hd.z + AFTER.front) _g.y = Math.min(_g.y, _hd.y - AFTER.lowBehind);
+      else _g.y = Math.min(_g.y, _hd.y - AFTER.under);
       // (a hand the fold had already let go keeps its fold weight until the goal has arrived)
       const hw = fade * (A[s + 'w'] + (1 - A[s + 'w']) * u) * w;
       if (hw > 1e-4) this._ikArm(s, _g, s === 'l' ? POLE_READY_L : POLE_READY_R, hw, null);
@@ -142,13 +155,39 @@ export class HangPose {
     const b = this.b;
     if (!b.upArmL || !b.upArmR || !b.spine5 || !b.head) return;
     if (this._kiteAfter && !this._hangStatic && !(this._kiteFl && this._kiteFl.state !== 'none')) { this._kiteAfterLayer(w); return; }
-    const F = this._kiteFl && this._kiteFl.state !== 'none' ? this._kiteFl : STATIC;
+    const F0 = this._kiteFl && this._kiteFl.state !== 'none' ? this._kiteFl : STATIC;
+    // (wave 2b: the forced reef (R5) taken before both hands have set the roll finishes the set first: the open plays on
+    //  from where it was to both hands on the bar, then the reef cross-fades from there; at 9d1acc3 the cross-fade from a
+    //  roll half round her hip put a palm 0.056-0.064 m off the bar)
+    const EF = this._kiteEff || (this._kiteEff = { state: 'none', t: 0, bank: 0, forced: false, fin: null, openT: 0, back: { p: new THREE.Vector3(), q: new THREE.Quaternion() }, furl0: 1 });
+    // (wave 2b: spine_02's live place: the mount and the road's first keys ride her back, kiteClips.js BACK_REF)
+    if (b.spine2) { this._charOf(b.spine2.bone, EF.back.p); this._liveW(b.spine2.bone, EF.back.q); } else EF.back = null;
+    EF.bank = F0.bank; EF.forced = F0.forced; EF.state = F0.state; EF.t = F0.t;
+    if (F0.state === 'opening') { EF.fin = null; EF.openT = F0.t; }
+    else if (F0.state === 'folding' && F0.forced) {
+      // (to the open's end: from there the reef is the glide's, with no cross-fade; a cross-fade from the set, the kite
+      //  pitched over her hands, stood the half-furled cells up through her face's column)
+      const setT = CLIP_S.open;
+      if (!EF.fin && this._kiteLast === 'opening' && EF.openT < setT) EF.fin = { t0: EF.openT, dur: setT - EF.openT };
+      if (EF.fin) { if (F0.t < EF.fin.dur) { EF.state = 'opening'; EF.t = EF.fin.t0 + F0.t; } else EF.t = F0.t - EF.fin.dur; }
+    } else EF.fin = null;
+    const F = EF;
     const P = this._kitePose || (this._kitePose = createKitePose());
     // (P still holds the last step's pose here: on a change of clip mid-way it is the cross-fade's start, the body's
     //  weight included)
-    if (F.state !== this._kiteLast && this._kiteLast && this._kiteLast !== 'none') {
+    // (wave 2b: the fold and the landing start from the glide's own pose and the glide from the open's last, so they take
+    //  no cross-fade: at 9d1acc3 the glide's open kite, cross-faded into the fold over 0.2 s, held the half-furled cells
+    //  up in front of her face at 0.30 of the fold. A landing from the reef starts from the reef's furl, `furl0`)
+    const seamless = (this._kiteLast === 'gliding' && (F.state === 'landing' || F.state === 'folding'))
+      || (this._kiteLast === 'opening' && (F.state === 'gliding' || (F.state === 'folding' && F.forced)))
+      || (this._kiteLast === 'folding' && F.state === 'landing');
+    // (a landing from the reef starts from the reef's furl and its bar, a hand lower)
+    if (F.state !== this._kiteLast) { const r = F.state === 'landing' && this._kiteLast === 'folding'; EF.furl0 = r ? P.furl : 1; EF.drop0 = r ? 0.05 : 0; }
+    F.furl0 = EF.furl0; F.drop0 = EF.drop0 || 0; if (F.drop0 > 0) F.bank = 0;
+    if (F.state !== this._kiteLast && this._kiteLast && this._kiteLast !== 'none' && !seamless) {
       const X = this._kiteX || (this._kiteX = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), furl: 0, l: new THREE.Vector3(), r: new THREE.Vector3(), lw: 0, rw: 0, body: 0, t0: 0, on: false });
       X.pos.copy(P.pos); X.quat.copy(P.quat); X.furl = P.furl; X.l.copy(P.l.goal); X.r.copy(P.r.goal); X.lw = P.l.w; X.rw = P.r.w; X.body = P.body; X.t0 = F.t; X.on = true;
+      X.lh = !!P.l.hold; X.rh = !!P.r.hold;
     } else if (F.state !== this._kiteLast && this._kiteX) this._kiteX.on = false;
     const xk = this._kiteX && this._kiteX.on ? sst(0, XFADE_S, F.t - this._kiteX.t0) : 1;
     // the clip's timing first (the body weight), with the bar of the last frame; the bar is solved below on the final
@@ -203,6 +242,7 @@ export class HangPose {
     // clip left the kite and her hands, not from the new clip's own first pose: XFADE_S of smoothstep (fix round 1:
     // the reef taken at 0.57 of the open moved her right wrist 0.35 m in one step)
     this._kiteLast = F.state;
+    if (F.back && b.spine2) { this._charOf(b.spine2.bone, F.back.p); this._liveW(b.spine2.bone, F.back.q); }
     kiteClipPose(F.state, F.t, F, _bar, P);
     if (this._kiteX && this._kiteX.on) {
       const X = this._kiteX, k = sst(0, XFADE_S, F.t - X.t0);
@@ -211,6 +251,9 @@ export class HangPose {
         P.pos.lerpVectors(X.pos, P.pos, k); P.quat.slerpQuaternions(X.quat, P.quat, k); P.furl = X.furl + (P.furl - X.furl) * k;
         P.l.goal.lerpVectors(X.l, P.l.goal, k); P.r.goal.lerpVectors(X.r, P.r.goal, k);
         P.l.w = X.lw + (P.l.w - X.lw) * k; P.r.w = X.rw + (P.r.w - X.rw) * k; P.body = X.body + (P.body - X.body) * k;
+        // (wave 2b: a hand that holds in both clips stays on its socket of the blended kite, not on a blend of the two
+        //  sockets: the bar's turn is slerped, the hands' goals were lerped, and the palm left the bar)
+        for (const s of ['l', 'r']) if (P[s].hold && X[s + 'h']) P[s].goal.copy(P[s].loc).applyQuaternion(P.quat).add(P.pos);
       }
     }
     // the clips place her PALM (0.7 of wrist to middle knuckle, as the handling rows read a palm) on the goal, not her
@@ -223,7 +266,7 @@ export class HangPose {
     //  the body itself moves under the bar, as at the touchdown's crouch)
     const GL = this._kiteGoal || (this._kiteGoal = { l: new THREE.Vector3(), r: new THREE.Vector3(), ok: false });
     const fresh = !GL.ok || (F.state === 'opening' && F.t <= 1e-6);
-    for (const s of ['l', 'r']) {
+    for (const s of ['r', 'l']) {
       const H = P[s], hw = H.w * w;
       _g.copy(H.goal).sub(PO[s]);
       if (!fresh) _g.sub(GL[s]).clampLength(0, GOAL_STEP).add(GL[s]);
@@ -232,9 +275,31 @@ export class HangPose {
     }
     GL.ok = true;
     this._kitePalmRead(PO);
+    // WAVE 2b: THE KITE IS WHERE HER HANDS ARE. From the take to the seat the roll (and the bar) is placed from her solved
+    // palms, never on its own road: from the right palm alone (its socket on the roll, the plan's turn) while she carries
+    // it, from both palms (the bar's axis through both sockets, the plan's turn about it) once both hold it. `carry` and
+    // `two` are the clip's weights (kiteClips.js); the plan's own place is kept for the bench (`plan`).
+    _pPlan.copy(P.pos); _qPlan.copy(P.quat);
+    if (P.carry > 1e-4 && w > 1e-4) {
+      this._charOf(b.handR.bone, _pr).add(PO.r); this._charOf(b.handL.bone, _pl).add(PO.l);
+      // one hand: the right palm on its socket
+      _q1.copy(P.quat); _c1.copy(P.r.loc).applyQuaternion(_q1); _c1.subVectors(_pr, _c1);
+      if (P.two > 1e-4) {
+        // both: the plan's socket-to-socket line turned onto the palms' line, its middle on theirs
+        _ua.subVectors(P.l.loc, P.r.loc).applyQuaternion(P.quat).normalize();
+        _va.subVectors(_pl, _pr);
+        if (_va.lengthSq() > 1e-6) _dq.setFromUnitVectors(_ua, _va.normalize()); else _dq.identity();
+        _q2.copy(_dq).multiply(P.quat);
+        _ml.addVectors(P.l.loc, P.r.loc).multiplyScalar(0.5).applyQuaternion(_q2);
+        _c2.addVectors(_pl, _pr).multiplyScalar(0.5).sub(_ml);
+        _c1.lerp(_c2, P.two); _q1.slerp(_q2, P.two);
+      }
+      const k = Math.min(1, P.carry * w);
+      P.pos.lerp(_c1, k); P.quat.slerp(_q1, k);
+    }
     this._curlFingers(this._fingerL, 1.05 * P.l.curl * P.l.w * w, 0.7 * P.l.curl * P.l.w * w);
     this._curlFingers(this._fingerR, 1.05 * P.r.curl * P.r.w * w, 0.7 * P.r.curl * P.r.w * w);
-    const I = this._hangInfo || (this._hangInfo = { bar: [0, 0, 0], sternY: 0, chinY: 0, hangBar: [0, 0, 0], kite: { pos: [0, 0, 0], quat: [0, 0, 0, 1], furl: 1, clip: 'glide', phase: 0 } });
+    const I = this._hangInfo || (this._hangInfo = { bar: [0, 0, 0], sternY: 0, chinY: 0, hangBar: [0, 0, 0], kite: { pos: [0, 0, 0], quat: [0, 0, 0, 1], furl: 1, clip: 'glide', phase: 0, plan: [0, 0, 0], carry: 0, two: 0, hold: { l: null, r: null }, loc: { l: [0, 0, 0], r: [0, 0, 0] }, back: { l: false, r: false } } });
     // `bar` is where the kite's origin is (its bar's centre); `hangBar` the hang's own solve (they agree in a glide)
     I.bar[0] = +P.pos.x.toFixed(4); I.bar[1] = +P.pos.y.toFixed(4); I.bar[2] = +P.pos.z.toFixed(4);
     I.hangBar[0] = +_bar.x.toFixed(4); I.hangBar[1] = +_bar.y.toFixed(4); I.hangBar[2] = +_bar.z.toFixed(4);
@@ -243,5 +308,7 @@ export class HangPose {
     K.pos[0] = P.pos.x; K.pos[1] = P.pos.y; K.pos[2] = P.pos.z;
     K.quat[0] = P.quat.x; K.quat[1] = P.quat.y; K.quat[2] = P.quat.z; K.quat[3] = P.quat.w;
     K.furl = P.furl; K.clip = P.clip; K.phase = P.phase;
+    K.plan[0] = _pPlan.x; K.plan[1] = _pPlan.y; K.plan[2] = _pPlan.z; K.carry = P.carry; K.two = P.two;
+    K.hold.l = P.l.hold; K.hold.r = P.r.hold; P.l.loc.toArray(K.loc.l); P.r.loc.toArray(K.loc.r); K.back.l = P.l.back; K.back.r = P.r.back;
   }
 }

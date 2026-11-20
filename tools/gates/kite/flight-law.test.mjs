@@ -36,6 +36,10 @@ test('seam: the kiteBar slot (src/hero/sockets.js) sits on the Survey Kite\'s gr
   assert.ok(K, 'no kiteBar slot');
   near(K.gripL.p[0], KITE_RECIPE.grip, 1e-9, 'left grip'); near(K.gripR.p[0], -KITE_RECIPE.grip, 1e-9, 'right grip');
   near(K.gripL.r, KITE_RECIPE.barR * 1.35, 0.0005, 'grip radius'); near(K.gripL.len, KITE_RECIPE.gripLen, 1e-9, 'grip length');
+  // (wave 2b) the carry socket on the furled roll is the clips' own, on the roll's surface
+  const { ROLL_TAKE } = await import('../../../src/entities/anim/kite/kiteClips.js');
+  for (let i = 0; i < 3; i++) near(K.rollTake.p[i], ROLL_TAKE.getComponent(i), 1e-9, `rollTake ${i}`);
+  near(Math.hypot(K.rollTake.p[1], K.rollTake.p[2]), KITE_RECIPE.rollR, 0.001, 'rollTake on the roll\'s surface');
 });
 
 test('seam: the five flight states, in the brief\'s order', () => {

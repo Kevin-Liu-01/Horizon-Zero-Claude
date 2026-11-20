@@ -31,19 +31,24 @@ const commit = (() => { try { return execFileSync('git', ['-C', REPO, 'rev-parse
 const dirty = (() => { try { return execFileSync('git', ['-C', REPO, 'status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0; } catch { return true; } })();
 const BUDGET_S = 600;
 
-/** The lenses, at T1 (the test flight's launch), golden; her heading 283 (toward the Ring). */
+/** The lenses, at T1 (the test flight's launch), golden; her heading 283 (toward the Ring). yawRel 0 is in front of her,
+ *  +90 her left side, -90 her right. (wave 2b: two close lenses on her right, where her right hand takes the roll off the
+ *  mount and carries it round her hip: one in front, one behind) */
 const BASE = { hour: 17.75, weather: 'trade', at: 'trig:T1', bearing: 283, state: { pose: 'idle', hud: false } };
 const LENSES = [
   { id: 'front3q', ...BASE, camera: { mode: 'orbit', yawRel: 35, dist: 3.4, height: 1.6, target: { fwd: 0, side: 0, up: 1.55 }, fov: 50, lookAt: 'off' } },
+  { id: 'right3q', ...BASE, camera: { mode: 'orbit', yawRel: -50, dist: 2.3, height: 1.45, target: { fwd: 0, side: 0, up: 1.2 }, fov: 50, lookAt: 'off' } },
+  { id: 'rear-r', ...BASE, camera: { mode: 'orbit', yawRel: -140, dist: 2.2, height: 1.45, target: { fwd: 0, side: 0, up: 1.15 }, fov: 50, lookAt: 'off' } },
   { id: 'side', ...BASE, camera: { mode: 'orbit', yawRel: 95, dist: 3.6, height: 1.7, target: { fwd: 0.2, side: 0, up: 1.6 }, fov: 50, lookAt: 'off' } },
-  // (fix round 1: the whole kite in the lens, its top longeron 2.7 m over the bar: the two close lenses cut it at the top)
-  { id: 'whole', ...BASE, camera: { mode: 'orbit', yawRel: 60, dist: 6.5, height: 2.4, target: { fwd: 0, side: 0, up: 2.5 }, fov: 58, lookAt: 'off' } },
 ];
-/** The poses: [name, state, seconds in it, bank] */
+/** The poses: [name, state, seconds in it, bank]: the take-down and the open (0.6 s), the glide, the fold (0.39 s) and
+ *  the stow (the fold's last steps: the roll seated on the mount, the hand letting go) */
 const POSES = [
-  ['open-012', 'opening', 0.06, 0], ['open-030', 'opening', 0.15, 0], ['open-044', 'opening', 0.22, 0], ['open-055', 'opening', 0.275, 0],
-  ['open-075', 'opening', 0.375, 0], ['glide', 'gliding', 0, 0], ['glide-bank-left', 'gliding', 0, -1],
-  ['fold-030', 'folding', 0.105, 0], ['fold-050', 'folding', 0.175, 0], ['fold-070', 'folding', 0.245, 0], ['fold-090', 'folding', 0.315, 0],
+  ['open-010', 'opening', 0.06, 0], ['open-025', 'opening', 0.15, 0], ['open-take-033', 'opening', 0.2, 0], ['open-045', 'opening', 0.27, 0],
+  ['open-055', 'opening', 0.33, 0], ['open-068', 'opening', 0.41, 0], ['open-set-082', 'opening', 0.49, 0], ['open-090', 'opening', 0.54, 0],
+  ['glide', 'gliding', 0, 0], ['glide-bank-left', 'gliding', 0, -1],
+  ['fold-015', 'folding', 0.06, 0], ['fold-030', 'folding', 0.117, 0], ['fold-045', 'folding', 0.175, 0], ['fold-060', 'folding', 0.234, 0],
+  ['fold-075', 'folding', 0.292, 0], ['stow-090', 'folding', 0.351, 0], ['stow-097', 'folding', 0.378, 0],
 ];
 
 /** Page code: hold her 3 m over T1's top, the kite on her, the update her own lens, model, animator and rig only. */

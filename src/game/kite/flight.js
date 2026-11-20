@@ -38,14 +38,16 @@ export const KITE = Object.freeze({
   /** lift stops this far above the launch height (m) and fades over the last `liftFadeM` */
   liftCapM: 25,
   liftFadeM: 2,
-  /** s from the request to her weight on the sling (KF4: 400-600 ms*) */
-  openS: 0.5,
-  /** s from the fold's request to hands free (KF4: <= 400 ms*) */
-  foldS: 0.35,
+  /** s from the request to her weight on the sling (KF4: 400-600 ms*; wave 2b 0.5 -> 0.6: her right hand takes the roll
+   *  off its mount at the small of her back and carries it round her hip, 1.8 m of road at W1's wrist bar) */
+  openS: 0.6,
+  /** s from the fold's request to hands free (KF4: <= 400 ms*; wave 2b 0.35 -> 0.39: the roll carried back to the mount; stepped at 60 Hz the state turns at the 24th step, 0.400 s) */
+  foldS: 0.39,
   /** m over the ground at which a glide becomes a landing (the flare) */
   landAglM: 1.2,
-  /** s the landing takes once the feet are down (planted inside 2 steps at 7.5 m/s is under 0.6 s) */
-  landS: 0.4,
+  /** s the landing takes once the feet are down (planted inside 2 steps at 7.5 m/s is under 0.6 s; wave 2b 0.4 -> 0.55: the
+   *  roll held through the crouch and carried back to its mount once she rises) */
+  landS: 0.55,
   /** m/s vertical at or under which a landing is free */
   safeLandVs: 3,
   /** m/s of sink the flare holds in the last `landAglM` (under safeLandVs) */
