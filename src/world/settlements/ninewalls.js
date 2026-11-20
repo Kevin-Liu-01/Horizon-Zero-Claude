@@ -123,12 +123,18 @@ export class Ninewalls {
     // in one frame at 865e8c6, run hh-c5-865e8c6) and registered their colliders again, which marked every walk grid dirty:
     // Ninewalls' (35-45 ms) was then built again by the first route the Holds people asked for, on the walk into the Holds
     if (this._dirty && this._wallsSig() === this._builtSig) { this._dirty = false; this.stats.unchanged = (this.stats.unchanged || 0) + 1; }
+    // C5: a real change rebuilds the walls this frame and gives their colliders and occluders the next (at 71644c5 the
+    // three in one frame held it 40 ms, first-hour leg 2's seal stages, run hh-c5-71644c5-prof)
+    if (this._afterWalls) {
+      this._afterWalls = false;
+      this._registerColliders();
+      if (this._near) this._registerOccluders();
+    }
     if (this._dirty) {
       this._dirty = false;
       this.stats.rebuilds++;
       this._buildWalls();
-      this._registerColliders();
-      if (this._near) this._registerOccluders();
+      this._afterWalls = true;
     }
   }
 
