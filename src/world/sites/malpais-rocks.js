@@ -384,8 +384,9 @@ export function tubeGeometry(ground) {
   const P = (sv, l, y) => { const q = tubeEN(sv, l); return [q.e * S, y, -q.n * S]; };
   const N = Math.round(T.len / ds);
   const lump = [R() * 6, R() * 6, R() * 6, R() * 6, R() * 6, R() * 6];
-  // the crust's lumps: the recipe's noise at the point (blobs of 2-4 m and a little of 1 m), smooth, no folds
-  const crust = (sv, th, l, y) => { const q = tubeEN(sv, l); return 1 + 0.16 * (fbm(q.e * 0.31 + y * 0.23 + lump[2], q.n * 0.31 - y * 0.17, 3) - 0.5) + 0.05 * (fbm(q.e * 1.1 + 7.1, q.n * 1.1 + y * 0.9, 2) - 0.5); };
+  // the crust's lumps: the recipe's noise at the point (blobs of 2-4 m, up to 11 % of the radius, and a little of 1 m),
+  // smooth, no folds (a1359f9 at 0.16: still a regular half-cylinder from F58)
+  const crust = (sv, th, l, y) => { const q = tubeEN(sv, l); return 1 + 0.22 * (fbm(q.e * 0.27 + y * 0.21 + lump[2], q.n * 0.27 - y * 0.15, 3) - 0.5) + 0.05 * (fbm(q.e * 1.1 + 7.1, q.n * 1.1 + y * 0.9, 2) - 0.5); };
   // the lip: how far the roof runs out past the mouth at an arch angle (0 at the feet, LIP over the crown, ragged)
   const lipAt = (th) => TUBE_LIP * Math.pow(Math.sin(th), 1.6) * (0.75 + 0.25 * Math.sin(th * 3.7 + lump[5]));
   const sway = (sv) => 0.6 * Math.sin(sv * 0.23 + lump[0]);
