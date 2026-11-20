@@ -2439,3 +2439,151 @@ accepted frames are the same, and the lanes' numbers reproduce.
 3. F44's lens cannot stand on her right, so the frame does not look along the Scar's line. F42 does not show the hook-rip.
 4. F39-people frames the people at the cost of the fight. It is a cost frame now, not a look frame.
 5. The audio has a model's loudness only. A capture of real play and a listen are still owed.
+
+## Polish run 3: the first-load cap, the M2 frames (Nov 20 2026)
+
+Two polish lanes worked in the one tree on `r5/int` beside the M2 fix wave 2: audio + size (the first-load cap) and
+frames + Oro. Two skeptics then tried to refute the size fix; one refuted it, and the size lane fixed what they found.
+No commit was pushed. Every number below was taken at the named commit from a clean detached worktree.
+
+**Why.** The polish-2 check at 2944784 found Tier 0's shipped ledger over the first-load cap (60.94 MB of 60), after
+the M2 audio added 1.50 MB. The ledger counted every file as first load. The rule for this run: do not raise the cap and
+do not just drop files from the count; make the game defer what it can, make the ledger count what really loads first,
+and prove it with a row in the built game.
+
+### The first-load cap
+
+- **The first hour's sound loads after control (c997201, 8940788).**
+  - Each audio manifest row has a load phase (`load: 'late'` in `src/audio/m2/cues.js`). Every first-hour row is late
+    except the Kit Rack's three UI clicks, which she can need the moment she has control.
+  - `src/audio/manifest.js` exports `DEFERRED_FILES` from that same field. `SampleBank.load()` fetches the boot rows
+    only; `loadLate()` fetches the rest once play has started, ranking the place she is in and its beds first.
+    `bank.lateAudit()` logs every ask for a late set against its decode.
+  - At c997201 the late bank waited 0.3 s of the clamped frame clock and started 0.86-1.03 s after control. At 8940788
+    it waits 3 frames of play.
+  - The shipped ledger (`tools/tier0/budgets.mjs`) reads the deferred set through `budgets.json` `shipped.deferred`
+    from the game's own module. It keeps no file list of its own, and a deferred file missing from disk fails it.
+  - New row **`P-boot-transfer`** (`tools/perf/boot-transfer.mjs`): the built game with the cache off, from page load
+    to control, for New Game and for Continues at Holds saves. It lists every file fetched before control and every
+    shipped file that was not.
+- **Two skeptics.** One found the fix honest (one deferred list shared by the game and the ledger; nothing else fetches
+  audio; no audio file changed). The other **refuted** it: a Continue at `seal-1` or `seal-2` re-spawns the Screed
+  beside her and it charges on its first step, before any late row can load, so the charge's tell was silent. No row
+  covered those saves.
+- **The fixes (c0dbe85, 20679b6, a26ac81, 04ca02f, f0e9c14, 0fac189).**
+  - **Every tell loads before control** (c0dbe85). The Screed's charge and the trample's wind-up are boot rows
+    (+28.9 KB). `late-bank.test.mjs` holds every `tell` row and every wind-up in the attack table to the boot set.
+    The late bank fetches a machine kind within 160 m of her first.
+  - **The boot row clicks as a player does** (mouse clicks, not DOM clicks) and adds a Continue at `seal-1`.
+  - **One unit for one cap** (20679b6). The ledger graded 60 MiB and the boot row 60e6 bytes. Both now grade decimal
+    MB, the stricter reading. In that unit the ledger at c0dbe85 read 62.38 MB, over the cap.
+  - **The ledger counts what a New Game really fetches first.** The Holds people that the game spawns by distance
+    (`HOLDS_CAST` less the archetypes staged at boot: oro, pit-farmer-2, pit-farmer-3, tiller-follower-2,
+    cochineal-picker-2; 6.49 MB) are read from the game's own lists as a second kind of deferral (`region`). The boot
+    row proves New Game fetches none of them before control. To let Node read those lists, the three id lists moved to
+    `src/world/npc/people/ids.js`, and `index.js` re-exports them under the same names. This is the smallest change in
+    the people lane's path; no value changed.
+  - **The total cap is back at M1** (110 MB). c997201 had moved `budgets.json` `exit` to M2 (165 MB); that switch is
+    for the M2 exit.
+  - **The charge was still silent at a26ac81, for two more reasons** (04ca02f, f0e9c14):
+    - The first hour's sound director only bound its listeners once the whole boot bank had decoded.
+    - The boot bank only started at the first click, because the title's key handler consumes its keys in the capture
+      phase. `GameAudio` now arms on pointerdown and keydown in the capture phase, so the boot bank loads from the
+      title's first key, tells first, and the director binds at once.
+    - With the boot bank in before control, the 3-frame count fell 7-14 ms before the row's control frame, and New
+      Game asked for four late beds before it. The count is now of animation frames from the game-start event.
+  - The boot row's fourth page in one browser stuck on the title for 180 s (at 20679b6 and 04ca02f). Each case now has
+    its own browser; the cause was not found.
+  - `A-audio-slice-live` had been failing since about c997201 (it read 220 of 224 rows the moment the boot bank was
+    in). It now waits for the late bank (0fac189).
+
+**Acceptance.**
+- **Shipped ledger: PASS, 55.88 MB first load against 60** (decimal MB; the boot set plus the built code). The total is
+  63.91 MB against the M1 cap of 110 MB. The margin is 4.12 MB.
+- **`P-boot-transfer` at f0e9c14: PASS** (run `20261120T063517Z-f0e9c14-boot-transfer`):
+
+  | case | fetched before control | files | deferred before control | frames over 33 ms after control |
+  |---|---|---|---|---|
+  | New Game | 49.82 MB | 265 | 0 | 0 (worst 10.3 ms) |
+  | Continue at `stall` | 51.50 MB | 270 | 0 from the late bank | 1 (50.9 ms) |
+  | Continue at `plumb-2` | 51.34 MB | 267 | 0 from the late bank | 0 (worst 17.7 ms) |
+  | Continue at `seal-1` | 51.50 MB | 270 | 0 from the late bank | 1 (41.7 ms) |
+
+  - New Game: 0 sets asked for before they decoded. The late bank was done 0.31 s after control; its lead over the
+    earliest she can sprint to each place is 15.8 s (the Holds) to 42.3 s (the Malpais edge).
+  - `seal-1`: the Screed's charge is heard. No tell and no one-shot was missed in any case.
+  - A Continue inside the Holds still asks for the Holds' and Ninewalls' beds and the forge fire 0.02-0.32 s before
+    they land. These are fade-in loops; they are reported, not graded.
+  - The two Continue frames over 33 ms are not attributed.
+- **Sound rows at 0fac189: 7 of 7 pass** (run `20261120T070246Z-0fac189-audio-live-final`). `A-audio-hour-live`
+  (late bank 58 of 58, 1.458 MB, 0 missed), `A-audio-slice-live`, `A-audio-gust-live`, `A-audio-walk-graph`, and the
+  kept rows A58b, A73d and A76.
+- **Tier 0 10/10** (8940788, and by the lane's report at f0e9c14 or earlier). **Slice 14/14** at 8940788 and f0e9c14.
+  Between f0e9c14 and 0fac189 only `tools/gates/audio/live-rows.mjs` changed; Tier 0 and the boot row were not re-run
+  at 0fac189.
+- **Shrinking the audio: measured, not shipped.** The stereo ambience beds at 64 kb/s instead of 96 would save 0.70 MB
+  in all, 0.37 MB of it from the first load. Against the source by 1/3-octave bands, the long-term worst band moves
+  from 0.69 to 1.16 dB, and the frame p95 from 0.66-1.22 to 1.02-1.87 dB. Not recommended for the music. Run
+  `20261120T0320Z-c997201-audio-shrink`.
+
+### The frames and Oro (59c0775, 7827ece, 8572260, ae301bb)
+
+F44, F42 and F39-look were filmed at 8572260 in two takes; F37, F02, F03 and F25 at 7827ece. 0 console errors. The
+comparison is with the polish-2 check film at 2944784.
+
+- **F44: PASS, closer** (80.4 % of pixels changed; the two takes differ in 0.4 %).
+  - She stands 6.9 m down the Scar's line from the benchmark, at (7.2, 287.0), still facing 249. The lens is 0.9 m
+    over its ground behind her right shoulder, clear of the benchmark block, looking along 225, 21 deg down.
+  - The Alidade is at her face (tube 0.015 m from her eye, weight 1.0).
+  - The planted Windwall reads: 16,064 px at luminance 52.6 against 114.1 behind.
+  - The Peg is on her line: 0.1 m off it, 19.0 m out, 1,399 px.
+  - Her feet are in frame (her box to y 857 of 900; at 18 deg down they were cut off). The Scar runs to the sea.
+  - Seen from behind her, the Alidade at her eye is hidden by her head and the bow.
+- **F42: PASS with a caveat, closer** (69.5 % changed).
+  - The hook-rip is held mid-pull: phase P, k 0.496, t 0.399 of 0.40.
+  - The Sickle has no tearable parts, so the staging hooks its hub bearing (its weak point between the blades). The
+    tip is 0.03 m off the hub horizontally but 0.16-0.23 m above it, so it reads at the hub's nose, not in it.
+  - The hull stands 2.07 m from her.
+  - The pull does not read as made by her body: she stands upright with the haft low.
+  - The two takes differ in 52-55 % of pixels (the Sickle's legs stand differently, and the grass): the staging does
+    not freeze the same picture twice.
+- **F39-look (new): FAIL on the fight.**
+  - All five people are in the lens at 36-92 px tall, which is readable.
+  - The Screed is 19 px on the skyline and one Sickle 9 px. Brea is not drawn because wall-1 hides her. The first
+    lens (7827ece) was worse: people 14-44 px, the Screed 35 px in the corner, Brea 6 px.
+  - A sightline search over the walls' and houses' colliders found no lens that shows both well. The game shelters the
+    people 73-86 m from the fight, and the fight is outside wall-1, 30-35 m above them.
+  - From this lens, 16 m over the south-west doors, the near house and the well show their bases as hanging wedges
+    where the slope falls away, and read as floating.
+  - F39-people stays the cost frame for IN11.
+- **Oro's shin (F37): PASS, closer** (10.7 % changed, 6.9 % outside her).
+  - The pale piece was the knee patch on his left leg (screen right, so the reviews' "right"). It was #6E675C, twice
+    the trousers' value; it is now #2C2926.
+  - In F37 the knee band's luminance went from 67.5 to 41.0, the shin below it 38.5, his other shin 24.8 (in the
+    apron's shadow). `oro-sheet.test` and `holds-cast.test` pass 5/5.
+  - `public/models/npc/oro.glb` takes only the rebuilt outfit base image (1,429,068 -> 1,428,716 bytes). A full
+    rebuild here re-encodes his other five images from WebP to KTX2 (1.43 -> 2.59 MB) and rebuilds the other Holds
+    GLBs; this commit does not take that.
+- **F02, F03 (accepted) and F25: the same.**
+  - F02: 9.6 % changed (5.3 % outside the sky mask and her); against the anchor 23.8 % (polish 2: 22.7 %).
+  - F03: 12.2 % (6.5 % outside her); against the anchor 39.5 % (40.7 %). F25: 0.6 % (0.03 % outside her).
+  - Only her idle and her cloth differ (wall clock).
+- **Kept rows at 8572260:** A1-boot-clean and A20b-no-system-errors pass. No kept row covers the stagings.
+
+---
+
+**Open after this run:**
+1. **F39-look:** no lens shows both the sheltering people and the fight. It needs the people staged nearer the fight
+   or a ruling that the frame is two frames. Its lens shows the near houses' and the well's bases floating over the
+   slope.
+2. **F42:** the hook sits on the hub's nose, not in a part (the Sickle has no tearable parts); the pull is not made
+   by her body; two takes differ in more than half their pixels.
+3. **F44:** the Alidade at her eye is hidden from the lens behind her.
+4. **A Continue inside the Holds** asks for its beds and the forge fire 0.02-0.32 s before they land (loops, not
+   graded). Its first frames after control hold one frame over 33 ms (50.9 ms at `stall`, 41.7 ms at `seal-1`),
+   not attributed.
+5. **The ledger's margin is 4.12 MB.** A full rebuild of Oro's model would add about 1.16 MB (WebP -> KTX2). The
+   64 kb/s beds (0.37 MB of first load) are measured and held back.
+6. Tier 0 and the boot row were not re-run at the final commit 0fac189 (only a live-row tool changed after f0e9c14).
+7. The boot row's stuck fourth page (one browser, four cases) is worked around, not explained.
+8. Still open from polish 2: no kept row covers the Sickle's hulls and sockets.
