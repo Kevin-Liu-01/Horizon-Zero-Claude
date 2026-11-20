@@ -58,3 +58,21 @@ test('the flight law\'s own grounded rule agrees with the seam on every state (r
   assert.deepEqual([...FLIGHT_GROUNDING], [...GROUNDING_WEATHER]);
   for (const s of [...STATES, 'clear', 'rain', 'storm']) assert.equal(flightFlyableIn(s === 'rain' || s === 'storm' ? 'squall' : s === 'clear' ? 'trade' : s), flyableIn(s), s);
 });
+
+test('(fix round 1) the flight law asks the seam through every fade in and out, and canOpen refuses on the same frames', async () => {
+  const { canOpen } = await import('../game/kite/flight.js');
+  let n = 0, refusedFade = 0;
+  for (const [from, to] of [['trade', 'calima'], ['trade', 'squall'], ['calima', 'trade'], ['squall', 'trade'], ['calima', 'fogbank'], ['squall', 'fogbank']]) {
+    for (let i = 0; i <= 100; i++) {
+      const w = mix(WEATHER[from], WEATHER[to], i / 100);
+      const seam = flyable(to, w);
+      assert.equal(flightFlyableIn(to, w), seam, `${from} -> ${to} at ${i} %`);
+      const o = canOpen({ airborneS: 1, clearM: 10, weather: to, w });
+      assert.equal(o.ok, seam, `canOpen ${from} -> ${to} at ${i} %`);
+      if (!seam) { assert.equal(o.why, 'weather'); assert.ok(typeof o.note === 'string' && o.note.length > 0); if (!GROUNDING_WEATHER.includes(to)) refusedFade++; }
+      n++;
+    }
+  }
+  console.log(`  ${n} fade steps agree; ${refusedFade} of them refused in a fade OUT (the seam's GROUNDED_WEIGHT rule)`);
+  assert.ok(refusedFade > 0);
+});

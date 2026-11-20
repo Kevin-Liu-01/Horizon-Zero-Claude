@@ -17,6 +17,7 @@
  *
  * Frame: engine x = E, z = -N (sites.js). A bearing b (deg, clockwise from north) is the direction (sin b, -cos b).
  */
+import { flyableIn as seamFlyableIn, GROUNDING_WEATHER as SEAM_GROUNDING_WEATHER, GROUNDED_WEIGHT } from '../../world/environment.js';
 
 /** @typedef {'none' | 'opening' | 'gliding' | 'folding' | 'landing'} FlightState */
 /** @type {readonly FlightState[]} */
@@ -105,16 +106,17 @@ export function groundedDownTime(agl, v0 = KITE.sink) {
   return Math.max(0, vPk - v0) / a + Math.max(0, vPk - vf) / b + cruise / vPk + Math.min(agl, KITE.groundedFlareM) / vf;
 }
 
-/** Weather states that ground the kite (BIBLE §3.2: calima and squall). */
-export const GROUNDING_WEATHER = Object.freeze(['calima', 'squall']);
+/** Weather states that ground the kite (BIBLE §3.2: calima and squall): the weather seam's own list. */
+export const GROUNDING_WEATHER = SEAM_GROUNDING_WEATHER;
 
 /**
- * The kite flies in this weather. `environment.js` (sky-look) owns the seam's `flyable()`; until it exports one, the
- * page calls this with `environment.weather`.
- * @param {string | null | undefined} weather
+ * The kite flies in this weather: the weather seam's law (src/world/environment.js `flyableIn`, behind `flyable()`; rule
+ * 21, one law: M3 fix round 1, area F's smallest change here, where wave 2 kept a copy without the seam's fade-out rule).
+ * @param {string | null | undefined} weather  the state (aliases as setWeather takes them)
+ * @param {{ calima?: number, rain?: number } | null} [w]  the cross-faded weather record, when the caller has it
  */
-export function flyableIn(weather) {
-  return !GROUNDING_WEATHER.includes(String(weather || 'trade'));
+export function flyableIn(weather, w = null) {
+  return seamFlyableIn(weather, w);
 }
 
 /**
@@ -162,12 +164,12 @@ export function createFlightBody() {
 
 /**
  * Can Space open the kite now? (KF4, KF5)
- * @param {{ airborneS: number, clearM: number, weather?: string, state?: FlightState }} q
+ * @param {{ airborneS: number, clearM: number, weather?: string, state?: FlightState, w?: { calima?: number, rain?: number } | null }} q
  * @returns {{ ok: boolean, why: '' | 'not-airborne' | 'too-low' | 'weather' | 'busy', note?: string }}
  */
-export function canOpen({ airborneS, clearM, weather = 'trade', state = 'none' }) {
+export function canOpen({ airborneS, clearM, weather = 'trade', state = 'none', w = null }) {
   if (state !== 'none') return { ok: false, why: 'busy' };
-  if (!flyableIn(weather)) return { ok: false, why: 'weather', note: GROUNDED_NOTE[/** @type {'calima'|'squall'} */ (weather)] };
+  if (!flyableIn(weather, w)) return { ok: false, why: 'weather', note: GROUNDED_NOTE[weather === 'calima' || (w?.calima ?? 0) > GROUNDED_WEIGHT.calima ? 'calima' : 'squall'] };
   if (!(airborneS >= KITE.openAirborneS)) return { ok: false, why: 'not-airborne' };
   if (!(clearM >= KITE.openClearM)) return { ok: false, why: 'too-low' };
   return { ok: true, why: '' };

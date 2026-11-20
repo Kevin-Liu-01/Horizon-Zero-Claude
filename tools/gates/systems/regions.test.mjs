@@ -99,7 +99,9 @@ test('the first load carries no file of a region other than the Pans (EN2, read 
 test('the loader: approach fetches, a failure retries on its backoff and never throws, depart unloads', async () => {
   let t = 0, calls = 0, fail = 2, unloaded = 0;
   const fakeMap = new RegionMap({ classify: (x) => (x < 0 ? 'pans' : 'holds'), size: 400, cell: 4 }).build();
-  const tr = new RegionTracker(fakeMap);
+  // (M3 fix round 1, area F) the tracker pinned at M2's 90 m, so this walk is M2's own: the Holds' M3 approach (60 m on
+  // foot, regions.js data) is tested in tools/perf/region-hitch.test.mjs
+  const tr = new RegionTracker(fakeMap, { approach: APPROACH_M });
   // the real Holds has no rows yet: the loader is handed one through its assetsOf
   const ld = new RegionLoader(tr, {
     now: () => t,
@@ -109,7 +111,7 @@ test('the loader: approach fetches, a failure retries on its backoff and never t
   });
   tr.update(-150, 0);                 // in the Pans, 150 m from the Holds
   assert.ok(!tr.near.has('holds'));
-  tr.update(-50, 0);                  // within the Holds' 60 m on foot (M3 wave 2, area F: their own approach): approach
+  tr.update(-80, 0);                  // within 90 m: approach
   assert.ok(tr.near.has('holds'));
   await new Promise((r) => setImmediate(r));
   assert.equal(ld.status().holds.state, 'failed');
@@ -118,7 +120,7 @@ test('the loader: approach fetches, a failure retries on its backoff and never t
   assert.equal(calls, 2); assert.equal(ld.status().holds.state, 'failed');
   t = 3000; ld.tick(); await new Promise((r) => setImmediate(r));
   assert.equal(calls, 3); assert.equal(ld.status().holds.state, 'resident');
-  tr.update(-190, 0);                  // past the approach plus the band (80 m): depart
+  tr.update(-190, 0);                  // past the approach plus the band: depart
   assert.ok(!tr.near.has('holds'));
   assert.equal(unloaded, 1);
   // a region with no rows is resident at once and never calls load

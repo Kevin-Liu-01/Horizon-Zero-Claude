@@ -19,6 +19,13 @@
  *     compiled off the frame and waited for, and only then added (on a 14 m ring round the crossing's end); unloaded and
  *     disposed on depart. The row hands the loader only the rows (`assetsOf`), and passes a Malpais crossing only if the
  *     loader's steps ran in that order. (Wave 1 drove the same order from this file: cc1e850-29a32d6.)
+ *     WAVE 3 (fix round 1): the Malpais' REAL build exists (src/world/sites/malpais-region.js, area A: e4c2321, decc1d7,
+ *     12b9a57), so it is what a Malpais crossing measures; the stand-ins come back only with --standin. Its steps are read
+ *     off its own stats as they are written; a crossing passes only if the seam's order held (approached, registered,
+ *     compiled and awaited, then added) and the region was taken down again on depart.
+ *   - NW11 / EF2 in the page: the Holds' cast (holds.js state, persons, and the people bank's GLBs of the cast) is read at
+ *     each crossing's start and end, and on the Holds-to-Malpais jog at each of the Kiln Yards' four wellheads (3 s each,
+ *     the recording paused).
  * One Chrome launch (slot1), vsync-locked headless: the intervals are presented-frame intervals (rAF), as TECH 9.1's
  * hitch lines are read. Per frame over 33 ms: the GL calls since the frame before (compiles, links, uploads: count and
  * ms), the long-animation-frame scripts, the region events and the stand-in loader's steps that fell in it, and a
@@ -40,6 +47,9 @@ import { fixture } from '../gates/systems/hour-two-fixtures.mjs';
 import { makeRecord } from '../../src/game/save/format.js';
 import { heightAt } from '../../src/world/island/recipe.js';
 import { REGIONS } from '../../src/core/regions.js';
+import { WELLHEADS } from '../../src/world/sites/kilnyards-layout.js';
+import { HOLDS_CAST } from '../../src/world/npc/people/holds.js';
+import { ARCHETYPE_IDS, SLICE_CAST } from '../../src/world/npc/people/ids.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
@@ -57,6 +67,10 @@ const OUT = flag('--out') || path.join(RUNS, `${stamp}-${commit.slice(0, 7)}-reg
 assertOutsideRepo(OUT, REPO);
 mkdirSync(OUT, { recursive: true });
 const crossings = CROSSINGS.filter((c) => !ONLY.length || ONLY.includes(c.id));
+/** --standin: wave 2's stand-in rows for the Malpais even where its real build exists (by default, WAVE 3, the real one). */
+const FORCE_STANDIN = args.includes('--standin');
+/** The Holds' cast GLBs that leave with the region (the regions seam's `cast`: HOLDS_CAST less the boot-staged archetypes). */
+const HOLDS_ONLY = HOLDS_CAST.filter((id) => !ARCHETYPE_IDS.includes(id) && !SLICE_CAST.includes(id));
 
 /**
  * The Malpais' stand-in rows: shipped GLBs (people, the town kit, the sea stacks) whose sum is at or over the Malpais'
@@ -67,8 +81,9 @@ const STANDIN_FILES = ['models/npc/guild-matron.glb', 'models/npc/boat-caulker-2
   'models/npc/salt-raker-2.glb', 'models/npc/tube-smith.glb', 'models/npc/atlas-pan.glb', 'models/settlements/saltrow-kit.glb', 'models/landmarks/sea-stacks.glb'];
 
 const report = {
-  row: 'A-region-hitch', wave: 2, loader: 'the game\'s own (engine.attachRegions: load, upload a texture a frame, register, compile and wait, add; unload on depart)', commit, clean: !!process.env.CLEAN_COMMIT, built: BUILT, port: PORT, startedAt: new Date().toISOString(),
-  bar: { over50: 0, over33: 1 }, standIn: { malpais: MAL.standIn, files: STANDIN_FILES }, standInNote: 'her movement is carried (no kite, no input drive); the Malpais\' files are stood in by shipped GLBs fetched again', crossings: [], console: [],
+  row: 'A-region-hitch', wave: 3, loader: 'the Malpais: its own build on the seam (MalpaisRegion: fetch, build in 5 ms slices, register, compile off the frame and wait, upload a texture a frame, add; release on depart); a region with rows: the game\'s RegionLoader (load, upload, register, compile and wait, add; unload on depart)', commit, clean: !!process.env.CLEAN_COMMIT, built: BUILT, port: PORT, startedAt: new Date().toISOString(),
+  bar: { over50: 0, over33: 1 }, standIn: { malpais: MAL.standIn, files: STANDIN_FILES, forced: FORCE_STANDIN }, holdsCast: HOLDS_ONLY,
+  standInNote: 'her movement is carried (no kite, no input drive); WAVE 3: the Malpais is its real build (src/world/sites/malpais-region.js) unless --standin, where shipped GLBs fetched again stand in for it', crossings: [], console: [],
 };
 const save = () => writeFileSync(path.join(OUT, 'region-hitch.json'), JSON.stringify(report, null, 1));
 
@@ -107,7 +122,7 @@ const recorder = () => {
       if (R.loaf.length > 300) R.loaf.shift();
       R.loaf.push({ t: e.startTime, d: Math.round(e.duration), scripts: (e.scripts || []).filter((s) => s.duration >= 3).map((s) => ({ fn: s.sourceFunctionName, url: (s.sourceURL || '').replace(/^.*\//, '').replace(/\?.*$/, ''), d: Math.round(s.duration) })) });
     } }).observe({ type: 'long-animation-frame', buffered: true });
-    new PerformanceObserver((l) => { for (const e of l.getEntries()) if (/standin=/.test(e.name)) R.res.push({ url: e.name.replace(/^.*\/models\//, ''), start: e.startTime, end: e.responseEnd, bytes: e.encodedBodySize }); }).observe({ type: 'resource', buffered: true });
+    new PerformanceObserver((l) => { for (const e of l.getEntries()) if (/standin=|\/malpais\//.test(e.name)) R.res.push({ url: e.name.replace(/^.*\/(models|textures)\//, ''), start: e.startTime, end: e.responseEnd, bytes: e.encodedBodySize }); }).observe({ type: 'resource', buffered: true });
   } catch (e) { R.obsError = String(e); }
   const snap = () => { const o = {}; for (const k in R.gl) o[k] = [R.gl[k].n, R.gl[k].ms]; return o; };
   let prev = snap();
@@ -138,20 +153,41 @@ const recorder = () => {
  * `assetsOf` is the row's: each approach gets the rows under fresh names and a fresh `?standin=` query (nothing cached),
  * each standing at a point on a 14 m ring round `place`. The loader's steps come back as `region-load-step` events.
  */
-const installStandIn = (rows, place) => {
+const installStandIn = (rows, place, forceStandIn = false) => {
   const C = window.__CTX__, E = C.engine, R = E.regions, S = window.__rh;
   const mark = (tag, extra = {}) => S.marks.push({ t: Math.round(performance.now()), tag, ...extra });
-  const held = (window.__standIn = { loads: 0 });
+  const held = (window.__standIn = window.__standIn || { loads: 0 });
   const H = (x, z) => C.terrain?.getHeight?.(x, z) ?? 0;
-  R.loader.assetsOf = (r) => {
-    if (r.id !== 'malpais') return r.assets;
-    held.loads++;
-    const tag = `s${held.loads}`, names = Object.keys(rows);
-    return Object.fromEntries(names.map((n, i) => {
-      const a = (i / names.length) * Math.PI * 2, x = place.x + Math.cos(a) * 14, z = place.z + Math.sin(a) * 14;
-      return [`${n}-${tag}`, { ...rows[n], url: `${rows[n].url}?standin=${tag}`, at: { x, y: H(x, z), z } }];
-    }));
-  };
+  // WAVE 3: the Malpais' real build (src/world/sites/malpais-region.js MalpaisRegion, on the seam's `region-approach`) is
+  // what the crossing measures; the stand-ins are wave 2's and come back only with --standin
+  const M = C.terrain?.malpais || null;
+  const real = !!M && !forceStandIn;
+  held.real = real;
+  if (real) {
+    R.loader.assetsOf = (r) => r.assets;
+    // each step of the real build marks the frame it lands in (stats.ms is written as each step ends; stats.compile once
+    // the programs are linked and awaited; stats.builds as it is added; stats.releases as it is taken down)
+    M.stats.ms = new Proxy({}, { set(t, k, v) { if (!(k in t)) mark(`malpais:${String(k)}`); t[k] = v; return true; } });
+    if (!M.__rhStats) {
+      M.__rhStats = true;
+      M.stats = new Proxy(M.stats, { set(t, k, v) {
+        if (k === 'compile') mark('malpais:compile', { ms: Math.round(v?.ms ?? 0), programs: v?.programs ?? 0 });
+        if (k === 'builds') mark('malpais:ready');
+        if (k === 'releases') mark('malpais:released');
+        t[k] = v; return true;
+      } });
+    }
+  } else {
+    R.loader.assetsOf = (r) => {
+      if (r.id !== 'malpais') return r.assets;
+      held.loads++;
+      const tag = `s${held.loads}`, names = Object.keys(rows);
+      return Object.fromEntries(names.map((n, i) => {
+        const a = (i / names.length) * Math.PI * 2, x = place.x + Math.cos(a) * 14, z = place.z + Math.sin(a) * 14;
+        return [`${n}-${tag}`, { ...rows[n], url: `${rows[n].url}?standin=${tag}`, at: { x, y: H(x, z), z } }];
+      }));
+    };
+  }
   if (!window.__standInEv) {
     window.__standInEv = true;
     for (const k of ['enter', 'leave', 'approach', 'depart']) C.events.on(`region-${k}`, (e) => window.__rh.marks.push({ t: Math.round(performance.now()), tag: `region-${k}`, region: e.region, depth: e.depth }));
@@ -159,7 +195,15 @@ const installStandIn = (rows, place) => {
     C.events.on('region-load-step', (e) => { const tag = { load: 'load-done', upload: 'uploaded-spread', register: 'registered', compile: 'programs-ready', add: 'added', unload: 'unloaded' }[e.step] || e.step; mark(tag, { region: e.region, ms: e.ms }); });
   }
   S.where = () => { const p = C.player.position; return { x: Math.round(p.x), z: Math.round(p.z), region: R.tracker.current }; };
-  return !!R.loader.compile && !!R.loader.register && !!R.loader.add;
+  return { loader: !!R.loader.compile && !!R.loader.register && !!R.loader.add, real, malpaisState: M?.state ?? null };
+};
+
+/** In the page: the Holds' cast as the game holds it (holds.js state, persons, and which of `ids` the people bank holds). */
+const castNow = (ids) => {
+  const C = window.__CTX__, P = C.people, T = C.engine.regions?.tracker, p = C.player.position;
+  const bank = P?.bank?.entries;
+  return { state: P?.holds?.state ?? null, persons: P?.holds?.persons?.size ?? null, banked: bank ? ids.filter((id) => bank.has(id)) : null,
+    nearHolds: T ? T.near.has('holds') : null, region: T?.current ?? null, at: { x: Math.round(p.x), z: Math.round(p.z) } };
 };
 
 /** In the page: carry her from a to b at speed (m/s), agl metres over the ground (0 = on it, snapped), in mode. */
@@ -271,10 +315,13 @@ try {
     const C = { id: c.id, mode: c.mode, speed: c.speed, agl: c.agl, a: c.a, b: c.b, standIn: c.to === 'malpais' || c.from === 'malpais' ? 'carried; Malpais files stood in' : 'carried; the Holds\' own files (nothing stood in)' };
     try {
       const inside = { x: c.b.x, z: c.b.z };
-      C.gameLoader = await page.evaluate(installStandIn, rows, inside);
+      const inst = await page.evaluate(installStandIn, rows, inside, FORCE_STANDIN);
+      C.gameLoader = inst.loader; C.real = inst.real; C.malpaisStateAtStart = inst.malpaisState;
+      if (inst.real && (c.to === 'malpais' || c.from === 'malpais')) C.standIn = 'carried; the Malpais\' REAL build (MalpaisRegion on region-approach: fetch, build in slices, register, compile off the frame, upload, add)';
       // to the start (a teleport: not counted), settle 4 s
       await page.evaluate((cc) => { const C = window.__CTX__, p = C.player; p.flight = cc.mode === 'flight' ? 'gliding' : 'none'; p.position.x = cc.a.x; p.position.z = cc.a.z; p._snapToGround?.(p.position.y + 200); }, c);
       await page.evaluate(hold, c.a, c.agl, 4000);
+      C.castAtStart = await page.evaluate(castNow, HOLDS_ONLY);
       C.before = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), where: window.__rh.where(), flight: window.__CTX__.player.flight, modeSeen: window.__CTX__.engine.regions.tracker.modeOf() }));
       C.modeBound = C.before.modeSeen === c.mode;
       await page.evaluate(() => { const S = window.__rh; S.on = true; S.frames = 0; S.over33 = 0; S.over50 = 0; S.max = 0; S.long = []; S.marks = []; S.res = []; S.loaf = []; S.last = 0; });
@@ -285,24 +332,64 @@ try {
       await page.screenshot({ path: shotOut, type: 'jpeg', quality: 80 }).catch(() => null);
       await page.evaluate(() => { window.__rh.last = 0; window.__rh.on = true; });
       await page.evaluate(hold, c.b, c.agl, 500);
-      C.mid = await page.evaluate(() => { const C = window.__CTX__, g = C.engine._regionRoots?.malpais; return { status: C.engine.regionStatus(), standIn: { added: g ? g.children.length : 0, loads: window.__standIn.loads },
+      C.mid = await page.evaluate(() => { const C = window.__CTX__, g = C.engine._regionRoots?.malpais, M = C.terrain?.malpais; return { status: C.engine.regionStatus(), standIn: { added: g ? g.children.length : 0, loads: window.__standIn.loads },
+        malpais: M ? { state: M.state, builds: M.stats.builds, ms: { ...M.stats.ms }, totalMs: M.stats.totalMs, worstSliceMs: M.stats.worstSliceMs, compile: M.stats.compile, textures: M.stats.textures, draws: M.stats.draws, tris: M.stats.tris, error: M.stats.error } : null,
         holdsCast: { state: C.people?.holds?.state ?? null, persons: C.people?.holds?.persons?.size ?? null, archetypes: C.people?.bank ? [...C.people.bank.entries.keys()] : null } }; });
+      C.castAtEnd = await page.evaluate(castNow, HOLDS_ONLY);
+      // NW11 / EF2 in the page: on foot from the crossing's end to each of the Kiln Yards' four wellheads (her jog, the
+      // recording paused: this is residency, not the crossing's frames), 3 s at each, the Holds' cast read as the game holds it
+      if (c.to === 'malpais' && c.mode === 'walk') {
+        await page.evaluate(() => { window.__rh.on = false; });
+        C.wellheads = [];
+        let from = c.b;
+        for (const w of WELLHEADS) {
+          const to = { x: w.x - 2.5, z: w.z + 2.5 };
+          await page.evaluate(carry, c, from, to, 0);
+          await page.evaluate(hold, to, 0, 3000);
+          C.wellheads.push({ id: w.id, ...(await page.evaluate(castNow, HOLDS_ONLY)) });
+          from = to;
+        }
+        const shotW = path.join(OUT, `${c.id}-wellhead.jpg`);
+        await page.screenshot({ path: shotW, type: 'jpeg', quality: 80 }).catch(() => null);
+        await page.evaluate(carry, c, from, c.b, 0);
+        await page.evaluate(hold, c.b, 0, 1500);
+        log(`${c.id}: the Holds' cast at the wellheads: ${C.wellheads.map((w) => `${w.id} ${w.state}/${w.persons} (${w.banked?.length ?? '?'} banked)`).join(', ')}`);
+      }
+      await page.evaluate(() => { window.__rh.last = 0; window.__rh.on = true; });
       C.back = await page.evaluate(carry, c, c.b, c.a, c.agl);
       await page.evaluate(hold, c.a, c.agl, 3000);
       const R = await page.evaluate(() => { const S = window.__rh; S.on = false; return { frames: S.frames, over33: S.over33, over50: S.over50, maxMs: +S.max.toFixed(1), long: S.long, marks: S.marks, res: S.res, loaf: S.loaf }; });
-      C.after = await page.evaluate(() => { const C = window.__CTX__, g = C.engine._regionRoots?.malpais; return { status: C.engine.regionStatus(), standInHeld: g ? g.children.length : 0, hp: Math.round(C.player.health ?? 0), dead: !!document.querySelector('.mn-death.show') }; });
+      C.after = await page.evaluate(() => { const C = window.__CTX__, g = C.engine._regionRoots?.malpais; return { status: C.engine.regionStatus(), standInHeld: g ? g.children.length : 0, malpaisState: C.terrain?.malpais?.state ?? null, hp: Math.round(C.player.health ?? 0), dead: !!document.querySelector('.mn-death.show') }; });
+      C.castAfter = await page.evaluate(castNow, HOLDS_ONLY);
       // down to the ground again before the next crossing (a teleport: not counted)
       await page.evaluate(() => { const p = window.__CTX__.player; p._snapToGround?.(p.position.y + 2); window.__CTX__.player.flight = 'none'; });
       C.frames = R.frames; C.over33 = R.over33; C.over50 = R.over50; C.maxMs = R.maxMs;
       C.long = R.long.map((f) => ({ ...f, ...causeOf(f, R.marks, R.res, R.loaf) }));
       C.marks = R.marks; C.fetched = R.res.map((r) => ({ url: r.url, ms: Math.round(r.end - r.start), bytes: r.bytes }));
       C.fetchedBytes = R.res.reduce((s, r) => s + (r.bytes || 0), 0);
-      const order = C.marks.filter((m) => ['load-done', 'uploaded-spread', 'registered', 'programs-ready', 'added'].includes(m.tag)).map((m) => m.tag);
-      C.loaderOrder = order;
-      C.loaderOrderOk = c.to !== 'malpais' || order.join(',').startsWith('load-done,uploaded-spread,registered,programs-ready,added');
-      C.pass = !C.after.dead && C.modeBound && C.gameLoader && C.loaderOrderOk && (c.to !== 'malpais' || C.fetchedBytes > 0) && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+      if (C.real) {
+        // the seam's order on the real build: approached first; registered, then compiled and awaited, then (uploaded and)
+        // added; and taken down on depart
+        const at = (tag) => { const m = C.marks.find((q) => q.tag === tag && (q.region == null || q.region === 'malpais')); return m ? m.t : null; };
+        const seq = C.marks.filter((m) => /^malpais:/.test(m.tag) || (/^region-(approach|depart)$/.test(m.tag) && m.region === 'malpais')).map((m) => m.tag);
+        C.loaderOrder = seq;
+        const tA = at('region-approach'), tR = at('malpais:register'), tC = at('malpais:compile'), tU = at('malpais:upload'), tAdd = at('malpais:add'), tReady = at('malpais:ready');
+        C.addedAtMs = tA != null && tReady != null ? tReady - tA : null;
+        C.loaderOrderOk = c.to !== 'malpais' || (tA != null && tR != null && tC != null && tAdd != null && tReady != null && tA <= tR && tR <= tC && tC <= tAdd && (tU == null || tU <= tAdd) && seq.includes('malpais:released'));
+        if (c.to === 'malpais') C.pass = !C.after.dead && C.modeBound && C.gameLoader && C.loaderOrderOk && C.after.malpaisState === 'cold' && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+        else C.pass = !C.after.dead && C.modeBound && C.gameLoader && !seq.length && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+      } else {
+        const order = C.marks.filter((m) => ['load-done', 'uploaded-spread', 'registered', 'programs-ready', 'added'].includes(m.tag)).map((m) => m.tag);
+        C.loaderOrder = order;
+        C.loaderOrderOk = c.to !== 'malpais' || order.join(',').startsWith('load-done,uploaded-spread,registered,programs-ready,added');
+        C.pass = !C.after.dead && C.modeBound && C.gameLoader && C.loaderOrderOk && (c.to !== 'malpais' || C.fetchedBytes > 0) && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+      }
+      // NW11 in the page (a separate verdict; it does not fail the crossing): the cast stood at the Holds end of a Pans
+      // crossing, and is out of memory at every wellhead
+      if (C.wellheads) C.castGoneAtWellheads = C.wellheads.every((w) => w.state === 'out' && w.persons === 0 && (w.banked?.length ?? 1) === 0);
+      if (c.to === 'holds') C.castCycle = { atHoldsEnd: C.castAtEnd, backAtStart: C.castAfter };
       C.shot = path.basename(shotOut);
-      log(`${c.id}: ${C.frames} frames, ${C.over33} over 33 ms, ${C.over50} over 50 ms (max ${C.maxMs}); stand-in ${(C.fetchedBytes / 1e6).toFixed(2)} MB fetched; ${C.pass ? 'PASS' : 'FAIL'}`);
+      log(`${c.id}: ${C.frames} frames, ${C.over33} over 33 ms, ${C.over50} over 50 ms (max ${C.maxMs}); ${C.real ? 'real Malpais' : 'stand-in'} ${(C.fetchedBytes / 1e6).toFixed(2)} MB fetched; order ${(C.loaderOrder || []).join('>')}; ${C.pass ? 'PASS' : 'FAIL'}`);
       // back at the start in the Holds the Malpais must have departed (its stand-ins disposed) before the next crossing
     } catch (e) { C.error = String(e?.stack || e).slice(0, 800); log(`${c.id} error: ${C.error.slice(0, 200)}`); }
     report.crossings.push(C);
