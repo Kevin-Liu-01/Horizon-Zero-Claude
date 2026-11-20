@@ -695,6 +695,17 @@ const screedNow = async () => {
     stage: q.current()?.id ?? 'done', reached: q.report().reached };
 };
 
+/**
+ * in-page (M3 fix wave): is the Screed within 0.45 s of changing its motion (an arrow's release and flight at 8 m)? The
+ * end of a stall (it backs off at once) or of the back-off (it walks on).
+ */
+const screedEdge = async (i) => {
+  const R = (await import('/src/instruments/kinds/screed-rules.js')).SCREED_RULES;
+  const m = window.__CTX__.machines.list[i], b = m?.brain, backT = m?.fightRules?.backT ?? 0;
+  if (!b) return false;
+  return (b.phase === 'stall' && R.stallS - b.phaseT < 0.45) || (backT > 0 && backT < 0.45);
+};
+
 /** in-page: a point at compass bearing b, r m from Ninewalls' centre (the walls seam's polar) */
 const polarNW = async (b, r) => { const W = await import('/src/world/settlements/ninewalls-layout.js'); const p = W.polar(b, r); return { x: p.x, z: p.z }; };
 
@@ -869,9 +880,15 @@ async function volley(page, K, stage, maxS = 8) {
       blocked = null;
       await draw();
       while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= 0.99 && Date.now() - td > 300)) break; }
+      // (M3 fix wave) never loosed across a change of its motion: at 3e576c6 chained run 3 an arrow solved on a stalled
+      // Screed (missM 0.019) left as the stall ended and it began to back off at 1.2 m/s, and met its hull 0.71 m from the
+      // seal; the next, loosed in the back-off, met nothing. Held drawn until the change is past, then solved again
+      let held = 0;
+      for (; held < 12 && (await page.evaluate(screedEdge, S.i)); held++) await sleep(100);
+      if (held) sol = await page.evaluate(SH.solveShot, S.i, part, 0.12);
       const G2 = await page.evaluate((i) => window.__sealGeom(i), S.i);
       const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null,
-        mNock: G2?.[part]?.mNock ?? null, mLens: G2?.[part]?.mLens ?? null };
+        mNock: G2?.[part]?.mNock ?? null, mLens: G2?.[part]?.mLens ?? null, heldS: held / 10 };
       if (sol && sol.first === `weak:${part}` && (G2?.[part]?.margin ?? 0) >= SEAL_MARGIN) { await K.mouse('left', false); rec.fired = true; await sleep(100); }
       else { await K.mouse('right', false); await sleep(30); await K.mouse('left', false); await sleep(30); await K.mouse('right', true); await sleep(200); rec.letDown = true; }
       drawing = false;
