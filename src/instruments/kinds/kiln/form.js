@@ -9,9 +9,16 @@
  * canisters on the flanks (vials), the vent hose coiled on a reel snug on the stern and run forward along the right
  * flank to its coupling, low on the right flank: the wellheads seam stands a Kiln with its wellhead off a FLANK (area A,
  * src/world/sites/kilnyards-layout.js `kilnStand`: the head 4.9 m from the body's centre, the hose's run 3.2 m), so the
- * coupling faces the well and the hose is seen on it (F59). Its one lamp sits in a drum on the
- * chimney's yoke (the working end is the mortar), beside the chimney and high: never above the door, so the door
- * and the lamp never read as a mouth and an eye. No head, no neck, no eye, no face, no tail.
+ * coupling faces the well and the hose is seen on it (F59).
+ *
+ * WAVE 2 (originality, the wave-1 review): the lamp sat in a drum on the chimney's yoke, beside the stack and high, and
+ * from the front a tall stack with one lamp beside it read as a neck with an eye. The lamp now sits LOW at the front
+ * right, in a drum on a bracket off the fire body beside the firebox surround, at 1.25 m (0.23 of the height; was 3.86 m,
+ * 0.70), below the door's centre and 1.4 m from the stack's axis: a working lamp at the fire's own face, like a stove's,
+ * never above the door (so door and lamp are never a mouth and an eye) and never at the stack. The stack is a bottle
+ * kiln's: it grows out of the dome broad (0.46 m at its root, was 0.34) and tapers to the muzzle, ringed by two brass
+ * hoops, and the trunnion sits between a matched pair of yoke cheeks: a structure, not a neck. Nothing glows but the
+ * door. No head, no neck, no eye, no face, no tail.
  *
  * Body frame: metres, y up from the ground under the hull's centre, +z forward (yaw 0 faces +z). Each knee is in the
  * sagittal plane (bible §7.1 rule 8): hip, knee and foot of a leg share one x.
@@ -56,13 +63,19 @@ export const KILN_PARTS = Object.freeze([
   cyl('crown', [0, 3.625, 0], 0.50, 0.15, 'y', { r2: 0.42, tone: 'brass' }),
   // the chimney-mortar on its trunnion (it tilts in the behaviour wave), a muzzle ring and a spike finial to 5.5 m
   cyl('trunnion', [0, 3.78, -0.20], 0.18, 1.10, 'x', { tone: 'joint' }),
-  cyl('chimney', [0, 4.48, -0.20], 0.34, 1.50, 'y', { r2: 0.30, hit: 'chimney' }),
+  // wave 2: a bottle kiln's stack, broad at its root (0.46 m) and tapering to the muzzle, two brass hoops on it
+  cyl('chimney', [0, 4.48, -0.20], 0.46, 1.50, 'y', { r2: 0.31, hit: 'chimney' }),
+  cyl('hoopLow', [0, 4.12, -0.20], 0.46, 0.07, 'y', { tone: 'brass' }),
+  cyl('hoopHigh', [0, 4.84, -0.20], 0.38, 0.07, 'y', { tone: 'brass' }),
   cyl('muzzle', [0, 5.28, -0.20], 0.38, 0.10, 'y', { tone: 'brass' }),
   cyl('finial', [0.30, 5.40, -0.20], 0.025, 0.20, 'y', { tone: 'brass' }),
-  // the lamp drum on the yoke's right cheek (the working end), facing forward
-  box('yokeCheek', [0.55, 3.80, -0.10], [0.12, 0.45, 0.40], { tone: 'joint' }),
-  cyl('lampDrum', [0.55, 3.86, 0.10], 0.19, 0.30, 'z', { tone: 'joint' }),
-  cyl('lamp', [0.55, 3.86, 0.27], 0.13, 0.04, 'z', { lamp: true, hit: 'lamp' }),
+  // the trunnion's yoke: a matched pair of cheeks (wave 1's single right cheek carried the lamp)
+  box('yokeCheekR', [0.55, 3.80, -0.20], [0.12, 0.45, 0.40], { tone: 'joint' }),
+  box('yokeCheekL', [-0.55, 3.80, -0.20], [0.12, 0.45, 0.40], { tone: 'joint' }),
+  // wave 2: the lamp low at the front right, in a drum on a bracket off the fire body, beside the firebox surround
+  box('lampBracket', [0.80, 1.25, 1.06], [0.16, 0.12, 0.20], { tone: 'joint' }),
+  cyl('lampDrum', [0.85, 1.25, 1.26], 0.17, 0.28, 'z', { tone: 'joint' }),
+  cyl('lamp', [0.85, 1.25, 1.415], 0.13, 0.03, 'z', { lamp: true, hit: 'lamp' }),
   // the firebox: a surround (oxblood in the art wave) and the door, its hinge on the left
   box('fireboxSurround', [0, 1.55, 1.30], [1.20, 1.10, 0.30]),
   box('fireboxDoor', [0, 1.55, 1.48], [0.80, 0.80, 0.06], { hit: 'fireboxDoor', dark: true }),
@@ -82,7 +95,7 @@ export const KILN_PARTS = Object.freeze([
 ]);
 
 /** The hull's lamp anchor and radius (body frame), as the lamp system will take it. */
-export const KILN_LAMP = Object.freeze({ at: [0.55, 3.86, 0.29], r: 0.13 });
+export const KILN_LAMP = Object.freeze({ at: [0.85, 1.25, 1.43], r: 0.13 });
 
 /**
  * The hit parts (the seam of M2 briefs §3.2: `sealed` | `seized` | `off`; M3 adds reseat). The door's own state is

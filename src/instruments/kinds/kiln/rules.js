@@ -30,6 +30,16 @@ import { KILN_CUES } from './cues.js';
  *
  * THE YARDS' SPAWNS (IK3). `KilnSpawner` puts one Kiln on the site every `respawnH` site-clock hours while fewer than
  * `cap` live and any wellhead is hot: four quenched, none.
+ *
+ * AWAKE, AND NEVER TWO (the orchestrator's provisional ruling R7 on the brief's Q4, M3 wave 2). The brief's default
+ * (§13 Q4, kept): "Two Kilns at the Yards, one awake at a time (the other plugged in and still, which is the stealth
+ * window the bible wants) ... Never two awake." R7: "a plugged, still Kiln does not count as an awake large kind for
+ * the encounter rule (it is the stealth window); never two awake." `kilnAwake(k)` is that count: a Kiln is awake unless
+ * it is plugged in (plugged, it neither turns nor walks nor shells: IK3, IK4; a sprung door staggers it where it stands
+ * and it stays plugged). Never two: `wake(site)` with the site's Kilns holds a plugged (or coupling) Kiln at its well
+ * while another Kiln there is awake (event `wake-held`), and `KilnSpawner.step(..., awake)` spawns nothing while one is.
+ * The encounter rule's callers (src/instruments/lib/sizeclass.js `encounterVerdict`: "living hulls only: the caller
+ * filters") pass a Kiln only when `kilnAwake` says so.
  */
 
 export const KILN_RULES = Object.freeze({
@@ -144,8 +154,15 @@ export class KilnBrain {
     return { stagger: true, why: 'the hot door sprang' };
   }
 
-  /** It is struck or sees her: it wakes (a plugged Kiln unplugs first). */
-  wake() {
+  /**
+   * It is struck or sees her: it wakes (a plugged Kiln unplugs first). `site`: the Kilns at the same site (R7, never two
+   * awake): while another of them is awake a plugged or coupling Kiln is held at its well (it stays plugged and still).
+   */
+  wake(site = null) {
+    if ((this.state === 'plugged' || this.state === 'coupling') && (site || []).some((o) => o && o !== this && o.alive !== false && kilnAwake(o))) {
+      this._ev('wake-held');
+      return false;
+    }
     if (this.state === 'plugged' || this.state === 'coupling') { this._set('unplugging'); return true; }
     if (this.state === 'idle' || this.state === 'walking') { this._set('awake'); return true; }
     return false;
@@ -323,17 +340,26 @@ export function shellWarning(shell, t) {
   return { shadow: { x: shell.x, z: shell.z, r: M.shadowR0 + (M.shadowR1 - M.shadowR0) * u, k: 0.35 + 0.65 * u }, whistle: true, cue: KILN_CUES.event.whistle };
 }
 
+/**
+ * R7: is this Kiln an awake large kind for the encounter rule? Every state but `plugged` is awake (walking, coupling,
+ * unplugging, idle and the fight); a plugged Kiln, staggered or not, stands still at its well and is not counted.
+ */
+export function kilnAwake(k) { return !!k && k.alive !== false && k.state !== 'plugged'; }
+
 /** IK3: the Yards' spawns on the site clock. */
 export class KilnSpawner {
-  constructor() { this.clockH = 0; this.nextH = KILN_RULES.respawnH; this.spawned = 0; }
-  /** Advance `hours` of site clock; returns how many Kilns it spawns now. `live` = Kilns alive at the site. */
-  step(hours, wellheads, live) {
+  constructor() { this.clockH = 0; this.nextH = KILN_RULES.respawnH; this.spawned = 0; this.held = 0; }
+  /**
+   * Advance `hours` of site clock; returns how many Kilns it spawns now. `live` = Kilns alive at the site; `awake` = how
+   * many of them are awake (R7: a spawn walks in awake, so none spawns while one is; that slot is lost, not queued).
+   */
+  step(hours, wellheads, live, awake = 0) {
     this.clockH += hours;
     let n = 0;
     while (this.clockH >= this.nextH) {
       this.nextH += KILN_RULES.respawnH;
       const anyHot = (wellheads || []).some((w) => w.state === 'hot');
-      if (anyHot && live + n < KILN_RULES.cap) n++;
+      if (anyHot && live + n < KILN_RULES.cap) { if (awake > 0 || n > 0) this.held++; else n++; }
     }
     this.spawned += n;
     return n;

@@ -1,5 +1,6 @@
 /**
- * M3 wave 1, area C: THE GREY LINE-UP (owner question Q3's default: "four grey silhouettes beside Brea at wave 1,
+ * M3 wave 1, area C (wave 2: the second page, `&wave=2` adds each form's one-line note of what changed: forms.mjs
+ * WAVE2_NOTES): THE GREY LINE-UP (owner question Q3's default: "four grey silhouettes beside Brea at wave 1,
  * before any surface work"). One page, no world and no game systems: Brea (her GLB, at her 1.72 m body) and the four
  * grey hulls built in the browser from the kinds' own form modules (./forms.mjs; the same parts the grey recipe
  * tools/build/instruments/gen-m3-blockout.mjs writes), a graduated height staff, studio light.
@@ -18,14 +19,16 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { configureKTX2, ktx2Loader } from '../../../../src/core/ktx2.js';
-import { M3_FORMS, expandParts } from './forms.mjs';
+import { WAVE2_NOTES } from './forms.mjs';
+import { buildGreyHull, strutMesh as greyStrut } from './grey-mesh.mjs';
 import { SONDE_KEEL, SONDE_POST, SONDE_TETHER } from '../../../../src/instruments/kinds/sonde/form.js';
 import { SondeBrain, downwind } from '../../../../src/instruments/kinds/sonde/rules.js';
 
 const q = new URLSearchParams(location.search);
 const VIEW = q.get('view') || 'front';
 const SIL = q.get('sil') === '1';
-const LU = window.__LINEUP__ = { ready: false, error: null, view: VIEW, sil: SIL, measured: {} };
+const WAVE = q.get('wave') || '1';
+const LU = window.__LINEUP__ = { ready: false, error: null, view: VIEW, sil: SIL, wave: WAVE, measured: {} };
 if (SIL) document.body.classList.add('sil');
 
 /** Calm lamp (bible §7.3) and the greys of the recipe (gen-m3-blockout.mjs GREY). */
@@ -76,34 +79,9 @@ function mat(p) {
   return mats.get(key);
 }
 
-const UP = new THREE.Vector3(0, 1, 0);
-function strutMesh(a, b, r, sides, material, r2 = r) {
-  const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = B.clone().sub(A), len = d.length();
-  const g = new THREE.CylinderGeometry(r2, r, len, sides, 1);
-  const m = new THREE.Mesh(g, material);
-  m.position.copy(A).addScaledVector(d, 0.5);
-  m.quaternion.setFromUnitVectors(UP, d.normalize());
-  return m;
-}
-
-/** One grey hull from its form's parts (the recipe's own shapes: box, 16-sided cylinder, 10-sided strut). */
-function buildHull(kind) {
-  const g = new THREE.Group(); g.name = kind;
-  for (const p of expandParts(M3_FORMS[kind].parts)) {
-    const material = mat(p);
-    let m;
-    if (p.type === 'box') { m = new THREE.Mesh(new THREE.BoxGeometry(...p.s), material); m.position.set(...p.c); }
-    else if (p.type === 'cyl') {
-      const geo = new THREE.CylinderGeometry(p.r2 ?? p.r, p.r, p.h, 16, 1);
-      if (p.axis === 'z') geo.rotateX(Math.PI / 2); else if (p.axis === 'x') geo.rotateZ(-Math.PI / 2);
-      m = new THREE.Mesh(geo, material); m.position.set(...p.c);
-    } else if (p.type === 'strut') m = strutMesh(p.a, p.b, p.r, 10, material);
-    if (!m) continue;
-    m.name = p.name; m.castShadow = !p.lamp; m.receiveShadow = true;
-    g.add(m);
-  }
-  return g;
-}
+const strutMesh = (a, b, r, sides, material, r2 = r) => greyStrut(THREE, a, b, r, sides, material, r2);
+/** One grey hull from its form's parts (./grey-mesh.mjs: the recipe's own shapes). */
+const buildHull = (kind) => buildGreyHull(THREE, kind, mat);
 
 function boxOf(obj) {
   obj.updateMatrixWorld(true);
@@ -254,6 +232,15 @@ async function main() {
     tag('Davit', `${m.davit.H} m · medium`, [X.davit, m.davit.H + 0.35, 0]);
     tag('Sonde', `${m.sonde.H} m · small · moored low here`, [X.sonde, 1.4 + m.sonde.H + 0.35, 0]);
     note.textContent = `M3 wave 1 grey hulls (area C), ${VIEW === 'side' ? 'side-on (each turned 90 deg)' : VIEW === 'quarter' ? 'three-quarter (each turned 35 deg)' : 'front'}${SIL ? ', silhouettes' : ''}. Proportion and silhouette only; lamps in calm bone-gold; the staff at left is banded every 0.5 m.`;
+  }
+  if (WAVE !== '1') {
+    // the second page: each form's one line of what changed (wave 2), at the foot of the frame
+    note.textContent = note.textContent.replace('M3 wave 1 grey hulls', `M3 wave ${WAVE} grey hulls`);
+    const foot = document.createElement('div'); foot.id = 'changed';
+    foot.innerHTML = '<b>What changed since the first page</b>' + ['kiln', 'spindle', 'davit', 'sonde'].filter((k) => VIEW !== 'sonde' || k === 'sonde')
+      .map((k) => `<div><b>${k[0].toUpperCase()}${k.slice(1)}:</b> ${WAVE2_NOTES[k]}.</div>`).join('');
+    document.body.appendChild(foot);
+    LU.notes = WAVE2_NOTES;
   }
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
   renderer.render(scene, camera);

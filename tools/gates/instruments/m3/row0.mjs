@@ -16,6 +16,7 @@ import { lensCheck, arrowCheck, mooringPost } from './sonde-mooring.mjs';
 import { WELLHEADS, APRON, YARDS } from '../../../../src/world/sites/kilnyards-layout.js';
 import { KILN_ROSTER } from '../../../../src/instruments/kinds/kiln/form.js';
 import { KILN_RULES, planVolley, rng } from '../../../../src/instruments/kinds/kiln/rules.js';
+import { q4r7 } from './measure.mjs';
 import { SpindleThrust, SPINDLE_RULES } from '../../../../src/instruments/kinds/spindle/rules.js';
 import { SONDE_RULES, SondeBrain } from '../../../../src/instruments/kinds/sonde/rules.js';
 import { WindwallState, WINDWALL } from '../../../../src/combat/windwall.js';
@@ -131,6 +132,12 @@ const R = rng(1);
       c_oneKilnAtTheYards: { ok: vC.ok, why: vC.anchors.flatMap((q) => q.why), needs: 'KILN_RULES.cap 2 -> 1' },
     },
     finding: 'two Kilns on one apron are 2 large within 60 m: the encounter rule fails Q4\'s default. NEEDS AN ORCHESTRATOR RULING (a or c pass; b is impossible at the wellheads) before F59 or IK10 can be staged' };
+  // wave 2: the ruling, applied (way a). R7 (provisional): "a plugged, still Kiln does not count as an awake large kind for
+  // the encounter rule (it is the stealth window); never two awake." Built in the Kiln's own rules (kilnAwake, wake(site),
+  // KilnSpawner's awake count), not in sizeclass.js (its callers filter); measured by measure.mjs Q4-R7
+  const r7 = q4r7();
+  out.encounterQ4.ruling = { id: 'R7', applied: 'src/instruments/kinds/kiln/rules.js kilnAwake / wake(site) / KilnSpawner.step(..., awake)', ok: r7.ok,
+    maxAwakeAtOnce: r7.maxAwakeAtOnce, encounterFailingStepsR7: r7.encounterFailingStepsR7, steps: r7.steps, encounterFailingStepsBeforeR7: r7.encounterFailingStepsBeforeR7 };
 }
 
 console.log(JSON.stringify(out, null, 1));

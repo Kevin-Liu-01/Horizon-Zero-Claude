@@ -4,7 +4,7 @@
  * prints them. Sim time at 60 Hz unless a row says otherwise. Every function returns { ok, ...numbers, why }.
  */
 import { M3_FORMS, M3_KINDS, boundsOf, lampsOf } from './forms.mjs';
-import { KilnBrain, KilnSpawner, KILN_RULES, chooseWellhead, planVolley, rng, bodyToWorld, kilnDamage, shellWarning } from '../../../../src/instruments/kinds/kiln/rules.js';
+import { KilnBrain, KilnSpawner, KILN_RULES, chooseWellhead, planVolley, rng, bodyToWorld, kilnDamage, shellWarning, kilnAwake } from '../../../../src/instruments/kinds/kiln/rules.js';
 import { KILN_DOOR } from '../../../../src/instruments/kinds/kiln/form.js';
 import * as THREE from 'three';
 import { Machine } from '../../../../src/entities/machines/machine.js';
@@ -14,7 +14,7 @@ import { SondeBrain, SONDE_RULES, downwind, bearingOf, sondeSightM } from '../..
 import { reseat } from '../../../../src/instruments/lib/kindkit.js';
 import { ST, STATUS, StatusBook } from '../../../../src/combat/status.js';
 import { PotField, POTS } from '../../../../src/combat/pots.js';
-import { CLASS_CAPS } from '../../../../src/instruments/lib/sizeclass.js';
+import { CLASS_CAPS, encounterVerdict } from '../../../../src/instruments/lib/sizeclass.js';
 import { WELLHEADS, wellheads, wellheadState, plugIn, unplug, setQuenched, resetWellheads } from '../../../../src/world/sites/kilnyards-layout.js';
 
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
@@ -536,4 +536,113 @@ export function clouded() {
   return { ok, lampDarkT: m.lampDarkT, suspicion: m.suspicion, unseenT: m._unseenT, onStatusCalls: calls, word: S.word, breaksLock: S.breaksLock, resetsAlert: S.resetsAlert };
 }
 
-export const ROWS = Object.freeze({ IK1: ik1, 'IK1-never': neverList, IK2: ik2, IK3: ik3, IK4: ik4, IK5: ik5, IK6: ik6, IK7: ik7, 'IK8-cues': ik8Cues, CLOUDED: clouded });
+
+/* ------------------------------------------------------------------------------------------------ IK1-read (wave 2) */
+/**
+ * The originality read of the grey forms, as geometry (wave 2; the wave-1 review's four risks). PROXIES, not a judge:
+ * the films and the owner's page are the read. Per kind:
+ *   frontDiscs  round flat faces that face the front or the back lens (the exposed end of a z-axis cylinder, or a ring
+ *               standing in the frontal plane), 0.25 m or more in radius: a disc to the lens is what read as a face or an
+ *               eye (the Spindle's upright ring and hub, the Sonde's nose cap and fan ducts). Bar 0.
+ *   lampX       the lamp's distance off the centre line (m): one centred pupil is what the lens rule forbids. Bar >= 0.1.
+ *   lampShare   the lamp's height over the hull's height: wave 1's Kiln lamp sat high beside the stack (0.70). Bar <= 0.6.
+ * `forms` defaults to the tree's (M3_FORMS); pass another table to read older forms the same way.
+ */
+export function readProxies(forms = M3_FORMS) {
+  const rows = {};
+  let ok = true;
+  for (const k of M3_KINDS) {
+    const F = forms[k], H = boundsOf(F.parts).max[1];
+    const zc = F.parts.filter((p) => p.type === 'cyl' && p.axis === 'z');
+    const ends = [];
+    for (const p of zc) {
+      for (const [sgn, r] of [[-1, p.r], [1, p.r2 ?? p.r]]) {
+        if (r < 0.25) continue;
+        const z = p.c[2] + sgn * p.h / 2;
+        // capped: another z-axis cylinder on the same axis meets this end with a radius at least as large
+        const capped = zc.some((q) => q !== p && Math.abs(q.c[0] - p.c[0]) < 0.01 && Math.abs(q.c[1] - p.c[1]) < 0.01
+          && [[-1, q.r], [1, q.r2 ?? q.r]].some(([s2, r2]) => Math.abs(q.c[2] + s2 * q.h / 2 - z) < 0.01 && r2 >= r - 0.01));
+        if (!capped) ends.push(`${p.name} ${sgn < 0 ? 'back' : 'front'} r ${r}`);
+      }
+    }
+    const rings = F.parts.filter((p) => p.type === 'torus' && p.axis === 'z' && p.R + p.tube >= 0.25).map((p) => `${p.name} R ${p.R}`);
+    const lamp = lampsOf(F.parts)[0];
+    const row = { frontDiscs: ends.length + rings.length, discs: [...ends, ...rings], lampX: r3(Math.abs(lamp.c[0])), lampY: lamp.c[1], lampShare: r3(lamp.c[1] / H) };
+    row.ok = row.frontDiscs === 0 && row.lampX >= 0.1 && row.lampShare <= 0.6;
+    ok = ok && row.ok;
+    rows[k] = row;
+  }
+  return { ok, rows, note: 'geometric proxies for the wave-1 review\'s four risks; the line-up film is the read' };
+}
+
+/* ------------------------------------------------------------------------------------------------ Q4 under R7 (wave 2) */
+/**
+ * The encounter at the Yards under the orchestrator's provisional ruling R7. The brief's Q4 default (kept): "Two Kilns
+ * at the Yards, one awake at a time (the other plugged in and still, which is the stealth window the bible wants), one
+ * Spindle escort, and a Davit from the third wellhead. Never two awake." R7: "a plugged, still Kiln does not count as
+ * an awake large kind for the encounter rule (it is the stealth window); never two awake."
+ *
+ * Two Kilns walk to area A's wellheads by their own rules and plug in; a Spindle holds 7.5 m off the first and a Davit
+ * 20 m behind it. Then 40 seeded fights of 600 s each: at random moments she strikes or is seen by either Kiln
+ * (`wake(site)`), throws Brine on either hot door (`brine`), and kills the awake one; a Kiln that is killed is gone.
+ * Every step: how many are awake (`kilnAwake`; bar: never more than 1), and the encounter rule
+ * (src/instruments/lib/sizeclass.js `encounterVerdict`) over the hulls it counts: the awake Kilns, the Spindle, the
+ * Davit (bar: ok on every step). For the record, the same steps with every live Kiln counted (the rule before R7).
+ * Then the spawner: a Kiln spawns while none is awake, and none while one is.
+ */
+export function q4r7() {
+  const cls = { kiln: 'large', spindle: 'medium', davit: 'medium' };
+  const classOf = (k) => cls[k];
+  let steps = 0, maxAwake = 0, failR7 = 0, failOld = 0, held = 0, woke = 0, sprung = 0, kills = 0, bothPlugged = 0;
+  const firstFail = [];
+  for (let seed = 1; seed <= 40; seed++) {
+    const R = rng(1000 + seed);
+    resetWellheads();
+    const world = { get wellheads() { return wellheads(); }, plugIn, unplug };
+    const W = WELLHEADS;
+    const A = new KilnBrain({ id: 'kiln-a', x: W[0].x + 14, z: W[0].z + 10, heading: 0 });
+    const B = new KilnBrain({ id: 'kiln-b', x: W[3].x + 14, z: W[3].z + 10, heading: 0 });
+    const site = [A, B];
+    for (let t = 0; t < 240 && !(A.plugged && B.plugged); t += DT) { A.step(DT, world); B.step(DT, world); }
+    if (A.plugged && B.plugged) bothPlugged++;
+    const spindle = { kind: 'spindle', x: A.x + 7.5, z: A.z }, davit = { kind: 'davit', x: A.x - 20, z: A.z };
+    const acts = [];
+    for (let t = 5; t < 600; t += 4 + R() * 26) acts.push({ t, what: R() < 0.55 ? 'wake' : R() < 0.75 ? 'brine' : 'kill', who: R() < 0.5 ? A : B });
+    let ai = 0;
+    for (let i = 0, t = 0; t < 600; i++, t = i * DT) {
+      while (ai < acts.length && acts[ai].t <= t) {
+        const { what, who } = acts[ai++];
+        if (who.alive === false) continue;
+        if (what === 'wake') { if (who.wake(site)) woke++; else if (who.events.at(-1)?.type === 'wake-held') held++; }
+        else if (what === 'brine') { const d = who.doorWorld(); const r = who.brine?.({ kind: 'pot', field: { x: d.x + 0.3 * Math.sin(who.heading), y: d.y, z: d.z + 0.3 * Math.cos(who.heading), contains: () => true } }); if (r?.stagger) sprung++; }
+        else if (what === 'kill' && kilnAwake(who)) { who.alive = false; kills++; }
+      }
+      for (const k of site) if (k.alive !== false) k.step(DT, world);
+      const live = site.filter((k) => k.alive !== false);
+      const awake = live.filter(kilnAwake);
+      maxAwake = Math.max(maxAwake, awake.length);
+      const others = [spindle, davit];
+      const vR7 = encounterVerdict([...awake.map((k) => ({ kind: 'kiln', x: k.x, z: k.z })), ...others], classOf);
+      const vOld = encounterVerdict([...live.map((k) => ({ kind: 'kiln', x: k.x, z: k.z })), ...others], classOf);
+      steps++;
+      if (!vR7.ok) { failR7++; if (firstFail.length < 3) firstFail.push({ seed, t: r3(t), why: vR7.anchors.flatMap((a) => a.why) }); }
+      if (!vOld.ok) failOld++;
+    }
+  }
+  // the spawner (R7): with one Kiln plugged and none awake a second spawns; with one awake none does
+  const S1 = new KilnSpawner(), S2 = new KilnSpawner();
+  resetWellheads();
+  const spawnedNoneAwake = S1.step(KILN_RULES.respawnH, wellheads(), 1, 0), spawnedOneAwake = S2.step(KILN_RULES.respawnH, wellheads(), 1, 1);
+  // the brain's own API: does kilnAwake count a plugged, staggered Kiln? (it should not: it stands still at its well)
+  resetWellheads();
+  const P = new KilnBrain({ x: WELLHEADS[1].kilnStand.x + 6, z: WELLHEADS[1].kilnStand.z + 6 });
+  const pw = { get wellheads() { return wellheads(); }, plugIn, unplug };
+  for (let t = 0; t < 240 && !P.plugged; t += DT) P.step(DT, pw);
+  const pluggedCounts = kilnAwake(P);
+  const ok = bothPlugged === 40 && maxAwake <= 1 && failR7 === 0 && held > 0 && woke > 0 && spawnedNoneAwake === 1 && spawnedOneAwake === 0 && pluggedCounts === false;
+  return { ok, ruling: 'R7 (provisional)', fights: 40, steps, bothPluggedBeforeTheFight: `${bothPlugged}/40`, maxAwakeAtOnce: maxAwake, encounterFailingStepsR7: failR7,
+    encounterFailingStepsBeforeR7: failOld, wakesTaken: woke, wakesHeld: held, doorsSprung: sprung, kills, firstFail,
+    spawner: { noneAwake: spawnedNoneAwake, oneAwake: spawnedOneAwake }, pluggedKilnCounted: pluggedCounts };
+}
+
+export const ROWS = Object.freeze({ IK1: ik1, 'IK1-never': neverList, 'IK1-read': readProxies, 'Q4-R7': q4r7, IK2: ik2, IK3: ik3, IK4: ik4, IK5: ik5, IK6: ik6, IK7: ik7, 'IK8-cues': ik8Cues, CLOUDED: clouded });

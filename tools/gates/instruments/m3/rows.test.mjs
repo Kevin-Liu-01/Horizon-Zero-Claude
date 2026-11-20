@@ -7,6 +7,8 @@ import { ROWS } from './measure.mjs';
 
 const TITLES = {
   IK1: 'IK1 sizes and classes: Kiln 5.5, Spindle 3.8, Davit 4.2, Sonde 3.0 m (+-0.1, W and L too); large, medium, medium, small; under the class triangle caps',
+  'IK1-read': 'wave 2, the originality read as geometry (proxies for the wave-1 review\'s four risks): no round flat face of 0.25 m or more to the front or back lens, the lamp off the centre line (>= 0.1 m) and at most 0.6 of the height',
+  'Q4-R7': 'Q4 under ruling R7 (provisional): "a plugged, still Kiln does not count as an awake large kind for the encounter rule (it is the stealth window); never two awake" (the brief\'s default, kept: "Two Kilns at the Yards, one awake at a time ... Never two awake"): 40 fights, never two awake, the encounter rule ok on every step',
   'IK1-never': 'the never list at blockout: one lamp each, no head/neck/eye/face/tail part, nothing emissive, knees in the sagittal plane, weak points >= 0.25 m; three plates countable',
   IK2: 'IK2 the firebox door: Brine (pot or arrow) on the hot door staggers 2.0 s +-0.2 at damage x1.0; cold door or elsewhere 0 of 10',
   IK3: 'IK3 plugged in: a quenched wellhead never chosen; it stands >= 120 s and never turns while plugged; four quenched, 0 spawns in 24 h',

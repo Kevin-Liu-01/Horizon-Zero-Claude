@@ -4,7 +4,7 @@
  * rm -r the slot the moment the run ends), on the lane's own Vite (127.0.0.1, nice -n 10, killed after).
  *
  *   node tools/gates/instruments/m3/film-lineup.mjs --port 5283 [--views front,side,quarter,sonde,front-sil,side-sil]
- *        [--label <name>] [--wait <s>] [--budget <s>]
+ *        [--label <name>] [--wait <s>] [--budget <s>] [--wave 2]   (--wave 2: the second page, each form's note of what changed)
  *   -> <review>/runs/<utc>-<commit>-m3c-lineup[-<label>]/<view>.png and lineup.json (heights measured on the page)
  *
  * Serves the tree this file sits in (a detached worktree at a commit: the measurement rule). Never port 5173.
@@ -24,6 +24,7 @@ const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[
 const PORT = guardPort(flag('--port'));
 const VIEWS = (flag('--views') || 'front,side,quarter,sonde,front-sil,side-sil').split(',');
 const WAIT_S = Number(flag('--wait', 1800)), BUDGET_S = Number(flag('--budget', 600));
+const WAVE = flag('--wave', '1');
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const log = (m) => console.log(`[lineup ${utc()}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,7 +68,7 @@ const dirty = git('status', '--porcelain', '--untracked-files=no').length > 0;
 const LABEL = flag('--label');
 const runDir = path.join(RUNS, `${utc().replace(/[-:]/g, '')}-${commit}-m3c-lineup${LABEL ? `-${LABEL}` : ''}`);
 assertOutsideRepo(runDir, REPO);
-const run = { tool: 'tools/gates/instruments/m3/film-lineup.mjs', commit, dirty, tree: REPO, port: PORT, views: VIEWS, startedAt: utc(), shots: [], console: [] };
+const run = { tool: 'tools/gates/instruments/m3/film-lineup.mjs', commit, dirty, tree: REPO, port: PORT, views: VIEWS, wave: WAVE, startedAt: utc(), shots: [], console: [] };
 
 if (await portOn(PORT, '127.0.0.1')) { console.error(`port ${PORT} is in use; not starting a second server`); process.exit(3); }
 if (!(await takeSlot())) { console.error('SLOT-NOT-AVAILABLE'); process.exit(4); }
@@ -93,7 +94,7 @@ try {
   for (const v of VIEWS) {
     if ((Date.now() - t0) / 1000 > BUDGET_S) { run.stopped = `budget ${BUDGET_S} s`; break; }
     const [view, sil] = v.split('-');
-    await page.goto(`http://127.0.0.1:${PORT}/tools/gates/instruments/m3/lineup.html?view=${view}${sil ? '&sil=1' : ''}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    await page.goto(`http://127.0.0.1:${PORT}/tools/gates/instruments/m3/lineup.html?view=${view}${sil ? '&sil=1' : ''}${WAVE !== '1' ? `&wave=${WAVE}` : ''}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction('window.__LINEUP__ && (window.__LINEUP__.ready || window.__LINEUP__.error)', { timeout: 120000, polling: 250 });
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const lu = await page.evaluate(() => window.__LINEUP__);

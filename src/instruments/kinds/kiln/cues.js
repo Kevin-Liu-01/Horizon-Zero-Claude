@@ -15,7 +15,7 @@ export const KILN_CUES = Object.freeze({
   /** one per brain event (KilnBrain.events[].type) and per mortar beat (planVolley, shellWarning) */
   event: Object.freeze({
     'door-sprung': 'kiln/door-spring', 'door-shut': 'kiln/door-shut', stagger: 'inst/stagger',
-    plugged: 'kiln/hose-lock', unplugged: 'kiln/hose-free',
+    plugged: 'kiln/hose-lock', unplugged: 'kiln/hose-free', 'wake-held': 'kiln/wake-held',
     volley: 'kiln/mortar', whistle: 'kiln/whistle', impact: 'kiln/shell', 'held-fire': 'kiln/mortar-hold',
   }),
   /** the lamp's states (src/instruments/lamps.js), the shared ids */
