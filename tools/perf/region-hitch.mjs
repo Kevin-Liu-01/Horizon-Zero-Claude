@@ -48,6 +48,7 @@ const PORT = guardPort(flag('--port'));
 if (PORT === 5173) throw new Error('5173 is never used');
 const BUILT = args.includes('--built');
 const UPLOAD = flag('--upload', 'spread');
+const WARM = !args.includes('--no-warm');
 const ONLY = (flag('--only', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[region-hitch ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -68,7 +69,7 @@ const STANDIN_FILES = ['models/npc/guild-matron.glb', 'models/npc/boat-caulker-2
   'models/npc/salt-raker-2.glb', 'models/npc/tube-smith.glb', 'models/npc/atlas-pan.glb', 'models/settlements/saltrow-kit.glb', 'models/landmarks/sea-stacks.glb'];
 
 const report = {
-  row: 'A-region-hitch', wave: 1, commit, clean: !!process.env.CLEAN_COMMIT, built: BUILT, port: PORT, upload: UPLOAD, startedAt: new Date().toISOString(),
+  row: 'A-region-hitch', wave: 1, commit, clean: !!process.env.CLEAN_COMMIT, built: BUILT, port: PORT, upload: UPLOAD, warm: WARM, startedAt: new Date().toISOString(),
   bar: { over50: 0, over33: 1 }, standIn: { malpais: MAL.standIn, files: STANDIN_FILES }, standInNote: 'her movement is carried (no kite, no input drive); the Malpais\' files are stood in by shipped GLBs fetched again', crossings: [], console: [],
 };
 const save = () => writeFileSync(path.join(OUT, 'region-hitch.json'), JSON.stringify(report, null, 1));
@@ -135,7 +136,7 @@ const recorder = () => {
 };
 
 /** In the page after Continue: the stand-in loader on the regions seam's own loader. */
-const installStandIn = (rows, upload, place) => {
+const installStandIn = (rows, upload, place, warm) => {
   const C = window.__CTX__, E = C.engine, R = E.regions, A = C.assets, S = window.__rh;
   const mark = (tag, extra = {}) => S.marks.push({ t: Math.round(performance.now()), tag, ...extra });
   const held = (window.__standIn = { names: [], roots: [], queue: [], loads: 0 });
@@ -161,12 +162,24 @@ const installStandIn = (rows, upload, place) => {
       e.root.traverse((o) => { const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []; for (const m of ms) for (const k in m) if (m[k]?.isTexture) tex.push(m[k]); });
       held.queue.push(...new Set(tex));
     }
-    if (upload === 'at-load') { for (const t of held.queue.splice(0)) { try { E.renderer.initTexture(t); } catch { /* */ } } for (const r of held.roots) E.scene.add(r); mark('uploaded-all'); }
+    if (upload === 'at-load') { for (const t of held.queue.splice(0)) { try { E.renderer.initTexture(t); } catch { /* */ } } mark('uploaded-all'); }
     else {
       await new Promise((res) => { const step = () => { const t = held.queue.shift(); if (t) { try { E.renderer.initTexture(t); } catch { /* */ } requestAnimationFrame(step); } else res(); }; requestAnimationFrame(step); });
-      for (const r of held.roots) E.scene.add(r);
       mark('uploaded-spread');
     }
+    // the programs: issued off the frame and awaited (KHR_parallel_shader_compile) before the models are drawn, as the
+    // engine's warm-up does (engine.compileAsDrawn + _awaitProgramsReady); --no-warm adds them to the scene cold
+    if (warm && E.compileAsDrawn && E._awaitProgramsReady) {
+      const g = new (E.scene.constructor)();
+      for (const r of held.roots) g.add(r);
+      try { E.compileAsDrawn(g, E.camera, E.scene); } catch (err) { mark('compile-threw', { err: String(err).slice(0, 120) }); }
+      mark('programs-issued');
+      await E._awaitProgramsReady(20000);
+      mark('programs-ready');
+      g.clear();
+    }
+    for (const r of held.roots) E.scene.add(r);
+    mark('added');
   };
   R.loader.unload = () => {
     for (const n of held.names.splice(0)) { try { A.unload(n); } catch { /* */ } }
@@ -197,6 +210,19 @@ const carry = (c, from, to, agl) => new Promise((resolve) => {
       p._fallPeak = p.position.y; p.airTime = 0;
     } else { try { p._snapToGround(p.position.y + 2); } catch { p.position.y = H(x, z); p._prevPos?.copy?.(p.position); } }
     if (s >= L) resolve({ s: +s.toFixed(1), ms: Math.round(performance.now() - t0) }); else requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+});
+
+/** In the page: hold her at `at`, agl metres over the ground, for ms (a flight's start and end: no fall). */
+const hold = (at, agl, ms) => new Promise((resolve) => {
+  const C = window.__CTX__, p = C.player;
+  const H = (x, z) => C.terrain?.getHeight?.(x, z) ?? p.position.y;
+  const t0 = performance.now();
+  const step = () => {
+    p.position.x = at.x; p.position.z = at.z;
+    if (agl > 0) { p.position.y = H(at.x, at.z) + agl; p.velocity?.set?.(0, 0, 0); p._prevPos?.copy?.(p.position); p._fallPeak = p.position.y; p.airTime = 0; }
+    if (performance.now() - t0 >= ms) resolve(true); else requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
 });
@@ -269,29 +295,31 @@ try {
     const C = { id: c.id, mode: c.mode, speed: c.speed, agl: c.agl, a: c.a, b: c.b, standIn: 'carried; Malpais files stood in' };
     try {
       const inside = { x: c.b.x, z: c.b.z };
-      await page.evaluate(installStandIn, rows, UPLOAD, inside);
+      await page.evaluate(installStandIn, rows, UPLOAD, inside, WARM);
       // to the start (a teleport: not counted), settle 4 s
-      await page.evaluate((cc) => { const C = window.__CTX__, p = C.player; C.engine.regions.tracker.modeOf = () => cc.mode; p.position.x = cc.a.x; p.position.z = cc.a.z; p._snapToGround?.(p.position.y + 200); if (cc.agl) { p.position.y += cc.agl; p._prevPos?.copy?.(p.position); } }, c);
-      await sleep(4000);
+      await page.evaluate((cc) => { const C = window.__CTX__, p = C.player; C.engine.regions.tracker.modeOf = () => cc.mode; p.position.x = cc.a.x; p.position.z = cc.a.z; p._snapToGround?.(p.position.y + 200); }, c);
+      await page.evaluate(hold, c.a, c.agl, 4000);
       C.before = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), where: window.__rh.where() }));
       await page.evaluate(() => { const S = window.__rh; S.on = true; S.frames = 0; S.over33 = 0; S.over50 = 0; S.max = 0; S.long = []; S.marks = []; S.res = []; S.loaf = []; S.last = 0; });
       C.out = await page.evaluate(carry, c, c.a, c.b, c.agl);
-      await sleep(3000);
+      await page.evaluate(hold, c.b, c.agl, 3000);
       const shotOut = path.join(OUT, `${c.id}-in.jpg`);
       await page.evaluate(() => { window.__rh.on = false; });
       await page.screenshot({ path: shotOut, type: 'jpeg', quality: 80 }).catch(() => null);
       await page.evaluate(() => { window.__rh.last = 0; window.__rh.on = true; });
-      await sleep(500);
+      await page.evaluate(hold, c.b, c.agl, 500);
       C.mid = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), standIn: { names: window.__standIn.names.length, queue: window.__standIn.queue.length, loads: window.__standIn.loads } }));
       C.back = await page.evaluate(carry, c, c.b, c.a, c.agl);
-      await sleep(3000);
+      await page.evaluate(hold, c.a, c.agl, 3000);
       const R = await page.evaluate(() => { const S = window.__rh; S.on = false; return { frames: S.frames, over33: S.over33, over50: S.over50, maxMs: +S.max.toFixed(1), long: S.long, marks: S.marks, res: S.res, loaf: S.loaf }; });
-      C.after = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), standInHeld: window.__standIn.names.length }));
+      C.after = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), standInHeld: window.__standIn.names.length, hp: Math.round(window.__CTX__.player.health ?? 0), dead: !!document.querySelector('.mn-death.show') }));
+      // down to the ground again before the next crossing (a teleport: not counted)
+      await page.evaluate(() => { const p = window.__CTX__.player; p._snapToGround?.(p.position.y + 2); window.__CTX__.engine.regions.tracker.modeOf = () => 'walk'; });
       C.frames = R.frames; C.over33 = R.over33; C.over50 = R.over50; C.maxMs = R.maxMs;
       C.long = R.long.map((f) => ({ ...f, ...causeOf(f, R.marks, R.res, R.loaf) }));
       C.marks = R.marks; C.fetched = R.res.map((r) => ({ url: r.url, ms: Math.round(r.end - r.start), bytes: r.bytes }));
       C.fetchedBytes = R.res.reduce((s, r) => s + (r.bytes || 0), 0);
-      C.pass = C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+      C.pass = !C.after.dead && C.fetchedBytes > 0 && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
       C.shot = path.basename(shotOut);
       log(`${c.id}: ${C.frames} frames, ${C.over33} over 33 ms, ${C.over50} over 50 ms (max ${C.maxMs}); stand-in ${(C.fetchedBytes / 1e6).toFixed(2)} MB fetched; ${C.pass ? 'PASS' : 'FAIL'}`);
       // back at the start in the Holds the Malpais must have departed (its stand-ins disposed) before the next crossing
