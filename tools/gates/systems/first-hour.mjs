@@ -599,14 +599,24 @@ async function driveBarbed(page, K) {
 /** ORO: to the tube mouth, E, his scene played through (Space, and the exit station). */
 async function driveOro(page, K) {
   const A = await page.evaluate(() => window.__CTX__.systemsGame.A.oro);
-  const w = await walkPath(page, A, 2.4, 60);
+  // (M2 fix wave 2) up to three tries, the village's road on the second, a drink under 50 between them: at 4fe5177
+  // chained run 1 the one 60 s walk from the terrace stopped 51.5 m short while the stood-up terrace Plumb's Sightline
+  // took her 75 -> 25, and the leg stopped at 'oro'
+  let w = null;
+  const tries = [];
+  for (let i = 0; i < 3; i++) {
+    if ((await page.evaluate(where)).hp < 50) await SH.drink(page, K, 92);
+    w = i === 1 ? await walkRoad(page, A, 2.4, 70) : await walkPath(page, A, 2.4, 60);
+    tries.push({ ok: w.ok, why: w.why ?? null, s: w.s ?? null });
+    if (w.ok || w.why === 'died') break;
+  }
   await sleep(400);
   await SH.holdE(page, K, 500);
   await sleep(400);
   await page.evaluate(() => { window.__probeQuest = 'the-scar'; });
   try { await SH.playScene(page, K, 60); } finally { await page.evaluate(() => { window.__probeQuest = null; }); }
   const r = await waitReached(page, SCAR_ID, 'oro', 6000);
-  return { walk: { ok: w.ok, why: w.why ?? null }, reached: r.ok, kit: await page.evaluate(() => ({ gaff: !!window.__CTX__.player?.hero?.kit?.gaff, given: !!window.__CTX__.systemsGame?.hour?._kitGiven })) };
+  return { walk: { ok: w.ok, why: w.why ?? null, tries }, reached: r.ok, kit: await page.evaluate(() => ({ gaff: !!window.__CTX__.player?.hero?.kit?.gaff, given: !!window.__CTX__.systemsGame?.hour?._kitGiven })) };
 }
 
 /**
@@ -753,8 +763,14 @@ async function driveScreed(page, K, stage, maxS = 120) {
     if (stage === 'stall') {
       // out of the village and into corridor 1/2 by its east mouth, then along it to 4 deg past the Screed's bearing
       if (!approach) {
-        approach = { mouth: await page.evaluate(polarNW, (C12.end + C12.end2) / 2, rMid) };
-        approach.walk = await walkPath(page, approach.mouth, 3, 90);
+        approach = { mouth: await page.evaluate(polarNW, (C12.end + C12.end2) / 2, rMid), tries: [] };
+        // (M2 fix wave 2) a second try from where the first stopped, a drink under 50 first
+        for (let i = 0; i < 2; i++) {
+          if ((await page.evaluate(where)).hp < 50) await SH.drink(page, K, 92);
+          approach.walk = await walkPath(page, approach.mouth, 3, 90);
+          approach.tries.push({ ok: approach.walk.ok, why: approach.walk.why ?? null });
+          if (approach.walk.ok || approach.walk.why === 'died') break;
+        }
         approach.at = { t: T(), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1) };
         const S2 = await page.evaluate(screedNow);
         note(S2, { mouth: true, walk: approach.walk.ok });
