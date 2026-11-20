@@ -11,6 +11,8 @@
  *            changes in wave 2), Rust Cone, the Yards' towers and stacks (to 29 m over the shelf), the hornitos and their
  *            steam (to 20 m), the tube shelter's crust.
  */
+import { HORNITOS } from '../../../src/world/sites/malpais-layout.js';
+
 export const lane = 'm3-world';
 
 /** @type {ReadonlyArray<object>} */
@@ -25,10 +27,18 @@ export const FRAMES = Object.freeze([
     /* M3 wave 2 (the orchestrator's ruling R2, provisional: "F56's lens moves to (250, -130) so Malpais ground shows; the
      * Scar is not in it"; the old text: "the Malpais from the Scar's upper end"). From (250, -130) the Scar's planed floor
      * runs 86 m west of the lens on bearings 233-360: every west-looking bearing shows it (Node ray count from the recipe,
-     * 32 x 18 rays, fov 55: bearing 270 pitch 0 -> Malpais 54 %, the Scar 25 %). Facing 155 and pitched down 15 deg the
-     * lens looks down Rust Cone's scree past the hornito field to the flow's sea front: Malpais ground 45 % of the rays
-     * (Rust Cone's flank 29 %, the lava below 16 %), the sea 26 %, sky 25 %, the Scar 0 % */
-    at: { en: [250, -130] }, bearing: 155, camera: { mode: 'eye', eye: 1.7, pitch: -15, fov: 55 }, state: { pose: 'idle', hud: false },
+     * 32 x 18 rays, fov 55: bearing 270 pitch 0 -> Malpais 54 %, the Scar 25 %). Facing 160 and pitched down 20 deg the
+     * lens looks down Rust Cone's scree past the hornito field to the flow's sea front: Malpais ground 47 % of the rays
+     * (Rust Cone's flank 27 %, the lava past 60 m 21 %), the sea 26 %, sky 21 %, the Scar 0 % (the subject check's Node
+     * half: Malpais ground 51.5 % of the frame, 7 of 7 hornitos in the safe area: PASS) */
+    at: { en: [250, -130] }, bearing: 160, camera: { mode: 'eye', eye: 1.7, pitch: -20, fov: 55 }, state: { pose: 'idle', hud: false },
+    /* its own subjects (rule 17; tools/frames/subjects.mjs's F56 row asks for Rust Cone's TOP in the lens, which no lens at
+     * R2's point can hold without looking 57 deg up the cone's own flank: the top stands 69 m over the lens, 44 m off). R2's
+     * frame: the Malpais ground (the table's own bar) and the hornito field below it */
+    subjects: [
+      { name: 'the Malpais ground', kind: 'ground', region: 'malpais', minShare: 0.25 },
+      { name: 'the hornito field (>= 5 cones)', kind: 'shapes', min: 5, minPx: 12, shapes: HORNITOS.map((h) => ({ id: h.id, kind: 'cone', x: h.x, z: h.z, r: h.r, rTop: h.r * 0.3, h: h.h })) },
+    ],
     ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 2: Rust Cone's red scree in the foreground, the aa's clinker and spires and the pahoehoe's sheets below toward the hornito field and the sea; no lava, nothing glowing. Wave 3: >= 3 steam sources (MP1, MP2, MP4)" },
   },
   {
@@ -38,7 +48,9 @@ export const FRAMES = Object.freeze([
     // bearing 300, pitch 6, fov 60) every stack top and tower-a's rim were above the frame and tower-b stood behind the
     // stacks, so the stub read as a dark spire. Node, this lens: rims and stack tops at x 0.00-0.63, y 0.16-0.88 of the
     // half-frame, the four caps at y -0.87, none behind ground
-    at: { en: [224.2, -32.4] }, bearing: 310, camera: { mode: 'eye', eye: 1.7, pitch: 24, fov: 55 }, state: { pose: 'idle', hud: false },
+    // M3 wave 2: pitched up 20 deg (was 24) and widened to fov 60 (was 55), so the four wellheads' caps stand inside the
+    // safe area (rule 17's check at a91c4f7: at 24 deg the caps sat 29-52 % in it, on the frame's lower edge)
+    at: { en: [224.2, -32.4] }, bearing: 310, camera: { mode: 'eye', eye: 1.7, pitch: 20, fov: 60 }, state: { pose: 'idle', hud: false },
     ref: { crops: ['board-kilnyards'], written: "the BOARD Kiln Yards panel. Wave 1 blockout: from the apron's south-east corner looking north-west and up: the four wellheads' caps along the bench's lower edge, the manifold rack, the four flue stacks with their tops in frame, the two tower stubs whole on the shelf; only the wellheads' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)" },
   },
   {
