@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "set": "W3",
+  "about": "Tutorial cards for hour two, in W1's shape: one at a time, 8 s, glass, top-left under the field note. HEAD in Chakra Petch caps, body in Plex Mono. Every card is kept in the Field Manual (Extras). 'kite' is the Survey Kite's card ('A Line Over the Glass'); 'yards' the Kiln Yards' card; 'rung-held' the reward card of 'The Kiln Yards' while rung 6 is not owned.",
+  "cards": [
+    { "id": "kite", "at": "1:20", "head": "SURVEY KITE", "body": "open from a height into the wind. 5 m on for 1 m down. It will not open in dust or a squall." },
+    { "id": "yards", "at": "1:52", "head": "WELLHEADS", "body": "a plugged Kiln stands blind. Brine within 3 m of its wellhead quenches it for good." },
+    { "id": "rung-held", "at": "2:15", "head": "RUNG 7 · HELD", "body": "the Arcane tiles hang at Oro's forge until you own rung 6, the Vanguard." }
+  ]
+}

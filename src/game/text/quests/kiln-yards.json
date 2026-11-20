@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "set": "W3",
+  "id": "kiln-yards",
+  "title": "THE KILN YARDS",
+  "giver": "oro",
+  "place": "the Malpaís",
+  "logSummary": "Four wellheads on the Kiln Yards' apron, two Kilns plugged into them by turns, and a Spindle walking the shelf.",
+  "kicker": "FIELD NOTE",
+
+  "stages": [
+    { "id": "oro-yards",   "at": "1:45", "type": "talk",  "note": "Talk to Oro at the tube mouth", "log": "Oro asked for the Kiln Yards' four wellheads, cold." },
+    { "id": "climb",       "at": "1:47", "type": "event", "note": "Walk up into the Malpaís, bearing 050", "log": "Walked up out of the Holds onto the cold lava." },
+    { "id": "plugged",     "at": "1:52", "type": "event", "note": "Reach a wellhead a Kiln is plugged into, unseen", "log": "Reached a wellhead under a plugged Kiln, unseen." },
+    { "id": "quench-1",    "at": "1:53", "type": "event", "note": "Brine the wellhead the Kiln is plugged into  {n} / 4", "log": "First wellhead quenched." },
+    { "id": "quench-2",    "at": "1:56", "type": "event", "note": "Wait for the other Kiln to plug in; quench that head", "log": "Second wellhead quenched." },
+    { "id": "quench-3",    "at": "1:59", "type": "event", "note": "Quench the third wellhead", "log": "Third wellhead quenched." },
+    { "id": "quench-4",    "at": "2:02", "type": "event", "note": "Quench the last wellhead past the Spindle", "log": "Fourth wellhead quenched. The apron is dark." },
+    { "id": "yards-quiet", "at": "2:03", "type": "event", "note": "Watch the Kilns go cold", "log": "Both Kilns stood cold. Nothing comes to the Yards to feed." },
+    { "id": "tube-rest",   "at": "2:05", "type": "rest",  "note": "Kindle the Brazier in the tube shelter and rest", "log": "Rested in the lava tube by the hornitos." },
+    { "id": "scar-flight", "at": "2:10", "type": "event", "note": "Fly home down the Scar's seven posts", "log": "Flew the Scar's line home, seven posts." },
+    { "id": "rung-7-held", "at": "2:15", "type": "talk",  "note": "Tell Oro the Yards are cold", "log": "Oro took the oxblood tiles down off the forge wall." }
+  ],
+
+  "closing": {
+    "note": "Rung 7 waits at Oro's forge",
+    "reward": ["RUNG 7 · ARCANE · HELD AT ORO'S", "MADE WHEN YOU WEAR RUNG 6"],
+    "rewardMade": ["RUNG 7 · ARCANE · OXBLOOD LAMELLAR", "KILN-WALK: FIRE POOLS DO NO DAMAGE"],
+    "logEnd": "The Kiln Yards are cold. The Holds' walls stand a while."
+  },
+
+  "prompts": {
+    "about": "The Yards' own prompts, read by src/game/hour2/kiln-yards.js. {n} and {of} are the belt's Brine count and its cap.",
+    "tank": "FILL BRINE POTS · QUENCH TANK",
+    "tankFull": "BELT FULL · {n} / {of}"
+  },
+
+  "scenes": [
+    {
+      "id": "yards",
+      "at": "1:45",
+      "where": "the tube mouth, the forge banked, noon gone",
+      "cards": [
+        { "who": "oro", "lines": ["The Scar's quiet. The walls are true.", "Now look up the hill, past the Rise."] },
+        { "who": "brea", "measure": true, "lines": ["Smoke on bearing 050. The Kiln Yards,", "two hundred and eighty metres", "and sixty-five of climb."] },
+        { "who": "oro", "lines": ["Four wellheads on that apron,", "and the Kilns drink from them.", "Every shell on the Holds is fired there."] },
+        { "who": "oro", "lines": ["Two of them up there now. One stands", "plugged in and blind while it drinks.", "The other walks, with a Spindle."] },
+        { "who": "brea", "measure": true, "lines": ["Brine within three metres of a head", "while a Kiln drinks from it.", "Four heads, four pots."] },
+        { "who": "oro", "lines": ["Three is all a belt holds. The plant", "had a quench tank at the bench's", "west end. If it holds brine, fill there."] },
+        { "who": "oro", "lines": ["Fill your belt from mine first.", "And don't stand in the walking one's eye."] },
+        { "who": "brea", "measure": true, "lines": ["Three pots. Bearing 050 and up.", "I'll be back before the forge is cold."] }
+      ]
+    },
+    {
+      "id": "yards-paid",
+      "at": "2:15",
+      "where": "the tube mouth, the forge lit",
+      "cards": [
+        { "who": "brea", "measure": true, "lines": ["Four heads quenched and both Kilns", "cold on the apron. Nothing walked", "up the bench in the hour I watched."] },
+        { "who": "oro", "lines": ["Then I owe you these.", "Oxblood tiles, scales cut in every one."] },
+        { "who": "oro", "lines": ["They hang on the Vanguard's frame,", "and you don't wear that yet.", "They stay on my wall until you do."] },
+        { "who": "brea", "measure": true, "lines": ["Rung 7 on the wall, waiting on 6.", "I'll come back for them."] },
+        { "who": "oro", "lines": ["Come back for them in one piece.", "I'll keep them oiled."] }
+      ]
+    }
+  ],
+
+  "breaAlone": {
+    "about": "Brea's own turns in the field on 'The Kiln Yards': one card each, shown as a subtitle when its trigger first happens. Each trigger shows once.",
+    "cards": [
+      { "on": "yards-given", "measure": true, "lines": ["Three Brine on the belt.", "Four heads. One trip to the tank."] },
+      { "on": "yards-walk", "measure": true, "lines": ["Upwind all the way. The smoke leans", "to 225, straight down the Scar."] },
+      { "on": "malpais-in", "measure": true, "lines": ["Cold aa underfoot. A hundred metres", "to go, and the apron above it."] },
+      { "on": "yards-seen", "measure": true, "lines": ["Two towers, four stacks, four heads.", "One Kiln plugged in, one walking."] },
+      { "on": "at-the-head", "measure": true, "lines": ["The head's three metres off.", "It hasn't turned. It can't."] },
+      { "on": "quenched-1", "measure": true, "lines": ["One head dark. It's gone cold", "where it stood. The other's moving."] },
+      { "on": "quenched-2", "measure": true, "lines": ["Two. Each time one goes cold,", "the other plugs in. Two left."] },
+      { "on": "quenched-3", "measure": true, "lines": ["Three. One head still glowing."] },
+      { "on": "quenched-4", "measure": true, "lines": ["Four. The apron's dark end to end."] },
+      { "on": "quiet", "measure": true, "lines": ["Two Kilns, five and a half metres", "each, and both of them stone cold."] },
+      { "on": "tank", "measure": true, "lines": ["Brine in the old tank, a hand deep.", "Enough for three more pots."] },
+      { "on": "brine-cold", "lines": ["Nothing drinks from that one.", "Brine where a Kiln is plugged in."] },
+      { "on": "spindle", "measure": true, "lines": ["The Spindle. Seven metres off its Kiln,", "on my side of it, ring spinning."] },
+      { "on": "to-the-tube", "measure": true, "lines": ["The tube's eighty metres east,", "under the hornitos. Rest there."] },
+      { "on": "scar-road", "measure": true, "lines": ["Seven posts down the Scar's lip.", "Wind behind me, 045."] },
+      { "on": "scar-down", "measure": true, "lines": ["Four hundred and eighty metres", "of line, and down on its foot."] }
+    ]
+  }
+}

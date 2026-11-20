@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "set": "W3",
+  "id": "wrong-tide",
+  "title": "THE WRONG TIDE",
+  "giver": "ansel",
+  "place": "Saltrow",
+  "logSummary": "The Gauge followed through one tide to the bronze post it levels to, and Benchmark 2 made true.",
+  "kicker": "FIELD NOTE",
+
+  "stages": [
+    { "id": "gauge-tide",    "at": "1:25", "type": "event", "note": "Rest at your Brazier till the tide turns; follow the Gauge", "log": "Followed the Gauge out across the pans on the turn." },
+    { "id": "find-b2",       "at": "1:31", "type": "event", "note": "Find the mark the Gauge levels to", "log": "Found Benchmark 2, a bronze post standing in the Glass." },
+    { "id": "resurvey-b2",   "at": "1:33", "type": "hold",  "note": "Re-survey Benchmark 2: take bearings  {n} / {of}", "log": "Re-surveyed Benchmark 2. Three bearings, closed." },
+    { "id": "clock-returns", "at": "1:36", "type": "event", "note": "Watch the Gauge go back to Sluice 3", "log": "The Gauge walked back to the Pan Houses' clock." },
+    { "id": "rung-3",        "at": "1:40", "type": "event", "note": "Have the Reckoner rung made at the guild house", "log": "The guild made the Brine-Cured: salt and three scutes." }
+  ],
+
+  "closing": {
+    "note": "The pans flood on the right tide",
+    "reward": ["RUNG 3 · RECKONER · BRINE-CURED", "THE PANS PRODUCE AGAIN"],
+    "logEnd": "The Gauge keeps our tide again. Benchmark 2 is a node."
+  },
+
+  "scenes": [
+    {
+      "id": "tide",
+      "at": "1:25",
+      "where": "the guild house, the tide board",
+      "cards": [
+        { "who": "ansel", "lines": ["The pans flooded at the wrong hour", "three days running. The Gauge", "walks off on its own tide now."] },
+        { "who": "brea", "measure": true, "lines": ["It's levelling to something.", "Out and back takes it ten minutes."] },
+        { "who": "ansel", "lines": ["Then walk behind it. Find what", "it's reading, and make it read us."] },
+        { "who": "brea", "measure": true, "lines": ["Rest at my Brazier till it turns,", "then out behind it. One tide."] }
+      ]
+    }
+  ],
+
+  "breaAlone": {
+    "about": "Brea's own turns in the field on 'The Wrong Tide': one card each, shown as a subtitle when its trigger first happens. Each trigger shows once.",
+    "cards": [
+      { "on": "gauge-leaves", "measure": true, "lines": ["It's off Sluice 3. Bearing 345,", "into the Glass, slow."] },
+      { "on": "b2-found", "measure": true, "lines": ["Benchmark 2. A bronze post a metre", "high, standing in the Glass."] },
+      { "on": "b2-true", "measure": true, "lines": ["Three bearings, and they close.", "The pans can read the post again."] },
+      { "on": "gauge-back", "measure": true, "lines": ["Back on Sluice 3, on the hour.", "Tide 0.4 m."] },
+      { "on": "scutes", "measure": true, "lines": ["Three float scutes the Gauge shed,", "and forty salt. That's the rung."] }
+    ]
+  }
+}

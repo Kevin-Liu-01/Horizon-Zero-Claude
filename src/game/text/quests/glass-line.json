@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "set": "W3",
+  "id": "glass-line",
+  "title": "A LINE OVER THE GLASS",
+  "giver": "ansel",
+  "place": "Saltrow",
+  "logSummary": "A box kite rebuilt from a wreck, the Sonde cut loose, and a glide off T1 on the trade.",
+  "kicker": "FIELD NOTE",
+
+  "stages": [
+    { "id": "walk-the-line", "at": "0:55", "type": "event",  "note": "Walk the line to the guild-house stud", "log": "Walked the line from Benchmark 1 to the guild house." },
+    { "id": "ansel-kite",    "at": "1:00", "type": "talk",   "note": "Talk to Ansel at the guild house", "log": "Ansel brought down the kite off the beam." },
+    { "id": "wreck",         "at": "1:05", "type": "gather", "note": "Cut sailcloth from the wreck on the black beach", "log": "Cut sailcloth from the wreck on the beach." },
+    { "id": "cane-cord",     "at": "1:10", "type": "gather", "note": "Cut cane and twist cord  {n} / {of}", "log": "Eight canes cut, four cords twisted." },
+    { "id": "rebuild",       "at": "1:13", "type": "event",  "note": "Rebuild the kite at the guild house", "log": "Rebuilt the kite: two cells, new spars, new cloth." },
+    { "id": "tether",        "at": "1:16", "type": "event",  "note": "Cut the Sonde's tether at the Sounding Ring", "log": "Cut the Sonde's tether. It drifted off downwind." },
+    { "id": "launch",        "at": "1:20", "type": "event",  "note": "Climb T1 and open the kite into the trade", "log": "Opened the kite off the top of T1." },
+    { "id": "fly",           "at": "1:21", "type": "event",  "note": "Glide to the marked field below the Shelf", "log": "Glided off T1 and landed on the marked field." },
+    { "id": "kite-given",    "at": "1:25", "type": "talk",   "note": "Bring the kite back to Ansel", "log": "Ansel said the kite is mine now." }
+  ],
+
+  "closing": {
+    "note": "The Survey Kite is on your back",
+    "reward": ["THE SURVEY KITE"],
+    "logEnd": "The Pan Houses have a kite again, and it's mine to fly."
+  },
+
+  "scenes": [
+    {
+      "id": "kite",
+      "at": "1:00",
+      "where": "the guild house, under the roof beam",
+      "cards": [
+        { "who": "ansel", "lines": ["The pans' sighting kite went into", "the surf off the black beach", "in the last calima. Torn through."] },
+        { "who": "brea", "measure": true, "lines": ["Then the pans have no eye over", "the Glass. Not past a hundred metres."] },
+        { "who": "ansel", "lines": ["There's one more. Up on the beam.", "Your mother's. Nesra left it there", "when she went up to Mistfold."] },
+        { "who": "brea", "measure": true, "lines": ["Nine years on a beam.", "The spars won't take a gust."] },
+        { "who": "ansel", "lines": ["So rebuild it. Cane, cord, and", "cloth off the wreck on the beach."] },
+        { "who": "brea", "measure": true, "lines": ["Eight canes and four cords.", "And the sailcloth off the wreck."] },
+        { "who": "ansel", "lines": ["And cut that Sonde loose at the Ring", "before you fly. Moored there,", "it calls every Plumb in the bay."] },
+        { "who": "brea", "measure": true, "lines": ["Off T1 on the trade, from 045.", "Five metres on for every one down."] }
+      ]
+    },
+    {
+      "id": "kite-back",
+      "at": "1:25",
+      "where": "the guild house door",
+      "cards": [
+        { "who": "ansel", "lines": ["I watched you from the door.", "Not one Plumb turned its lamp."] },
+        { "who": "brea", "measure": true, "lines": ["Fourteen metres of stair and four", "of pillar, and I came down", "on the mark. It flies true."] },
+        { "who": "ansel", "lines": ["Then keep it. The guild has no one", "else who'd hang under it."] }
+      ]
+    }
+  ],
+
+  "breaAlone": {
+    "about": "Brea's own turns in the field on 'A Line Over the Glass': one card each, shown as a subtitle when its trigger first happens. Each trigger shows once.",
+    "cards": [
+      { "on": "line-walked", "measure": true, "lines": ["Benchmark 1 to the stud,", "two hundred and eighty metres."] },
+      { "on": "wreck-seen", "measure": true, "lines": ["The wreck's ribs, three metres", "of torn cloth still on them."] },
+      { "on": "cloth-cut", "lines": ["Salt-stiff, but it'll hold a seam."] },
+      { "on": "canes-cut", "measure": true, "lines": ["Eight canes, straight enough.", "Four cords twisted from the rush."] },
+      { "on": "rebuilt", "measure": true, "lines": ["Two cells, cane spars, the bar", "at my chest. It folds to a roll", "under a metre long."] },
+      { "on": "sonde-seen", "measure": true, "lines": ["The Sonde, moored to the Ring.", "One line to cut, from fifteen metres."] },
+      { "on": "tether-cut", "measure": true, "lines": ["Cut. It's drifting off on 225,", "downwind, lamp still on."] },
+      { "on": "t1-top", "measure": true, "lines": ["Top of T1. Wind on my face,", "045, steady."] },
+      { "on": "landed", "measure": true, "lines": ["Down on the field. Walking pace", "when my feet touched."] }
+    ]
+  }
+}

@@ -108,5 +108,83 @@
         }
       ]
     }
+  },
+  "w3": {
+    "set": "W3",
+    "about": "Writing for hour two: 'A Line Over the Glass', 'The Wrong Tide' and 'The Kiln Yards', Nesra's first mention (once, by Ansel, in the kite quest), Field Books 11-18, and the kite's, the Yards' and the held rung's cards. The same rules as W1 (rules above); checked by node --test src/game/hour2/writing-w3.test.mjs.",
+    "files": {
+      "quests": [
+        "quests/glass-line.json",
+        "quests/wrong-tide.json",
+        "quests/kiln-yards.json"
+      ],
+      "tutorial": "cards/hour-two-w3.json",
+      "books": "books/field-books-w3.json"
+    },
+    "worldFacts": {
+      "about": "Fixed numbers in the W3 lines that the world must agree with, and where each comes from.",
+      "items": [
+        {
+          "line": "the Kiln Yards on bearing 050 from Oro, 280 metres and 65 of climb",
+          "source": "src/game/hour2/plan.js PLACES.oro (3, 206.5) to the Yards (219, 27): 281 m on 050; the island recipe: 77.9 m to the apron at 143.0 m"
+        },
+        {
+          "line": "four wellheads, 10 m apart; Brine within three metres",
+          "source": "src/world/sites/kilnyards-layout.js WELLHEADS (u -15, -5, 5, 15) and QUENCH_R 3"
+        },
+        {
+          "line": "two towers, 26 m and 22; four stacks",
+          "source": "kilnyards-layout.js YARDS.towers (26, 22.5), YARDS.stacks (4)"
+        },
+        {
+          "line": "two Kilns, one walking with a Spindle; five and a half metres each",
+          "source": "M3-BRIEFS Q4 default and R7; bible 7.4 Kiln 5.5 m; Spindle escort 6-9 m (spindle/rules.js escortMid 7.5)"
+        },
+        {
+          "line": "three is all a belt holds",
+          "source": "src/combat/pots.js POT_CAP 3"
+        },
+        {
+          "line": "the Scar: 225, 480 m, seven posts",
+          "source": "bible 2.2 and the wind roads: the Scar runs 225 with the wind, 480 m; 7 posts on its north lip (R4: a glide road)"
+        },
+        {
+          "line": "the tube eighty metres east of the Yards",
+          "source": "plan.js PLACES.tubeShelter: 81 m from the Yards"
+        },
+        {
+          "line": "five metres on for every one down",
+          "source": "bible 12: the Survey Kite glides 5:1 (plan.js KITE.glide)"
+        },
+        {
+          "line": "fourteen metres of stair and four of pillar",
+          "source": "bible 3.4 Organ Shelf columns to 14 m; sites.js TRIG_TOP 4"
+        },
+        {
+          "line": "the Gauge out and back in ten minutes; Sluice 3; tide 0.4 m",
+          "source": "gauge.js CLOCK period 600 s; bible 11.2 the 0:05 card"
+        },
+        {
+          "line": "Benchmark 2 a bronze post standing in the Glass, bearing 345 from the Gauge",
+          "source": "bible 3.4 B2 (-380, -180); plan.js PLACES.gauge to PLACES.b2: 343 deg"
+        },
+        {
+          "line": "salt x40 and three float scutes for rung 3",
+          "source": "bible 8.4 rung 3 RECKONER"
+        },
+        {
+          "line": "the Ring 34 m across",
+          "source": "bible 3.4 the Sounding Ring"
+        },
+        {
+          "line": "T3 at 145 m",
+          "source": "R1: Rust Cone's top at 145 m"
+        },
+        {
+          "line": "seven hornitos, 3 to 6 m",
+          "source": "bible 3.3 the hornito field; malpais-layout.js 7 hornitos"
+        }
+      ]
+    }
   }
 }
