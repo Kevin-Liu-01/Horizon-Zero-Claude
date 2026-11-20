@@ -13,8 +13,18 @@
  *     page lacks is the name the beat fails by ("not built: ...") until it plays;
  *   - `danger`: the beat has an hp row in Node first (rule 22: 10 simulated plays, lowest hp >= 25), named here.
  * Nothing here is wired into the runtime; the stage tables of the three quests are written against it in wave 2.
+ *
+ * R8 WIRED (M3 wave 2b, area C; the orchestrator's ruling R8: "Leg 5 and the exit's two-leg pairing keep their 900 s
+ * bar: shorten the route (a nearer Brazier, a road) rather than the bar; propose with numbers"). The route proposed at
+ * M3 wave 2 (./route.js, its numbers and why) is the plan now: three beats take its budgets, each keeps its wave-1
+ * budget as `wave1S` (the old text kept), and each names the new piece it needs, so the runner fails it by that name
+ * until its owner builds it:
+ *   gauge-tide  275 -> 60 s   rest at the cistern's Brazier until the Gauge's tide turns ('brazier:tide-rest')
+ *   hand-net     50 -> 40 s   the fishing hut on the Glass's shore, 40 m from B2 toward the stud (PLACES.fishingHut)
+ *   oro-yards    72 -> 52 s   WALK THE LINE from the re-surveyed B2 to B1, then on foot to Oro ('travel:b2-node')
+ * Leg 5 290 s (327 with its boot), legs 4+5 784 s, legs 5+6 884 s, against EXIT_LAUNCH_S 900.
  */
-import { TRIG, TRIG_TOP, SCAR, TUBES, siteById } from '../../world/island/sites.js';
+import { TRIG, TRIG_TOP, SCAR, TUBES, REST, siteById } from '../../world/island/sites.js';
 import { BENCHMARKS, GAUGE, fieldPoint } from '../../world/sites/layout.js';
 import { GUILD_STUD } from '../../world/settlements/saltrow-layout.js';
 
@@ -27,6 +37,14 @@ const en = (e, n) => Object.freeze({ x: e, z: -n });   // the bible's (E, N) -> 
 const site = (id) => { const s = siteById(id); return Object.freeze({ x: s.x, z: s.z }); };
 const T1 = TRIG.find((t) => t.id === 'T1');
 const B1 = BENCHMARKS.find((b) => b.id === 'bm-01');
+/** BIBLE §8 B2 (engine x, z): see PLACES.b2. */
+const B2 = en(-380, -180);
+/** R8: the fishing hut stands this far from B2 on the line from B2 to the guild-house stud (the Glass's shore). */
+export const HUT_FROM_B2_M = 40;
+const hutR8 = () => {
+  const L = Math.hypot(GUILD_STUD.x - B2.x, GUILD_STUD.z - B2.z), k = HUT_FROM_B2_M / L, r1 = (v) => Math.round(v * 10) / 10;
+  return Object.freeze({ x: r1(B2.x + (GUILD_STUD.x - B2.x) * k), z: r1(B2.z + (GUILD_STUD.z - B2.z) * k) });
+};
 
 /**
  * Where hour two's beats happen (engine x, z). `malpaisEdge` is where the first hour ends (leg 3's 'calima-cross' and
@@ -47,11 +65,16 @@ export const PLACES = Object.freeze({
   gauge: Object.freeze(fieldPoint(GAUGE.u, GAUGE.v)),
   // BIBLE §8 B2: "a bronze post standing in the Glass". The code's 'bm-02' is the Jameo benchmark (layout.js), which
   // is the bible's B4: the ids are reconciled by area G at its row 0 (BACKLOG); the run walks to the bible's point
-  b2: en(-380, -180),
-  // the fishing hut has no place in the bible or the tree; row 0's default: the dry head of the black beach, 20 m
-  // west of the beach's site point, 0.9 m over the sea (a proposal, placed by area A at wave 2). (At ed90645 it was
-  // (-352, 330), under the Sounding Ring's arc: seen on leg 6's Continue at 37a7a5e)
-  fishingHut: Object.freeze({ x: -210, z: 400 }),
+  b2: B2,
+  // the fishing hut has no place in the bible or the tree. R8 (wired at M3 wave 2b): on the Glass's shore, 40 m from B2
+  // toward the stud, (-341.5, 190.7): 84 m from the stud, so leg 5's 'hand-net' is 40 s and leg 6 walks 40 m to B2.
+  // Was (wave 1 fix): "row 0's default: the dry head of the black beach, 20 m west of the beach's site point, 0.9 m over
+  // the sea (a proposal, placed by area A at wave 2)", (-210, 400). (At ed90645 it was (-352, 330), under the Sounding
+  // Ring's arc: seen on leg 6's Continue at 37a7a5e)
+  fishingHut: hutR8(),
+  // R8: Brea's own Brazier at the cistern (the home Brazier stands at REST's seat), 40 m from the stud: leg 5 rests
+  // here until the Gauge's tide turns
+  brazier: Object.freeze({ x: REST.x, z: REST.z }),
   oro: Object.freeze({ x: 3.0, z: 206.5 }),
   kilnYards: site('kiln-yards'),
   tubeShelter: Object.freeze({ ...TUBES['malpais-tube'][0] }),
@@ -89,9 +112,13 @@ export const NEEDS = Object.freeze({
   'site:tube-shelter': { what: 'the Malpais tube shelter and its Brazier (world, systems)', probe: `!!C.braziers?.byId?.('tube-shelter')` },
   'site:scar-posts': { what: 'the Scar\'s 7 line-posts (world, area B)', probe: `(C.world?.linePosts?.scar?.length ?? 0) === 7` },
   'card:rung-7-held': { what: 'the reward card that holds rung 7 at Oro\'s (writing, W3)', probe: `false` },
+  // R8 (wired at M3 wave 2b): the two new pieces the shorter route needs. The rest's hook follows the noon rest's
+  // (braziers.js `noonFor`, set by the runtime): the cistern's dialog offers the Gauge's turn of the tide as a stop
+  'brazier:tide-rest': { what: 'R8: the cistern Brazier\'s rest offers the Gauge\'s turn of the tide as a stop, and the Gauge\'s tide clock is carried through it (systems: braziers ctx.braziers.tideFor, as noonFor; instruments: gauge.js reads the rest; writing: the row\'s words, W3)', probe: `typeof C.braziers?.tideFor === 'function'` },
+  'travel:b2-node': { what: 'R8: Benchmark 2, once re-surveyed, is a WALK THE LINE node (systems: TrueGround.nodes(); the bible\'s B2 reconciled by area G, as bm:b2)', probe: `false` },
 });
 
-/** @typedef {{ id: string, leg: 4|5|6, quest: string|null, event: string, where?: object, budgetS: number, needs: string[], danger?: string, place: string, note?: string }} Beat */
+/** @typedef {{ id: string, leg: 4|5|6, quest: string|null, event: string, where?: object, budgetS: number, wave1S?: number, needs: string[], danger?: string, place: string, note?: string }} Beat */
 
 const beat = (o) => Object.freeze({ ...o, needs: Object.freeze(o.needs) });
 
@@ -117,15 +144,19 @@ export const BEATS = Object.freeze([
   beat({ id: 'kite-given', leg: 4, quest: GLASS_LINE_ID, event: 'quest-rewarded', where: { item: 'survey-kite' }, budgetS: 35, place: 'ansel',
     needs: ['quest:glass-line', 'kite:item'] }),
   // ---- leg 5: from leg 4's save - "The Wrong Tide" (area G) and the fishing hut
-  beat({ id: 'gauge-tide', leg: 5, quest: WRONG_TIDE_ID, event: 'tide-followed', budgetS: 275, place: 'gauge', needs: ['quest:wrong-tide', 'kind:gauge-attacks'], danger: 'gauge' }),
+  beat({ id: 'gauge-tide', leg: 5, quest: WRONG_TIDE_ID, event: 'tide-followed', budgetS: 60, wave1S: 275, place: 'gauge',
+    needs: ['quest:wrong-tide', 'kind:gauge-attacks', 'brazier:tide-rest'], danger: 'gauge',
+    note: 'R8: walk to the cistern\'s Brazier, rest until the tide turns, walk to the Gauge (wave 1: 265 s waiting for its leave)' }),
   beat({ id: 'find-b2', leg: 5, quest: WRONG_TIDE_ID, event: 'benchmark-found', where: { id: 'b2' }, budgetS: 30, place: 'b2', needs: ['quest:wrong-tide', 'bm:b2'] }),
   beat({ id: 'resurvey-b2', leg: 5, quest: WRONG_TIDE_ID, event: 'resurvey-done', where: { benchmark: 'b2' }, budgetS: 60, place: 'b2', needs: ['quest:wrong-tide', 'bm:b2'], danger: 'resurvey-b2' }),
   beat({ id: 'clock-returns', leg: 5, quest: WRONG_TIDE_ID, event: 'gauge-returned', budgetS: 60, place: 'gauge', needs: ['quest:wrong-tide'] }),
   beat({ id: 'rung-3', leg: 5, quest: WRONG_TIDE_ID, event: 'rung-made', where: { rung: 'reckoner' }, budgetS: 40, place: 'guildStud', needs: ['quest:wrong-tide', 'rung:3'] }),
-  beat({ id: 'hand-net', leg: 5, quest: null, event: 'item-taken', where: { item: 'hand-net', at: 'fishing-hut' }, budgetS: 50, place: 'fishingHut', needs: ['site:fishing-hut'] }),
+  beat({ id: 'hand-net', leg: 5, quest: null, event: 'item-taken', where: { item: 'hand-net', at: 'fishing-hut' }, budgetS: 40, wave1S: 50, place: 'fishingHut',
+    needs: ['site:fishing-hut'], note: 'R8: the hut on the Glass\'s shore, 84 m from the stud' }),
   // ---- leg 6: from leg 5's save - "The Kiln Yards"
-  beat({ id: 'oro-yards', leg: 6, quest: KILN_YARDS_ID, event: 'scene-done', where: { scene: 'yards' }, budgetS: 72, place: 'oro', needs: ['quest:kiln-yards'],
-    note: 'Oro gives it only after "True Ground"' }),
+  beat({ id: 'oro-yards', leg: 6, quest: KILN_YARDS_ID, event: 'scene-done', where: { scene: 'yards' }, budgetS: 52, wave1S: 72, place: 'oro',
+    needs: ['quest:kiln-yards', 'bm:b2', 'travel:b2-node'],
+    note: 'Oro gives it only after "True Ground"; R8: the hut to B2 on foot, WALK THE LINE to B1, B1 to Oro on foot' }),
   beat({ id: 'climb', leg: 6, quest: KILN_YARDS_ID, event: 'region-enter', where: { region: 'malpais' }, budgetS: 75, place: 'kilnYards',
     needs: ['quest:kiln-yards', 'region:malpais'], danger: 'walk-out', note: 'walked: it is upwind' }),
   beat({ id: 'plugged', leg: 6, quest: KILN_YARDS_ID, event: 'wellhead-reached', where: { unseen: true, plugged: true }, budgetS: 50, place: 'kilnYards',
@@ -162,10 +193,15 @@ export const KITE = Object.freeze({ forward: 7.5, sink: 1.5, glide: 5 });
  */
 export const WALKS = Object.freeze({
   4: Object.freeze([['b1', 'guildStud'], ['guildStud', 'wreck'], ['wreck', 'guildStud'], ['guildStud', 'sonde'], ['sonde', 't1'], ['ring', 'ansel']]),
-  5: Object.freeze([['ring', 'gauge'], ['gauge', 'b2'], ['b2', 'gauge'], ['gauge', 'guildStud'], ['guildStud', 'fishingHut']]),
-  6: Object.freeze([['fishingHut', 'oro'], ['oro', 'kilnYards'], ['kilnYards', 'tubeShelter'], ['tubeShelter', 'scarTop'], ['scarFoot', 'oro']]),
+  // R8: leg 5 goes by the cistern's Brazier to the Gauge (wave 1: the ring straight to the gauge); leg 6 walks the hut to
+  // B2, WALKS THE LINE to B1 (TRAVELS) and walks B1 to Oro (wave 1: the hut to Oro on foot)
+  5: Object.freeze([['ring', 'brazier'], ['brazier', 'gauge'], ['gauge', 'b2'], ['b2', 'gauge'], ['gauge', 'guildStud'], ['guildStud', 'fishingHut']]),
+  6: Object.freeze([['fishingHut', 'b2'], ['b1', 'oro'], ['oro', 'kilnYards'], ['kilnYards', 'tubeShelter'], ['tubeShelter', 'scarTop'], ['scarFoot', 'oro']]),
 });
 export const FLIGHTS = Object.freeze({ 4: Object.freeze([['t1', 'ring']]), 5: Object.freeze([]), 6: Object.freeze([['scarTop', 'scarFoot']]) });
+/** WALK THE LINE between travel nodes (no metres walked; leg 4's first beat is one too, from the Malpais edge to B1).
+ * R8: leg 6's B2 to B1. */
+export const TRAVELS = Object.freeze({ 4: Object.freeze([['malpaisEdge', 'b1']]), 5: Object.freeze([]), 6: Object.freeze([['b2', 'b1']]) });
 
 /**
  * The runner's cap per leg (sim seconds of play from the Chrome slot; tools/gates/systems/hour-two.mjs --leg-budget) and
@@ -213,10 +249,11 @@ const dist = (a, b) => Math.hypot(PLACES[a].x - PLACES[b].x, PLACES[a].z - PLACE
 export function legClock(leg) {
   const walks = WALKS[leg].map(([a, b]) => ({ from: a, to: b, m: +dist(a, b).toFixed(1) }));
   const flights = FLIGHTS[leg].map(([a, b]) => ({ from: a, to: b, m: +dist(a, b).toFixed(1) }));
+  const travels = TRAVELS[leg].map(([a, b]) => ({ from: a, to: b, m: +dist(a, b).toFixed(1) }));   // not walked
   const m = walks.reduce((s, w) => s + w.m, 0), fm = flights.reduce((s, w) => s + w.m, 0);
   const walkS = m / JOG_MS, flyS = fm / KITE.forward, moveS = walkS + flyS;
   const budgetS = beatsOfLeg(leg).reduce((s, b) => s + b.budgetS, 0);
-  return { leg, walks, flights, metres: +m.toFixed(1), walkS: +walkS.toFixed(1), flyS: +flyS.toFixed(1), moveS: +moveS.toFixed(1),
+  return { leg, walks, flights, travels, metres: +m.toFixed(1), walkS: +walkS.toFixed(1), flyS: +flyS.toFixed(1), moveS: +moveS.toFixed(1),
     walkGameH: +(walkS / S_PER_GAME_HOUR).toFixed(2), budgetS, budgetGameH: +(budgetS / S_PER_GAME_HOUR).toFixed(2),
     estS: BRIEF_EST_S[leg], capS: LEG_CAP_S, fitsCap: budgetS + BOOT_S <= LEG_CAP_S, budgetOverMoveS: +(budgetS - moveS).toFixed(1) };
 }

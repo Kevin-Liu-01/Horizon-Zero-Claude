@@ -89,7 +89,11 @@ test('row 0: leg 5 follows the Gauge through one tide: its leave and return from
   const g = gaugeTide(CLOCK, OPEN_PHASE);
   console.log(`  the Gauge: period ${g.periodS} s; spawned at phase ${g.openPhase}; leaves for the Glass ${g.spawnToLeaveS} s after its spawn, back at Sluice 3 ${g.spawnToReturnS} s after (away ${g.awayS} s)`);
   const by = Object.fromEntries(beatsOfLeg(5).map((b) => [b.id, b.budgetS]));
-  assert.ok(by['gauge-tide'] >= g.spawnToLeaveS, `gauge-tide ${by['gauge-tide']} s < ${g.spawnToLeaveS} s to its leave`);
+  // R8 (wired at M3 wave 2b, src/game/hour2/route.js): the cistern Brazier's rest carries the Gauge's tide clock to its
+  // leave, so 'gauge-tide' is the walk, the rest and the walk (60 s) and needs that rest; its wave-1 wait is kept as wave1S
+  const gt = beatsOfLeg(5).find((b) => b.id === 'gauge-tide');
+  if (gt.needs.includes('brazier:tide-rest')) assert.ok(gt.wave1S >= g.spawnToLeaveS, `gauge-tide's wave-1 wait ${gt.wave1S} s < ${g.spawnToLeaveS} s to its leave`);
+  else assert.ok(by['gauge-tide'] >= g.spawnToLeaveS, `gauge-tide ${by['gauge-tide']} s < ${g.spawnToLeaveS} s to its leave`);
   assert.ok(by['find-b2'] + by['resurvey-b2'] + by['clock-returns'] >= g.awayS, 'the three beats while it is away');
 });
 

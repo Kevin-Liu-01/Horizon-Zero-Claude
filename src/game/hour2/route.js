@@ -2,8 +2,11 @@
  * HOUR TWO, R8: LEG 5 AND THE EXIT'S TWO-LEG PAIRING UNDER 900 s BY ROUTE (Milestone 3 wave 2, area E; the orchestrator's
  * ruling R8: "Leg 5 and the exit's two-leg pairing keep their 900 s bar: shorten the route (a nearer Brazier, a road)
  * rather than the bar; propose with numbers"). Pure data and arithmetic, no THREE, no DOM: Node reads it
- * (src/game/hour2/route.test.mjs). A PROPOSAL: nothing here is wired; plan.js's BEATS keep their wave-1 budgets until the
- * owners of the three changes below land them, and the runner reads plan.js.
+ * (src/game/hour2/route.test.mjs). WIRED at M3 wave 2b (area C): plan.js's BEATS carry these budgets (each beat keeps its
+ * wave-1 budget as `wave1S`), the hut's and the Brazier's places, leg 5's and 6's walks and leg 6's travel, and the two
+ * new needs the runner fails the beats by until their owners build them ('brazier:tide-rest', 'travel:b2-node'). This
+ * file stays the proposal's record and its arithmetic. (Was: "A PROPOSAL: nothing here is wired; plan.js's BEATS keep
+ * their wave-1 budgets until the owners of the three changes below land them, and the runner reads plan.js.")
  *
  * Why the bar fails today (plan.js at wave 1): leg 5's budgets are 515 s, 275 of them the wait for the Gauge's tide to
  * turn (gauge.js CLOCK: it spawns at phase 0.108 and leaves for the Glass 265 s later, back 415 s after its spawn), so
@@ -25,18 +28,15 @@
  * Leg 5's other beats keep their budgets; 'clock-returns' and the two before it still cover the Gauge's 150 s away.
  */
 import { REST } from '../../world/island/sites.js';
-import { PLACES, BEATS, BOOT_S, EXIT_LAUNCH_S, JOG_MS, beatsOfLeg } from './plan.js';
+import { PLACES, BEATS, BOOT_S, EXIT_LAUNCH_S, JOG_MS, HUT_FROM_B2_M, beatsOfLeg } from './plan.js';
 
 const d = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const r1 = (v) => Math.round(v * 10) / 10;
 
-/** The hut's proposed place: on the line from B2 to the stud, 40 m from B2 (engine x, z). */
-export const HUT_FROM_B2_M = 40;
-export const HUT_R8 = Object.freeze((() => {
-  const L = d(PLACES.b2, PLACES.guildStud), k = HUT_FROM_B2_M / L;
-  return { x: r1(PLACES.b2.x + (PLACES.guildStud.x - PLACES.b2.x) * k), z: r1(PLACES.b2.z + (PLACES.guildStud.z - PLACES.b2.z) * k) };
-})());
-/** The cistern's Brazier (the home Brazier stands at REST's seat). */
+/** The hut's place: on the line from B2 to the stud, 40 m from B2 (engine x, z): plan.js PLACES.fishingHut since R8 is wired. */
+export { HUT_FROM_B2_M };
+export const HUT_R8 = PLACES.fishingHut;
+/** The cistern's Brazier (the home Brazier stands at REST's seat): plan.js PLACES.brazier. */
 export const BRAZIER_R8 = Object.freeze({ id: 'cistern', x: REST.x, z: REST.z });
 /** What a rest costs on the clock of the run (the dialog, the fade out and in, standing up), seconds (*). */
 export const REST_S = 12;
@@ -65,9 +65,20 @@ export function r8Beats() {
   }));
 }
 
-/** A leg's beat budgets, wave 1 or with R8. */
+/** A leg's beat budgets, wave 1 (each wired beat's `wave1S`) or with R8 (plan.js's budgets, as wired). */
 export function legBudget(leg, { r8 = false } = {}) {
-  return beatsOfLeg(leg).reduce((s, b) => s + (r8 && R8_BEATS[b.id] ? R8_BEATS[b.id].to : b.budgetS), 0);
+  return beatsOfLeg(leg).reduce((s, b) => s + (r8 ? b.budgetS : (b.wave1S ?? b.budgetS)), 0);
+}
+
+/** Is R8 wired? Each changed beat's plan budget is R8's `to` and its `wave1S` R8's `from`; no other beat moved. */
+export function r8Wired() {
+  const off = [];
+  for (const b of BEATS) {
+    const r = R8_BEATS[b.id];
+    if (r ? b.budgetS !== r.to || b.wave1S !== r.from : b.wave1S != null) off.push(b.id);
+  }
+  const hut = PLACES.fishingHut, b2 = PLACES.b2;
+  return { ok: !off.length && Math.abs(d(hut, b2) - HUT_FROM_B2_M) < 0.1 && PLACES.brazier?.x === REST.x && PLACES.brazier?.z === REST.z, off };
 }
 
 /** An exit launch of two legs (their budgets and two boots) against EXIT_LAUNCH_S. */
