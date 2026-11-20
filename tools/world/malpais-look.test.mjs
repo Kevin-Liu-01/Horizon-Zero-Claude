@@ -16,7 +16,7 @@ import { MALPAIS_TERM, MALPAIS_ROCK_COLOR, MALPAIS_PARS } from '../../src/world/
 import { buildKilnYardsNear } from '../../src/world/sites/kilnyards-near.js';
 import { WELLHEADS, YARDS, YARDS_WALK } from '../../src/world/sites/kilnyards-layout.js';
 import { HORNITOS } from '../../src/world/sites/malpais-layout.js';
-import { clinkerPlan, pinnaclePlan, coneWeight } from '../../src/world/sites/malpais-rocks.js';
+import { clinkerPlan, pinnaclePlan, ridgePlan, hornitoGeometry, coneWeight } from '../../src/world/sites/malpais-rocks.js';
 import { buildLayers } from '../build/ground/gen-malpais-layers.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -96,9 +96,30 @@ test('the rock keeps off the Yards\' walk grid, the apron, the tube and every ho
   const P = pinnaclePlan(g);
   assert.ok(P.length >= 30, `${P.length} pinnacles`);
   for (const p of P) {
-    assert.ok(p.h >= 2.5 && p.h <= 8.0, `${p.id} ${p.h} m`);
+    // fix round 1: 3-15 m (were 2.5-8: small cones past 60 m); a cluster's smaller spires from 3 m
+    assert.ok(p.h >= 3.0 && p.h <= 15.0, `${p.id} ${p.h} m`);
     assert.ok(!(p.x > W.x0 - 8 && p.x < W.x1 + 8 && p.z > W.z0 - 8 && p.z < W.z1 + 8), `${p.id} by the walk grid`);
   }
+  assert.ok(P.filter((p) => p.h >= 8).length >= 20, 'at least 20 spires of 8 m or more');
+  // the pressure ridges and tumuli (fix round 1): 2-5 m, off the walk grid and Rust Cone, apart from each other and the spires
+  const Q = ridgePlan(g, P), Q2 = ridgePlan(g, P);
+  assert.deepEqual(Q, Q2);
+  assert.ok(Q.length >= 20, `${Q.length} ridges`);
+  for (const q of Q) {
+    assert.ok(q.h >= 2 && q.h <= 5, `${q.id} ${q.h} m`);
+    assert.ok(!(q.x > W.x0 - 10 && q.x < W.x1 + 10 && q.z > W.z0 - 10 && q.z < W.z1 + 10), `${q.id} by the walk grid`);
+    assert.ok(coneWeight(q.x, q.z) <= 0.05, `${q.id} on Rust Cone`);
+    for (const h of HORNITOS) assert.ok(Math.hypot(q.x - h.x, q.z - h.z) >= h.r + 10, `${q.id} on ${h.id}`);
+  }
+});
+
+test('the hornitos are chimneys: each taller than its foot is wide, its column about half as wide (fix round 1)', () => {
+  for (const h of HORNITOS) {
+    assert.ok(h.h > 2 * h.r * 0.8, `${h.id}: ${h.h} m tall on a ${2 * h.r} m foot`);
+    assert.ok(h.h >= 3 && h.h <= 6, `${h.id}: ${h.h} m`);
+  }
+  const geo = hornitoGeometry((x, z) => heightAt(x, z));
+  assert.ok(geo.attributes.position.count / 3 > HORNITOS.length * 300, 'lumpy chimneys, not cones');
 });
 
 test('the zone map reads the zones\' law: the sheet\'s cut of the stored field is the bake\'s pahoehoe', () => {

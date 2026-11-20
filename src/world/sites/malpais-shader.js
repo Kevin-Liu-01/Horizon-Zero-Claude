@@ -28,6 +28,13 @@ uniform vec4 uMalTile;                // 1 / tile (m): aa, pahoehoe, cinder, scr
 uniform vec4 uMalK;                   // x the term's strength (0 = the blockout tint as before), y its far fade start, z its end
 vec4 malA(float i, vec2 uv, vec2 gx, vec2 gy) { return textureGrad(tMalA, vec3(uv, i), gx, gy); }
 vec4 malN(float i, vec2 uv, vec2 gx, vec2 gy) { return textureGrad(tMalN, vec3(uv, i), gx, gy); }
+/* (fix round 1: past 90 m the plain read flat) the flow's large relief as a height field (m): pressure ridges and
+ * tumuli, ridged noise in cells of 28 and 14 m, 0 in the troughs to about 4 m on a crest; read three times for its slope */
+float malRidge(vec2 p) {
+  vec4 n = gNoiseT(p * 0.018 + 0.61);
+  float r = 1.0 - abs(2.0 * (0.65 * n.r + 0.35 * n.g) - 1.0);
+  return r * r * 4.0;
+}
 `;
 
 export const MALPAIS_TERM = /* glsl */ `
@@ -66,8 +73,9 @@ export const MALPAIS_TERM = /* glsl */ `
         t2 = vec2(t2.x * 0.766 - t2.y * 0.643, t2.x * 0.643 + t2.y * 0.766);
         vec2 t = mix(t1, t2, b);
         vec3 c = pow(a.rgb, vec3(2.2));
-        // (wave 2 film at e664972: the aa read red-brown in the low sun) a quarter of its chroma out: dark grey-brown
-        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.75);
+        // (wave 2 film at e664972: the aa read red-brown in the low sun) (fix round 1: still maroon at 17:45, hue 10.5 deg,
+        // saturation 0.60) half its chroma out and the rest a cold blue-grey: the layer is cool basalt now, this keeps it so
+        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.9, 0.98, 1.14), c, 0.5);
         // lichen crust: grey-green flecks on the clinker's tops, a few metres of them here and there
         float lich = smoothstep(0.66, 0.8, nz.b) * smoothstep(0.55, 0.85, a.a) * 0.55;
         c = mix(c, vec3(0.105, 0.118, 0.088), lich);
@@ -75,7 +83,10 @@ export const MALPAIS_TERM = /* glsl */ `
       }
       if (wPa > 0.01) {
         // the ropes run across the flow: the sheet's own downslope, so the arcs bow downhill
-        vec2 fall = normalize(wn.xz + vec2(1e-4, 0.0));
+        // (fix round 1: on level ground, the Yards' apron, wn.xz is near zero and its noise turned the ropes into rosettes)
+        // the sheet's downslope where it has one, else a slow flow field that turns over 50-100 m
+        vec2 flow = normalize(vec2(0.42, 0.91) + (nz.rg - 0.5) * 0.8);
+        vec2 fall = normalize(wn.xz * 6.0 + flow * 0.3);
         vec2 q = vec2(dot(xz, vec2(-fall.y, fall.x)), dot(xz, fall)) * uMalTile.y;
         vec2 qx = vec2(dot(dx, vec2(-fall.y, fall.x)), dot(dx, fall)) * uMalTile.y, qy = vec2(dot(dy, vec2(-fall.y, fall.x)), dot(dy, fall)) * uMalTile.y;
         vec4 a = malA(1.0, q, qx, qy), n = malN(1.0, q, qx, qy);
@@ -94,13 +105,22 @@ export const MALPAIS_TERM = /* glsl */ `
       }
       if (wSc > 0.01) {
         // (e664972: read down the fall line the scree streaked into stripes where the lens looks along the cone's face)
-        // a plain turned read; the rust red kept, its glow taken down (0.6 of its chroma, 0.7 of its light)
+        // (fix round 1: at a 1.2 m tile the clasts read as confetti from 10-60 m) two reads, turned apart and at 1.2 and
+        // 2.9 m, blended on a 4 m field; a 2-4 m patchwork of the cone's own shades over them; the rust red kept
         vec2 u = vec2(dot(xz, vec2(0.906, 0.423)), dot(xz, vec2(-0.423, 0.906))) * uMalTile.w;
+        vec2 uq = vec2(dot(xz, vec2(-0.259, 0.966)), dot(xz, vec2(-0.966, -0.259))) * uMalTile.w * 0.41 + 0.53;
         vec4 a = malA(3.0, u, dx * uMalTile.w, dy * uMalTile.w), n = malN(3.0, u, dx * uMalTile.w, dy * uMalTile.w);
+        vec4 a2 = malA(3.0, uq, dx * uMalTile.w * 0.41, dy * uMalTile.w * 0.41), n2 = malN(3.0, uq, dx * uMalTile.w * 0.41, dy * uMalTile.w * 0.41);
+        vec4 sp = gNoiseT(xz * 0.11 + 0.23);
+        float b = smoothstep(0.35, 0.65, sp.g + (a2.a - a.a) * 0.4);
         vec2 t = n.xy * 2.0 - 1.0; t = vec2(t.x * 0.906 - t.y * 0.423, t.x * 0.423 + t.y * 0.906);
-        vec3 c = pow(a.rgb, vec3(2.2));
-        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.5) * 0.55 * (0.85 + 0.3 * nz.a);
-        mc += c * wSc; mp += vec3(t.x, 0.0, t.y) * wSc; mr += n.z * wSc; mo += n.a * wSc; ws += wSc;
+        vec2 t2 = n2.xy * 2.0 - 1.0; t2 = vec2(-t2.x * 0.259 - t2.y * 0.966, t2.x * 0.966 - t2.y * 0.259);
+        vec3 c = pow(mix(a.rgb, a2.rgb, b), vec3(2.2));
+        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.55) * 0.6;
+        // the patchwork: darker and lighter fans and streaks a few metres across (B 2.3 m cells, A 1.1 m), and the slow
+        // field's 10-30 m shade
+        c *= (0.72 + 0.5 * sp.b) * (0.88 + 0.24 * sp.a) * (0.85 + 0.3 * nz.a);
+        mc += c * wSc; mp += vec3(mix(t, t2, b).x, 0.0, mix(t, t2, b).y) * wSc; mr += mix(n.z, n2.z, b) * wSc; mo += mix(n.a, n2.a, b) * wSc; ws += wSc;
       }
       mc /= max(ws, 1e-4); mp /= max(ws, 1e-4); mr /= max(ws, 1e-4); mo /= max(ws, 1e-4);
       // (e664972: the pahoehoe's glassy ropes glinted in a grid at 100 m, the tile's repeat) the relief and the gloss fade
@@ -108,6 +128,15 @@ export const MALPAIS_TERM = /* glsl */ `
       float farK = smoothstep(20.0, 90.0, dCam);
       mp *= 1.0 - 0.65 * farK;
       mr = mix(mr, max(mr, 0.82), farK);
+      // (fix round 1) the flow's large relief, off Rust Cone and kept at every range: the ridges' slope bends the normal
+      // and their troughs darken, so the plain reads as ridged rock to 300 m where the texel detail has faded out
+      {
+        float rH = malRidge(xz), rX = malRidge(xz + vec2(2.0, 0.0)), rZ = malRidge(xz + vec2(0.0, 2.0));
+        float rk = (1.0 - cone) * (1.0 - pah * 0.6);
+        mp += vec3(-(rX - rH), 0.0, -(rZ - rH)) * 0.5 * 0.55 * rk;
+        mc *= mix(1.0, 0.62 + 0.12 * rH, rk);
+        mo *= mix(1.0, 0.75 + 0.07 * rH, rk);
+      }
       // the large scale: each place its own shade (10-30 m), the cone keeps its red
       mc *= 0.82 + 0.36 * macA;
       float ao = clamp(mo * 1.15, 0.0, 1.0);

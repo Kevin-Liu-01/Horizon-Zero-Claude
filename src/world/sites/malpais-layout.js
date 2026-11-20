@@ -36,9 +36,11 @@ export const RUST_CONE = Object.freeze({ ...rec('rust-cone', 283, -101), top: 14
  * fix round 1: B6's post (268, -196) was 2.24 m from its centre, 1.16 m inside its 3.4 m foot (F58 at 3283f5b). It stands
  * 4.5 m south-west, so the post is 2.43 m outside its foot (malpais-rows.mjs prints B6's clearance from every foot; >= 1 m).
  */
+/* M3 wave 2 fix round 1: the feet narrowed (were r 3.4, 4.2, 2.6, 3.6, 3.0, 2.4, 3.2): a hornito is a spatter chimney taller
+ * than it is wide (its skirt's diameter 0.83-0.87 of its height, the column's about half), not a rubble heap */
 export const HORNITOS = Object.freeze([
-  [265, -201, 4.5, 3.4, true], [275, -200, 6.0, 4.2, true], [284, -196, 3.2, 2.6, false], [279, -209, 5.0, 3.6, true],
-  [290, -205, 3.8, 3.0, true], [268, -208, 3.0, 2.4, false], [295, -214, 4.2, 3.2, false],
+  [265, -201, 4.5, 1.9, true], [275, -200, 6.0, 2.5, true], [284, -196, 3.2, 1.4, false], [279, -209, 5.0, 2.1, true],
+  [290, -205, 3.8, 1.6, true], [268, -208, 3.0, 1.3, false], [295, -214, 4.2, 1.8, false],
 ].map(([e, n, h, r, steam], i) => rec(`hornito-${i + 1}`, e, n, { h, r, steam })));
 
 /** Benchmark 6 (plan (268, -180), on Rust Cone's 48 deg south foot): the nearest ground no steeper than 20 deg over 4 m. */

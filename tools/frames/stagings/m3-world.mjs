@@ -42,6 +42,14 @@ export const FRAMES = Object.freeze([
     ref: { crops: ['key-malpais'], written: "the KEY Malpais strip, form only (its glowing vent and lava masked: the Malpais is cold). Wave 2: Rust Cone's red scree in the foreground, the aa's clinker and spires and the pahoehoe's sheets below toward the hornito field and the sea; no lava, nothing glowing. Wave 3: >= 3 steam sources (MP1, MP2, MP4)" },
   },
   {
+    /* M3 wave 2 fix round 1 (MP1's night half, "no terrain pixel brighter than the sky"): F56's lens at 22:30, the region
+     * built as in F56; a lane frame, measured, never judged against a reference */
+    id: 'F56-night', subject: "F56's lens at night (MP1: the Malpais cold, no ground brighter than the sky)", in: 'M3', hour: 22.5, weather: 'trade',
+    at: { en: [250, -130] }, bearing: 160, camera: { mode: 'eye', eye: 1.7, pitch: -20, fov: 55 }, state: { pose: 'idle', hud: false },
+    subjects: [{ name: 'the Malpais ground', kind: 'ground', region: 'malpais', minShare: 0.25 }],
+    ref: { written: "lane frame (area A, MP1): F56's lens at 22:30. Measured only: no Malpais ground pixel brighter than the sky's median; nothing glows" },
+  },
+  {
     id: 'F57', subject: 'the Kiln Yards from the apron, dusk (blockout)', in: 'M3', hour: 19.5, weather: 'trade',
     // fix round 1: from the apron's south-east corner (its frame u 23.5, v -9.5), looking north-west and up 24 deg, so both
     // tower stubs stand whole (their broken rims in frame) and the four stack tops can be counted. At 3283f5b (221.4, -29.1;
@@ -52,7 +60,11 @@ export const FRAMES = Object.freeze([
     // safe area (rule 17's check at a91c4f7: at 24 deg the caps sat 29-52 % in it, on the frame's lower edge); and 3.4 m
     // west along the bench's edge, turned to 315 (was (224.2, -32.4), 310): in the page at e664972 the stacks stood in
     // front of tower-b and left 67 % of it unoccluded (the check asks 70 %); from here they cover 31 % of its width, not 39
-    at: { en: [221, -34] }, bearing: 315, camera: { mode: 'eye', eye: 1.7, pitch: 20, fov: 60 }, state: { pose: 'idle', hud: false },
+    // M3 wave 2 fix round 1: 2 m east along the bench's edge (was (221, -34)): at 036b486 the page still found tower-b 67 %
+    // unoccluded (14 of 21 samples; the check asks 70 %), stack-4 standing across it. From (223, -34) stack-4 passes to
+    // tower-b's left: Node (the page's own tolerance, the stacks, the towers and the racks as occluders) 18 of 21 samples
+    // clear, tower-a 21 of 21, the four stacks and the four caps in the safe area
+    at: { en: [223, -34] }, bearing: 315, camera: { mode: 'eye', eye: 1.7, pitch: 20, fov: 60 }, state: { pose: 'idle', hud: false },
     ref: { crops: ['board-kilnyards'], written: "the BOARD Kiln Yards panel. Wave 1 blockout: from the apron's south-east corner looking north-west and up: the four wellheads' caps along the bench's lower edge, the manifold rack, the four flue stacks with their tops in frame, the two tower stubs whole on the shelf; only the wellheads' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)" },
   },
   {
@@ -76,7 +88,7 @@ const malpaisBuilt = {
     api.undo(() => M.release());
   },
 };
-export const STAGINGS = Object.freeze({ F56: malpaisBuilt, F57: malpaisBuilt, F58: malpaisBuilt });
+export const STAGINGS = Object.freeze({ F56: malpaisBuilt, 'F56-night': malpaisBuilt, F57: malpaisBuilt, F58: malpaisBuilt });
 
 /**
  * The accepted frames the Malpais can be seen in, by their computed masks (tools/world/skyline-masks.mjs --region m3,

@@ -7,8 +7,27 @@
  */
 import { probe as lens } from './camera-probe-page.mjs';
 
-export function probe(f) {
+/* (M3 wave 2 fix round 1, MP2 "no tile repeat under 20 m") on F56 only: 40 m orthographic top-down captures of the
+ * Malpais' ground term at an aa site and a pahoehoe site (Node chose them: 85-100 % one zone over the square), the material
+ * alone (meadow-page.mjs topDown: no shadow, sky or skyline), returned as 8-bit luma for tools/perf/autocorr.mjs */
+export const TOPDOWN = Object.freeze({ frame: 'F56', span: 40, px: 512, sites: Object.freeze([{ id: 'aa', x: 300, z: 140 }, { id: 'pahoehoe', x: 190, z: 125 }]) });
+
+export async function probe(f) {
   const out = lens(f);
+  if (f?.id === TOPDOWN.frame && window.__CTX__?.terrain?.malpais?.ready) {
+    try {
+      const M = await import('/tools/perf/meadow-page.mjs');
+      const C = window.__CTX__;
+      out.topdown = [];
+      for (const s of TOPDOWN.sites) {
+        const t = await M.topDown(C.engine, C, s.x, s.z, { span: TOPDOWN.span, px: TOPDOWN.px });
+        const L = new Uint8Array(t.px * t.px);
+        for (let i = 0; i < L.length; i++) L[i] = Math.round(0.2126 * t.rgba[i * 4] + 0.7152 * t.rgba[i * 4 + 1] + 0.0722 * t.rgba[i * 4 + 2]);
+        let bin = ''; for (let i = 0; i < L.length; i += 32768) bin += String.fromCharCode.apply(null, L.subarray(i, i + 32768));
+        out.topdown.push({ ...s, span: t.span, px: t.px, luma: btoa(bin) });
+      }
+    } catch (e) { out.topdown = { error: String(e?.message || e).slice(0, 300) }; }
+  }
   const C = window.__CTX__;
   try {
     const M = C?.terrain?.malpais;

@@ -5,7 +5,7 @@ import { biomesAt, fbm } from '../island/recipe.js';
 import { MalpaisBlockout } from './malpais.js';
 import { MALPAIS_PARS, MALPAIS_ROCK_COLOR } from './malpais-shader.js';
 import { MALPAIS_LAYERS } from './malpais-files.js';
-import { CLINKER, clinkerPlan, pinnaclePlan, clastGeometry, pinnacleGeometry, hornitoGeometry, pinnacleColliders, coneWeight } from './malpais-rocks.js';
+import { CLINKER, clinkerPlan, pinnaclePlan, ridgePlan, clastGeometry, pinnacleGeometry, ridgeGeometry, hornitoGeometry, pinnacleColliders, ridgeColliders, coneWeight } from './malpais-rocks.js';
 import { kilnYardsNearJobs, finishKilnYardsNear } from './kilnyards-near.js';
 
 /**
@@ -42,7 +42,9 @@ import { kilnYardsNearJobs, finishKilnYardsNear } from './kilnyards-near.js';
  */
 export const ZONE_MAP = Object.freeze({ x0: 40, z0: -376, x1: 512, z1: 448, cell: 2.5 });
 /** The term's far fade (m): the textured ground gives way to the blockout tone the far field is baked from. */
-export const MALPAIS_FADE = Object.freeze([170, 240]);
+/** (fix round 1: [200, 250], was [170, 240]) the far field takes over at terrain.js FAR_START (250 m), so the term ends there;
+ * past it the blockout tone (bake.js malpaisTone) is the cold basalt's too */
+export const MALPAIS_FADE = Object.freeze([200, 250]);
 /** The per-frame budget of a build slice (ms). */
 export const SLICE_MS = 5;
 
@@ -241,6 +243,17 @@ export class MalpaisRegion {
       tris += pg.attributes.position.count / 3 + hgeo.attributes.position.count / 3;
       step('rock', now() - tb);
       await slice();
+      // (fix round 1) the pressure ridges and tumuli: the flow's large relief, drawn in the clinker's material
+      tb = now();
+      const ridges = ridgePlan(ground, pins);
+      this.stats.ridges = ridges.length;
+      const rgeo = ridgeGeometry(ridges, ground);
+      held.geos.push(rgeo);
+      const rm = new THREE.Mesh(rgeo, matClinker); rm.name = 'malpais-ridges'; rm.castShadow = true; rm.receiveShadow = true;
+      group.add(rm);
+      tris += rgeo.attributes.position.count / 3;
+      step('rock', now() - tb);
+      await slice();
       // the tube shelter's blockout (wave 3 has its look) and the Yards' and the Malpais' blockers
       tb = now();
       const block = new MalpaisBlockout(C, group, ground, { hornitos: false });
@@ -325,14 +338,14 @@ export class MalpaisRegion {
       if (this._switch.ground) T.setMalpaisGround?.(held.ground);
       block.update();
       const Col = C.collision;
-      if (Col?.register) for (const d of pinnacleColliders(pins)) {
-        const id = Col.register({ kind: d.kind, shape: d.shape, blocking: true, camera: true, occluder: true, ref: pm });
+      if (Col?.register) for (const d of [...pinnacleColliders(pins), ...ridgeColliders(ridges, ground)]) {
+        const id = Col.register({ kind: d.kind, shape: d.shape, blocking: true, camera: true, occluder: true, ref: d.id.startsWith('ridge') ? rm : pm });
         if (Array.isArray(id)) held.colliderIds.push(...id); else if (id >= 0) held.colliderIds.push(id);
       }
       step('add', now() - tb);
       this.stats.colliders = (block.stats.colliders || 0) + held.colliderIds.length;
       this.stats.tris = Math.round(tris);
-      this.stats.draws = held.tiles.length + 2 + block.stats.draws + 2;
+      this.stats.draws = held.tiles.length + 3 + block.stats.draws + 2;
       this.stats.totalMs = Math.round(now() - t0);
       this.stats.builds++;
       const ds = now() - sliceT;
@@ -387,8 +400,8 @@ export class MalpaisRegion {
     const T = this.terrain;
     return [
       { id: 'malpais-ground', on: () => { this._switch.ground = true; if (this._held) T.setMalpaisGround?.(this._held.ground); }, off: () => { this._switch.ground = false; T.setMalpaisGround?.(null); } },
-      { id: 'malpais-rock', on: () => { this._switch.rock = true; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = true; } },
-        off: () => { this._switch.rock = false; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = false; } } },
+      { id: 'malpais-rock', on: () => { this._switch.rock = true; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = true; } },
+        off: () => { this._switch.rock = false; this.update(); for (const n of ['malpais-pinnacles', 'malpais-hornitos', 'malpais-ridges']) { const o = this._held?.group?.getObjectByName(n); if (o) o.visible = false; } } },
       { id: 'malpais-kit', on: () => { if (this._held?.kit) this._held.kit.group.visible = true; }, off: () => { if (this._held?.kit) this._held.kit.group.visible = false; } },
     ];
   }

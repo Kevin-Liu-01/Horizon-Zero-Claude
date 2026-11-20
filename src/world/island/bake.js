@@ -72,7 +72,9 @@ const CRATER_TALUS = hex(0xa98f70), CRATER_CAP = hex(0x2a2220);
  * No lava, nothing that glows: every tone is a dark rock's (bible §3: zero emissive terrain).
  */
 const MALPAIS = Object.freeze({
-  aa: hex(0x2e2925), aaOx: hex(0x3d3229), pah: hex(0x1b1c20), pahSkin: hex(0x2a2a2e), cinder: hex(0x4b2f24), lichen: hex(0x5f6356),
+  // (M3 wave 2 fix round 1, area A, the smallest change: the near term's aa is a cold basalt now; was aa 0x2e2925, aaOx
+  // 0x3d3229, cinder 0x4b2f24, so the far field past 250 m and the term meet in one tone)
+  aa: hex(0x28292c), aaOx: hex(0x35312f), pah: hex(0x1b1c20), pahSkin: hex(0x2a2a2e), cinder: hex(0x3c2e29), lichen: hex(0x5f6356),
 });
 /** The share of pahoehoe at an engine point (0 aa .. 1 pahoehoe): lobes from a 3-octave field at about 80 m. */
 export function malpaisSheet(x, z) { return ss(0.50, 0.58, fbm(x * 0.012 + 3.1, z * 0.012 - 8.3, 3)); }

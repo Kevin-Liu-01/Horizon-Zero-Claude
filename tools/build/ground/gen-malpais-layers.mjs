@@ -100,13 +100,17 @@ function cavity(H, N, k, radii) {
   }
   return C;
 }
+/** The albedo's ceiling (sRGB): 0.50 is linear 0.218, so ETC1S's few codes of error stay well under the bar's 0.30. */
+export const ALBEDO_CAP = 0.5;
 function pack(N, L) {
   const NR = normalFrom(L.H, N, L.normal), AO = cavity(L.H, N, L.ao, L.aoR);
   const a = Buffer.alloc(N * N * 4), n = Buffer.alloc(N * N * 4);
   for (let i = 0; i < N * N; i++) {
-    a[i * 4] = Math.round(clamp01(L.A[i * 3]) * 255);
-    a[i * 4 + 1] = Math.round(clamp01(L.A[i * 3 + 1]) * 255);
-    a[i * 4 + 2] = Math.round(clamp01(L.A[i * 3 + 2]) * 255);
+    // (M3 wave 2 fix round 1, MP1 on the SHIPPED files: ETC1S lifted 14 scree and cinder texels of 150/255 past linear
+    // 0.30) every albedo channel is capped at ALBEDO_CAP before the encoder, leaving the codec its error under 0.30
+    a[i * 4] = Math.round(Math.min(ALBEDO_CAP, clamp01(L.A[i * 3])) * 255);
+    a[i * 4 + 1] = Math.round(Math.min(ALBEDO_CAP, clamp01(L.A[i * 3 + 1])) * 255);
+    a[i * 4 + 2] = Math.round(Math.min(ALBEDO_CAP, clamp01(L.A[i * 3 + 2])) * 255);
     a[i * 4 + 3] = Math.round(clamp01(L.H[i]) * 255);
     n[i * 4] = Math.round((NR[i * 2] * 0.5 + 0.5) * 255);
     n[i * 4 + 1] = Math.round((NR[i * 2 + 1] * 0.5 + 0.5) * 255);
@@ -121,7 +125,9 @@ function pack(N, L) {
  * are oxidised (dull red-brown), never their peaks alone: a bright core in a dark clast reads as heat. */
 function aa(N) {
   const H = new Float32Array(N * N), A = new Float32Array(N * N * 3), R = new Float32Array(N * N);
-  const black = hex(0x141210), brown = hex(0x2b2420), ox = hex(0x432a20), grey = hex(0x35322f);
+  // (fix round 1: the plain read maroon at 17:45, hue 10.5 deg, saturation 0.60) cold basalt: blue-grey black clasts, the
+  // oxidised ones a dull umber and fewer
+  const black = hex(0x111214), brown = hex(0x26272a), ox = hex(0x352c27), grey = hex(0x34363a);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const u = x / N, v = y / N, i = y * N + x;
     const wu = u + fbm(u, v, 6, 2, 3) * 0.02, wv = v + fbm(u, v, 6, 2, 5) * 0.02;
@@ -134,7 +140,7 @@ function aa(N) {
     H[i] = h;
     const on = sm(0.02, 0.16, h);
     const oxK = sm(-0.15, 0.45, fbm(u, v, 3, 3, 31));                          // oxidised patches a metre across
-    const c0 = id > 0.9 ? grey : id < 0.3 + 0.4 * oxK ? ox : brown;
+    const c0 = id > 0.88 ? grey : id < 0.12 + 0.3 * oxK ? ox : brown;
     const t = 0.8 + id * 0.28 + fbm(u, v, 40, 2, 13) * 0.1;
     const c = mix3(black, [c0[0] * t, c0[1] * t, c0[2] * t], on);
     A[i * 3] = c[0]; A[i * 3 + 1] = c[1]; A[i * 3 + 2] = c[2];
@@ -176,7 +182,7 @@ function pahoehoe(N) {
 /** CINDER: loose lapilli, black and red-brown, in drifts. */
 function cinder(N) {
   const H = new Float32Array(N * N), A = new Float32Array(N * N * 3), R = new Float32Array(N * N);
-  const black = hex(0x1a1615), red = hex(0x4e281c), ox = hex(0x6a3420), fines = hex(0x261d1a);
+  const black = hex(0x18181a), red = hex(0x3e2620), ox = hex(0x553023), fines = hex(0x222023);   // (fix round 1) cooler, the red a tinge
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const u = x / N, v = y / N, i = y * N + x;
     const a = worley(u, v, 48, 71, 0.95), b = worley(u + 0.27, v + 0.41, 96, 73, 0.95);
@@ -197,7 +203,9 @@ function cinder(N) {
 /** SCREE: Rust Cone's scoria. Angular oxidised clasts, the bible's rust red (#8E3B23) and its kin, a few black. */
 function scree(N) {
   const H = new Float32Array(N * N), A = new Float32Array(N * N * 3), R = new Float32Array(N * N);
-  const rust = hex(0x8e3b23), dark = hex(0x4a2018), ochre = hex(0x86462a), black = hex(0x231a17), fines = hex(0x5a2a1c);
+  // (fix round 1: at a 1.2 m tile the red clasts on black read as confetti from 10-60 m) the clasts and the fines in one
+  // narrow band of rust (#8E3B23 and its kin), a few darker, almost none black
+  const rust = hex(0x7e3624), dark = hex(0x5a2a1e), ochre = hex(0x7a4029), black = hex(0x3a221c), fines = hex(0x5e2c1f);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const u = x / N, v = y / N, i = y * N + x;
     const wu = u + fbm(u, v, 8, 2, 81) * 0.015, wv = v + fbm(u, v, 8, 2, 83) * 0.015;
@@ -206,8 +214,8 @@ function scree(N) {
     const h = Math.max(hB, hS), id = h === hB ? big.id : sml.id;
     H[i] = clamp01(h + fbm(u, v, 60, 2, 89) * 0.05);
     const on = sm(0.03, 0.2, h);
-    const sc = id > 0.92 ? black : id > 0.84 ? ochre : id > 0.35 ? rust : dark;
-    const t = 0.72 + id * 0.3 + fbm(u, v, 30, 2, 91) * 0.1;
+    const sc = id > 0.96 ? black : id > 0.86 ? ochre : id > 0.4 ? rust : dark;
+    const t = 0.86 + id * 0.16 + fbm(u, v, 30, 2, 91) * 0.08;
     const c = mix3(fines, [sc[0] * t, sc[1] * t, sc[2] * t], on);
     A[i * 3] = c[0]; A[i * 3 + 1] = c[1]; A[i * 3 + 2] = c[2];
     R[i] = clamp01(0.9 + (1 - on) * 0.06);
