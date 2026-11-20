@@ -22,6 +22,13 @@ export class FaceDirector {
     this.ctx = ctx;
     // C5: the mouth's cavity program is linked by the boot's warm-up (face.js cavityWarmMesh)
     ctx?.engine?.addWarmExtra?.(cavityWarmMesh());
+    // C5 (engine lane, the smallest change here): and its program once the world's material scan has registered it (its
+    // fog and cascades: another program key), which linked on the first bark of first-hour leg 2 at ddc31c1 (34.8 ms); and
+    // every face's cavity made, hidden, before a warm-up compiles the scene, so Brea's fade clone of hers links there too
+    const reg = cavityWarmMesh();
+    ctx?.environment?.registerMaterial?.(reg.material);
+    ctx?.engine?.addWarmExtra?.(reg);
+    ctx?.engine?.addWarmPass?.(() => { for (const f of this.list) f.prepareCavity?.(); });
     this.list = [];            // every live Face (no Set: a frame's walk allocates nothing)
     this.brea = null;
     this.alive = null;         // null: alive in play, at rest in a ?shot film

@@ -50,11 +50,11 @@ const recorder = (over) => {
   // getProgramInfoLog once per program, on its first use) waited over LATE_USE_MS while she plays, after the boot's
   // warm-up. Each is named by the build that made it (Material.prototype.onBuild, patched once the game's three is
   // reachable: the object, its two parents, the material's type and name, and the program's key).
-  R.playing = false; R.late = []; R.latePending = []; R.built = new WeakMap(); R.build = null; R.used = new WeakSet();
+  R.playing = false; R.late = []; R.latePending = []; R.built = new WeakMap(); R.used = new WeakSet(); R.drawObj = null; R.drawMat = null; R.drawDepth = false;
   const LATE_USE_MS = 5;
   const lateNote = (kind, glp, ms) => {
     if (!R.playing || R.late.length >= 200) return;
-    const b = R.built.get(glp) || null;
+    const b = R.built.get(glp) || R.nameDraw?.() || null;
     R.latePending.push([R.late.length, glp]);
     R.late.push({ kind, t: Math.round(performance.now()), ms: Math.round(ms * 10) / 10, who: b?.who ?? null, mat: b?.mat ?? null, key: b?.key ?? null,
       at: (() => { const p = window.__CTX__?.player?.position; return p ? { x: Math.round(p.x), z: Math.round(p.z) } : null; })(),
@@ -73,26 +73,30 @@ const recorder = (over) => {
           if (d > 5 && R.slow.length < 8) R.slow.push([a[0], Math.round(d * 10) / 10]);
           if (!R.used.has(a[0])) { R.used.add(a[0]); if (d > LATE_USE_MS) lateNote('first-use', a[0], d); }
         }
-        if (link) { if (R.build) R.built.set(a[0], R.build); R.build = null; lateNote('link', a[0], d); }
+        if (link) { const b = R.nameDraw?.(); if (b) R.built.set(a[0], b); lateNote('link', a[0], d); }
       }
     };
   }
-  // the build that the next linkProgram belongs to (three: getProgram -> material.onBuild -> acquireProgram -> link)
+  // the draw that the next linkProgram belongs to: three r187 links a program inside the draw that first asks for it
+  // (renderObject: object.onBeforeRender, material.onBeforeRender, then the program; the shadow pass: object.onBeforeShadow
+  // with the depth material). The prototypes' no-op hooks are patched once the game's three is reachable; an object or a
+  // material with its own hook is seen through the other one. A link from a compile (no draw) is named by the draw before
+  // it, so the entry's key and its diff are the identity; `who` is the hint.
   const hookBuild = () => {
     const C = window.__CTX__; if (!C?.scene || R.buildHooked) return;
     let m = null; C.scene.traverse((o) => { if (!m && o.material && !Array.isArray(o.material)) m = o.material; });
     if (!m) return;
-    let proto = Object.getPrototypeOf(m);
-    while (proto && !Object.prototype.hasOwnProperty.call(proto, 'onBuild')) proto = Object.getPrototypeOf(proto);
-    if (!proto) return;
-    const f = proto.onBuild, nm = (o) => (o ? (o.name || o.type) : '');
-    proto.onBuild = function (object, parameters, renderer) {
-      try {
-        R.build = { who: object ? `${nm(object.parent?.parent)}/${nm(object.parent)}/${nm(object)}` : null, mat: `${this.type}${this.name ? ':' + this.name : ''}`,
-          key: [parameters?.shaderID ?? parameters?.shaderName, parameters?.outputColorSpace, parameters?.skinning ? 'skin' : null, parameters?.customProgramCacheKey?.slice?.(0, 40) || null].filter((x) => x != null).join(',') };
-      } catch { /* */ }
-      return f.call(this, object, parameters, renderer);
-    };
+    const own = (o, k) => { let p = Object.getPrototypeOf(o); while (p && !Object.prototype.hasOwnProperty.call(p, k)) p = Object.getPrototypeOf(p); return p; };
+    const nm = (o) => (o ? (o.name || o.type) : '');
+    const name = (obj, mat, depth) => ({ who: obj ? `${nm(obj.parent?.parent)}/${nm(obj.parent)}/${nm(obj)}` : null,
+      mat: mat ? `${depth ? 'shadow:' : ''}${mat.type}${mat.name ? ':' + mat.name : ''}` : null });
+    const Mp = own(m, 'onBeforeRender'), Op = own(C.scene, 'onBeforeShadow') || own(C.scene, 'onBeforeRender');
+    if (Mp) { const f = Mp.onBeforeRender; Mp.onBeforeRender = function (renderer, scene, camera, geometry, object, group) { R.drawObj = object; R.drawMat = this; R.drawDepth = false; return f.call(this, renderer, scene, camera, geometry, object, group); }; }
+    if (Op) {
+      if (Op.onBeforeRender) { const f = Op.onBeforeRender; Op.onBeforeRender = function (renderer, scene, camera, geometry, material, group) { R.drawObj = this; R.drawMat = material; R.drawDepth = false; return f.call(this, renderer, scene, camera, geometry, material, group); }; }
+      if (Op.onBeforeShadow) { const f = Op.onBeforeShadow; Op.onBeforeShadow = function (renderer, object, camera, shadowCamera, geometry, depthMaterial, group) { R.drawObj = object; R.drawMat = object.material; R.drawDepth = true; return f.call(this, renderer, object, camera, shadowCamera, geometry, depthMaterial, group); }; }
+    }
+    R.nameDraw = () => (R.drawObj ? name(R.drawObj, Array.isArray(R.drawMat) ? R.drawMat[0] : R.drawMat, R.drawDepth) : null);
     R.buildHooked = true;
   };
   try {

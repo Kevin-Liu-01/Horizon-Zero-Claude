@@ -1348,6 +1348,9 @@ export class Player {
 
     /** Brea's parts (outfit, stow kit) and the published `player.hero` surface. */
     this.hero = installHero(this);
+    // C5 (engine lane, the smallest change here): her fade clones made before a warm-up compiles the scene, so their
+    // programs link under the sheet (at ddc31c1 her belt pots' clones linked in the first second of play: 41.9 ms)
+    ctx.engine?.addWarmPass?.(() => { if (this.model) this._collectMaterials(); });
     this.animator = new PlayerAnimator(ctx, this.model);
 
     ctx.input.onDown('Space', () => this.jump());

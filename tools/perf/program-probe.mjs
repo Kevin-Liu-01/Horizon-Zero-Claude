@@ -35,6 +35,7 @@ const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const PORT = guardPort(flag('--port'));
 const RESOLVE = args.includes('--resolve');
+const WARMDRAW = args.includes('--warm-draw');
 const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
 const OUT = flag('--out') || path.join(RUNS, `${stamp}-${process.env.CLEAN_COMMIT || 'tree'}-program-probe`);
 assertOutsideRepo(OUT, REPO);
@@ -75,14 +76,15 @@ async function main() {
     const page = await browser.newPage();
     await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
     const errors = [];
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
+    const warns = [];
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 300)); else if (m.type() === 'warning' && /\[CAL\]/.test(m.text())) warns.push(m.text().slice(0, 300)); });
     page.on('pageerror', (e) => errors.push(`pageerror: ${String(e).slice(0, 300)}`));
     await page.evaluateOnNewDocument(firstUse);
     await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
     await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 180000, polling: 100 });
     out.titleS = +((Date.now() - tC) / 1000).toFixed(2);
     await sleep(4000);   // the deferred warm-up's poll (main.js _warmUpDeferred) and a few title frames
-    out.page = await page.evaluate(async (RESOLVE) => {
+    out.page = await page.evaluate(async (RESOLVE, WARMDRAW) => {
       const C = window.__CTX__, E = C.engine, r = E.renderer, gl = r.getContext(), THREE = E.constructor.THREE || null;
       const R = window.__pp;
       const o = {};
@@ -108,7 +110,7 @@ async function main() {
       const csm = E.csm;
       o.shadow = { hour: C.environment?.time ?? null, sunY: C.environment?.sunDir?.y ?? null, shadowMap: { enabled: r.shadowMap.enabled, autoUpdate: r.shadowMap.autoUpdate, type: r.shadowMap.type },
         cascades: csm ? csm.lights.map((l) => ({ cast: l.castShadow, vis: l.visible, intensity: +l.intensity.toFixed(3), map: !!l.shadow.map, auto: l.shadow.autoUpdate })) : null,
-        depth: list.filter((q) => /^depth|^distance/.test(q.cacheKey || '')).map((q) => { const a = (q.cacheKey || '').split(','); return { kind: a[0], f55: a[55], skin: (Number(a[55]) & 32) ? 1 : 0, used: R.used.has(q.program) }; }),
+        depth: list.filter((q) => /^depth|^distance/.test(q.cacheKey || '')).map((q) => { const a = (q.cacheKey || '').split(','); return { kind: a[0], f55: a[55], skin: (Number(a[55]) & 32) ? 1 : 0, used: R.used.has(q.program), id: q.id, key: q.cacheKey }; }),
         warmCaster: (() => { const m = E._warmExtras?.find((x) => x.name === 'warm-skinned-caster'); return m ? { castShadow: m.castShadow, layers: m.layers.mask, drawnN: E._warmDrawnN ?? null } : null; })(),
         cameraLayers: C.camera.layers.mask };
       // the plain-Object systems
@@ -143,14 +145,30 @@ async function main() {
         const td = performance.now(); r.setRenderTarget(E.sceneTarget); r.render(d, C.camera); r.setRenderTarget(null); gl.finish(); o.fresh.d = { readyAfterFrames: fd, drawAndFinishMs: +(performance.now() - td).toFixed(1) };
         for (const m of [a, b, c, d]) m.material.dispose();
       }
+      // (--warm-draw) the warm extras drawn once more at the title: which depth programs it links (the skinned caster's)
+      if (WARMDRAW) {
+        const before = new Set(r.info.programs);
+        const sk = E._warmExtras.find((x) => x.name === 'warm-skinned-caster');
+        const hits = { main: 0, shadow: 0, frame: 0 };
+        if (sk) { sk.onBeforeRender = () => { hits.main++; }; sk.onBeforeShadow = () => { hits.shadow++; }; }
+        const fr0 = r.info.render.frame;
+        let err = null; try { E._drawWarmExtras(C.scene, C.camera); } catch (e) { err = String(e); }
+        hits.frame = r.info.render.frame - fr0; hits.sceneIsEngine = C.scene === E.scene; hits.cameraIsEngine = C.camera === E.camera;
+        hits.hold = !!E._hold; hits.ctxLost = !!E.contextLost; hits.smAuto = r.shadowMap.autoUpdate; hits.smEnabled = r.shadowMap.enabled;
+        // and once more with the caster in the scene through a real frame of the loop
+        if (sk) { sk.position.copy(C.camera.position); sk.frustumCulled = false; C.scene.add(sk); await frame(); await frame(); C.scene.remove(sk); }
+        hits.afterLoop = { ...hits };
+        o.warmDraw = { hits, err, extras: E._warmExtras.map((x) => x.name || x.type), caster: sk ? { pos: sk.position.toArray().map((v) => +v.toFixed(1)), cam: C.camera.position.toArray().map((v) => +v.toFixed(1)) } : null,
+          fresh: r.info.programs.filter((q) => !before.has(q)).map((q) => (q.cacheKey || '').replace(/false,/g, 'f,').slice(0, 300)) };
+      }
       if (RESOLVE) {
         const t0 = performance.now(), each = [];
         for (const q of unused) { const t = performance.now(); try { q.getUniforms(); } catch { /* */ } each.push(+(performance.now() - t).toFixed(1)); }
         o.resolve = { n: unused.length, ms: Math.round(performance.now() - t0), each };
       }
       return o;
-    }, RESOLVE);
-    out.errors = errors;
+    }, RESOLVE, WARMDRAW);
+    out.errors = errors; out.warns = warns;
   } catch (e) {
     out.error = String(e?.stack || e);
     log('error', out.error);

@@ -75,6 +75,15 @@ export class TransitFar {
     this.minSunDegDrawn = null;
     this.outsideWindowFrames = 0;
     this.failed = null;
+    // C5 (engine lane, the smallest change here): the GLB (150 KB) is fetched once the title stands (the deferred warm-up's
+    // event; never in the boot's first load), hidden, so its program links and has its first use on the title, not when
+    // calima arrives (at ddc31c1 it linked on its first frame there: 35.4 ms; linked off the frame in play, its first use
+    // still waited 33.4 ms at 914bbfb: a synchronous GL call in play waits for the GPU process)
+    // (not under ?shot: a film stages the far form itself, F45-transit, and every other film stays as it was)
+    if (!ctx?.params?.has?.('shot')) {
+      ctx?.events?.on?.('warm-up-complete', () => { this._load(); });
+      ctx?.events?.on?.('game-start', () => { this._load(); });
+    }
   }
 
   /** The ground it stands on: the lowest of its three feet (the higher feet stand into the slope, never over air). */
@@ -160,10 +169,10 @@ export class TransitFar {
         this.ctx.scene?.add(root);
       };
       // C5 (engine lane, the smallest change here: the first hour's hitches): its program (the hulls' but for its key) is
-      // linked off the frame before it stands in the scene: added as the GLB landed, it linked on its first frame when
-      // calima arrived after the rest, 35.4 ms at ddc31c1 (first-hour leg 3)
+      // linked off the frame before it stands in the scene, and given its first use at once while the title (or a sheet)
+      // stands: added as the GLB landed, it linked on its first frame when calima arrived after the rest, 35.4 ms at ddc31c1
       const E = this.ctx.engine;
-      if (E?.compileOffFrame) return E.compileOffFrame(root).then(add, add);
+      if (E?.compileOffFrame) return E.compileOffFrame(root, { force: this.ctx.state !== 'playing' }).then(add, add);
       add();
     }).catch((err) => { this.failed = String(err?.message || err); });
     return this.loading;
