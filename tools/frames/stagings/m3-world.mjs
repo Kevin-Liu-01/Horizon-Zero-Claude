@@ -21,9 +21,12 @@ export const FRAMES = Object.freeze([
     ref: { written: "lane frame (area A, wave 1): the world's cost from the flight frame's height before the kite exists; the Sounding Ring 22 deg left of centre, Saltrow 32 deg right, the salt field below. Measured only (GPU ms by the back-to-back readback), never judged" },
   },
   {
-    id: 'F56', subject: "the Malpais from the Scar's upper end (blockout)", in: 'M3', hour: 17.75, weather: 'trade',
-    at: { en: [251, -43] }, bearing: 140, camera: { mode: 'eye', eye: 2.0, pitch: -3, fov: 55 }, state: { pose: 'idle', hud: false },
-    ref: { written: "wave 1 blockout: from the Scar's upper end looking south-east over the Malpais: Rust Cone's crest on the left of centre, the lava falling away toward the hornito field and the sea. Wave 2-3: aa and pahoehoe both present, cinder bands, Rust Cone; 0 emissive ground texels, >= 3 steam sources (MP1, MP2, MP4)" },
+    id: 'F56', subject: "the Malpais from beside the Scar's upper end (blockout)", in: 'M3', hour: 17.75, weather: 'trade',
+    // restaged at wave 1 (run 20261120T081239Z-3283f5b-m3world-w1): from the Scar's upper end itself (251, -43; 108 m, at Rust
+    // Cone's north-west foot) the cone's flank filled the lens (46 % of rays struck ground within 30 m in Node). The lens
+    // stands 23 m west-north-west of it on the Yards' fill batter's foot, where the cone and the flow beyond are seen whole
+    at: { en: [232, -30] }, bearing: 145, camera: { mode: 'eye', eye: 1.7, pitch: -6, fov: 55 }, state: { pose: 'idle', hud: false },
+    ref: { written: "wave 1 blockout: from beside the Scar's upper end (on the Yards' batter, 23 m from it) looking south-east over the Malpais: Rust Cone whole on the left of centre, the lava falling away toward the hornito field and the sea. Wave 2-3: aa and pahoehoe both present, cinder bands, Rust Cone; 0 emissive ground texels, >= 3 steam sources (MP1, MP2, MP4)" },
   },
   {
     id: 'F57', subject: 'the Kiln Yards from the apron, dusk (blockout)', in: 'M3', hour: 19.5, weather: 'trade',
