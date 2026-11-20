@@ -1162,6 +1162,7 @@ export class SightingSystem {
   _warmPrograms(engine, cam) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 0.1, 0, 0, 0, 0.1, 0]), 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));   // shells ride real meshes: normals
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1]), 2));
     geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Uint16Array(12), 4));
     geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4));
@@ -1181,10 +1182,13 @@ export class SightingSystem {
       if (!hadHero) this._clearHero();
     }
     if (!this._pathKeep) this._pathKeep = this._pathMat();
-    const keep = new THREE.Mesh(geo, this._pathKeep);
+    const line = new THREE.BufferGeometry();   // a transect's attributes: position and uv (no normals: vertexNormals is in the key)
+    line.setAttribute('position', geo.getAttribute('position'));
+    line.setAttribute('uv', geo.getAttribute('uv'));
+    const keep = new THREE.Mesh(line, this._pathKeep);
     this._overlayScene.add(keep);
     try { engine.compileFor(this._overlayScene, null, cam); } finally { this._overlayScene.remove(keep); }
-    geo.dispose();
+    geo.dispose(); line.dispose();
     if (!this.on && !this._hulls.size && !this._parts.size) this._figureRT.dispose();   // as _releaseFigure leaves it
   }
 

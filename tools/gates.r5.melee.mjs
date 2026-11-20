@@ -1170,7 +1170,12 @@ export const GATES = [
         p.heading = 0; p._faceX = 0; p._faceZ = 1; p._candX = 0; p._candZ = 1; p._latchT = 0;
         p.camYaw = Math.PI;
         if (p.model) p.model.rotation.y = 0;
-        await place(m.kind, 2.8);
+        /* (M2 fix wave 3, hero-anim, the smallest change here: place() takes a ROLE. Given m.kind, a kind, KIND[] had no
+         *  entry and it fell through to stagedPicks()[0], which spawned one machine of every kind and parked the first, a
+         *  Gauge, on m's spot: swing 1 hit that Gauge (the game's own gap -0.11 m, correct for it) while this row read the
+         *  Plumb (0.51-0.62 m), and the Gauge was knocked clear for swings 2-4. Traced on the page at ddc31c1 (lane D diag,
+         *  melee-hit's machine): the hit shapes were current; the row measured another machine. The role re-parks m) */
+        await place('sentry', 2.8);
         for (let f = 0; f < 8; f++) await frame();
         await walkIn();
 

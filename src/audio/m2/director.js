@@ -198,14 +198,17 @@ export class HourAudio {
       if (e.attack !== TRAMPLE.attack || e.phase !== 'windup') return;
       const m = e.machine, p = this.ctx.player?.position;
       if (this.trample.tells.length >= 32) this.trample.tells.shift();
-      this.trample.tells.push({ t: performance.now() / 1000, d: m && p ? +Math.hypot(m.position.x - p.x, m.position.z - p.z).toFixed(2) : null, m });
+      // the machine by a WeakRef: a strong one held up to 32 tells' dead Tillers, each with its rig and skinned meshes,
+      // after the site manager disposed them (A90b at 16dfc0e: audio.hour.trample.tells[i].m, a heap snapshot's
+      // retaining path; the smallest change in the audio lane's file)
+      this.trample.tells.push({ t: performance.now() / 1000, d: m && p ? +Math.hypot(m.position.x - p.x, m.position.z - p.z).toFixed(2) : null, m: m ? new WeakRef(m) : null });
     });
     this._on('player-damage', (e) => {
       const m = e.from;
       if (!m || m.kind !== 'tiller') return;
       const now = performance.now() / 1000;
       let tell = null;
-      for (let i = this.trample.tells.length - 1; i >= 0; i--) { const q = this.trample.tells[i]; if (q.m === m && now - q.t < 3) { tell = q; break; } }
+      for (let i = this.trample.tells.length - 1; i >= 0; i--) { const q = this.trample.tells[i]; if (q.m?.deref() === m && now - q.t < 3) { tell = q; break; } }
       if (!tell) return;
       if (this.trample.hits.length >= 32) this.trample.hits.shift();
       this.trample.hits.push({ leadS: +(now - tell.t).toFixed(3), d0: tell.d });

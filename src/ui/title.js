@@ -577,15 +577,22 @@ export function underSheet(fn) {
       if (++n < 3) { requestAnimationFrame(lift); return; }
       let out;
       try { out = fn(); } finally {
-        const t0 = performance.now();
-        let run = 0, last = t0;
-        const tick = (now) => {
-          const d = now - last; last = now;
-          run = d < 33 ? run + 1 : 0;
-          if (run >= WARM_FRAMES || now - t0 > 6000) { L.classList.add('hidden'); L.dataset.closedAfterMs = String(Math.round(now - t0)); resolve(out); return; }
+        // C5 (engine lane, the smallest change here): two frames for what the start put in the world, then the engine's
+        // start warm-up (its programs linked and first used under the sheet: engine.warmStart), then the warm frames
+        const E = typeof window !== 'undefined' ? window.__CTX__?.engine : null;
+        const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+        const warm = E?.warmStart ? frame().then(frame).then(() => E.warmStart()).catch(() => null) : Promise.resolve(null);
+        warm.then(() => {
+          const t0 = performance.now();
+          let run = 0, last = t0;
+          const tick = (now) => {
+            const d = now - last; last = now;
+            run = d < 33 ? run + 1 : 0;
+            if (run >= WARM_FRAMES || now - t0 > 6000) { L.classList.add('hidden'); L.dataset.closedAfterMs = String(Math.round(now - t0)); resolve(out); return; }
+            requestAnimationFrame(tick);
+          };
           requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
+        });
       }
     };
     requestAnimationFrame(lift);

@@ -505,6 +505,14 @@ export class Combat {
     this._pickupTick = 0;      // (fix round 1: frames, a Smi; a double clock written every frame is a heap number a frame)
     this._pickupN = -1; this._pickupLast = null;
     this._aimWarm = false; this._pihWarm = false;
+    // C5 (engine lane, the smallest change here: the first hour's hitches): the aim march's 800 warm runs behind the
+    // boot's and the start's sheet (engine.addWarmPass), not on her first aiming frame in play: run there, they held
+    // Combat.update 39.7 ms in the Plumb fight of first-hour leg 2 at 3bb6c9e (a leg's launch aims first there)
+    ctx.engine?.addWarmPass?.(() => {
+      if (this._aimWarm || !ctx.camera || !ctx.terrain) return;
+      this._aimWarm = true;
+      for (let i = 0; i < 800; i++) this._updateAimPoint();
+    });
 
     // --- input (keybinds v2) — all gated by state so nothing equips/cycles
     //     underneath the pause menu / death screen

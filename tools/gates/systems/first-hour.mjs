@@ -58,6 +58,8 @@ if (PORT === 5173) throw new Error('5173 is never used');
 const LEGS = (flag('--legs', '1,2,3') || '').split(',').map((s) => Number(s.trim())).filter((n) => [1, 2, 3].includes(n));
 const LABEL = flag('--label', 'systems-first-hour');
 const LEG_BUDGET_S = Number(flag('--leg-budget', 720));
+// (M3 fix wave) --slot-wait <s>: how long each leg waits for slot1 (default 1800; leg 1's slice run is passed the same)
+const SLOT_WAIT_S = Number(flag('--slot-wait', 1800));
 // (wave 4) --chain: each leg after the first starts from the record the leg before it left in its store (leg 1's is the
 // slice run's newest record, which slice-hour.mjs writes into its report), CONTINUE pressed on it: the save carried
 // across the hour, a launch a leg. Without it a leg run alone starts from its fixture.
@@ -693,6 +695,20 @@ const screedNow = async () => {
     stage: q.current()?.id ?? 'done', reached: q.report().reached };
 };
 
+/**
+ * in-page (M3 fix wave): is the Screed within 0.45 s of changing its motion (an arrow's release and flight at 8 m), or
+ * in the first 0.4 s of one? The end of a stall (it backs off at once) and the start and end of the back-off.
+ */
+const screedEdge = async (i) => {
+  const SR = await import('/src/instruments/kinds/screed-rules.js'), R = SR.SCREED_RULES, FIGHT = SR.FIGHT;
+  const m = window.__CTX__.machines.list[i], b = m?.brain, backT = m?.fightRules?.backT ?? 0;
+  if (!b) return false;
+  // (a7d1cc3 probe e-stall-p4: an arrow held past the stall's end and solved in the first 0.3 s of the back-off met the
+  // hull 0.62 m off the seal: solveShot reads its motion over 8 frames, so the first 0.4 s of the back-off is held too;
+  // holding through the whole back-off (da66735) let its chest come between her and the near seal)
+  return (b.phase === 'stall' && R.stallS - b.phaseT < 0.45) || backT > FIGHT.backS - 0.4 || (backT > 0 && backT < 0.45);
+};
+
 /** in-page: a point at compass bearing b, r m from Ninewalls' centre (the walls seam's polar) */
 const polarNW = async (b, r) => { const W = await import('/src/world/settlements/ninewalls-layout.js'); const p = W.polar(b, r); return { x: p.x, z: p.z }; };
 
@@ -724,7 +740,15 @@ const mayShoot = (S) => {
  * in-page: per seal, where it is, its state, and those two margins from where she stands now (or from `stand`, her
  * nock and lens carried there as they sit about her now, turned to face the seal).
  */
-const SEAL_MARGIN = 0.55;
+// 0.45 m: the near seal's hit counts within 0.266 m of its centre, and at ddc31c1 the real arrow strayed up to about
+// 0.2 m from the solved line beside it; at f5c955a (probe e-stall-p1) lines of 1.18-1.31 m all struck the far seal
+const SEAL_MARGIN = 0.45;
+// a stand's margins are read from her nock and lens carried there; at f5c955a one read 0.71 m and gave 0.45 m once she
+// stood there with the bow raised, so a stand must clear the bar by this much more
+const STAND_SLACK = 0.4;
+/** the draw a seal arrow is loosed at (combat.drawStrength; hunter arrows scale speed with draw). At 0.55 (936878f,
+ * a384337) two stall arrows in six probes met the hull 0.39-0.55 m off the seal they were solved onto; at 0.75 none did */
+const DRAW_FIRE = 0.75;
 const sealGeom = (mi, stand = null) => {
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, cb = C.combat, T = C.terrain;
   if (!m || !m._sealW) return null;
@@ -766,11 +790,11 @@ const sealGeom = (mi, stand = null) => {
  * in-page: A STAND WITH A CLEAR LINE to one of `parts` (the seals still on), as a player steps round for a better
  * angle: points 2.4-7 m to either side of the Screed and 1-8 m ahead of its centre, on her side of every wall (whole
  * or cut: the walk there and the line from there to the Screed cross none), on ground within 1.5 m of hers, clear of
- * its body and its blade box, never where mayShoot holds the bow (in its cone, 0.8 rad, beyond 5.5 m while it walks), each
- * line passing the other seal by SEAL_MARGIN + 0.15 (sealGeom's margins, carried to the stand); the nearest walk wins.
+ * its body and its blade box, never where mayShoot holds the bow (in its cone, 0.8 rad, beyond 5.5 m while it walks, or
+ * not facing it), each line passing the other seal by SEAL_MARGIN + STAND_SLACK (sealGeom's margins, carried to the stand); the nearest walk wins.
  * Returns { stand, part, margin, d, n (candidates), why } or { stand: null, best (the widest margin seen), n, why }.
  */
-const sealStand = async (mi, parts, margin) => {
+const sealStand = async (mi, parts, margin, slack) => {
   const W = await import('/src/world/settlements/ninewalls-layout.js');
   const C = window.__CTX__, m = C.machines.list[mi], P = C.player.position, T = C.terrain;
   if (!m) return { stand: null, why: 'no Screed' };
@@ -805,15 +829,18 @@ const sealStand = async (mi, parts, margin) => {
         const d = Math.hypot(x - m.position.x, z - m.position.z), ang = Math.abs(Math.atan2(s, a));
         // (mayShoot's own 'chargeable': no arrow is loosed there while it walks)
         if (walking && d > 5.5 && ang < 0.8) { why.cone++; continue; }
+        // and mayShoot's 'facing': in front of it, within 1.2 rad of its heading while it walks (1.6 stalled or backing)
+        if (!(a > 0.5 && ang < (walking ? 1.2 : 1.6))) { why.facing = (why.facing || 0) + 1; continue; }
         const g = geom(mi, { x, z });
         for (const p of parts) {
           const mg = g?.[p]?.margin ?? 0;
           if (!bestSeen || mg > bestSeen.margin) bestSeen = { part: p, margin: mg, a, s, at: [+x.toFixed(1), +z.toFixed(1)] };
-          if (mg < margin + 0.15) { why.margin++; continue; }
+          if (mg < margin + slack) { why.margin++; continue; }
           // the straight line from there meets that seal's own sphere first (the moldboard stands 1.4 m tall in front of
           // the seals at 1.34 m; the flight's drop over 8 m is 2 cm), and the lens's line meets no hull short of it
           if (!lineTo(g, p)) { why.line++; continue; }
           const walk = Math.sqrt(L2);
+          if (walk > 7) { why.far = (why.far || 0) + 1; continue; }
           if (!best || walk < best.d) best = { stand: { x, z }, part: p, margin: mg, d: +walk.toFixed(1), a, s };
         }
       }
@@ -830,6 +857,8 @@ const sealStand = async (mi, parts, margin) => {
  * is out of its line) so the first arrow leaves as the stall begins. At 72b3f5e (chain1) the wall-2 stall gave three
  * clean hits in 5.2 s, one arrow at a time with the bow lowered between them; both seals take four.
  */
+/** the seal arrows loosed in this fight ({ part, at }: Date.now()), for the ones still in flight (volley) */
+const FIRED = [];
 async function volley(page, K, stage, maxS = 8) {
   const t0 = Date.now(), shots = [];
   let blocked = null, drawing = false, td = 0, needStand = false;
@@ -848,7 +877,18 @@ async function volley(page, K, stage, maxS = 8) {
       // seal's hit, or once it was off, nothing). No clear line: the volley ends and the drive steps to a stand
       const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
       const G = await page.evaluate((i) => window.__sealGeom(i), S.i);
-      const order = (S.sealsLeft.length === 2 ? [far, near] : S.sealsLeft.slice()).filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
+      // (da66735 probes 6-8: far, far, near in the stall and the near one's second arrow held through the back-off, where
+      // its chest came between them: three fail-soft. Now near, near, far in the stall: the far seal's line only opens
+      // as it backs off, so its second arrow goes in the back-off)
+      // (936878f probes 13-14: at 0.55 draw the next arrow was chosen before the one in flight had landed, and two went at a
+      // seal its second hit had already taken off) a seal with hits + arrows loosed at it in the last 0.8 s >= 2 is done
+      const inFlight = (p) => FIRED.filter((f) => f.part === p && Date.now() - f.at < 800).length;
+      const wanted = (S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice()).filter((p) => (S.hits?.[p] ?? 0) + inFlight(p) < 2);
+      if (!wanted.length) { await sleep(120); continue; }
+      const order = wanted.filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
+      // (M3 fix wave) the string drawn while the look is solved: the nock (0.42 s) and the draw run under the solve, not
+      // after it (at a9598c1 the stall's 3 s held three arrows and the fourth left at its end)
+      if (order.length) await draw();
       let part = null, sol = null;
       for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && q.first === `weak:${p}`) { part = p; sol = q; break; } }
       if (!part) {
@@ -858,11 +898,22 @@ async function volley(page, K, stage, maxS = 8) {
       }
       blocked = null;
       await draw();
-      while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= 0.99 && Date.now() - td > 300)) break; }
+      // (M3 fix wave) loosed at three-quarter draw (a quick shot at 6-9 m; solveShot flies the arrow at the draw it has):
+      // nock 0.42 s + draw 0.65 s held the cadence to 1.2-1.3 s, two arrows and a third at the stall's edge
+      while (Date.now() - td < 1600) {
+        if (sol && sol.ds >= DRAW_FIRE && sol.missM < 0.02 && Date.now() - td > 300) break;   // drawn and on it already
+        sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= DRAW_FIRE && Date.now() - td > 300)) break;
+      }
+      // (M3 fix wave) never loosed across a change of its motion: at 3e576c6 chained run 3 an arrow solved on a stalled
+      // Screed (missM 0.019) left as the stall ended and it began to back off at 1.2 m/s, and met its hull 0.71 m from the
+      // seal; the next, loosed in the back-off, met nothing. Held drawn until the change is past, then solved again
+      let held = 0;
+      for (; held < 12 && (await page.evaluate(screedEdge, S.i)); held++) await sleep(100);
+      if (held) sol = await page.evaluate(SH.solveShot, S.i, part, 0.12);
       const G2 = await page.evaluate((i) => window.__sealGeom(i), S.i);
       const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null,
-        mNock: G2?.[part]?.mNock ?? null, mLens: G2?.[part]?.mLens ?? null };
-      if (sol && sol.first === `weak:${part}` && (G2?.[part]?.margin ?? 0) >= SEAL_MARGIN) { await K.mouse('left', false); rec.fired = true; await sleep(100); }
+        mNock: G2?.[part]?.mNock ?? null, mLens: G2?.[part]?.mLens ?? null, heldS: held / 10 };
+      if (sol && sol.first === `weak:${part}` && (G2?.[part]?.margin ?? 0) >= SEAL_MARGIN) { await K.mouse('left', false); rec.fired = true; FIRED.push({ part, at: Date.now() }); await sleep(100); }
       else { await K.mouse('right', false); await sleep(30); await K.mouse('left', false); await sleep(30); await K.mouse('right', true); await sleep(200); rec.letDown = true; }
       drawing = false;
       shots.push(rec);
@@ -961,8 +1012,14 @@ async function driveScreed(page, K, stage, maxS = 120) {
       const onFloor = (q) => { const r = Math.hypot(q.x - C12.cx, q.z - C12.cz); return r > C12.rIn + 0.6 && r < C12.rOut - 0.8; };
       let sgn = S.side >= 0 ? 1 : -1;
       if (S.rP > C12.rIn - 0.5 && S.rP < C12.rOut + 0.5 && !onFloor(at(sgn)) && onFloor(at(-sgn))) sgn = -sgn;
-      await walkTo(page, at(sgn), 0.8, 1.6);
-      note(await page.evaluate(screedNow), { sidestep: true });
+      // (M3 fix wave) and up to 3 m further along its heading, as far as the corridor's floor goes: the charge stops on the
+      // second wall, so the further she stands along its line, the further in front of its seals she is in the stall. At
+      // 2e0a3cd (probe e-stall-p2) she stood 2.8 m ahead of its centre, 5.6 m to a side: the far seal's line passed the near
+      // one by 0.21-0.36 m (a stand 2.8 m further on had 0.89 m), and only one arrow reached it before it walked on
+      const fwd = (q, k) => ({ x: q.x + S.fx * k, z: q.z + S.fz * k });
+      const k = [3, 2.5, 2, 1.5, 1, 0.5, 0].find((kk) => onFloor(fwd(at(sgn), kk)) && (kk === 0 || onFloor(fwd(at(sgn), kk / 2)))) ?? 0;
+      await walkTo(page, fwd(at(sgn), k), 0.8, 2.0);
+      note(await page.evaluate(screedNow), { sidestep: true, fwd: k });
       continue;
     }
     if (!S.sealsLeft.length) { await sleep(200); continue; }
@@ -974,7 +1031,7 @@ async function driveScreed(page, K, stage, maxS = 120) {
         // (M3 fix wave) no clear line to a seal still on from here: a stand that has one, if a player can reach it
         const S2 = await page.evaluate(screedNow);
         if (S2 && S2.sealsLeft.length) {
-          const st = await page.evaluate(sealStand, S2.i, S2.sealsLeft, SEAL_MARGIN);
+          const st = await page.evaluate(sealStand, S2.i, S2.sealsLeft, SEAL_MARGIN, STAND_SLACK);
           const rec = { t: T(), stand: st.stand ? { part: st.part, margin: +st.margin.toFixed(3), d: st.d, a: st.a, s: st.s } : null, best: st.best ?? null, why: st.why, phase: S2.phase, backT: S2.backT };
           standLog.push(rec);
           if (st.stand) { rec.walk = await walkTo(page, st.stand, 0.5, 3, { sprint: st.d > 3 }); continue; }
@@ -983,6 +1040,15 @@ async function driveScreed(page, K, stage, maxS = 120) {
         if (S2 && (S2.phase === 'stall' || S2.backT > 0)) { await sleep(150); continue; }
       } else if (!v.shots.some((q) => q.fired)) await sleep(150);
       if (!v.needStand) continue;
+    }
+    // (M3 fix wave) after the seal stall, while it walks: a stand with a clear line (out of its cone, facing it) before the
+    // ambush. At f5c955a (probe e-stall-p1) the far seal took one arrow as it backed off; when its line closed she went
+    // back to the ambush point, it walked on and cut wall-2 and wall-3
+    if (S.stalls >= 2 && S.phase === 'walk' && !S.between) {
+      const st = await page.evaluate(sealStand, S.i, S.sealsLeft, SEAL_MARGIN, STAND_SLACK);
+      const rec = { t: T(), stand: st.stand ? { part: st.part, margin: +st.margin.toFixed(3), d: st.d, a: st.a, s: st.s } : null, best: st.best ?? null, why: st.why, phase: S.phase, backT: S.backT, walking: true };
+      standLog.push(rec);
+      if (st.stand) { rec.walk = await walkTo(page, st.stand, 0.5, 3, { sprint: st.d > 3 }); continue; }
     }
     // the ambush point: 10 m in front of it and 5 m to one side, kept on corridor 1/2's floor while it is outside or in it
     const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
@@ -1156,7 +1222,7 @@ async function runLeg(leg, startRec = null) {
     // the leg before's Vite (its own, or slice-hour's) takes a few seconds to let the port go after its SIGTERM
     for (let i = 0; i < 60 && (await portOpen(PORT)); i++) await sleep(500);
     if (await portOpen(PORT)) throw new Error(`port ${PORT} already in use`);
-    const slot = await takeMachineSlot({ who: `systems first-hour leg ${leg} ${PORT}`, waitS: 1800, log });
+    const slot = await takeMachineSlot({ who: `systems first-hour leg ${leg} ${PORT}`, waitS: SLOT_WAIT_S, log });
     if (!slot.ok) throw new Error(slot.why);
     slotTaken = true;
     L.slotTakenAt = new Date().toISOString();
@@ -1198,6 +1264,11 @@ async function runLeg(leg, startRec = null) {
       const bt0 = T();
       const played = {};
       await page.evaluate(() => { if (window.__hp) window.__hp.beatMin = Infinity; });
+      // (M3 fix wave, HR8) a drink before a beat under 60 hp, as a player tops up between fights (SH.drink: Q held, at once
+      // null on a dry gourd). At e068546 chained run 1 she came to the Screed at 27 hp from the walk to Oro (a Tiller's
+      // trample and hopper burst) and started leg 3 at 27: the Pegs at Benchmark 1 took her to 11, 1135 frames under 25
+      // (not inside the fight: seal-1 and seal-2 start in the Screed's stall, where driveScreed drinks under 50 itself)
+      if (driveOn && (leg === 2 || leg === 3) && st.id !== 'seal-1' && st.id !== 'seal-2' && (await page.evaluate(where)).hp < 60) played.topUp = await SH.drink(page, K, 98, 4000).catch((e) => ({ error: String(e).slice(0, 120) }));
       if (!driveOn) played.notDriven = 'a beat before it did not pass';
       else if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
@@ -1284,7 +1355,7 @@ const beatsOf = (leg) => (leg === 2 ? SCAR_STAGES : TRUE_GROUND_STAGES);
 function runLeg1() {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const child = spawn(process.execPath, [path.join(REPO, 'tools/gates/systems/slice-hour.mjs'), '--port', String(PORT), '--run-only', '--label', `${LABEL}-leg1`], { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [path.join(REPO, 'tools/gates/systems/slice-hour.mjs'), '--port', String(PORT), '--run-only', '--label', `${LABEL}-leg1`, '--slot-wait', String(SLOT_WAIT_S)], { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     child.stdout.on('data', (d) => { out += d; process.stdout.write(d); });
     child.stderr.on('data', (d) => { out += d; process.stderr.write(d); });
@@ -1313,6 +1384,13 @@ mkdirSync(runDir, { recursive: true });
 try {
   let carry = null;
   for (const leg of LEGS) {
+    // (M3 fix wave) a chain whose leg before left no record stops here: at 88c5c4c leg 1 timed out waiting for slot1 and
+    // leg 2 would have started from its fixture, a run that only looks chained
+    // and one whose leg before did not pass all its beats stops too: at ae888fc chained run 1 the slice stopped at 'climb'
+    // and legs 2 and 3 started from its mid-slice record ("not built" on all 14)
+    const before = report.legs.at(-1);
+    const why = !carry ? 'the leg before left no record' : before && (() => { const m = /^(\d+)\/(\d+)/.exec(before.passed || ''); return !m || +m[1] < +m[2]; })() ? `the leg before stopped (${before.passed})` : null;
+    if (CHAIN && leg !== LEGS[0] && why) { log(`leg ${leg}: not run (${why})`); report.legs.push({ leg, notRun: why, beats: [], passed: `0/${leg === 2 ? SCAR_STAGES.length : TRUE_GROUND_STAGES.length}` }); carry = null; continue; }
     log(`leg ${leg}${CHAIN && carry ? ' (from the record the leg before left)' : ''}`);
     const L = leg === 1 ? await runLeg1() : await runLeg(leg, CHAIN ? carry : null);
     carry = L.endRecord ?? null;

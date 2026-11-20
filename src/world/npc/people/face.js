@@ -640,6 +640,13 @@ export class Face {
     if (this.cavity) this.cavity.visible = on;
   }
 
+  /** C5: the cavity made now, hidden (a warm-up compiles it; it shows only while she or he speaks, as before). */
+  prepareCavity() {
+    if (this.cavity) return;
+    this._showCavity(true);
+    if (this.cavity) this.cavity.visible = false;
+  }
+
   /** Rest: every influence 0, the cavity hidden. */
   rest() {
     const I = this.inf;

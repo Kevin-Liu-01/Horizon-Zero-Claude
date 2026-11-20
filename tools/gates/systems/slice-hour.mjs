@@ -1126,7 +1126,8 @@ export { probe, targetsOf, aimPoint, solveShot, scanStands, waitStill, walkTo, w
 if (IS_MAIN) try {
   mkdirSync(runDir, { recursive: true });
   if (await portOpen(PORT)) throw new Error(`port ${PORT} already in use`);
-  const slot = await takeMachineSlot({ who: `systems slice-hour ${PORT}`, waitS: 1800, log });
+  // (M3 fix wave) --slot-wait <s> (default 1800): four lanes and a wave share slot1; a chained hour waits its turn
+  const slot = await takeMachineSlot({ who: `systems slice-hour ${PORT}`, waitS: Number(flag('--slot-wait', 1800)), log });
   if (!slot.ok) throw new Error(slot.why);
   T0 = Date.now();
   report.slotTakenAt = new Date().toISOString();

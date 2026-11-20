@@ -2488,14 +2488,14 @@ export class Engine {
       // the raced `compileAsync` had to go.
       // M1.8c: compiled as the scene pass draws them (the composer's target bound): with no target bound three built
       // every program in its on-screen variant (tone mapped, sRGB out), and the first real frame linked them all again
+      // C5: the warm passes first: a pass may also put materials on scene objects (her fade clones: player.js)
+      if (this._warmPasses.length && scene === this.scene) this._runWarmPasses(camera);
       this.compileAsDrawn(scene, camera, scene);
       if (this._warmExtras.length && scene === this.scene) {
         const g = new THREE.Group();
         for (const m of this._warmExtras) g.add(m);
         try { this.compileAsDrawn(g, camera, scene); } finally { g.clear(); }
       }
-      // C5: the programs systems draw outside the scene (the alidade's overlay and mask, the light shafts)
-      if (this._warmPasses.length && scene === this.scene) this._runWarmPasses(camera);
       await this._awaitProgramsReady(timeoutMs);
       // C5: and each extra DRAWN once, with the scene, into the scene pass's own target: a linked program still waited on
       // its first draw (the GPU process finishes it there; 80bab35 found the same for the armour). At 57033ec the mouth's
@@ -2521,6 +2521,21 @@ export class Engine {
     this.warmUpTexturesUploaded = textures;
     this.warmUpGeometriesUploaded = geometries;
     return { ms: this.warmUpMs, programs: this.warmUpPrograms, textures, geometries };
+  }
+
+  /**
+   * C5: the start's warm-up, behind the Loading sheet that BEGIN and CONTINUE stand up (src/ui/title.js underSheet),
+   * after the start has run and two frames have been drawn: the save's apply puts things in the world the boot never
+   * had (at ddc31c1 her belt pots' fade clones linked two programs in the first second of first-hour leg 3, 41.9 ms).
+   * The whole warm-up again (a compile of a linked program is a lookup), the warm extras drawn again (the lights the save
+   * stood up), every program given its first use. Bounded by `timeoutMs`.
+   */
+  async warmStart(timeoutMs = 3000) {
+    const t0 = performance.now();
+    this._warmDrawnN = -1;
+    const w = await this.warmUp(this.scene, this.camera, timeoutMs);
+    this.startWarm = { ms: Math.round(performance.now() - t0), programs: w.programs, resolved: this.programResolve.n };
+    return this.startWarm;
   }
 
   /**
@@ -2653,13 +2668,83 @@ export class Engine {
     camera.updateMatrixWorld();
     const ahead = new THREE.Vector3(0, 0, -2).applyMatrix4(camera.matrixWorld);
     for (const [m] of was) if (m.userData.warmNearCamera) { m.position.copy(ahead); m.updateMatrixWorld(true); }
+    // C5: and the shadow pass's depth programs, one per kind of caster (casterProxies)
+    const casters = this._casterProxies(scene, ahead);
+    for (const c of casters) g.add(c);
     scene.add(g);
     try { if (camera === this.camera) this.render(0); }
     catch (err) { console.warn('[CAL] warm extras draw skipped:', err?.message || err); }
     finally {
       scene.remove(g);
       for (const [m, fc, vis, nsc] of was) { g.remove(m); m.frustumCulled = fc; m.visible = vis; if (nsc === undefined) delete m.userData.noSizeCull; else m.userData.noSizeCull = nsc; }
+      for (const c of casters) { g.remove(c); if (c.isInstancedMesh) c.dispose(); }
     }
+  }
+
+  /**
+   * C5: THE SHADOW PASS'S DEPTH PROGRAMS. The pass draws every plain caster with one shared depth material, and three
+   * looks its program up again only when something it checks changes from the caster before (skinning, morphs,
+   * instancing...), not on the geometry's attributes or the material's side; a caster that needs a clone (a map with
+   * alphaTest, an alpha map) gets its own. So which depth programs exist depends on the order casters happen to be drawn
+   * in: at ddc31c1 the terrace Plumb, a skinned caster WITH normals drawn after a plain one, linked a depth program on the
+   * walk into the Holds (22.9 ms), though the boot's skinned warm caster was drawn (after a person's caster: skinned, no
+   * normals, so no program change). Here every kind of caster in the scene (its class, morphs, instance colours, the
+   * geometry's attributes, the side it casts with, the clone's conditions) gets one proxy (its geometry, material and
+   * skeleton), each drawn after a dummy of the other skinning, so its own program is looked up; and the skinned warm
+   * caster with normals is one of them. Unculled, 2 m in front of the camera, under the sheet, for one frame.
+   */
+  _casterProxies(scene, at) {
+    const reps = new Map();
+    const sideOf = (m) => (m.shadowSide != null ? m.shadowSide : m.side);
+    const sig = (o) => {
+      const m = Array.isArray(o.material) ? o.material[0] : o.material, geo = o.geometry;
+      if (!m || !geo?.attributes?.position) return null;
+      const a = Object.keys(geo.attributes).filter((k) => k !== 'position' && k !== 'skinIndex' && k !== 'skinWeight').sort().join('+');
+      return [o.isSkinnedMesh ? 'S' : o.isInstancedMesh ? 'I' : o.isBatchedMesh ? 'B' : 'M', o.morphTargetInfluences?.length ? 'mo' : '',
+        o.isInstancedMesh && o.instanceColor ? 'ic' : '', a, sideOf(m), (m.map && m.alphaTest > 0) ? `map${m.map.channel ?? 0}` : '',
+        (m.alphaMap && m.alphaTest > 0) ? 'am' : '', (m.displacementMap && m.displacementScale !== 0) ? 'dm' : '', m.alphaToCoverage ? 'a2c' : '',
+        o.customDepthMaterial ? o.customDepthMaterial.uuid : ''].join('|');
+    };
+    // today's casters, and the meshes that may cast later with a program of their own: every skinned mesh, and every
+    // mesh whose material needs a depth clone (an Instrument's hull casts by its distance: the Plumb's uv1 alpha-mapped
+    // hull linked a depth program in the leg 2 fight at 3bb6c9e, 24.8 ms)
+    const clone = (m) => !!m && ((m.map && m.alphaTest > 0) || (m.alphaMap && m.alphaTest > 0) || (m.displacementMap && m.displacementScale !== 0) || m.alphaToCoverage === true);
+    scene.traverse((o) => {
+      if (!o.isMesh || o.isBatchedMesh || o.userData?.__sightOverlay) return;
+      const m0 = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!(o.castShadow || o.userData?.__shadowCulled === true || o.isSkinnedMesh || clone(m0))) return;
+      const k = sig(o);
+      if (k && !reps.has(k)) reps.set(k, o);
+    });
+    const sk = this._warmExtras.find((m) => m.name === 'warm-skinned-caster');
+    if (sk) { const k = sig(sk); if (k && !reps.has(k)) reps.set(k, sk); }
+    const dummies = this._casterDummies || (this._casterDummies = (() => {
+      const plain = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), new THREE.MeshStandardMaterial());
+      const skin = warmSkinnedCaster();
+      for (const d of [plain, skin]) { d.castShadow = true; d.frustumCulled = false; d.userData.noSizeCull = true; }
+      return { plain, skin };
+    })());
+    const out = [];
+    for (const src of reps.values()) {
+      let p;
+      if (src === sk) p = sk.clone();
+      else if (src.isSkinnedMesh) { p = new THREE.SkinnedMesh(src.geometry, src.material); p.bindMode = src.bindMode; p.bind(src.skeleton, src.bindMatrix); }
+      else if (src.isInstancedMesh) {
+        p = new THREE.InstancedMesh(src.geometry, src.material, 1);
+        if (src.instanceColor) p.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3).fill(1), 3);
+      } else p = new THREE.Mesh(src.geometry, src.material);
+      if (src.morphTargetInfluences) p.morphTargetInfluences = src.morphTargetInfluences.slice();
+      if (src.customDepthMaterial) p.customDepthMaterial = src.customDepthMaterial;
+      // a dummy of the other skinning first: the depth material's program is looked up again for the proxy
+      const d = (src.isSkinnedMesh ? dummies.plain : dummies.skin).clone();
+      for (const o of [d, p]) {
+        o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false; o.visible = true; o.userData.noSizeCull = true;
+        o.position.copy(at); o.scale.setScalar(o === p ? 0.01 : 1); o.updateMatrixWorld(true);
+        out.push(o);
+      }
+    }
+    this.casterProxyKinds = reps.size;
+    return out;
   }
 
   /**
@@ -2728,14 +2813,18 @@ export class Engine {
    * 13 ms if read at once; tools/perf/program-probe.mjs). The caller adds `root` to the scene when this resolves. At
    * ddc31c1 the Transit's far form, added as its GLB landed, linked on its first frame: 35.4 ms (first-hour leg 3).
    * `register(mesh)` (optional) is what the world does to a new material (environment.registerMaterial), run first.
+   * `force`: nobody is playing (the title, a sheet), so the first use is taken at once. In play the first use still
+   * waits for the GPU process's queue (33.4 ms for the far form at 914bbfb): in play this only shortens a hitch.
    * Bounded by `timeoutMs`: it never holds the load.
    */
-  async compileOffFrame(root, { camera = this.camera, scene = this.scene, register = null, timeoutMs = 3000 } = {}) {
+  async compileOffFrame(root, { camera = this.camera, scene = this.scene, register = null, timeoutMs = 3000, force = false } = {}) {
     if (!root || !this.renderer) return { ms: 0, programs: 0 };
     const t0 = performance.now(), p0 = this.renderer.info.programs?.length ?? 0;
     if (register) root.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine) { try { register(o); } catch { /* */ } } });
     try { this.compileAsDrawn(root, camera, scene); } catch (err) { console.warn('[CAL] compileOffFrame:', err?.message || err); }
     const wait = () => new Promise((res) => setTimeout(res, 16));
+    // `force` (no one is playing: the title, a sheet): the first use now, not after the parallel link
+    if (force) this.resolvePrograms({ force: true });
     for (;;) {
       const r = this.resolvePrograms();
       if (!r.left || performance.now() - t0 > timeoutMs) break;

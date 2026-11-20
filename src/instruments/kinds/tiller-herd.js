@@ -96,6 +96,20 @@ export class HerdFile {
   }
 
   rankOf(m) { return this.order.indexOf(m); }
+
+  /**
+   * A member disposed (`Squads.forget`): the file lets it go. `refresh` runs only from a living member's update or a
+   * chime, so a herd whose last member died kept its dead leader (and `order`) and with it the whole disposed machine,
+   * rig and skinned meshes (A90b at 16dfc0e: `squads.herds[0].file.leader`, a heap snapshot's retaining path).
+   * The next refresh rebuilds as it would have: a new leader resets the crumbs, the same leader keeps them.
+   */
+  forget(m) {
+    const i = this.order.indexOf(m);
+    if (this.leader !== m && i < 0) return;
+    if (this.leader === m) this.leader = null;
+    if (i >= 0) this.order.splice(i, 1);
+    this._n = -1;
+  }
 }
 
 const simNow = (m) => (HOT.engine || m.ctx?.engine)?.simTime ?? 0;

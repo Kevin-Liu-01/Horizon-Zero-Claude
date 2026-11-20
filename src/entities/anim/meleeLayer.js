@@ -366,6 +366,8 @@ const RECOIL_RATE = 11;
 /** How much of a stance one RENDERED frame may take on (a loaded box must not
  *  snap her hips; see `_stance`). */
 const STANCE_STEP_MAX = 0.10;
+/** M2 fix wave 3 (A101, ruling 5): the guard stance's weight loads at this rate (1/s) once both feet are welded */
+const STANCE_IN_RATE = 16;
 const STANCE = {
   ready: { thighL: -0.54, thighR: 0.16, calfL: 0.72, calfR: 0.34, footL: -0.17, footR: -0.30, abd: 0.15, dx: 0.0, dy: -0.115 },
   /* fix round 1 (V47: "four different actions", the body doing the work): light-1 is
@@ -2023,7 +2025,9 @@ export class MeleeLayer {
     /* ...and the blade stays out of the ground as POSED (the goal-side check
      * in `_groundClear` is a prediction; the arm clamps, the wrist limits and
      * the stance's pelvis drop, added after this layer, all move the tip) */
-    if ((stance === 'swing' || stance === 'ready' || this._held) && this._groundResidual()) this._solveRight(w, u);
+    /* (M2 fix wave 3, A103's slope rows: one residual pass left a heavy's blade 0.02 m in the hillside on one frame
+     *  uphill at ddc31c1, the re-solve's wrist limits taking some of the turn back; a second pass takes what is left) */
+    for (let gi = 0; gi < 2 && (stance === 'swing' || stance === 'ready' || this._held) && this._groundResidual(); gi++) this._solveRight(w, u);
     /* ...and her ARM stays out of the machine (round 6, S5): the blade may
      * go into the hull it hits, the hand and forearm holding it may not. */
     this._armHullGuard(w, st);
@@ -2225,7 +2229,12 @@ export class MeleeLayer {
     else if (stance !== 'swing') this._weldSwing = false;
     this._weldWas = stance === 'swing';
     const welded = ((an._strideT || 0) > 0.10 || this._weldSwing) ? 1 : 0;
-    this._stanceW = damp(this._stanceW || 0, welded, 7, dt);
+    /* (M2 fix wave 3, A101 under ruling 5: the guard is AT REST when it reads ready. Stopping out of a run with the guard
+     *  up, her legs loaded into the guard's stance at 7/s: the pelvis was still sinking 0.3-0.5 s after she stopped, and
+     *  the guard's blade rode 0.06-0.10 m over its canon height through that (A101's read after the sprint's held click:
+     *  0.582 m on the page at ddc31c1, 0.527 in Node 20 frames after the stop, settling to 0.486). Into the stance it now
+     *  loads at STANCE_IN_RATE (0.026 m of pelvis a 1/60 s step at most, no pop), out of it at 7/s as before) */
+    this._stanceW = damp(this._stanceW || 0, welded, welded > (this._stanceW || 0) ? STANCE_IN_RATE : 7, dt);
     /* THE HIPS TURN AND TRAVEL WITH THE BEAT (melee W1; `py` and `dz` on the pose
      * keys, continuous with them). The feet are planted by the conform, so a
      * turned and driven pelvis loads the legs instead of skating them, and the leg

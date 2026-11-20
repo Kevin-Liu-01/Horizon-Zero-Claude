@@ -18,6 +18,8 @@
  *   F39-people   each of the five sheltering people: inside the frustum, pixels drawn, screen point
  *   F39-look     (polish 3) the same, with each person's height on screen (its mask's box), and the fight's: the Screed's,
  *                each Sickle's and Brea's pixels and box heights
+ *                (F39-look restaged in wall-1's lee: also where the staging put each of the five, `staging`, and every
+ *                height again on the mask's core box, `coreH`: the mask without its isolated dither pixels)
  *   F42          (polish 3) also the hook-rip held for the frame (verb, phase, its clock) and the staging's report: the
  *                part on the hook and the gap from the hook's tip to it
  *   F44          (polish 3) also her own pixels and box, and the lens's view bearing and pitch
@@ -74,7 +76,25 @@ export async function probe(frame) {
       return { pixels: m, drawn: a.map(Math.round), behind: b.map(Math.round), yDrawn: r1(Yof(...a)), yBehind: r1(Yof(...b)), dY: r1(Yof(...a) - Yof(...b)),
         hueDrawn: r1(ha.h), hueBehind: r1(hb.h), chromaDrawn: r1(ha.c), chromaBehind: r1(hb.c), palerShare: Math.round(paler / m * 1000) / 1000 };
     };
-    const res = { pixels: n, box: x1 >= 0 ? [x0, y0, x1, y1].map((v, i) => Math.round(v * (i % 2 ? H / bh : W / bw))) : null, all: stats(() => true) };
+    // the core box: the mask without its isolated pixels (a mask pixel with 3 or more of its 8 neighbours in the mask). Two
+    // draws a frame apart differ in scattered single pixels far from the thing (the post chain's dither), which stretch
+    // the plain box: at b87afe7 the Screed's ran 586 px tall where its body is about 200 px
+    let cx0 = bw, cy0 = bh, cx1 = -1, cy1 = -1;
+    for (let k = 0; k < mask.length; k++) {
+      if (!mask[k]) continue;
+      const x = k % bw, yb = (k / bw) | 0;
+      let nb = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const xx = x + dx, yy = yb + dy;
+        if (xx >= 0 && xx < bw && yy >= 0 && yy < bh && mask[yy * bw + xx]) nb++;
+      }
+      if (nb < 3) continue;
+      const y = bh - 1 - yb;
+      if (x < cx0) cx0 = x; if (x > cx1) cx1 = x; if (y < cy0) cy0 = y; if (y > cy1) cy1 = y;
+    }
+    const res = { pixels: n, box: x1 >= 0 ? [x0, y0, x1, y1].map((v, i) => Math.round(v * (i % 2 ? H / bh : W / bw))) : null,
+      coreBox: cx1 >= 0 ? [cx0, cy0, cx1, cy1].map((v, i) => Math.round(v * (i % 2 ? H / bh : W / bw))) : null, all: stats(() => true) };
     if (split) {
       // split at a buffer row (counted from the top): above = head, below = legs
       const yb = bh - 1 - Math.round(split * bh / H);
@@ -234,9 +254,11 @@ export async function probe(frame) {
       });
       out.peopleInLens = out.people.filter((q) => q.pixels > 0).length;
       if (id === 'F39-look') {
-        out.fight = (C.machines?.list || []).filter((m) => m && !m._disposed && m.root && (m.kind === 'screed' || m.kind === 'sickle') && m.root.visible).map((m) => { const r = maskRead(m.root); return { kind: m.kind, pixels: r.pixels, boxH: r.box ? r.box[3] - r.box[1] : null, toLensM: r1(Math.hypot(m.position.x - cam.position.x, m.position.z - cam.position.z)) }; });
+        out.staging = window.__f39look || null;   // where the staging put the five: bearing, metres to the Screed and to its threat lines
+        out.fight = (C.machines?.list || []).filter((m) => m && !m._disposed && m.root && (m.kind === 'screed' || m.kind === 'sickle') && m.root.visible).map((m) => { const r = maskRead(m.root); return { kind: m.kind, pixels: r.pixels, boxH: r.box ? r.box[3] - r.box[1] : null, coreH: r.coreBox ? r.coreBox[3] - r.coreBox[1] : null, coreBox: r.coreBox, toLensM: r1(Math.hypot(m.position.x - cam.position.x, m.position.z - cam.position.z)) }; });
+        out.peopleCore = st.map((q) => { const g = q.group || q.root || q.model; const r = g ? maskRead(g) : null; return { id: q.id ?? null, coreH: r?.coreBox ? r.coreBox[3] - r.coreBox[1] : null, coreBox: r?.coreBox || null }; });
         const hr = C.player?.model ? maskRead(C.player.model) : null;
-        out.brea = hr ? { pixels: hr.pixels, boxH: hr.box ? hr.box[3] - hr.box[1] : null } : null;
+        out.brea = hr ? { pixels: hr.pixels, boxH: hr.box ? hr.box[3] - hr.box[1] : null, coreH: hr.coreBox ? hr.coreBox[3] - hr.coreBox[1] : null, coreBox: hr.coreBox } : null;
       }
       out.machines = (C.machines?.list || []).filter((m) => m && !m._disposed && m.root).map((m) => ({ kind: m.kind, screen: proj(m.position.clone().add(new THREE.Vector3(0, 1, 0))) }));
     } catch (e) { out.peopleError = String(e?.message || e).slice(0, 300); }
