@@ -25,6 +25,8 @@
  * (largest channel over 10 of 255, the skyline masks' threshold) from repeat 1 to repeat 2 inside and outside the mask,
  * against the same from repeat 1 to repeat 3 (the session's own floor: nothing was added); the Sonde's own vertices
  * projected on the frozen frame, and how many fall inside the mask. Masks and diff images go outside the repo.
+ * The strict pass wants 0 such pixels; the frames are not pixel-repeatable (clouds, grass, cloth), so each frame also
+ * carries the odd-one-out control (rec.oddOneOut) and `passWithinNoise`.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -171,6 +173,20 @@ async function main() {
         if (d13 <= 10 && d32 > 10) { only++; onlyBits[k] = 1; }
       }
       rec.outsideOnlyWithSondePx = only;
+      // the session's own control (fix round 1: clouds, grass and her cloth move between repeats, so the strict count is
+      // never 0): outside the mask, the pixels where repeat 2 ALONE is the odd one out (1 and 3 agree, 2 differs from
+      // both) against the same for repeat 3 alone and repeat 1 alone. With nothing added outside the mask, repeat 2 is
+      // no likelier to be the odd one than the other two: `withinNoise` when its count is no more than the larger control
+      let o2 = 0, o3 = 0, o1 = 0;
+      for (let k = 0; k < W * H; k++) {
+        if (M.mask[k]) continue;
+        const o = k * 3, dd = (x, y) => Math.max(Math.abs(x[o] - y[o]), Math.abs(x[o + 1] - y[o + 1]), Math.abs(x[o + 2] - y[o + 2]));
+        const d12 = dd(a.data, b.data), d13 = dd(a.data, c.data), d23 = dd(b.data, c.data);
+        if (d13 <= 10 && d12 > 10 && d23 > 10) o2++;
+        else if (d12 <= 10 && d13 > 10 && d23 > 10) o3++;
+        else if (d23 <= 10 && d12 > 10 && d13 > 10) o1++;
+      }
+      rec.oddOneOut = { r2WithSonde: o2, r3: o3, r1: o1, withinNoise: o2 <= Math.max(o1, o3) };
       // a picture: the frame with the Sonde, the mask's edge in white, the changes outside it in magenta
       const pic = Buffer.from(b.data);
       for (let k = 0; k < W * H; k++) {
@@ -188,13 +204,14 @@ async function main() {
         projectedVerticesInFrame: pts.length, insideMask: inside };
     } else rec.sonde = { installed: false };
     rec.pass = !!(rec.withSonde && rec.sonde.installed && rec.sonde.insideMask === rec.sonde.projectedVerticesInFrame && rec.outsideOnlyWithSondePx === 0);
+    rec.passWithinNoise = !!(rec.withSonde && rec.sonde.installed && rec.sonde.insideMask === rec.sonde.projectedVerticesInFrame && rec.oddOneOut?.withinNoise);
     res.frames[id] = rec;
     console.log(`${id.padEnd(10)} mask ${String(M.coveragePct).padStart(6)} %  ` + (rec.withSonde
-      ? `with the Sonde: inside ${rec.withSonde.insidePx} px, outside ${rec.withSonde.outsidePx} px (${rec.withSonde.outsidePct} %); floor outside ${rec.floor.outsidePx} px; outside, changed only with the Sonde ${only(rec)} px; Sonde vertices ${rec.sonde.insideMask}/${rec.sonde.projectedVerticesInFrame} inside  ${rec.pass ? 'PASS' : 'FAIL'}`
+      ? `with the Sonde: inside ${rec.withSonde.insidePx} px, outside ${rec.withSonde.outsidePx} px (${rec.withSonde.outsidePct} %); floor outside ${rec.floor.outsidePx} px; outside, changed only with the Sonde ${only(rec)} px; Sonde vertices ${rec.sonde.insideMask}/${rec.sonde.projectedVerticesInFrame} inside  ${rec.pass ? 'PASS' : 'FAIL'} strict; odd one out r2 ${rec.oddOneOut.r2WithSonde} vs r3 ${rec.oddOneOut.r3} / r1 ${rec.oddOneOut.r1}: ${rec.passWithinNoise ? 'PASS' : 'FAIL'} within the session's noise`
       : JSON.stringify(rec.missing || rec.error)));
   }
   const all = Object.values(res.frames);
-  res.verdict = { frames: all.length, pass: all.filter((r) => r.pass).length };
+  res.verdict = { frames: all.length, pass: all.filter((r) => r.pass).length, passWithinNoise: all.filter((r) => r.passWithinNoise).length };
   writeFileSync(path.join(out, 'sonde-mask.json'), JSON.stringify(res, null, 1));
   if (flag('--json')) writeFileSync(flag('--json'), JSON.stringify(res, null, 1));
   console.log(`masks and proof pictures: ${out}`);
