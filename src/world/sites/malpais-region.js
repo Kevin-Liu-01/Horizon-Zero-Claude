@@ -201,9 +201,9 @@ export class MalpaisRegion {
       const matClinker = rockMat('aa', 0, 1.6, 1.0, 0);
       // (e664972: the scree layer on the hornitos read as red foliage) spatter is the aa's dark clinker, a little warmer
       const matSpatter = rockMat('spatter', 0, 0.9, 1.1, 0.0);
-      // (wave 2b, R9) the tube shelter's crust and vault: the pahoehoe layer at its own 3.4 m tile (the rock reads layer 1
-      // at the cinder's tile x scale), a little darker than the sheets
-      const matTube = rockMat('tube', 1, MALPAIS_LAYERS.tile.cinder / MALPAIS_LAYERS.tile.pahoehoe, 0.85, 0.0);
+      // (wave 2b, R9) the tube shelter's crust and vault, a little darker than the flow. (wave 3, MP6: the pahoehoe layer's
+      // ropes, read triplanar on the crust's steep sides, drew wood grain at 55126d7) the aa's broken rock at 1.3 x its tile
+      const matTube = rockMat('tube', 0, 1.3, 0.85, 0.0);
       matTube.side = THREE.DoubleSide;
 
       const group = new THREE.Group();
@@ -276,7 +276,9 @@ export class MalpaisRegion {
       br.setState({ kindled: false, burning: false });
       br.update(0, null, 1);
       br.group.name = 'malpais-tube-brazier';
-      br.group.traverse((o) => { if (o.isMesh && o.material) { held.mats.push(o.material); if (o.name === 'brazier-cistern-water') o.visible = false; } });
+      // cold: the ash's canvas carries its cracks in orange (the same canvas is its glow map); unlit, the ash is darkened so
+      // the cracks read as cold cinder, not as embers (55126d7: the bowl read warm orange in F58's mouth)
+      br.group.traverse((o) => { if (o.isMesh && o.material) { held.mats.push(o.material); if (o.material.emissiveMap) o.material.color.set(0x3a3836); } });
       held.brazier = br;
       group.add(br.group);
       // (wave 2b, MP4) the steam: every plume of a group in one instanced draw

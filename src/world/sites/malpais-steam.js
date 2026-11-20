@@ -10,17 +10,16 @@ import { patchAerial, patchDeck } from '../island/aerial.js';
  *
  * Cheap by construction: one quad per puff, every puff of a group in ONE instanced draw (a group's plumes share their
  * place: the hornito field and the flow's vents, the Yards), the motion entirely in the vertex shader from one time
- * uniform (no per-frame upload), no shadow cast, no depth write. Lit like everything else (Lambert, its normal the
+ * uniform (no per-frame upload), no shadow cast, no depth write. Lit like everything else (its normal the
  * world's up, so a plume takes the sky and the low sun as a cloud does) and never emissive: fumarole white is its albedo.
  * The time is the environment's own clock in seconds (its game hours x the day's real length): a frozen clock (a staged
  * frame, a pause) freezes the steam where it is, so a film repeats.
  *
- * (M3 wave 3: the Yards' stack plumes did not show over F57's dusk sky. No pass covers them: the puffs were drawn, but a
- * Lambert material takes no light from the sky's IBL (three's Lambert reads scene.environment only as a reflection), so at
- * 19:30, with the sun 2.8 deg up and a plume's normal the world's up, a puff was lit by the 0.12 hemisphere light alone:
- * near black at 0.3 cover over a sky in the tone curve's shoulder, a few codes darker at most. The steam is a standard
- * material now (roughness 1, no metal): the sky's IBL lights it as it lights the ground and the rock, so a plume takes the
- * sky's light, and the stacks' plumes are denser than a vent's (STEAM_LOOK.opacity by kind; one material a group.)
+ * (M3 wave 3: the Yards' stack plumes did not show over F57's dusk sky.) A standard material now (roughness 1, no
+ * metal), so the sky's IBL lights a puff as it lights the ground and the rock (three's Lambert takes scene.environment only
+ * as a reflection, not as light), and the stacks' plumes are denser than the flow's (STEAM_LOOK.opacity by group; one
+ * material a group, one program). What each part did is measured on the page (tools/world/malpais-probe-page.mjs
+ * steamVisibility: the frame with and without the steam, with Lambert and wave 2b's cover in its place).
  *
  *   const st = buildSteam(STEAM, ground)   st.group (one mesh a group) · st.materials · st.update(env) · st.dispose()
  *   st.counts                              { sources, puffs, draws, triangles }
@@ -28,7 +27,7 @@ import { patchAerial, patchDeck } from '../island/aerial.js';
  *                                          material, for a paired toggle against none (malpais-region.js perfSwitches)
  */
 /** Fumarole white (sRGB), and the plume's look: the most a puff covers, its life (s) by kind, how far the wind carries it. */
-export const STEAM_LOOK = Object.freeze({ color: 0xe4e8e8, opacity: Object.freeze({ flow: 0.3, yards: 0.55 }), life: Object.freeze({ hornito: 9, vent: 7, stack: 8 }), carry: 0.32, grow: Object.freeze({ hornito: 4.0, vent: 2.6, stack: 4.0 }), puffs: 2.0 });
+export const STEAM_LOOK = Object.freeze({ color: 0xe4e8e8, opacity: Object.freeze({ flow: 0.3, yards: 0.85 }), life: Object.freeze({ hornito: 9, vent: 7, stack: 8 }), carry: 0.32, grow: Object.freeze({ hornito: 4.0, vent: 2.6, stack: 4.0 }), puffs: 2.0 });
 /* (M3 wave 3, MP4's cost per source: the vents nearest F56's lens, 34-42 m, carried most of the steam's 1.45 ms) a vent's
  * plume swells less (2.6 times its first radius, was 4) and has fewer puffs (./malpais-layout.js STEAM): a crack's breath,
  * not a chimney's */

@@ -156,5 +156,7 @@ export const STEAM = Object.freeze([
   ...HORNITOS.filter((h) => h.steam).map((h) => Object.freeze({ id: `steam-${h.id}`, kind: 'hornito', x: h.x, z: h.z, base: h.h, h: +Math.min(13, (19.6 - h.h) / 1.15).toFixed(2), r: h.r * 0.45, n: 14 })),
   // (M3 wave 3, MP4's cost per source) a vent's plume 8 puffs in flight (was 12), its puffs swelling less (malpais-steam.js)
   ...VENTS.map((v) => Object.freeze({ id: `steam-${v.id}`, kind: 'vent', x: v.x, z: v.z, base: 0.2, h: 9 * v.k, r: 0.8, n: 8 })),
-  ...YARDS.stacks.filter((s) => STEAM_STACKS[s.id]).map((s) => Object.freeze({ id: `steam-${s.id}`, kind: 'stack', x: s.x, z: s.z, base: s.h, h: STEAM_STACKS[s.id], r: s.r * 0.8, n: 12 })),
+  // (M3 wave 3, F57: at 55126d7 a stack's plume moved its pixels over the dusk sky by 10 luma on average: a pale smear that
+  // read as cloud) a stack's plume thicker at its mouth (the stack's own radius) and 16 puffs in flight (was 0.8 r, 12)
+  ...YARDS.stacks.filter((s) => STEAM_STACKS[s.id]).map((s) => Object.freeze({ id: `steam-${s.id}`, kind: 'stack', x: s.x, z: s.z, base: s.h, h: STEAM_STACKS[s.id], r: s.r, n: 16 })),
 ]);

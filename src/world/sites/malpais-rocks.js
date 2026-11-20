@@ -368,7 +368,9 @@ export function hornitoGeometry(ground) {
  * at the back by the vault's end.
  * (M3 wave 3, MP6: wave 2b's tube read as a faceted blockout arch: one flat normal a triangle, a ring a metre, each rim
  * vertex pushed by its own random step) Each surface is one welded grid (shared vertices: smooth normals), a ring every
- * 0.55 m and 25 points an arch, its lumps and the ropy folds of the crust smooth fields of (s, angle). At the mouth the
+ * 0.55 m and 25 points an arch. The crust is a low, round-shouldered hump (an ellipse over a skirt 5.5 m out, not wave
+ * 2b's upright super-ellipse), lumped by the recipe's own noise at the vertex's place (first film at 55126d7: lumps
+ * from sines of (s, angle) hung in folds like a draped cloth). At the mouth the
  * roof runs out past the opening as a lip, up to LIP m over the floor's edge and thinning to a drooped, rounded edge, as
  * a tube's crust breaks back where its roof fell in; the walls under it are cut back. `ground(x, z)` the drawn terrain
  * (engine frame). About 3,000 triangles.
@@ -382,9 +384,8 @@ export function tubeGeometry(ground) {
   const P = (sv, l, y) => { const q = tubeEN(sv, l); return [q.e * S, y, -q.n * S]; };
   const N = Math.round(T.len / ds);
   const lump = [R() * 6, R() * 6, R() * 6, R() * 6, R() * 6, R() * 6];
-  // the crust's own lumps and folds: smooth in s and in the arch's angle (no per-vertex step)
-  const crust = (sv, th) => 1 + 0.055 * Math.sin(th * 4.3 + sv * 0.71 + lump[2]) + 0.035 * Math.sin(th * 9.1 - sv * 0.53 + lump[3])
-    + 0.03 * Math.sin(sv * 1.9 + th * 1.7 + lump[4]) * Math.sin(th);
+  // the crust's lumps: the recipe's noise at the point (blobs of 2-4 m and a little of 1 m), smooth, no folds
+  const crust = (sv, th, l, y) => { const q = tubeEN(sv, l); return 1 + 0.16 * (fbm(q.e * 0.31 + y * 0.23 + lump[2], q.n * 0.31 - y * 0.17, 3) - 0.5) + 0.05 * (fbm(q.e * 1.1 + 7.1, q.n * 1.1 + y * 0.9, 2) - 0.5); };
   // the lip: how far the roof runs out past the mouth at an arch angle (0 at the feet, LIP over the crown, ragged)
   const lipAt = (th) => TUBE_LIP * Math.pow(Math.sin(th), 1.6) * (0.75 + 0.25 * Math.sin(th * 3.7 + lump[5]));
   const sway = (sv) => 0.6 * Math.sin(sv * 0.23 + lump[0]);
@@ -403,15 +404,16 @@ export function tubeGeometry(ground) {
   const outer = [];
   const outerRing = (sv, tail, lipK) => {
     const f = floorAt(sv), w = sway(sv), hk = hkAt(sv);
-    const Wo = (T.half + T.wall) * (tail < 1 ? 0.6 + 0.4 * tail : 1), Ho = (T.height + T.crust) * hk * tail;
-    const r = [P(sv, w + T.foot * (tail < 1 ? 0.75 : 1), f - 1.0)];
+    const Wo = (T.half + T.wall + 0.7) * (tail < 1 ? 0.6 + 0.4 * tail : 1), Ho = (T.height + T.crust) * hk * tail, Wf = T.foot + 0.6;
+    const r = [P(sv, w + Wf * (tail < 1 ? 0.75 : 1), f - 1.0)];
     for (let k = 0; k < K; k++) {
-      const th = (k / (K - 1)) * Math.PI, n = crust(sv, th);
-      const [l, y] = arch(Wo, Ho, th);
+      const th = (k / (K - 1)) * Math.PI, c = Math.cos(th), sn = Math.sin(th);
+      // a round-shouldered hump: an ellipse (p 2), its shoulders a little fuller than a circle's
+      const l = Wo * c, y = Ho * Math.pow(sn, 0.8), n = crust(sv, th, l, y);
       const out = lipK * lipAt(th);
-      r.push(P(sv - out, w + l * n, f + Math.max(-0.4, y * n) - lipK * 0.12 * Math.sin(th)));
+      r.push(P(sv - out, w + l * n, f + Math.max(-0.4, y * n) - lipK * 0.12 * sn));
     }
-    r.push(P(sv, w - T.foot * (tail < 1 ? 0.75 : 1), f - 1.0));
+    r.push(P(sv, w - Wf * (tail < 1 ? 0.75 : 1), f - 1.0));
     return r;
   };
   outer.push(outerRing(0, 1, 1));

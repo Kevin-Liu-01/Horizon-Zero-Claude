@@ -22,13 +22,15 @@ export const TOPDOWN = Object.freeze({ frame: 'F56', span: 40, px: 512, sites: O
  * (M3 wave 3, MP4: "the Yards' stack steam visible over the sky in F57") what the steam adds to the frame, on the frozen
  * frame: the frame drawn with the steam and without it, and with only the sky dome (the pixels nothing else covers: the
  * sky), read back after the whole post chain. Pixels the steam changes by more than 3 of 255 in any channel, all and over
- * the sky; the luma it moves them by; and the same with the steam's sky light (IBL) off (envMapIntensity 0, no recompile),
- * which is what a Lambert puff had. Restores everything.
+ * the sky, the luma it moves them by, where they are (a 16 x 9 grid, top row first) and their box; then the same with
+ * wave 2b's cover (0.3) in the standard material, and with wave 2b's Lambert material and cover, so each change's share is
+ * read (the first film at 55126d7 tried envMapIntensity 0 for the second: three reads scene.environmentIntensity for a
+ * material with no envMap of its own, so it changed nothing). Restores everything.
  */
 async function steamVisibility(C, st) {
   const E = C.engine, R = E.renderer, gl = R.getContext();
   const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight, n = bw * bh * 4;
-  const A = new Uint8Array(n), B = new Uint8Array(n), K = new Uint8Array(n), A0 = new Uint8Array(n);
+  const A = new Uint8Array(n), B = new Uint8Array(n), K = new Uint8Array(n), A1 = new Uint8Array(n), A2 = new Uint8Array(n);
   const shot = (buf) => { E.render(0); E.render(0); gl.readPixels(0, 0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf); };
   const solos = st.group.children.filter((m) => m.name.startsWith('malpais-steam-solo-'));
   const was = st.group.children.map((m) => m.visible), gwas = st.group.visible;
@@ -44,27 +46,45 @@ async function steamVisibility(C, st) {
     C.scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && o.name !== 'sky') { o.visible = false; hidden.push(o); } });
     try { shot(K); } finally { for (const o of hidden) o.visible = true; }
     st.group.visible = true;
-    const mats = st.materials, envI = mats.map((m) => m.envMapIntensity);
-    try { for (const m of mats) m.envMapIntensity = 0; shot(A0); } finally { mats.forEach((m, i) => { m.envMapIntensity = envI[i]; }); }
+    // wave 2b's cover (0.3 in every group) in the standard material, then in a Lambert material (wave 2b's own)
+    const meshes = st.group.children.filter((m) => !m.name.startsWith('malpais-steam-solo-'));
+    const covers = st.materials.map((m) => [m.userData.cover, m.userData.cover?.value.x]);
+    try {
+      for (const [K2] of covers) if (K2) K2.value.x = 0.3;
+      shot(A1);
+      const T = await import('three');
+      const lam = new Map();
+      for (const m of meshes) {
+        const sm = m.material;
+        if (!lam.has(sm)) { const l = new T.MeshLambertMaterial({ color: sm.color.getHex(), transparent: true, depthWrite: false }); l.onBeforeCompile = sm.onBeforeCompile; l.customProgramCacheKey = () => 'cal-malpais-steam-probe-lambert'; lam.set(sm, l); }
+        m.userData.__probeMat = sm; m.material = lam.get(sm);
+      }
+      try { shot(A2); } finally { for (const m of meshes) { m.material = m.userData.__probeMat; delete m.userData.__probeMat; } for (const l of lam.values()) l.dispose(); }
+    } finally { for (const [K2, v] of covers) if (K2) K2.value.x = v; }
     const L = (b, i) => 0.2126 * b[i] + 0.7152 * b[i + 1] + 0.0722 * b[i + 2];
     const count = (X) => {
-      let all = 0, sky = 0, skyUpper = 0, dL = 0, dLmax = 0, dLmin = 0;
+      let all = 0, sky = 0, skyUpper = 0, dL = 0, dLmax = 0, dLmin = 0, x0 = bw, y0 = bh, x1 = -1, y1 = -1;
+      const grid = new Array(16 * 9).fill(0);
       for (let i = 0, k = 0; i < n; i += 4, k++) {
         const d = Math.max(Math.abs(X[i] - B[i]), Math.abs(X[i + 1] - B[i + 1]), Math.abs(X[i + 2] - B[i + 2]));
         if (d <= 3) continue;
         all++;
+        const x = k % bw, y = bh - 1 - ((k / bw) | 0);
+        grid[Math.min(8, (y * 9 / bh) | 0) * 16 + Math.min(15, (x * 16 / bw) | 0)]++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
         const isSky = Math.max(Math.abs(K[i] - B[i]), Math.abs(K[i + 1] - B[i + 1]), Math.abs(K[i + 2] - B[i + 2])) <= 2;
         if (!isSky) continue;
         sky++;
         if (((k / bw) | 0) > bh / 2) skyUpper++;   // readPixels rows run bottom-up
         const l = L(X, i) - L(B, i); dL += l; if (l > dLmax) dLmax = l; if (l < dLmin) dLmin = l;
       }
-      return { changed: all, overSky: sky, overSkyUpperHalf: skyUpper, skyLumaMean: sky ? +(dL / sky).toFixed(2) : null, skyLumaMax: +dLmax.toFixed(1), skyLumaMin: +dLmin.toFixed(1) };
+      return { changed: all, overSky: sky, overSkyUpperHalf: skyUpper, skyLumaMean: sky ? +(dL / sky).toFixed(2) : null, skyLumaMax: +dLmax.toFixed(1), skyLumaMin: +dLmin.toFixed(1), box: x1 >= 0 ? [x0, y0, x1, y1] : null, grid16x9: grid };
     };
     let skyPx = 0; for (let i = 0; i < n; i += 4) if (Math.max(Math.abs(K[i] - B[i]), Math.abs(K[i + 1] - B[i + 1]), Math.abs(K[i + 2] - B[i + 2])) <= 2) skyPx++;
     out.skyPixels = skyPx;
-    out.withSkyLight = count(A);
-    out.noSkyLight = count(A0);
+    out.now = count(A);
+    out.standardCover03 = count(A1);
+    out.lambertCover03 = count(A2);
     out.method = 'readPixels after the post chain; changed = any channel > 3 of 255 against the frame without steam; sky = the pixels the sky dome alone draws the same (<= 2)';
   } finally { restore(); E.render(0); }
   return out;

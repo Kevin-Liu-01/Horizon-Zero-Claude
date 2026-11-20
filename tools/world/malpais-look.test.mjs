@@ -156,7 +156,7 @@ test('MP4 data: >= 3 steaming hornitos and >= 3 vents; every plume inside its co
     m.onBeforeCompile(sh);
     for (const k of ['#include <project_vertex>', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>']) assert.ok(!sh.vertexShader.includes(k), `${k} not replaced`);
     assert.ok(sh.fragmentShader.includes('diffuseColor.a *= a'), 'the puff\'s cover not applied');
-    assert.ok(sh.uniforms.uSteamK.value.x > 0 && sh.uniforms.uSteamK.value.x <= 0.6, 'the cover');
+    assert.ok(sh.uniforms.uSteamK.value.x > 0 && sh.uniforms.uSteamK.value.x <= 0.9, 'the cover');
   }
   assert.equal(new Set(st.materials.map((m) => m.customProgramCacheKey())).size, 1);
   // the stacks' plumes denser than the flow's
