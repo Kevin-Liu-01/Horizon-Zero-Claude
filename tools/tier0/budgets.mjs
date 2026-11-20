@@ -263,7 +263,7 @@ export async function runShippedLedger({ root, assets, dist = null, exit }) {
   return {
     id: 'shipped-ledger',
     status: failures.length ? 'FAIL' : dist ? 'PASS' : 'PENDING',
-    summary: `first load ${mbd(first)} MB of ${S.firstLoadCapMb} (decimal MB; ${mb(first)} MiB; boot set ${mbd(boot)} MB in ${A.files.length - lateN} files + built code ${dist ? `${mbd(code)} MB` : 'not measured (no build)'}; ${mbd(late)} MB in ${lateN} files deferred until control); total ${mbd(total)} MB of the ${ex} cap ${cap} MB (public/ ${mbd(pub)} MB in ${A.files.length} files)`,
+    summary: `first load ${mbd(first)} MB of ${S.firstLoadCapMb} (decimal MB; ${mb(first)} MiB; boot set ${mbd(boot)} MB in ${A.files.length - lateN} files + built code ${dist ? `${mbd(code)} MB` : 'not measured (no build)'}; ${mbd(late)} MB in ${lateN} files deferred: ${byWhen.control ? `${mbd(byWhen.control.bytes)} MB after control` : 'none after control'}, ${byWhen.region ? `${mbd(byWhen.region.bytes)} MB by region` : 'none by region'}); total ${mbd(total)} MB of the ${ex} cap ${cap} MB (public/ ${mbd(pub)} MB in ${A.files.length} files)`,
     failures,
     notes: rows,
     details: { unit: 'MB = 1e6 bytes', firstLoadMb: mbd(first), firstLoadMib: mb(first), marginMb: mbd(S.firstLoadCapMb * MB10 - first), bootMb: mbd(boot), bootFiles: A.files.length - lateN, deferredMb: mbd(late), deferredFiles: lateN, deferredByWhen: Object.fromEntries(Object.entries(byWhen).map(([k, v]) => [k, { mb: mbd(v.bytes), files: v.n }])), totalMb: mbd(total), publicMb: mbd(pub), codeMb: mbd(code), byLine: Object.fromEntries(Object.entries(byLine).map(([k, v]) => [k, mbd(v)])) },

@@ -228,8 +228,27 @@ async function title(page) {
   await sleep(300);
 }
 
+let lastPage = null, lastStep = null;
+/** Where a case stopped: the page's state and a screenshot beside the report. */
+async function whyStopped(name) {
+  const p = lastPage;
+  if (!p) return null;
+  const st = await p.evaluate(() => {
+    const C = window.__CTX__;
+    let info = null;
+    try { info = C?.progression?.saveInfo?.() ?? null; } catch (e) { info = 'saveInfo threw: ' + String(e).slice(0, 200); }
+    return { href: location.href, state: C?.state ?? null, titleStage: C?.menus?.titleStage ?? null, hasSave: !!C?.progression?.hasSave?.(), info,
+      loading: document.querySelector('.ld-sheet, .loading, #loading')?.className ?? null, body: document.body?.className ?? null };
+  }).catch((e) => ({ evalError: String(e).slice(0, 200) }));
+  try { await p.screenshot({ path: path.join(OUT, `stopped-${name}.png`) }); } catch { /* */ }
+  try { await p.close(); } catch { /* */ }
+  lastPage = null;
+  return { step: lastStep, ...st };
+}
+
 async function oneCase(browser, kind, from) {
   const page = await browser.newPage();
+  lastPage = page; lastStep = 'open';
   await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1.25 });
   page.on('console', (m) => { if (m.type() === 'error') run.console.push({ case: kind, text: m.text().slice(0, 300) }); });
   page.on('pageerror', (e) => run.console.push({ case: kind, text: 'pageerror: ' + String(e).slice(0, 300) }));
@@ -240,6 +259,7 @@ async function oneCase(browser, kind, from) {
   const rec = { case: kind + (from ? `:${from}` : ''), pass: null };
   if (kind === 'continue') {
     // the save first (its own page load, not measured), then the page opened again
+    lastStep = 'the save page';
     await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
     await page.waitForFunction(() => window.__CTX__?.state === 'title' && !!window.__CTX__?.progression?.saves?.store, { timeout: 180000, polling: 100 });
     const save = { ...recordFor(from), savedAt: Date.now() };
@@ -256,8 +276,10 @@ async function oneCase(browser, kind, from) {
   cdp.on('Network.loadingFinished', onDone);
   cdp.on('Network.loadingFailed', onFail);
   const tNav = Date.now();
+  lastStep = 'the measured page: to the title';
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await title(page);
+  lastStep = 'the title: to control';
   if (kind === 'new-game') {
     await clickOn(page, '.mn-title-item', /NEW GAME/);
     await clickOn(page, '.mn-diff');
@@ -364,12 +386,16 @@ try {
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--window-size=1600,940',
       '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'] });
   try {
-    for (const c of [['new-game', null], ...CONTINUES.map((f) => ['continue', f])]) {
+    for (const c of [...(args.includes('--no-new-game') ? [] : [['new-game', null]]), ...CONTINUES.map((f) => ['continue', f])]) {
       try {
         const rec = await oneCase(browser, c[0], c[1]);
         run.cases.push(rec);
         log(`${rec.case}: ${rec.beforeControl.mb} MB in ${rec.beforeControl.files} files before control, ${rec.beforeControl.deferredFiles} deferred; late ${rec.late?.decoded}/${rec.late?.rows} by ${rec.late?.lastDecodedS} s, missed ${rec.late?.missed?.length}; ${rec.pass ? 'PASS' : 'FAIL'}`);
-      } catch (e) { run.cases.push({ case: c.join(':'), pass: false, error: String(e?.stack || e).slice(0, 600) }); log(`${c.join(':')}: ${e}`); }
+      } catch (e) {
+        const stopped = await whyStopped(c.join('-'));
+        run.cases.push({ case: c.join(':'), pass: false, error: String(e?.stack || e).slice(0, 600), stopped });
+        log(`${c.join(':')}: ${e} (at ${stopped?.step}: ${JSON.stringify(stopped).slice(0, 300)})`);
+      }
       save();
     }
   } finally {
