@@ -1865,3 +1865,67 @@ export function settleCorpseNow(machine) {
   }
   return true;
 }
+
+/**
+ * C5 (engine lane, the smallest change here). THE CORPSE SOLVE'S CODE KEPT WARM. The first wreck of a page paid for
+ * its code's first runs on top of the settle: 33 ms against 18-21 for the next ones (tools/perf/corpse-settle-probe-page
+ * .mjs at e04cbeb), and 36 ms of Combat.update at the first Peg of first-hour leg 1 (a 41.6 ms frame). So the solve
+ * runs here on a stand-in wreck (a small skinned mesh on six bones, flat ground, never in the scene, no events, no
+ * shadow), in the page's idle time (requestIdleCallback): once at load and again every WARM_EVERY_MS, so the code is
+ * not let go before the first fight. It writes nothing outside the stand-in; a frame never waits on it.
+ */
+const WARM_EVERY_MS = 15000;
+let _warmM = null;
+function warmStandIn() {
+  const root = new THREE.Group(), body = new THREE.Group();
+  root.add(body);
+  const bones = [];
+  const names = ['pelvis', 'spine', 'legL', 'footL', 'legR', 'footR'];
+  const parent = [-1, 0, 0, 2, 0, 4];
+  for (let b = 0; b < names.length; b++) {
+    const bone = new THREE.Bone();
+    bone.name = names[b];
+    bone.position.set(b === 0 ? 0 : (b % 2 ? 0.2 : -0.2), b === 0 ? 0.8 : -0.35, 0);
+    if (parent[b] >= 0) bones[parent[b]].add(bone);
+    bones.push(bone);
+  }
+  body.add(bones[0]);
+  const n = 1200, pos = new Float32Array(n * 3), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const a = i * 2.399, y = (i / n) * 1.2;
+    pos[i * 3] = Math.cos(a) * 0.4; pos[i * 3 + 1] = y; pos[i * 3 + 2] = Math.sin(a) * 0.4;
+    const b0 = i % bones.length, b1 = (b0 + 1) % bones.length;
+    si[i * 4] = b0; si[i * 4 + 1] = b1; sw[i * 4] = 0.7; sw[i * 4 + 1] = 0.3;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+  g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+  g.userData.perMachine = true;
+  const mesh = new THREE.SkinnedMesh(g, new THREE.MeshBasicMaterial());
+  body.add(mesh);
+  root.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones));
+  const m = { root, body, position: root.position, height: 1.2, bodyRadius: 0.5, heading: 0, _rigDisposed: true,
+    ctx: { terrain: { getHeight: () => 0 } } };
+  return { m, bones };
+}
+export function warmCorpseCode() {
+  try {
+    if (!_warmM) _warmM = warmStandIn();
+    const { m, bones } = _warmM;
+    const g = new CorpseGrounder(m, { chassis: (b) => b.name === 'pelvis' || b.name === 'spine' });
+    for (let i = 0; i < 18; i++) {
+      const t = 0.18 * (i + 1);
+      for (let b = 1; b < bones.length; b++) bones[b].rotation.x = Math.min(1, t) * (b % 2 ? 0.9 : -0.7);
+      m.body.position.y = -0.05 * Math.min(1, t);
+      g.update(t);
+    }
+    posedStats(m, 300);
+  } catch (e) { /* a warm-up never matters to the game */ }
+}
+if (typeof window !== 'undefined' && typeof requestIdleCallback === 'function') {
+  // no timeout: on a page with no idle time it waits (a frame never carries it)
+  const again = () => requestIdleCallback((d) => { if (d.timeRemaining() >= 8) warmCorpseCode(); setTimeout(again, d.timeRemaining() >= 8 ? WARM_EVERY_MS : 1000); });
+  setTimeout(again, 2000);
+}
