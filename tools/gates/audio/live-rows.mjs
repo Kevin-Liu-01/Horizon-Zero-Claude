@@ -53,6 +53,12 @@ export const GATES = [
       if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
       const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       const MAN = (await import('/src/audio/manifest.js')).MANIFEST;
+      // the manifest holds the first hour's late rows too (the first-load cap: fetched after control, GameAudio.update):
+      // "every row decoded" waits for that bank (c997201 read the bank the moment the boot bank was in; at f0e9c14 the
+      // late bank was still landing then, 220 of 224)
+      const tl = performance.now();
+      while (!a.bankLate && performance.now() - tl < 6000) await sleep(60);
+      if (a.bankLate) { try { await a.bankLate; } catch (e) {} }
       const au = a.bank.audit();
       let worstLoopMs = 0, worstLoop = null, worstAnyMs = 0;
       for (const r of MAN) {
