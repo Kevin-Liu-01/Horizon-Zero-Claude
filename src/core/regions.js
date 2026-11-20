@@ -15,6 +15,8 @@
  *   map.depth(id, x, z)         -> metres       signed: > 0 inside (distance to its edge), < 0 outside
  *   const tr = new RegionTracker(map)
  *   tr.update(x, z)             -> events[]     fires each crossing once (see HYSTERESIS_M)
+ *   tr.modeOf = () => 'walk' | 'flight'          (M3) how she moves: a region's approach distance is per mode
+ *                                                (`approachOf`); the engine binds it to the flight state seam
  *   tr.on('enter' | 'leave' | 'approach' | 'depart', fn({ region, x, z, depth }))
  *   tr.current                  -> id | null    the region she is in (null only between a leave and the next enter)
  *   tr.resident()               -> id[]         the region she is in plus every region she is approaching
@@ -42,6 +44,14 @@ export const HYSTERESIS_M = 20;
  * enter point (18 s at a sprint, over a minute at a walk).
  */
 export const APPROACH_M = 90;
+/**
+ * (Milestone 3, the regions seam) A region within this many metres of her IN THE AIR is being approached: at 10 m/s of
+ * kite speed 150 m is 15 s of fetch, the walk's 90 m at a 5 m/s jog 18 s. A region may set its own (`approach`).
+ */
+export const FLIGHT_APPROACH_M = 150;
+/** The approach distance (m) of `region` for a mode ('walk' or 'flight'): its own if it has one, else the seam's. */
+export const approachOf = (region, mode = 'walk') =>
+  region?.approach?.[mode] ?? (mode === 'flight' ? Math.max(FLIGHT_APPROACH_M, APPROACH_M) : APPROACH_M);
 /** The label grid's cell, metres. */
 export const CELL_M = 4;
 
@@ -55,6 +65,13 @@ export const CELL_M = 4;
  * @property {string[]} sites     site ids (src/world/island/sites.js) that stand in it
  * @property {Record<string, object>} assets  deferred asset rows (`ctx.assets.loadExtra` shape) resident while near
  * @property {string[]} files     public/ path prefixes this region's files live under (never in the first load)
+ * @property {{ walk: number, flight: number }} [approach]  (M3) metres at which it is approached on foot and in the
+ *                                 air; absent: APPROACH_M and FLIGHT_APPROACH_M
+ * @property {{ residentMb: number, shippedMb: number }} [standIn]  (M3, D9) the plan's line for a region not built
+ *                                 yet: the resident ledger and A-region-hitch hold this much for it until its files exist
+ * @property {{ module: string, export: string, file: string, except?: { module: string, export: string }[] }} [cast]
+ *                                 (M3, D9) the people's GLBs resident with this region (read by Node from the game's
+ *                                 own list, as tools/tier0/budgets.json's deferred sources are), relative to public/
  */
 
 /** @type {ReadonlyArray<Readonly<Region>>} */
@@ -64,16 +81,23 @@ export const REGIONS = Object.freeze([
     assets: {}, files: [] },
   { id: 'holds', name: 'The Crescent Holds', biome: 'holds', built: true, people: 'holds',
     sites: ['ninewalls', 'jameo'],
-    assets: {}, files: ['models/holds/', 'textures/holds/'] },
+    assets: {}, files: ['models/holds/', 'textures/holds/'],
+    cast: { module: 'src/world/npc/people/holds.js', export: 'HOLDS_CAST', file: 'models/npc/{}.glb',
+      except: [{ module: 'src/world/npc/people/ids.js', export: 'ARCHETYPE_IDS' }, { module: 'src/world/npc/people/ids.js', export: 'SLICE_CAST' }] } },
+  // Milestone 3: the Malpais is next. Approached at 60 m on foot and 150 m in the air (the M3 seam's starting values);
+  // until its own files exist it is held at the plan's line (M3-BRIEFS §12: 14 MB shipped, 16 MB resident)
   { id: 'malpais', name: 'The Malpais', biome: 'malpais', built: false, people: 'none',
-    sites: ['kiln-yards', 'rust-cone', 'hornito-field'], assets: {}, files: ['models/malpais/', 'textures/malpais/'] },
+    sites: ['kiln-yards', 'rust-cone', 'hornito-field'], assets: {}, files: ['models/malpais/', 'textures/malpais/'],
+    approach: { walk: 60, flight: 150 }, standIn: { residentMb: 16, shippedMb: 14 } },
   { id: 'cloudline', name: 'The Cloudline', biome: 'cloudline', built: false, people: 'cloudline',
     sites: ['mistfold', 'fog-harp'], assets: {}, files: ['models/cloudline/', 'textures/cloudline/'] },
   { id: 'flank', name: 'The Flank', biome: 'flank', built: false, people: 'none',
     sites: ['pinned-cliff', 'leveler-muster', 'the-boilers'], assets: {}, files: ['models/flank/', 'textures/flank/'] },
   { id: 'caldera', name: 'The Caldera', biome: 'caldera', built: false, people: 'none',
     sites: ['roques', 'calibration-yard', 'the-fundamental'], assets: {}, files: ['models/caldera/', 'textures/caldera/'] },
-].map((r) => Object.freeze({ ...r, sites: Object.freeze(r.sites), assets: Object.freeze(r.assets), files: Object.freeze(r.files) })));
+].map((r) => Object.freeze({ ...r, sites: Object.freeze(r.sites), assets: Object.freeze(r.assets), files: Object.freeze(r.files),
+  ...(r.approach ? { approach: Object.freeze(r.approach) } : {}), ...(r.standIn ? { standIn: Object.freeze(r.standIn) } : {}),
+  ...(r.cast ? { cast: Object.freeze(r.cast) } : {}) })));
 
 /** The region the game boots in: its rows may be boot rows; every other region's may not. */
 export const BOOT_REGION = 'pans';
@@ -192,12 +216,19 @@ function signedDistance(label, n, k, cell) {
   return out;
 }
 
-/** enter / leave with hysteresis, approach / depart at APPROACH_M. Fires each crossing once. */
+/**
+ * enter / leave with hysteresis, approach / depart at each region's approach distance for the mode she moves in
+ * (`approachOf`; a tracker built with an explicit `approach` uses that for every region, as M2's tests do). Fires each
+ * crossing once.
+ */
 export class RegionTracker {
-  constructor(map = new RegionMap(), { hysteresis = HYSTERESIS_M, approach = APPROACH_M } = {}) {
+  constructor(map = new RegionMap(), { hysteresis = HYSTERESIS_M, approach = null, modeOf = () => 'walk' } = {}) {
     this.map = map;
     this.band = hysteresis / 2;
-    this.approachM = approach;
+    this.approachM = approach ?? APPROACH_M;
+    this._fixed = approach != null;
+    /** () -> 'walk' | 'flight': how she moves now (the engine binds the flight state seam; a row may set it) */
+    this.modeOf = modeOf;
     this.current = null;
     this.near = new Set();
     this.started = false;
@@ -240,10 +271,13 @@ export class RegionTracker {
         if (best) { this.current = best; this._fire('enter', best, x, z, bd, out); }
       }
     }
+    let mode = 'walk';
+    try { mode = this.modeOf?.() === 'flight' ? 'flight' : 'walk'; } catch { /* walk */ }
     for (const r of M.regions) {
       const d = M.depth(r.id, x, z), has = this.near.has(r.id);
-      if (!has && (d >= -this.approachM || r.id === this.current)) { this.near.add(r.id); this._fire('approach', r.id, x, z, d, out); }
-      else if (has && r.id !== this.current && d < -(this.approachM + this.band * 2)) { this.near.delete(r.id); this._fire('depart', r.id, x, z, d, out); }
+      const A = this._fixed ? this.approachM : approachOf(r, mode);
+      if (!has && (d >= -A || r.id === this.current)) { this.near.add(r.id); this._fire('approach', r.id, x, z, d, out); }
+      else if (has && r.id !== this.current && d < -(A + this.band * 2)) { this.near.delete(r.id); this._fire('depart', r.id, x, z, d, out); }
     }
     return out;
   }
