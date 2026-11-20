@@ -13,7 +13,7 @@
  *
  * KINDS (resolved in the page by subject-page.mjs; the data kinds in Node too):
  *   hero                          Brea's model (her skinned vertices sampled)
- *   object   { object }           the scene's object of that name (e.g. the grey kite's mesh)
+ *   object   { object }           the scene's object of that name (e.g. the Survey Kite's mesh, 'survey-kite')
  *   path     { path }             an object at a path off ctx (e.g. 'combat.windwall.prop.group')
  *   machines { machine }          every visible Instrument of that kind: each a member
  *   people                        every visible person: each a member
@@ -67,17 +67,17 @@ export const SUBJECTS = Object.freeze({
   // ---- Milestone 3 (§3.3)
   F51: [
     { name: 'Brea under the kite', kind: 'hero', minPx: 100 },
-    { name: 'the kite', kind: 'object', object: 'kite-grey-blockout', minPx: 60 },
+    { name: 'the kite', kind: 'object', object: 'survey-kite', minPx: 60 },
     { name: 'the Sounding Ring below', kind: 'shapes', minPx: 4, shapes: [site('sounding-ring', 25, 6)] },
     { name: 'Saltrow below', kind: 'shapes', minPx: 6, shapes: [site('saltrow', 45, 10)] },
   ],
   F52: [
     { name: 'Brea in the hang, side-on', kind: 'hero', minPx: 300 },
-    { name: 'the whole kite', kind: 'object', object: 'kite-grey-blockout', minPx: 200, inLens: 0.95 },
+    { name: 'the whole kite', kind: 'object', object: 'survey-kite', minPx: 200, inLens: 0.95 },
   ],
   F53: [
     { name: 'Brea at T1\'s top', kind: 'hero', minPx: 200 },
-    { name: 'the kite opening', kind: 'object', object: 'kite-grey-blockout', minPx: 80 },
+    { name: 'the kite opening', kind: 'object', object: 'survey-kite', minPx: 80 },
   ],
   F54: [
     { name: 'the Organ Shelf road\'s five posts', kind: 'shapes', min: 5, minPx: 20,
