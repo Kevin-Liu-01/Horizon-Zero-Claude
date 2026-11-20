@@ -107,7 +107,7 @@ const R = rng(1);
   // the post (SONDE_MOORING) against every probed lens, and the bow from the rise (ArrowPool.predict): ./sonde-mooring.mjs
   const L = lensCheck(), B = await arrowCheck();
   out.sondeAtRing.post = mooringPost();
-  out.sondeAtRing.postInAcceptedLens = { sweptVolume: `half-sphere r ${L.sweptR} m round the shackle (tether 18 + hull 2.8) and the post`, lensesChecked: L.lensesChecked,
+  out.sondeAtRing.postInAcceptedLens = { sweptVolume: `half-sphere r ${L.sweptR} m round the shackle (tether ${SONDE_RULES.tetherM} + hull reach ${L.hullReachM} + 0.5; sonde-mooring.mjs sweptVolume(), the mask's own ball) and the post`, lensesChecked: L.lensesChecked,
     acceptedLensesSeeingIt: L.acceptedSeeing, seenBy: L.seenBy, clearOf: L.clearOf, unmeasuredNoProbe: L.unmeasuredNoProbe,
     verdict: L.acceptedSeeing.length ? `IN ${L.acceptedSeeing.length} accepted lenses (${L.acceptedSeeing.join(', ')}): the Ring itself is in them, so no post at the Ring keeps it out by placement; it is masked by its swept volume (area A's skyline-masks row: centre the shackle, r ${L.sweptR} m)` : 'in no probed accepted lens' };
   out.sondeAtRing.arrowFromRise = { via: 'ArrowPool.predict (src/combat/arrows.js) over the island bake, bow 1.45 m over the ground, arrow 62 m/s', shots: B.shots, reached: B.reached, worstMissM: B.worstMissM, notReached: B.notReached, note: B.note };

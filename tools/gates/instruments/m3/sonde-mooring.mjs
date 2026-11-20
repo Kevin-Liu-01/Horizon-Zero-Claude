@@ -11,7 +11,8 @@
  * THE LENSES. Every frame lens probed in a film run (run.json frames[].probe: position, quaternion, fov, aspect, read
  * off the frozen frame by tools/frames/film.mjs --probe, the same records tools/world/skyline-masks.mjs reads; the
  * newest probe of each frame id). The swept volume is everything the Sonde can fill: the sphere of the tether plus the
- * hull's reach (18 + 2.8 m) round the shackle, above the ground, and the post. A lens SEES it when any of ~650 points on
+ * hull's reach (sweptVolume(): 18 m + the hull's reach from the form's parts + 0.5 m, the same ball ./sonde-mask.mjs
+ * masks: rule 21) round the shackle, above the ground, and the post. A lens SEES it when any of ~650 points on
  * that volume's surface projects inside the 1600 x 900 frame with no ground (the island bake, bilinear, as the masks
  * march it) between it and the lens. Nothing but the ground occludes (the Ring, houses: the answer is only ever too
  * large). Frames of the frameset with no probe on file are listed UNMEASURED by name.
@@ -28,7 +29,8 @@ import * as THREE from 'three';
 import { ensureMacro, heightAt } from '../../../../src/world/island/recipe.js';
 import { GRID } from '../../../../src/world/island/bake.js';
 import { siteById } from '../../../../src/world/island/sites.js';
-import { SONDE_MOORING, SONDE_POST } from '../../../../src/instruments/kinds/sonde/form.js';
+import { SONDE_MOORING, SONDE_POST, SONDE_KEEL } from '../../../../src/instruments/kinds/sonde/form.js';
+import { M3_FORMS, expandParts } from './forms.mjs';
 import { SondeBrain, SONDE_RULES } from '../../../../src/instruments/kinds/sonde/rules.js';
 import { REVIEW } from '../../../frames/paths.mjs';
 
@@ -60,6 +62,27 @@ export function mooringPost() {
   const x = ring.x + Math.sin(b) * SONDE_MOORING.offsetM, z = ring.z - Math.cos(b) * SONDE_MOORING.offsetM;
   const y = ground()(x, z);
   return { ring: { x: ring.x, z: ring.z, y: r2(ground()(ring.x, ring.z)) }, x: r2(x), z: r2(z), y: r2(y), shackleY: r2(y + SONDE_POST.h) };
+}
+
+/** The farthest any point of the hull lies from its keel ring (m), from every part's bounding corners. */
+export function hullReach() {
+  let best = 0;
+  const K = SONDE_KEEL, AX = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+  const at = (x, y, z) => { best = Math.max(best, Math.hypot(x - K[0], y - K[1], z - K[2])); };
+  for (const p of expandParts(M3_FORMS.sonde.parts)) {
+    if (p.type === 'box') { for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) at(p.c[0] + sx * p.s[0] / 2, p.c[1] + sy * p.s[1] / 2, p.c[2] + sz * p.s[2] / 2); }
+    else if (p.type === 'cyl') {
+      const a = AX[p.axis || 'y'], r = Math.max(p.r, p.r2 ?? p.r), e = [0, 1, 2].map((k) => (a[k] ? p.h / 2 : r));
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) at(p.c[0] + sx * e[0], p.c[1] + sy * e[1], p.c[2] + sz * e[2]);
+    } else if (p.type === 'strut') { for (const q of [p.a, p.b]) for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) at(q[0] + sx * p.r, q[1] + sy * p.r, q[2] + sz * p.r); }
+  }
+  return best;
+}
+
+/** The swept volume: { c: [x, y, z] the shackle (engine frame), R }. */
+export function sweptVolume() {
+  const P = mooringPost(), reach = hullReach();
+  return { c: [P.x, P.shackleY, P.z], R: SONDE_RULES.tetherM + reach + 0.5, reach: Math.round(reach * 1000) / 1000, tetherM: SONDE_RULES.tetherM, post: P };
 }
 
 /** The newest probe of each frame id across the film runs (and the frameset's ids, to name the ones without one). */
@@ -124,8 +147,8 @@ function lensSees(probe, pts, W = 1600, Hh = 900) {
 }
 
 export function lensCheck(runsDir) {
-  const P = mooringPost(), R = SONDE_RULES.tetherM + 2.8;
-  const pts = sweptPoints(P, R);
+  const V = sweptVolume(), P = V.post, R = V.R;
+  const pts = sweptPoints({ ...P, shackleY: V.c[1] }, R);
   const { lenses, frameset } = probedLenses(runsDir);
   const accepted = new Set(frameset.map((f) => f.id));
   const rows = [];
@@ -136,7 +159,7 @@ export function lensCheck(runsDir) {
   const seenBy = rows.filter((r) => r.seen > 0);
   const noProbe = frameset.filter((f) => !lenses.has(f.id)).map((f) => `${f.id} (${f.camera?.mode}${f.camera?.screen ? ` ${f.camera.screen}` : ''})`);
   return {
-    post: P, sweptR: R, points: pts.length, lensesChecked: rows.length,
+    post: P, sweptR: Math.round(R * 1000) / 1000, hullReachM: V.reach, points: pts.length, lensesChecked: rows.length,
     seenBy: seenBy.map((r) => ({ id: r.id, accepted: r.accepted, distM: r.distM, visiblePts: `${r.seen}/${r.of}`, frameBox: r.box, nearestM: r.nearestM })),
     acceptedSeeing: seenBy.filter((r) => r.accepted).map((r) => r.id),
     clearOf: rows.filter((r) => !r.seen).map((r) => r.id),

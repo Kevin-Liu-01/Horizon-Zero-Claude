@@ -30,36 +30,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { M3_FORMS, expandParts } from './forms.mjs';
-import { ground, mooringPost } from './sonde-mooring.mjs';
-import { SONDE_KEEL } from '../../../../src/instruments/kinds/sonde/form.js';
-import { SONDE_RULES } from '../../../../src/instruments/kinds/sonde/rules.js';
+import { ground, hullReach, sweptVolume } from './sonde-mooring.mjs';
 import { REVIEW, assertOutsideRepo } from '../../../frames/paths.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const r3 = (v) => Math.round(v * 1000) / 1000;
-const AX = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 
-/** The farthest any point of the hull lies from its keel ring (m), from every part's bounding corners. */
-export function hullReach() {
-  let best = 0;
-  const K = SONDE_KEEL;
-  const at = (x, y, z) => { best = Math.max(best, Math.hypot(x - K[0], y - K[1], z - K[2])); };
-  for (const p of expandParts(M3_FORMS.sonde.parts)) {
-    if (p.type === 'box') { for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) at(p.c[0] + sx * p.s[0] / 2, p.c[1] + sy * p.s[1] / 2, p.c[2] + sz * p.s[2] / 2); }
-    else if (p.type === 'cyl') {
-      const a = AX[p.axis || 'y'], r = Math.max(p.r, p.r2 ?? p.r), e = [0, 1, 2].map((k) => (a[k] ? p.h / 2 : r));
-      for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) at(p.c[0] + sx * e[0], p.c[1] + sy * e[1], p.c[2] + sz * e[2]);
-    } else if (p.type === 'strut') { for (const q of [p.a, p.b]) for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) at(q[0] + sx * p.r, q[1] + sy * p.r, q[2] + sz * p.r); }
-  }
-  return best;
-}
-
-/** The swept volume: { c: [x, y, z] the shackle (engine frame), R }. */
-export function sweptVolume() {
-  const P = mooringPost(), reach = hullReach();
-  return { c: [P.x, P.shackleY, P.z], R: SONDE_RULES.tetherM + reach + 0.5, reach: r3(reach), tetherM: SONDE_RULES.tetherM, post: P };
-}
+/* hullReach and sweptVolume live in ./sonde-mooring.mjs (one volume for row 0 and the mask: rule 21); re-exported. */
+export { hullReach, sweptVolume };
 
 function rayDirs(probe, W, Hh) {
   const [qx, qy, qz, qw] = probe.quaternion;

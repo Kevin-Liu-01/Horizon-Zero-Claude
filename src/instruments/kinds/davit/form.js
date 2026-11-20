@@ -43,7 +43,7 @@ const ARMS = [];
   // the working arm (right), wave 2: a straight open lattice boom on a slewing turntable at the deck's right edge, raked
   // forward to a flat sheave at 4.2 m; the hoist cable up the boom from the winch; the backstay pendant from the boom's
   // tip to the top of an A-frame gantry behind the winch (boom, pendant and gantry: one triangle)
-  const bx = 0.75, foot = [bx, 1.90, 0.30], tip = [bx, 3.98, 1.68];
+  const bx = 0.75, foot = [bx, 1.90, 0.30], tip = [bx, 4.08, 1.73];
   ARMS.push(
     cyl('turntableR', [bx, 1.69, 0.30], 0.24, 0.08, 'y', { tone: 'brass' }),
     cyl('kingpostR', [bx, 1.80, 0.30], 0.13, 0.18, 'y', { tone: 'joint' }),
@@ -57,17 +57,19 @@ const ARMS = [];
     ARMS.push(strut(`boomLace${i + 1}`, [bx + s0 * half(t0), lerp(t0, 1), lerp(t0, 2)], [bx - s0 * half(t1), lerp(t1, 1), lerp(t1, 2)], 0.018, { tone: 'joint' }));
   }
   ARMS.push(
+    // fix round 1: the sheave sits between the chords' ends (r 0.10, inside the lattice's 0.14 m), never a disc proud of
+    // the tip (from the side a 0.15 m disc on the boom's end over the six legs could read as a head on a neck)
     cyl('boomTipPin', [bx, tip[1], tip[2]], 0.05, 0.22, 'x', { tone: 'joint' }),
-    cyl('sheaveR', [bx, 4.05, 1.76], 0.15, 0.06, 'x', { tone: 'brass' }),
-    strut('hoistCable', [0.30, 2.18, 0.20], [bx, 4.10, 1.70], 0.012, { tone: 'joint' }),
-    strut('cableR', [bx, 3.92, 1.90], [bx, 2.95, 1.90], 0.012, { tone: 'joint' }),
-    box('hookBlockR', [bx, 2.84, 1.90], [0.16, 0.22, 0.16], { tone: 'joint', hit: 'hookR' }),
-    cyl('hookR', [bx, 2.66, 1.90], 0.03, 0.16, 'y', { tone: 'brass' }),
+    cyl('sheaveR', [bx, tip[1], tip[2]], 0.10, 0.06, 'x', { tone: 'brass' }),
+    strut('hoistCable', [0.30, 2.18, 0.20], [bx, tip[1] + 0.08, tip[2] - 0.06], 0.012, { tone: 'joint' }),
+    strut('cableR', [bx, tip[1] - 0.04, tip[2] + 0.17], [bx, 2.95, tip[2] + 0.17], 0.012, { tone: 'joint' }),
+    box('hookBlockR', [bx, 2.84, tip[2] + 0.17], [0.16, 0.22, 0.16], { tone: 'joint', hit: 'hookR' }),
+    cyl('hookR', [bx, 2.66, tip[2] + 0.17], 0.03, 0.16, 'y', { tone: 'brass' }),
     // the A-frame gantry behind the winch (clear of the drum) and the backstay pendant to the boom's tip
     strut('gantryLegR1', [0.30, 1.66, -0.35], [0.62, 2.85, -0.35], 0.05, { tone: 'joint' }),
     strut('gantryLegR2', [0.74, 1.66, -0.35], [0.62, 2.85, -0.35], 0.05, { tone: 'joint' }),
     cyl('gantryTop', [0.62, 2.85, -0.35], 0.06, 0.16, 'z', { tone: 'brass' }),
-    strut('backstayR', [0.62, 2.85, -0.30], [bx, 3.98, 1.66], 0.015, { tone: 'joint' }),
+    strut('backstayR', [0.62, 2.85, -0.30], [bx, tip[1], tip[2] - 0.02], 0.015, { tone: 'joint' }),
   );
   // the stowed arm (left): the boom laid back along the deck beside the rack, the jib folded forward over it, its hook
   // block hanging short at the cab's flank (the pair never stands up as a pair: never read as two raised arms)

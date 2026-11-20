@@ -23,16 +23,19 @@ import { WAVE2_NOTES } from './forms.mjs';
 import { buildGreyHull, strutMesh as greyStrut } from './grey-mesh.mjs';
 import { SONDE_KEEL, SONDE_POST, SONDE_TETHER } from '../../../../src/instruments/kinds/sonde/form.js';
 import { SondeBrain, downwind } from '../../../../src/instruments/kinds/sonde/rules.js';
+import { LAMP_STATES } from '../../../../src/instruments/lamps.js';
 
 const q = new URLSearchParams(location.search);
 const VIEW = q.get('view') || 'front';
 const SIL = q.get('sil') === '1';
 const WAVE = q.get('wave') || '1';
-const LU = window.__LINEUP__ = { ready: false, error: null, view: VIEW, sil: SIL, wave: WAVE, measured: {} };
+/** `&lamp=calm|wary|hostile`: every lamp in that state's token (lamps.js LAMP_STATES, never a copy), for IK8's dE 3 read. */
+const LAMP = LAMP_STATES[q.get('lamp')] && q.get('lamp') !== 'dark' ? q.get('lamp') : 'calm';
+const LU = window.__LINEUP__ = { ready: false, error: null, view: VIEW, sil: SIL, wave: WAVE, lamp: LAMP, lampToken: LAMP_STATES[LAMP].token, measured: {} };
 if (SIL) document.body.classList.add('sil');
 
-/** Calm lamp (bible §7.3) and the greys of the recipe (gen-m3-blockout.mjs GREY). */
-const CALM = 0xf2ead3;
+/** The lamp's state token (bible §7.3; calm by default) and the greys of the recipe (gen-m3-blockout.mjs GREY). */
+const LAMP_COLOUR = parseInt(LAMP_STATES[LAMP].token.slice(1), 16);
 const GREY = { hull: 0xa9a7a2, joint: 0x6d6c69, brass: 0x8f8a7a, dark: 0x3a3936, glass: 0xd6f0ee };
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -71,7 +74,7 @@ function mat(p) {
   const key = p.lamp ? 'lamp' : p.dark ? 'dark' : p.vial ? 'glass' : p.tone || 'hull';
   if (!mats.has(key)) {
     let m;
-    if (key === 'lamp') m = new THREE.MeshBasicMaterial({ color: CALM, toneMapped: false });
+    if (key === 'lamp') m = new THREE.MeshBasicMaterial({ color: LAMP_COLOUR, toneMapped: false });
     else if (key === 'glass') m = new THREE.MeshStandardMaterial({ color: GREY.glass, roughness: 0.15, metalness: 0 });
     else m = new THREE.MeshStandardMaterial({ color: GREY[key] ?? GREY.hull, roughness: key === 'brass' ? 0.45 : 0.7, metalness: key === 'brass' ? 0.3 : 0 });
     mats.set(key, m);
@@ -231,7 +234,7 @@ async function main() {
     tag('Spindle', `${m.spindle.H} m · medium`, [X.spindle, m.spindle.H + 0.35, 0]);
     tag('Davit', `${m.davit.H} m · medium`, [X.davit, m.davit.H + 0.35, 0]);
     tag('Sonde', `${m.sonde.H} m · small · moored low here`, [X.sonde, 1.4 + m.sonde.H + 0.35, 0]);
-    note.textContent = `M3 wave 1 grey hulls (area C), ${VIEW === 'side' ? 'side-on (each turned 90 deg)' : VIEW === 'quarter' ? 'three-quarter (each turned 35 deg)' : 'front'}${SIL ? ', silhouettes' : ''}. Proportion and silhouette only; lamps in calm bone-gold; the staff at left is banded every 0.5 m.`;
+    note.textContent = `M3 wave 1 grey hulls (area C), ${VIEW === 'side' ? 'side-on (each turned 90 deg)' : VIEW === 'quarter' ? 'three-quarter (each turned 35 deg)' : 'front'}${SIL ? ', silhouettes' : ''}. Proportion and silhouette only; lamps in ${LAMP === 'calm' ? 'calm bone-gold' : `the ${LAMP} token ${LAMP_STATES[LAMP].token}`}; the staff at left is banded every 0.5 m.`;
   }
   if (WAVE !== '1') {
     // the second page: each form's one line of what changed (wave 2), at the foot of the frame
@@ -245,6 +248,19 @@ async function main() {
   camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
   renderer.render(scene, camera);
   placeTags();
+  // each visible lamp's centre on the screen (CSS px), for the film's colour read (film-lineup.mjs: dE2000 to the token)
+  if (!SIL) {
+    LU.lampPx = {};
+    const lampMat = mats.get('lamp');
+    for (const k of order) {
+      if (!hulls[k].visible || !hulls[k].parent) continue;
+      hulls[k].traverse((o) => {
+        if (!o.isMesh || o.material !== lampMat) return;
+        const c = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).project(camera);
+        LU.lampPx[k] = [Math.round(((c.x + 1) / 2) * window.innerWidth), Math.round(((1 - c.y) / 2) * window.innerHeight)];
+      });
+    }
+  }
   LU.ready = true;
 }
 

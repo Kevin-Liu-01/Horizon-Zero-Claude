@@ -5,6 +5,8 @@
  *
  *   node tools/gates/instruments/m3/film-lineup.mjs --port 5283 [--views front,side,quarter,sonde,front-sil,side-sil]
  *        [--label <name>] [--wait <s>] [--budget <s>] [--wave 2]   (--wave 2: the second page, each form's note of what changed)
+ *   a view's suffixes: -sil (flat silhouettes), -wary / -hostile (every lamp in that state; calm by default). On every
+ *   non-silhouette view each lamp's centre pixel (median of 5 x 5) is read off the PNG: dE2000 to its token (IK8, bar 3).
  *   -> <review>/runs/<utc>-<commit>-m3c-lineup[-<label>]/<view>.png and lineup.json (heights measured on the page)
  *
  * Serves the tree this file sits in (a detached worktree at a commit: the measurement rule). Never port 5173.
@@ -17,6 +19,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../../chrome-profile.mjs';
 import { RUNS, SLOTS, assertOutsideRepo } from '../../../frames/paths.mjs';
+import sharp from 'sharp';
+import { deltaE } from '../../../../src/instruments/lib/color.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const args = process.argv.slice(2);
@@ -63,6 +67,20 @@ async function teardown() {
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, async () => { await teardown(); process.exit(130); });
 process.on('exit', () => { releaseSlot(); if (vite) { try { process.kill(-vite.pid, 'SIGKILL'); } catch { /* */ } } });
 
+/** Each lamp's centre pixel on the PNG (the median of a 5 x 5 patch per channel) and its dE2000 to the token. */
+async function lampColours(file, px, token) {
+  const { data, info } = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const out = {};
+  for (const [k, [x, y]] of Object.entries(px)) {
+    if (x < 2 || y < 2 || x >= info.width - 2 || y >= info.height - 2) { out[k] = { at: [x, y], off: true }; continue; }
+    const ch = [[], [], []];
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const o = ((y + dy) * info.width + (x + dx)) * 3; for (let c = 0; c < 3; c++) ch[c].push(data[o + c]); }
+    const rgb = ch.map((a) => a.sort((p, q) => p - q)[12]);
+    out[k] = { at: [x, y], rgb, hex: '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase(), token, dE: +deltaE(rgb.map((v) => v / 255), token).toFixed(2) };
+  }
+  return out;
+}
+
 const commit = git('rev-parse', '--short', 'HEAD');
 const dirty = git('status', '--porcelain', '--untracked-files=no').length > 0;
 const LABEL = flag('--label');
@@ -93,15 +111,17 @@ try {
   page.on('requestfailed', (r) => run.failed.push(`failed ${r.url().replace(`http://127.0.0.1:${PORT}`, '')} ${r.failure()?.errorText || ''}`));
   for (const v of VIEWS) {
     if ((Date.now() - t0) / 1000 > BUDGET_S) { run.stopped = `budget ${BUDGET_S} s`; break; }
-    const [view, sil] = v.split('-');
-    await page.goto(`http://127.0.0.1:${PORT}/tools/gates/instruments/m3/lineup.html?view=${view}${sil ? '&sil=1' : ''}${WAVE !== '1' ? `&wave=${WAVE}` : ''}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
+    const [view, ...mods] = v.split('-');
+    const sil = mods.includes('sil'), lamp = mods.find((m) => m === 'wary' || m === 'hostile' || m === 'calm');
+    await page.goto(`http://127.0.0.1:${PORT}/tools/gates/instruments/m3/lineup.html?view=${view}${sil ? '&sil=1' : ''}${lamp ? `&lamp=${lamp}` : ''}${WAVE !== '1' ? `&wave=${WAVE}` : ''}`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction('window.__LINEUP__ && (window.__LINEUP__.ready || window.__LINEUP__.error)', { timeout: 120000, polling: 250 });
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const lu = await page.evaluate(() => window.__LINEUP__);
     const file = path.join(runDir, `${v}.png`);
     await page.screenshot({ path: file });
-    run.shots.push({ view: v, file, ready: lu.ready, error: lu.error, measured: lu.measured, arms: lu.arms });
-    log(`${v}: ${lu.ready ? 'ok' : lu.error}`);
+    const lampRead = lu.lampPx ? await lampColours(file, lu.lampPx, lu.lampToken) : null;
+    run.shots.push({ view: v, file, ready: lu.ready, error: lu.error, lamp: lu.lamp, lampToken: lu.lampToken, lampRead, measured: lu.measured, arms: lu.arms });
+    log(`${v}: ${lu.ready ? 'ok' : lu.error}${lampRead ? ` lamps ${Object.entries(lampRead).map(([k, r]) => `${k} dE ${r.dE}`).join(', ')}` : ''}`);
   }
   run.chromeS = +((Date.now() - t0) / 1000).toFixed(1);
 } catch (e) { run.error = String(e?.stack || e).slice(0, 800); code = 1; } finally {
