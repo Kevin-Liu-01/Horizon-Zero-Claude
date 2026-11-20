@@ -99,7 +99,16 @@ const hangUnderKite = {
     const head = wp(b.head.bone), fwd = new V(Math.sin(p.heading), 0, Math.cos(p.heading));
     const side = (s) => { const w = wp(b[`hand${s}`].bone), e = wp(b[`loArm${s}`].bone), sh = wp(b[`upArm${s}`].bone);
       return { wristFrontOfHeadM: +new V().subVectors(w, head).dot(fwd).toFixed(3), wristBelowHeadBoneM: +(head.y - w.y).toFixed(3), elbowOverShoulderM: +(e.y - sh.y).toFixed(3) }; };
-    window.__kiteStage.read = { L: side('L'), R: side('R'), bar: an.hangPoseInfo?.() || null, kiteTris: K.triangles, hang: !!an._hangOn, kiteWorld: K.group.getWorldPosition(new V()).toArray().map((v) => +v.toFixed(2)) };
+    // is the kite drawable from this lens: in the scene, visible, on the lens's layers, inside its frustum, where on screen
+    const cam = C.camera, kc = K.group.getWorldPosition(new V()), ndc = kc.clone().project(cam);
+    let inScene = false; for (let o = K.group; o; o = o.parent) if (o === C.scene) inScene = true;
+    K.mesh.geometry.computeBoundingSphere();
+    const sph = K.mesh.geometry.boundingSphere.clone().applyMatrix4(K.mesh.matrixWorld);
+    const M4 = cam.projectionMatrix.constructor, pm = new M4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    let inFrustum = null; try { const THREE = await import('three'); inFrustum = new THREE.Frustum().setFromProjectionMatrix(pm).intersectsSphere(sph); } catch (e) { inFrustum = `? ${e.message}`; }
+    const vis = []; for (let o = K.mesh; o; o = o.parent) vis.push(o.visible ? 1 : 0);
+    window.__kiteStage.read = { L: side('L'), R: side('R'), bar: an.hangPoseInfo?.() || null, kiteTris: K.triangles, hang: !!an._hangOn, kiteWorld: kc.toArray().map((v) => +v.toFixed(2)),
+      drawable: { inScene, visibleChain: vis.join(''), layersOk: cam.layers.test(K.mesh.layers), inFrustum, ndc: ndc.toArray().map((v) => +v.toFixed(3)), sphereR: +sph.radius.toFixed(2), cam: cam.position.toArray().map((v) => +v.toFixed(2)), rootScale: root.getWorldScale(new V()).toArray().map((v) => +v.toFixed(3)), programs: C.engine.renderer?.info?.programs?.length ?? null } };
     // (the run's JSON keeps only the stand-in list: the page's read goes on it, marked as a read)
     api.standIn(`read (not a stand-in): ${JSON.stringify(window.__kiteStage)}`);
   },
