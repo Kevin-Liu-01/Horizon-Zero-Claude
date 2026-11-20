@@ -301,8 +301,10 @@ const AXIAL_PREFIX = ['spine_', 'neck_', 'head_'];
 /* (M1a weapons round 2, W4's knee clause: the haft now lies on the palm, 0.024 m off the old line, which took the guard's
  *  blade 0.02 m lower, under her knee as her stance settles; the guard's shaft is lifted 2.4 deg: tip 0.43 -> 0.48 m,
  *  inside R2's 0.35-0.55) */
+/* (M2 fix wave 2, A101's ready tip: the page reads the guard on its first ready frames, while the draw's settle still has
+ *  the tip 0.552-0.584 m up (canon M7 0.35-0.55; settled 0.48 in Node); the guard's shaft 1 deg lower) */
 const READY = {
-  hand: [-0.24, 1.21, 0.05], shaft: [0.37, -0.42, 0.828],
+  hand: [-0.24, 1.21, 0.05], shaft: [0.367, -0.436, 0.821],
   lh: [0.22, 0.95, 0.20], lhW: 1, lhOn: 0.5425, yaw: -0.50, py: -0.28, pitch: 0.32, roll: 0.02, dz: 0.0,
 };
 /**
@@ -345,6 +347,8 @@ const ROH_STEP = 0.065;
 /** M1a weapons round 2 (W3/W10: a wrist <= 0.06-0.08 m a step): the stow's right-fist leg to the hand-over line ends here
  *  (holster k; was 0.62) and the left fist's carry back to the keeper takes this much of it after the let-go (was 0.30) */
 const STOW_HO = 0.45, STOW_CARRY = 0.42;
+/** M2 fix wave 2: how long the left fist takes to open off the seated haft at the stow's end (s; W3) */
+const LETGO_T = 0.18;
 /** ...and the right fist's take from the left at the hand-over: the butt where the right fist would hold it, within (m) */
 const HANDOVER_SNAP = 0.010;
 /** ...and the haft's radius at the three sockets (m, the handling rows' own: sockets.js r at the prop's scale) */
@@ -3441,6 +3445,20 @@ export class MeleeLayer {
     const L = this._lc || (this._lc = { on: false, u: 0, hold: 0, butt: new THREE.Vector3(), dir: new THREE.Vector3(),
       s0: new THREE.Vector3(), d0: new THREE.Vector3(), pt: new THREE.Vector3() });
     L.on = false;
+    /* (M2 fix wave 2, W3 at the stow's let-go: the fist opens over `LETGO_T` s of its own from the seat, and runs on past
+     *  the stow's clock into the holstered fade when the clock ends first; on the clock it was squeezed into the last
+     *  1-2 steps (the seat comes at 0.91-0.95 of the stow) and the open hand left the haft 0.13-0.19 m in one step,
+     *  the lanceStowAsk bench) */
+    if (stance !== 'holster') this._letGoOn = stance === 'holstered' && !!this._letGoOn && !!this.lance;
+    if (this._letGoOn && stance === 'holstered') {
+      this._letGoT += this._lastDt || 0;
+      const hold = 1 - smoothstep(this._letGoT, 0, LETGO_T);
+      if (hold <= 1e-3) { this._letGoOn = false; L.hold = 0; L.u = 0; return; }
+      this._liveSocket(L.s0, L.d0);
+      L.butt.copy(L.s0); L.dir.copy(L.d0); L.pt.copy(L.s0).addScaledVector(L.d0, LC_S);
+      L.u = 0; L.hold = hold; L.on = true;
+      return;
+    }
     if (!this.lance || (stance !== 'draw' && stance !== 'holster')) { L.hold = 0; L.u = 0; return; }
     const dk = clamp(st?.drawK ?? 0, 0, 1);
     let u = 0, hold = 0;
@@ -3466,8 +3484,10 @@ export class MeleeLayer {
         const k = clamp((dk - r0) / Math.max(0.05, r1 - r0), 0, 1);
         u = 1 - trapEase(k);   // (M1a weapons step 2: seated from rest, not at CARRY_EASE's end slope)
         // (M1a weapons round 2: the fist lets go only once the haft is seated, `_leftOnHaft`, and from then)
-        const rs = this._lSeated ? Math.max(r1, this._seatK ?? r1) : 9;
-        hold = 1 - smoothstep(dk, rs, Math.min(1.08, rs + 0.15));
+        if (this._lSeated) {
+          if (!this._letGoOn) { this._letGoOn = true; this._letGoT = 0; } else this._letGoT += this._lastDt || 0;
+          hold = 1 - smoothstep(this._letGoT, 0, LETGO_T);
+        } else { this._letGoOn = false; hold = 1; }
       }
     }
     // the stowed line (the socket's own, the carry off for the read)
