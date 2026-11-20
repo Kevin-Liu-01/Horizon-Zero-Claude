@@ -63,7 +63,14 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
   const GL = (b) => { if (!glass.has(b)) glass.set(b, new KBucket(`glass:${b}`)); return glass.get(b); };
 
   /* ------------------------------- the wedge body ---------------------------- */
-  const so = { seamsU: [0.1, 0.26, 0.42, 0.58, 0.74, 0.9], seamsZ: [-0.7, S.split, 0.5], rivetEvery: 0.2, uSteps: 40, zStep: 0.1 };
+  /* POLISH (frames lane, F42 "the Sickle reads against the meadow"): a VALUE SPLIT on the body. At 02f7125 every plate was
+   * white enamel and the blades brass: in the golden meadow at 16:30 the Sickle drew as the grass it stood in (F42, F39).
+   * The two upper flank plates of each side (u 0.1-0.26 and 0.74-0.9, from the brass strake up to the crown's seam) are
+   * gunmetal enamel now: a dark saddle under a white crown, over white lower flanks and legs, the strake between them.
+   * The language is the Instruments' own (white enamel, gunmetal, brass, the oxblood band on the cowl); nothing glows. */
+  const DARK_U = [0.1, 0.74];
+  const so = { seamsU: [0.1, 0.26, 0.42, 0.58, 0.74, 0.9], seamsZ: [-0.7, S.split, 0.5], rivetEvery: 0.2, uSteps: 40, zStep: 0.1,
+    plateTone: (ua0) => (DARK_U.some((u) => Math.abs(ua0 - u) < 1e-6) ? C.GUNMETAL : C.ENAMEL) };
   const skin = loftShell(H('pelvis'), S.sections, { ...so, zMax: S.split, caps: [true, false] });
   loftShell(H('chest'), S.sections, { ...so, zMin: S.split, caps: [false, true] });
   for (const s of [1, -1]) {
@@ -125,9 +132,15 @@ export async function build({ out = ROOT, file = null, preview = false } = {}) {
   rbox(H('chest'), V(LB.x, (sh.p.y + LB.y - S.lampR) / 2, LB.z + 0.06), [0.16, Math.max(0.04, LB.y - S.lampR - sh.p.y + 0.04), 0.16], 0.012, { surf: 'bronze', tone: C.BRASS, wear: 0.6 });
   limbRing(H('chest'), at(LB.x, sh.p.y + 0.01, LB.z + 0.06), 0.05, 0.11, 0.014, { ticks: 12 });
   const dr = lampDrum(H('chest'), LB, V(0, 0, 1), { r: S.lampR, depth: S.lampDepth, ticks: 12 });
-  // the hood: an enamel visor over the drum, riveted (a slit from above)
+  // the hood: a gunmetal visor over the drum, riveted (a slit from above); POLISH (F42): with a gunmetal sleeve over the
+  // drum's enamel barrel, the lamp's bone-gold iris sits in a dark surround (the value split on the lamp: on white
+  // enamel in the golden meadow the calm lamp drew as the grass)
   plate(H('chest'), [[-0.11, 0], [0.11, 0], [0.085, 0.11], [-0.085, 0.11]], 0.012, 0.003,
-    basis(V(-1, 0, 0), V(0, 0.12, 1).normalize(), V(0, 1, -0.12).normalize(), V(LB.x, LB.y + S.lampR * 1.02, LB.z + S.lampDepth - 0.1)), { surf: 'glaze', tone: C.ENAMEL, wear: 0.4 });
+    basis(V(-1, 0, 0), V(0, 0.12, 1).normalize(), V(0, 1, -0.12).normalize(), V(LB.x, LB.y + S.lampR * 1.02, LB.z + S.lampDepth - 0.1)), { surf: 'graphite', tone: C.GUNMETAL, wear: 0.3 });
+  lathe(H('chest'), [
+    P(S.lampR * 1.0, 0.008, 'graphite', C.GUNMETAL), P(S.lampR * 1.07, 0.016, 'graphite', C.GUNMETAL),
+    P(S.lampR * 1.07, S.lampDepth - 0.05, 'graphite', C.GUNMETAL), P(S.lampR * 1.1, S.lampDepth - 0.035, 'graphite', C.GUNMETAL),
+  ], Mz(LB), { segs: 32, wear: 0.3, crease: 30 });
   for (const s of [1, -1]) rivet(H('chest'), V(LB.x + s * 0.07, LB.y + S.lampR * 1.04 + 0.012, LB.z + S.lampDepth - 0.06), V(0, 1, 0), 0.009);
 
   /* ------------------------------- the flask, the antenna ----------------------- */

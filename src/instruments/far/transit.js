@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TRANSIT_CARD } from '../../game/quest/scar-plan.js';
+import { patchAerial, patchDeck } from '../../world/island/aerial.js';
 
 /**
  * THE TRANSIT'S FAR FORM (M2 wave 4 "the hour", area C; bible 11.2 0:55, 7.4 #12; M2 briefs §6 wave 4, EN4).
@@ -44,6 +45,18 @@ export const HEIGHT = 22.0;
 /** The drum's centre above the ground (gen-transit.mjs `r5Far.head`). */
 const HEAD_Y = 19.95;
 const FOOT_R = 7.0;
+/**
+ * POLISH (frames lane, "the far form's legs no paler than the dust around them"): the far form takes the island's
+ * far-form air and the trade deck capped as the ground takes it (island/aerial.js patchAerial, patchDeck), as the Kiln
+ * Yards' far form does (d174a23). It stands on the shelf at 153 m, its drum at 173 m: inside the deck's slab (105-150 m)
+ * and over it, so it drew the deck's optical depth uncapped, and at 02f7125 its white enamel legs stood paler than the
+ * dust they stand in (F45-transit). ALBEDO takes its painted colours a step down toward the island's range for a far
+ * form (its enamel is linear 0.78; the Yards' tile is 0.04-0.09). Read in F45-transit's frame (run
+ * 20261120T000919Z-4e451a2-polish-x1-partial, legs' mean display Y against the dust they hide and a 3-10 px ring round
+ * them): the patches alone (x1.0) took the legs to 161.6 against 165.7 behind and 162.1 around; x0.7 to 159.3; x0.5 to
+ * 158.4. 0.7 keeps the staff legs pale and under the dust round them.
+ */
+export const ALBEDO = 0.7;
 
 export class TransitFar {
   constructor(ctx) {
@@ -120,6 +133,17 @@ export class TransitFar {
       root.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = false; o.receiveShadow = false;
+        // the far-form air and the capped deck, set before the environment registers the material (its wrapper calls
+        // this first), and the albedo in the island's range
+        const mat = o.material;
+        if (mat && !mat.userData.calFar) {
+          mat.userData.calFar = true;
+          if (mat.color) mat.color.multiplyScalar(ALBEDO);
+          mat.onBeforeCompile = (shader) => { patchAerial(shader); patchDeck(shader); };
+          mat.customProgramCacheKey = () => 'cal-transit-far';
+          mat.needsUpdate = true;
+          this.ctx.environment?.registerMaterial?.(mat);
+        }
         o.userData.noSizeCull = true;
         // every frame it is drawn: the record, and down the frame the window or the sun fails (EN4)
         o.onBeforeRender = () => {
