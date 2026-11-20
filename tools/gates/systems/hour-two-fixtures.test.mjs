@@ -50,3 +50,22 @@ test('legs 5 and 6 carry hour two\'s state in the hour2 field (kept by the save 
   assert.deepEqual(r6.areas.hour2.nets, { 'hand-net': 1 });
   for (const r of [r5, r6]) { assert.equal(r.weather, 'trade'); assert.equal(map.regionAt(r.position.x, r.position.z), 'pans'); }
 });
+
+test('(HT5, wave 1) a save from before M3 loads: the first hour\'s records carry no hour2 field and stay valid; hour2 survives a write and read', async () => {
+  const { fixture: firstHour } = await import('./first-hour-fixtures.mjs');
+  const { SaveFields } = await import('../../../src/game/save/fields.js');
+  for (const leg of [2, 3]) {
+    const r = firstHour(leg);
+    assert.equal(classify(JSON.stringify(r)), 'ok');
+    assert.equal(r.areas?.hour2 ?? null, null);
+    const F = new SaveFields();
+    let got = 'unset';
+    F.register('hour2', { get: () => null, set: (v) => { got = v; } });
+    F.apply(r.areas);
+    assert.equal(got, null, `leg ${leg}: hour2 starts fresh`);
+  }
+  const r5 = fixture(5);
+  const st = new SaveStore(new MemoryStorage());
+  st.write(r5);
+  assert.deepEqual(st.read(1, r5.kind).areas.hour2, r5.areas.hour2);
+});
