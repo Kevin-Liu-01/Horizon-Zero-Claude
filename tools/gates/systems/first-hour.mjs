@@ -613,39 +613,75 @@ const screedNow = async () => {
     rS: Math.hypot(m.position.x - cs.x, m.position.z - cs.z), bS: W.bearingOf(m.position.x, m.position.z), rP: Math.hypot(P.x - cs.x, P.z - cs.z), bP: W.bearingOf(P.x, P.z),
     between: wall?.id ?? null,
     // corridor 1/2 (between the outer wall and the second): its two faces and where its arcs end
-    c12: { rIn: w2.r + w2.t / 2, rOut: w1.r - w1.t / 2, end: Math.min(w1.to, w2.to), end2: Math.max(w1.to, w2.to), from: Math.max(w1.from, w2.from) },
+    c12: { cx: cs.x, cz: cs.z, rIn: w2.r + w2.t / 2, rOut: w1.r - w1.t / 2, end: Math.min(w1.to, w2.to), end2: Math.max(w1.to, w2.to), from: Math.max(w1.from, w2.from) },
     stage: q.current()?.id ?? 'done', reached: q.report().reached };
 };
 
 /** in-page: a point at compass bearing b, r m from Ninewalls' centre (the walls seam's polar) */
 const polarNW = async (b, r) => { const W = await import('/src/world/settlements/ninewalls-layout.js'); const p = W.polar(b, r); return { x: p.x, z: p.z }; };
 
+/** Is she in the Screed's line (where its charge goes)? */
+const inLineOf = (S) => S.ahead > -2 && S.ahead < 28 && Math.abs(S.side) < 4.2;
+
 /**
- * One arrow on the first of `parts` of machine i the game's own flight reaches from here: RMB, Steady, the look on that
- * part (solveShot), the draw re-solved until full; loosed only if the flight still meets the part first, else let down
- * (RMB let go before LMB: combat.js keeps the arrow), as a player does who sees the shot is blocked.
+ * May she loose on a seal now? Nothing whole between them, it near, its front toward her (the rams face its heading),
+ * and never with a charge able to come: in 'come' and walking, within its charge band and cone with its cooldown run
+ * (at the third probe a shot loosed in its walk took 1.5 s, its wind-up came inside it and the blade took 32 hp).
  */
-async function looseOn(page, K, i, parts, { drawMs = 450, tolDeg = 0.12 } = {}) {
+const mayShoot = (S) => {
+  if (!S || !S.sealsLeft.length || S.between || S.d >= 24 || S.phase === 'windup' || S.phase === 'charge') return false;
+  const ang = Math.abs(Math.atan2(S.side, S.ahead));
+  const facing = S.ahead > 0.5 && ang < ((S.phase === 'stall' || S.backT > 0) ? 1.6 : 1.2);
+  const chargeable = S.mode === 'come' && S.phase === 'walk' && S.backT <= 0 && S.cd < 2.0 && S.d > 5.5 && S.d < 26 && ang < 0.8;
+  return facing && !chargeable && (S.phase === 'stall' || S.backT > 0 || S.mode === 'done' || !inLineOf(S));
+};
+
+/**
+ * A VOLLEY ON THE SEALS: the bow kept raised (RMB held) while she may shoot, each arrow on the first seal the game's own
+ * flight reaches from here (solveShot), Steady taken fresh, drawn until full, loosed only if the flight still meets that
+ * seal first; a blocked draw is let down (RMB let go before LMB: combat.js keeps the arrow) and the bow raised again.
+ * It ends when no seal is clear for 0.7 s, she may no longer shoot, or `maxS` runs out. Raised during its charge (she
+ * is out of its line) so the first arrow leaves as the stall begins. At 72b3f5e (chain1) the wall-2 stall gave three
+ * clean hits in 5.2 s, one arrow at a time with the bow lowered between them; both seals take four.
+ */
+async function volley(page, K, stage, maxS = 8) {
+  const t0 = Date.now(), shots = [];
+  let blocked = null, drawing = false, td = 0;
+  const draw = async () => { if (drawing) return; await K.up('ShiftLeft'); await sleep(30); await K.down('ShiftLeft'); await sleep(30); await K.mouse('left', true); drawing = true; td = Date.now(); };
+  // a flight that meets either seal still on first is an arrow worth loosing (both need hits)
+  const onSeal = (S, first) => { const m = /^weak:(seal[LR])$/.exec(first || ''); return !!m && S.sealsLeft.includes(m[1]); };
   await K.mouse('right', true); await sleep(200);
-  await K.up('ShiftLeft'); await sleep(30); await K.down('ShiftLeft'); await sleep(40);
-  let part = null, sol = null;
-  for (const p of parts) { const q = await page.evaluate(SH.solveShot, i, p, tolDeg); if (q?.clear) { part = p; sol = q; break; } }
-  if (!part) { await K.up('ShiftLeft'); try { await K.mouse('right', false); } catch { /* */ } return { part: null, why: 'no seal clear from here' }; }
-  await K.mouse('left', true);
-  const t0 = Date.now();
-  let fired = false;
   try {
-    while (Date.now() - t0 < drawMs || (sol && sol.ds < 0.99 && Date.now() - t0 < drawMs + 800)) {
-      sol = await page.evaluate(SH.solveShot, i, part, tolDeg);
-      if (!sol) break;
+    while ((Date.now() - t0) / 1000 < maxS) {
+      const S = await page.evaluate(screedNow);
+      if (!S || (S.stage !== 'seal-1' && S.stage !== 'seal-2')) break;
+      // its charge, she out of its line: the arrow nocked and drawn, held full for the stall
+      if (S.phase === 'charge' && !inLineOf(S) && S.sealsLeft.length) { await draw(); await sleep(40); continue; }
+      if (!mayShoot(S)) break;
+      // the near seal first (the far one sits behind it from her side; at volley1 two of three far draws were let down)
+      const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
+      const order = S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice();
+      let part = null, sol = null;
+      for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && (q.clear || onSeal(S, q.first))) { part = p; sol = q; break; } }
+      if (!part) { blocked ??= Date.now(); if (Date.now() - blocked > 700) { shots.push({ t: +((Date.now() - t0) / 1000).toFixed(1), none: true, phase: S.phase }); break; } continue; }
+      blocked = null;
+      await draw();
+      while (Date.now() - td < 1600) { sol = await page.evaluate(SH.solveShot, S.i, part, 0.12); if (!sol || (sol.ds >= 0.99 && Date.now() - td > 300)) break; }
+      const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null };
+      if (sol && (sol.clear || onSeal(S, sol.first))) { await K.mouse('left', false); rec.fired = true; await sleep(100); }
+      else { await K.mouse('right', false); await sleep(30); await K.mouse('left', false); await sleep(30); await K.mouse('right', true); await sleep(200); rec.letDown = true; }
+      drawing = false;
+      shots.push(rec);
     }
   } finally {
-    if (sol?.clear) { try { await K.mouse('left', false); } catch { /* */ } fired = true; await sleep(Math.max(300, 1000 * (sol?.tf ?? 0) + 120)); }
-    else { try { await K.mouse('right', false); } catch { /* */ } await sleep(40); try { await K.mouse('left', false); } catch { /* */ } }
+    if (drawing) { try { await K.mouse('right', false); } catch { /* */ } await sleep(30); }
+    try { await K.mouse('left', false); } catch { /* not held */ }
     await K.up('ShiftLeft');
-    try { await K.mouse('right', false); } catch { /* */ }
+    try { await K.mouse('right', false); } catch { /* not held */ }
   }
-  return { part, fired, first: sol?.first ?? null, missM: sol?.missM ?? null, clear: !!sol?.clear, ds: sol?.ds ?? null };
+  await sleep(250);
+  const hits = await page.evaluate((n) => window.__screedHits.slice(-n), Math.max(1, shots.filter((q) => q.fired).length));
+  return { shots, hits, s: +((Date.now() - t0) / 1000).toFixed(1) };
 }
 
 /**
@@ -711,32 +747,31 @@ async function driveScreed(page, K, stage, maxS = 120) {
     }
     // seal-1 / seal-2
     if (st.hp < 50 && S.phase !== 'windup' && S.phase !== 'charge') { await SH.drink(page, K, 92, 3500); continue; }
-    if (S.phase === 'charge') { await sleep(80); continue; }
-    const inLine = S.ahead > -2 && S.ahead < 28 && Math.abs(S.side) < 4.2;
+    const inLine = inLineOf(S);
+    if (S.phase === 'charge') {
+      // out of its line while it runs: the bow up, the first arrow ready for the stall
+      if (!inLine && !S.between && S.sealsLeft.length && S.d < 24) { const v = await volley(page, K, stage); shots += v.shots.filter((q) => q.fired).length; log.push({ t: T(), volley: v }); }
+      else await sleep(80);
+      continue;
+    }
     if (S.phase === 'windup' && !S.between && inLine && sidestepS !== S.stalls * 100 + S.cuts) {
       // its wind-up (1.2 s): 5 m further out of its line, square to its heading, to the side she already leans to
       sidestepS = S.stalls * 100 + S.cuts;
-      const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
-      await walkTo(page, { x: S.px + rx * 5.5, z: S.pz + rz * 5.5 }, 0.8, 1.6);
+      // to the side she leans to, unless that step leaves the corridor's floor (a wall stops her short, in its path)
+      const at = (sg) => ({ x: S.px + S.fz * sg * 5.5, z: S.pz - S.fx * sg * 5.5 });
+      const onFloor = (q) => { const r = Math.hypot(q.x - C12.cx, q.z - C12.cz); return r > C12.rIn + 0.6 && r < C12.rOut - 0.8; };
+      let sgn = S.side >= 0 ? 1 : -1;
+      if (S.rP > C12.rIn - 0.5 && S.rP < C12.rOut + 0.5 && !onFloor(at(sgn)) && onFloor(at(-sgn))) sgn = -sgn;
+      await walkTo(page, at(sgn), 0.8, 1.6);
       note(await page.evaluate(screedNow), { sidestep: true });
       continue;
     }
     if (!S.sealsLeft.length) { await sleep(200); continue; }
-    // an arrow when nothing whole stands between them, it is near, and its front is toward her (the rams face its heading)
-    const facing = S.ahead > 0.5 && Math.abs(Math.atan2(S.side, S.ahead)) < ((S.phase === 'stall' || S.backT > 0) ? 1.6 : 1.2);
-    // never with a charge able to come: in 'come' and walking, within its charge band and cone with its cooldown run
-    // (at the third probe a shot loosed in its walk took 1.5 s, its wind-up came inside it and the blade took 32 hp)
-    const ang = Math.abs(Math.atan2(S.side, S.ahead));
-    const chargeable = S.mode === 'come' && S.phase === 'walk' && S.backT <= 0 && S.cd < 2.0 && S.d > 5.5 && S.d < 26 && ang < 0.8;
-    if (!S.between && S.d < 24 && facing && S.phase !== 'windup' && !chargeable && (S.phase === 'stall' || S.backT > 0 || S.mode === 'done' || !inLine)) {
-      // the far seal first while the stall holds it square (it turns away as it backs off and walks), then the near one
-      const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
-      const order = S.sealsLeft.length === 2 ? (S.phase === 'stall' ? [far, near] : [near, far]) : S.sealsLeft.slice();
-      const r = await looseOn(page, K, S.i, order);
-      if (r.fired) shots++;
-      const hit = r.fired ? await page.evaluate(() => window.__screedHits.at(-1) ?? null) : null;
-      log.push({ t: T(), shot: r.part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), ...r, hit, hitsBefore: S.hits });
-      if (!r.part) await sleep(150);
+    if (mayShoot(S)) {
+      const v = await volley(page, K, stage);
+      shots += v.shots.filter((q) => q.fired).length;
+      log.push({ t: T(), volley: v });
+      if (!v.shots.some((q) => q.fired)) await sleep(150);
       continue;
     }
     // the ambush point: 10 m in front of it and 5 m to one side, kept on corridor 1/2's floor while it is outside or in it
