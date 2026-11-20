@@ -1450,6 +1450,7 @@ try {
       long: report.legs.flatMap((l) => (l.hitchSum?.long || []).map((q) => ({ leg: l.leg, ...q }))) };
     report.hitch.pass = over50 === 0 && s > 0 && over33 * 600 / s <= 3;
   }
+  const lows = report.legs.map((l) => l.hp?.min).filter((v) => v != null);
   report.hr8 = { bar: 'hp never under 25 on any frame in play (HR8)', lowest: lows.length ? Math.min(...lows) : null, pass: lows.length === report.legs.length && lows.every((v) => v >= 25) };
   writeFileSync(path.join(runDir, 'report.json'), JSON.stringify(report, null, 2));
   log(`report: ${path.join(runDir, 'report.json')}`);
