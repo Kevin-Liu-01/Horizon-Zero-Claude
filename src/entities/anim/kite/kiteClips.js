@@ -33,13 +33,13 @@ const qz = (deg) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,
  * (tools/build/recipes/outfit-pan-1.mjs, the survey case); furled, the roll rides on it, its lower end at the waist.
  */
 const CASE_ANGLE = 36;                               // deg from vertical; the roll's axis is 90 - 36 = 54 deg off her x
-const MOUNT = Object.freeze({ c: new THREE.Vector3(0.05, 1.22, -0.27), q: qz(90 - CASE_ANGLE) });
+const MOUNT = Object.freeze({ c: new THREE.Vector3(0.05, 1.22, -0.36), q: qz(90 - CASE_ANGLE) });
 const AXIS = new THREE.Vector3(Math.cos((90 - CASE_ANGLE) * D2R), Math.sin((90 - CASE_ANGLE) * D2R), 0);
 /** the keys of the open: [share of the open, centre, turn] (the fold plays them backwards) */
 const ROLL_KEYS = Object.freeze([
   [0.10, MOUNT.c, MOUNT.q],                                                   // on the case
-  [0.24, MOUNT.c.clone().addScaledVector(AXIS, -0.30).setZ(-0.33), MOUNT.q],  // slid down out of the lower flap
-  [0.34, new THREE.Vector3(-0.45, 0.88, -0.22), qz(80)],                      // swung out past her right hip, behind
+  [0.24, MOUNT.c.clone().addScaledVector(AXIS, -0.30).setZ(-0.41), MOUNT.q],  // slid down out of the lower flap
+  [0.34, new THREE.Vector3(-0.47, 0.88, -0.26), qz(80)],                      // swung out past her right hip, behind
   [0.44, new THREE.Vector3(-0.45, 0.88, 0.28), qz(90)],                       // at her right hip, in front, hanging
   [0.55, new THREE.Vector3(0.0, 1.03, 0.43), qz(0)],                          // across in front of her belly: hands on
 ]);

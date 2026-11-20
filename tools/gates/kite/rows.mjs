@@ -43,7 +43,11 @@ const pf = (b) => (b ? 'PASS' : 'FAIL');
 line('KF0a', 'T1 to the Ring', 'RECORDED', `${R0.a.distM} m on ${R0.a.bearing}; holding the track ${R0.a.glideHoldingTrack}:1 (crab ${R0.a.crabDeg} deg), needs ${R0.a.heightNeededM} m, has ${R0.a.heightHaveM} m (launch ${R0.a.T1.launchY} m), short ${R0.a.shortM} m; lands ${R0.a.straightSteadyTrade.landedM_fromRingCentre} m from the Ring's centre (steady trade), ${R0.a.straightGameWind.landedM_fromRingCentre} m (the game's wind); the Organ Shelf road: ${R0.a.byOrganShelfRoad.postsStreaming}/5 posts lift, gain ${R0.a.byOrganShelfRoad.gainM} m`);
 line('KF0b', 'the Scar', 'RECORDED', `drop ${R0.b.dropM} m vs ${R0.b.heightNeededM} m needed; on the line lands at k ${R0.b.glideOnTheLine.landedAtK}; on the north-west lip passes the lower end ${R0.b.glideOnTheNorthWestLip.aglPassingTheLowerEnd} m up; ${R0.b.postsStreaming}/7 posts lift`);
 line('KF0c', '60 m over the Pans', R0.c.reachable ? 'RECORDED' : 'RECORDED (not reachable)', `best ${R0.c.best.aglOverPans} m from ${R0.c.best.from} on ${R0.c.best.bearing}; per launch: ${R0.c.fromEveryTrig.map((r) => `${r.from} ${r.maxAglOverPans_anyBearing} m (${r.bearingsReaching60mOverPans} bearings >= 60)`).join(', ')}; F51 20 s off ${R0.c.F51.from} on ${R0.c.F51.headingDeg}: ${R0.c.F51.at20s?.agl} m over the ${R0.c.F51.at20s?.region}`);
-line('KF0d', 'the furled roll beside the bow', 'UNMEASURED', R0.d.bench);
+{
+  const k = ['open', 'fold', 'land'].map((c) => CB.rows[c].rollToStowKit_m).filter((v) => v != null), m = Math.min(...k);
+  line('KF0d', 'the furled roll beside the bow: the bow and lance stowed, on the mount and every step of the open, fold and landing', m > 0 ? 'PASS' : 'FAIL', `the roll's surface >= ${m.toFixed(3)} m from the stowed kit (lance, bow, quiver; the clip bench); the mount rides outside the stowed bow and lance`);
+  line('KF0d', 'the open with the bow in hand', 'UNMEASURED', 'wave 3 (the open with a weapon drawn needs combat\'s holster rule in flight: no weapon verb while flight is not none)');
+}
 // KF1 (the static hang, Node)
 line('KF1', 'wrists in front of the head plane (static hang)', pf(H.wristsInFront.pass), `${H.wristsInFront.min_m} m`);
 line('KF1', 'wrists at or below head height (static hang)', pf(H.wristsAtOrBelowHead.pass), `${H.wristsAtOrBelowHead.min_belowHeadBone_m} m under the head bone`);

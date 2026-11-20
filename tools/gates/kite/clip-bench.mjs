@@ -35,6 +35,19 @@ root.add(K.group);
 const V = () => new THREE.Vector3();
 const tmp = V(), tmp2 = V(), head = V(), hb = V(), fwd = V(), seg = new THREE.Line3();
 const pos = K.mesh.geometry.attributes.position;
+// the stowed kit on her back and hips (the lance, the bow's mount, the quiver: one skinned mesh), every 3rd vertex
+let KIT = null; R.model.traverse((o) => { if (!KIT && o.isSkinnedMesh && o.userData?.heroPart === 'stowkit') KIT = o; });
+const kitV = V(), rA = V(), rB = V(), rQ = new THREE.Quaternion(), rootQ = new THREE.Quaternion();
+/** the furled roll's nearest approach to the stowed kit (m, surface to vertex), or null when the kite is open */
+function rollToKit(info) {
+  if (!KIT || !info || info.kite.furl > 0.05) return null;
+  root.getWorldQuaternion(rootQ); rQ.fromArray(info.kite.quat).premultiply(rootQ);
+  const c = root.localToWorld(V().fromArray(info.kite.pos)), ax = V(1, 0, 0).applyQuaternion(rQ).multiplyScalar(0.475);
+  rA.copy(c).sub(ax); rB.copy(c).add(ax); seg.set(rA, rB);
+  let m = Infinity;
+  for (let i = 0, n = KIT.geometry.attributes.position.count; i < n; i += 3) { KIT.getVertexPosition(i, kitV); KIT.localToWorld(kitV); seg.closestPointToPoint(kitV, true, tmp2); m = Math.min(m, kitV.distanceTo(tmp2) - 0.06); }
+  return m;
+}
 const TRUNK = ['pelvis', 'spine1', 'spine2', 'spine3', 'spine4', 'spine5', 'neck1'].filter((k) => b[k]);
 
 /** one step's read */
@@ -64,7 +77,8 @@ function read() {
     }
   }
   const hc = an._charOf(b.head.bone, V());
-  return { ...r, headClear, trunkClear, headChar: [r3(hc.x), r3(hc.y), r3(hc.z)], kitePos: info?.kite?.pos?.map(r3) ?? null, clip: info?.kite?.clip ?? null, phase: info?.kite?.phase ?? null, furl: info?.kite?.furl ?? null };
+  const kit = an._kiteFl?.state !== 'none' ? rollToKit(info) : null;
+  return { ...r, headClear, trunkClear, kit, headChar: [r3(hc.x), r3(hc.y), r3(hc.z)], kitePos: info?.kite?.pos?.map(r3) ?? null, clip: info?.kite?.clip ?? null, phase: info?.kite?.phase ?? null, furl: info?.kite?.furl ?? null };
 }
 
 /** Fly a scenario by the law, posing her from its state each step; grade every step whose state is not 'none'. */
@@ -127,11 +141,12 @@ for (const sc of S) for (const st of sc.steps) {
   }
   if (Number.isFinite(st.headClear) && st.headClear < P.headClear) { P.headClear = st.headClear; P.headAt = { scenario: sc.name, t: st.t, phase: r3(st.phase), furl: r3(st.furl), head: st.headChar, kite: st.kitePos }; }
   if (Number.isFinite(st.trunkClear) && st.trunkClear < P.trunkClear) { P.trunkClear = st.trunkClear; P.trunkAt = { scenario: sc.name, t: st.t, phase: r3(st.phase), furl: r3(st.furl) }; }
+  if (st.kit != null && st.kit < (P.kit ?? Infinity)) { P.kit = st.kit; P.kitAt = { scenario: sc.name, t: st.t, phase: r3(st.phase) }; }
   if (isBad) { bad++; if (badSteps.length < 12) badSteps.push({ scenario: sc.name, t: st.t, clip: st.clip, phase: r3(st.phase), L: st.L, R: st.R }); }
   if (isBadF) { badFacing++; if (badFacingSteps.length < 12) badFacingSteps.push({ scenario: sc.name, t: st.t, clip: st.clip, phase: r3(st.phase), L: r3(st.L.frontFacing), R: r3(st.R.frontFacing) }); }
 }
 const rows = {};
-for (const c of CLIPS) { const P = per[c]; rows[c] = { steps: P.steps, minWristFront_headFrame_m: r3(P.frontHeadFrame), minWristFront_facing_m: r3(P.frontFacing), minWristBelowHeadBone_m: r3(P.belowHead), maxElbowOverShoulder_m: r3(P.elbowOver), kiteMinHeadClear_m: Number.isFinite(P.headClear) ? r3(P.headClear) : null, kiteMinTrunkClear_m: Number.isFinite(P.trunkClear) ? r3(P.trunkClear) : null, worstAt: P.worst, headAt: P.headAt ?? null, trunkAt: P.trunkAt ?? null }; }
+for (const c of CLIPS) { const P = per[c]; rows[c] = { steps: P.steps, minWristFront_headFrame_m: r3(P.frontHeadFrame), minWristFront_facing_m: r3(P.frontFacing), minWristBelowHeadBone_m: r3(P.belowHead), maxElbowOverShoulder_m: r3(P.elbowOver), kiteMinHeadClear_m: Number.isFinite(P.headClear) ? r3(P.headClear) : null, kiteMinTrunkClear_m: Number.isFinite(P.trunkClear) ? r3(P.trunkClear) : null, worstAt: P.worst, headAt: P.headAt ?? null, trunkAt: P.trunkAt ?? null, rollToStowKit_m: P.kit != null ? r3(P.kit) : null, rollToStowKitAt: P.kitAt ?? null }; }
 let kiteClear = Infinity, rollClear = Infinity;
 for (const c of CLIPS) { const P = per[c]; if (Number.isFinite(P.headClear)) kiteClear = Math.min(kiteClear, P.headClear); if (Number.isFinite(P.trunkClear)) rollClear = Math.min(rollClear, P.trunkClear); }
 const res = { steps: total, badSteps: bad, pass: bad === 0 && total > 0, handsFreeSteps: handsFree,
