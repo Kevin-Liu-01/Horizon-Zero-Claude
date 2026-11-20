@@ -104,7 +104,24 @@ const recorder = (over) => {
           lf: E?.lastFrame ? { js: +E.lastFrame.jsMs.toFixed(1), sim: +E.lastFrame.simMs.toFixed(1), sub: +E.lastFrame.renderMs.toFixed(1), tail: +E.lastFrame.tailMs.toFixed(1), calls: E.lastFrame.calls } : null,
           gl: dGl, info: cur && prevInfo ? { p: cur.p - prevInfo.p, g: cur.g - prevInfo.g, x: cur.x - prevInfo.x } : null,
           heapMB: Math.round(heap / 1e5) / 10, heapD: Math.round((heap - prevHeap) / 1e5) / 10 };
-        if (cur && prevInfo && cur.p > prevInfo.p) { try { f.programs = info.programs.slice(prevInfo.p).map((q) => q.name || q.cacheKey?.slice(0, 60) || '?'); } catch { /* */ } }
+        if (cur && prevInfo && cur.p > prevInfo.p) {
+          try {
+            const fresh = info.programs.slice(prevInfo.p);
+            f.programs = fresh.map((q) => q.name || q.cacheKey?.slice(0, 60) || '?');
+            // C5: whose they are: the drawn objects whose material now holds one of them (name and two parents, material)
+            const P = E.renderer.properties, who = [];
+            const nm = (o) => (o ? (o.name || o.type) : '');
+            E.scene?.traverse?.((o) => {
+              if (who.length >= 6) return;
+              const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+              for (const m of ms) {
+                const pr = P.get(m)?.currentProgram;
+                if (pr && fresh.includes(pr)) { who.push(`${nm(o.parent?.parent)}/${nm(o.parent)}/${nm(o)} ${m.type}${m.name ? ':' + m.name : ''}`); break; }
+              }
+            });
+            f.programsOf = who;
+          } catch { /* */ }
+        }
         if (R.sys) { const top = Object.entries(R.sys).filter(([, v]) => v > 1).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => [k, Math.round(v * 10) / 10]); if (top.length) f.sys = top; }
         pending.push(f);
       }
