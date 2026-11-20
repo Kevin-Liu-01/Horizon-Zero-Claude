@@ -1009,10 +1009,14 @@ async function driveScreed(page, K, stage, maxS = 120) {
       // steps of up to 14 deg (a chord that keeps to the corridor), not 6 deg with a stop at each: it is a race. In the three chains at 621a2c7 that passed it wound
       // up at 10.5 m, a moment short of wall-1 (chargeM 7-24 m, cone 0.6 rad); in chained run 4 it reached wall-1 first,
       // walked through all three walls with no charge (0 stalls) and the fight went fail-soft. Her stand is behind wall-1,
-      // so a charge that starts while she runs still meets the wall
+      // so a charge that starts while she runs still meets the wall.
+      // She runs it 1.2 m off wall-2 (the corridor's inner side), not down its middle: further from the Screed its cone
+      // takes her about 1.5 deg sooner and the arc is shorter (f7b9471 chained run 2: at 46.2 s she stood 0.63 rad off its
+      // heading at 11.6 m, 0.03 rad outside the cone, and it walked into wall-1 a moment later; run 1 made it by 0.01 rad)
+      const rRun = C12.rIn + 1.2;
       const inBand = S.d >= 7.5 && S.d <= 23 && Math.abs(Math.atan2(S.side, S.ahead)) <= 0.55;
       if ((S.mode === 'come' || S.d < 52) && S.phase === 'walk' && !inBand && S.bP - want > 2.5) {
-        const w = await walkTo(page, await page.evaluate(polarNW, Math.max(want, S.bP - 14), rMid), 2.5, 5);
+        const w = await walkTo(page, await page.evaluate(polarNW, Math.max(want, S.bP - 14), rRun), 2.5, 5);
         note(await page.evaluate(screedNow), { run: true, ok: w.ok, why: w.why ?? null });
         continue;
       }
