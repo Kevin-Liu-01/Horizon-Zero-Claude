@@ -366,7 +366,7 @@ const HOLSTER_T = 0.42;
 const HOLSTER_T_CALM = 0.50;
 /** The stow an AIM asks for (round 6): the bow waits for the lance's
  *  re-parent, so this is how long the left hand is empty after RMB. */
-const HOLSTER_T_AIM = 0.30;
+const HOLSTER_T_AIM = 0.42;
 /** How long the ready stance persists after the last swing. */
 const READY_HOLD = 3.6;
 /**

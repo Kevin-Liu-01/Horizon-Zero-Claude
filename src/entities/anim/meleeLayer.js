@@ -2089,7 +2089,11 @@ export class MeleeLayer {
       this._lhRate(stance, dt);
       this._solveLeft(w, u);
       this._leftOnHaft(stance, w);
-    } else { this._lhPrevOk = false; this._lReadBack = false; this.needsTake = false; }
+    } else {
+      this._lhPrevOk = false; this._lReadBack = false; this.needsTake = false;
+      // (M2 fix wave 4: the reach's goal bound starts from the bow's fist when the bow lets the left arm go: swap 1 to 2)
+      (this._lrPrev ??= new THREE.Vector3()); an._charOf(b.handL.bone, this._lrPrev); this._lrOk = true;
+    }
     /* M1a debt fix 1 (M1.3d, the crouched Undercut: the left palm 0.084 m off grip2 in the follow-through and
      * 0.131 m at the contact from the holster, bench at 88b1605). Crouched, the Undercut's sink takes her left
      * shoulder down and back further than the keys come down, and the left arm, at full reach, stops short of
@@ -3068,7 +3072,7 @@ export class MeleeLayer {
       else {
         frac = this._pullFrac('holster', LEG_EASE(clamp(k / STOW_HO, 0, 1)));
         // (M2 fix wave 4: the right lets go at the end of its guard leg, `STOW_HO`, not from 0.30 of the clock)
-        const reach = k >= Math.min(0.30, STOW_HO - 0.02) ? this._reparentGap(frac) : 9;
+        const reach = k >= STOW_HO + 0.02 ? this._reparentGap(frac) : 9;
         const give = this._grabSettle(reach, k);
         holstered = !!give;
         if (give) {
