@@ -54,6 +54,8 @@ const MAXCELLS = 200;                // default cells per bone; see HitHulls opt
 // with it. 5 cm against a median surface error of 0.09-0.39 m is noise on the
 // accuracy and the difference between closing a seam and threading it.
 const HULL_SKIN = 0.05;
+/** C5: frames a new machine waits before its warm-up hull build (update). */
+const WARM_AFTER = 8;
 // the largest weak-point sphere the exact (arrow) sweep tests as its own body (`raycast`): lamps, vials, small sensors
 const WP_SWEEP_MAX = 0.35;
 const _plan = new Int32Array(3);
@@ -1137,11 +1139,20 @@ export class HitHulls {
     this.stats.frameRefreshes = 0;
     // amortised warm-up: one machine per frame, so the first shot at a fresh
     // species never pays a 10-25 ms extraction inside a combat frame
+    // C5 (engine lane, the smallest change here: the first hour's hitches): a machine's warm-up build waits WARM_AFTER
+    // frames from the frame it is first seen, so it does not land on its spawn's own first frames (its first update, its
+    // first draw and uploads). At aab2223 the Screed's 17 ms build fell in the frame its first update took 13.6 ms: 41.7 ms
+    // (first-hour leg 2, run hh-c5-aab2223-10min). A shot before then builds it at once, as it always could.
     const roster = this.ctx.machines && this.ctx.machines.list;
     if (roster) {
+      const seen = this._firstSeen || (this._firstSeen = new WeakMap());
       for (let i = 0; i < roster.length; i++) {
-        if (this.sets.has(roster[i])) continue;
-        this.build(roster[i]);
+        const m = roster[i];
+        if (this.sets.has(m)) continue;
+        const f0 = seen.get(m);
+        if (f0 === undefined) { seen.set(m, this.frame); continue; }
+        if (this.frame - f0 < WARM_AFTER) continue;
+        this.build(m);
         break;
       }
     }
