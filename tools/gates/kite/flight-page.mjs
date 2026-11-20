@@ -132,9 +132,12 @@ const LAUNCH = async ({ runS = 0.12, openAfter = 0.42 }) => {
   await K.until(() => !p.grounded, 3000);
   const air0 = K.sim();
   await K.waitSim(openAfter);
-  K.key('KeyW', false);
   await K.tap('Space');
   await K.frames(2);
+  // (not yet: too soon or too low, the press does nothing; Space again every 0.1 s while she is in the air, as a player
+  //  presses again, up to 1.6 s airborne)
+  for (let i = 0; i < 12 && p.flight === 'none' && !p.grounded; i++) { await K.waitSim(0.1); await K.tap('Space'); await K.frames(2); }
+  K.key('KeyW', false);
   return { jumped: !p.grounded, airborneS: +(K.sim() - air0).toFixed(3), flight: p.flight, open: p.kitePilot.last.open, refused: p.kitePilot.last.refused, sinceSpace: +(K.sim() - t0).toFixed(3) };
 };
 
