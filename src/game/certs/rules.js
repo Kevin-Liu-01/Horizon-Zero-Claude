@@ -110,3 +110,87 @@ export function actsFromQuests(rm, tg) {
   if (st(tg, 'survey') === 'done') { out.push({ act: 'benchmark', at: 'bm-01' }); out.push({ act: 'resection', at: 'bm-01' }); }
   return out;
 }
+
+/* ------------------------------------------------------------------------------------------------------------------
+ * THE COUNTED ACTS SEAM (Milestone 3, §3.2 of the area briefs; owner: systems). Typed on day 0 of wave 1.
+ *
+ * Events only: combat, instruments and items EMIT these names on ctx.events with these payloads; nobody else moves a
+ * counter, and a kill emits nothing (no name below is a kill, and `actsOfEvent` refuses every other name). The live
+ * half (./live.js) adopts the seam when the emitters do (wave 3); until then it keeps its M2 listeners, so no act is
+ * counted twice. Pure: `node --test tools/gates/systems/certs-ranks.test.mjs`.
+ *
+ *   'transect:crossed'  {CrossedEvent}   a live transect crossed; counts 'unseen' only when she was not seen
+ *   'undercut'          {UndercutEvent}  a part cut from under a hull (Transect IV: `large` only with undercutLarge)
+ *   'reed:metres'       {ReedEvent}      metres moved hidden in reed since the last emit; 'reed' per REED_M
+ *   'triangle'          {TriangleEvent}  a triangle sighted
+ *   'lamp:dark'         {LampEvent}      a lamp darkened; counts 'dark' only without a kill
+ *   'vial:30m'          {VialEvent}      a vial cracked; counts 'vial' only from VIAL_M or more
+ *   'resurvey'          {ResurveyEvent}  a benchmark re-surveyed: 'benchmark' and 'resection' (its three bearings)
+ *   'pry'               {PryEvent}       a tool Pried off a hull: 'pried' (once per hull and part: the emitter's dedupe)
+ *   'made'              {MadeEvent}      a pot or a net made: 'made' (other makings count nothing)
+ * ------------------------------------------------------------------------------------------------------------------ */
+
+/**
+ * @typedef {{ transect: string, unseen: boolean, flagged?: boolean }} CrossedEvent
+ * @typedef {{ kind: string, part: string, large?: boolean }} UndercutEvent
+ * @typedef {{ m: number }} ReedEvent
+ * @typedef {{ id: string }} TriangleEvent
+ * @typedef {{ kind: string, killed?: boolean }} LampEvent
+ * @typedef {{ kind: string, m: number }} VialEvent
+ * @typedef {{ benchmark: string, bearings?: number[] }} ResurveyEvent
+ * @typedef {{ kind: string, part: string }} PryEvent
+ * @typedef {{ item: string, n?: number }} MadeEvent
+ * @typedef {'transect:crossed'|'undercut'|'reed:metres'|'triangle'|'lamp:dark'|'vial:30m'|'resurvey'|'pry'|'made'} CountedEventName
+ * @typedef {{ act: keyof typeof ACTS, n: number, at: string|null }} CountedAct
+ */
+
+/** The seam's event names, in the order of §3.2's table. */
+export const COUNTED_EVENTS = Object.freeze(['transect:crossed', 'undercut', 'reed:metres', 'triangle', 'lamp:dark', 'vial:30m', 'resurvey', 'pry', 'made']);
+/** Metres hidden in reed per Transect act (BIBLE 15: "each 25 m moved hidden in reed"). */
+export const REED_M = 25;
+/** A vial counts from this many metres (BIBLE 15). */
+export const VIAL_M = 30;
+/** What may be 'made' for a Ballast act: the pots and the nets (BIBLE 15: "a pot or a net made"). */
+export const MADE_ITEMS = Object.freeze(['blast-bomb', 'brine-pot', 'cinder-pot', 'dust-pot', 'hand-net', 'basalt-net', 'wire-net', 'net']);
+
+/**
+ * The acts one seam event counts. Pure but for the reed remainder, which the caller keeps in `carry` ({ reed: m }).
+ * Anything that is not a seam event (a kill above all) returns [] and changes nothing.
+ * @param {string} name
+ * @param {any} e
+ * @param {{ reed?: number }} [carry]
+ * @returns {CountedAct[]}
+ */
+export function actsOfEvent(name, e = {}, carry = {}) {
+  e = e || {};
+  switch (name) {
+    case 'transect:crossed': return e.unseen === true && !e.flagged ? [{ act: 'unseen', n: 1, at: e.transect ?? null }] : [];
+    case 'undercut': return e.part ? [{ act: 'undercut', n: 1, at: `${e.kind ?? '?'}:${e.part}` }] : [];
+    case 'reed:metres': {
+      const m = Number(e.m);
+      if (!(m > 0) || !Number.isFinite(m)) return [];
+      const total = (carry.reed ?? 0) + m;
+      const n = Math.floor(total / REED_M);
+      carry.reed = total - n * REED_M;
+      return n ? [{ act: 'reed', n, at: null }] : [];
+    }
+    case 'triangle': return e.id ? [{ act: 'triangle', n: 1, at: e.id }] : [];
+    case 'lamp:dark': return e.killed ? [] : [{ act: 'dark', n: 1, at: e.kind ?? null }];
+    case 'vial:30m': return Number(e.m) >= VIAL_M ? [{ act: 'vial', n: 1, at: e.kind ?? null }] : [];
+    case 'resurvey': return e.benchmark ? [{ act: 'benchmark', n: 1, at: e.benchmark }, { act: 'resection', n: 1, at: e.benchmark }] : [];
+    case 'pry': return e.part ? [{ act: 'pried', n: 1, at: `${e.kind ?? '?'}:${e.part}` }] : [];
+    case 'made': return MADE_ITEMS.includes(e.item) ? [{ act: 'made', n: Math.max(1, Math.floor(e.n ?? 1)), at: e.item }] : [];
+    default: return [];
+  }
+}
+
+/** A CertRules fed by seam events: `emit(name, payload)` -> the ranks granted. The reed remainder rides in `carry`. */
+export class CountedActs {
+  constructor(rules = new CertRules()) { this.rules = rules; this.carry = { reed: 0 }; }
+  /** @param {string} name @param {any} [e] */
+  emit(name, e) {
+    const out = [];
+    for (const a of actsOfEvent(name, e, this.carry)) out.push(...this.rules.count(a.act, { n: a.n, at: a.at }));
+    return out;
+  }
+}
