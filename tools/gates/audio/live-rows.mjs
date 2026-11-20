@@ -21,6 +21,12 @@
  *                        tools/gates/audio/walk-graph.mjs): integrated loudness -18 LUFS +- 2 and true peak <= -1 dBTP of
  *                        the master after the real DynamicsCompressor, its gain reduction read every step, and the
  *                        Round-4 synthesized voices that still play, by name.
+ *   A-audio-hour-live    Milestone 2: the first hour's bank decodes whole in Chrome (every new set, its length as built);
+ *                        the director's five beds and the re-survey's hold are up; Brea set down inside Ninewalls brings
+ *                        Ninewalls' bed up and the Pans' beds down through the regions seam (its enter and leave), and
+ *                        back home the Pans return; the calima (environment.setWeather) thins the trade wind under half
+ *                        and drops a 100 m one-shot under 0.4; every first-hour event (the Windwall, the gaff, the pots,
+ *                        the Screed, the re-survey, the trample's wind-up) plays its cue through the game's own bus.
  */
 const ARM = `
   const _arm = async () => {
@@ -264,6 +270,87 @@ export const GATES = [
         directorChirped: r.slice.lamp.chirps > 0 && r.slice.lamp.missed === 0 };
       const failed = Object.keys(checks).filter(k => !checks[k]);
       return { pass: failed.length === 0, detail: { failed, checks, ...r } };
+    })()`,
+  },
+  {
+    id: 'A-audio-hour-live', kind: 'action', lane: 'audio',
+    title: "Milestone 2 live: the first hour's bank decodes whole; the zones follow the regions seam (Ninewalls up, the Pans' beds down, and back); calima at noon thins the wind; every first-hour event plays its cue",
+    settle: 400, timeout: 150000,
+    assert: `(async () => {
+      ${ARM}
+      const a = await _arm();
+      if (!a.ac) return { pass: null, detail: 'SKIP: no AudioContext' };
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const t1 = performance.now();
+      while (!(a.hour && a.hour.ready) && performance.now() - t1 < 4000) await sleep(60);
+      const H = a.hour;
+      if (!H || !H.ready) return { pass: false, detail: 'the director of the first hour never came up' };
+      const { M2_CUES } = await import('/src/audio/m2/cues.js');
+      const MAN = (await import('/src/audio/manifest.js')).MANIFEST;
+      const m2sets = new Set(M2_CUES.map(c => c.set));
+      let decoded = 0, rows = 0, worstMs = 0;
+      for (const r of MAN) {
+        if (!m2sets.has(r.set)) continue;
+        rows++;
+        const b = a.bank.get(r.id);
+        if (!b) continue;
+        decoded++;
+        worstMs = Math.max(worstMs, Math.abs(b.duration - r.dur) * 1000);
+      }
+      const P = __CTX__.player, env = __CTX__.environment;
+      const home = { x: P.position.x, y: P.position.y, z: P.position.z };
+      const { CENTRE } = await import('/src/world/settlements/ninewalls-layout.js');
+      const go = async (x, z, ms) => { P.position.x = x; P.position.z = z; if (P._snapToGround) P._snapToGround(); await sleep(ms); };
+      const snap = () => ({ zone: { ...H.stats().zone }, beds: { ...H.stats().beds }, pans: +(a.slice.beds.pans?.volume ?? -1).toFixed(3), trade: +(a.slice.beds.trade?.volume ?? -1).toFixed(3), region: __CTX__.regions?.tracker?.current ?? null });
+      const cross0 = H.crossings.length;
+      let atHome0, atNine, atHome1, calima = null;
+      const w0 = env?.weather;
+      try {
+        atHome0 = snap();
+        await go(CENTRE.x + 6, CENTRE.z + 6, 7000);
+        atNine = snap();
+        await go(home.x, home.z, 7000);
+        atHome1 = snap();
+        if (env?.setWeather) {
+          const tr0 = a.slice.beds.trade?.volume ?? 0;
+          env.setWeather('calima', 0);
+          await sleep(2500);
+          calima = { director: +H.calima.toFixed(3), bed: +(H.beds.calima?.volume ?? 0).toFixed(3), tradeBefore: +tr0.toFixed(3), tradeAfter: +(a.slice.beds.trade?.volume ?? 0).toFixed(3), far100: +H.farGain(100).toFixed(3) };
+        }
+      } finally {
+        if (env?.setWeather && w0) env.setWeather(w0, 0);
+        await go(home.x, home.z, 300);
+      }
+      const crossings = H.crossings.slice(cross0).map(c => c.type + ':' + c.region);
+      // every first-hour event cue, through the game's own bus and director
+      const c0 = a.cueCounts();
+      const E = __CTX__.events;
+      const at = { x: P.position.x + 6, y: P.position.y, z: P.position.z };
+      const fake = (kind) => ({ kind, position: { x: at.x, y: at.y, z: at.z }, alive: true });
+      E.emit('windwall-planted', { x: at.x, z: at.z, h: 0.9 });
+      E.emit('windwall-block', { result: 'block' }); E.emit('windwall-block', { result: 'parry' }); E.emit('windwall-bash', { kind: 'screed' });
+      E.emit('gaff-hit', { verb: 'light1', kind: 'screed' }); E.emit('gaff-hit', { verb: 'hookRip', kind: 'screed', blown: 'off' });
+      E.emit('pot-landed', { id: 'brine', at }); E.emit('pot-status', { kind: 'screed', pot: 'brine' }); E.emit('pot-landed', { id: 'cinder', at });
+      for (const n of ['screed-charge', 'screed-stalled', 'seal-off', 'screed-seized', 'screed-cut']) E.emit(n, { machine: fake('screed') });
+      E.emit('resurvey-bearing', {}); E.emit('resurvey-done', {});
+      E.emit('machine-attack-phase', { machine: fake('tiller'), kind: 'herd-trample', attack: 'herd-trample', phase: 'windup' });
+      await sleep(600);
+      const c1 = a.cueCounts();
+      const want = ['windwall/plant', 'windwall/block', 'windwall/parry', 'windwall/bash', 'gaff/hit', 'gaff/hook', 'gaff/rip', 'pot/break', 'pot/seize', 'pot/cinder',
+        'screed/charge', 'screed/stall', 'screed/seal', 'screed/seize', 'screed/cut', 'alidade/mark', 'alidade/true', 'tiller/trample'];
+      const played = Object.fromEntries(want.map(s => [s, (c1[s] || 0) - (c0[s] || 0)]));
+      const silent = want.filter(s => !(played[s] > 0));
+      const checks = {
+        decoded: rows > 0 && decoded === rows && worstMs < 30, beds: Object.keys(H.beds).length === 5 && !!H._hold,
+        ninewallsUp: atNine.zone.nine >= 0.9 && atNine.zone.holds + atNine.zone.other >= 0.9 && atNine.beds.ninewalls > 0.1,
+        pansDownInNinewalls: atNine.pans <= 0.05 && atHome0.pans > 0.05,
+        pansBack: atHome1.zone.pans >= 0.9 && atHome1.zone.nine <= 0.1,
+        crossings: crossings.includes('enter:holds') && crossings.includes('leave:holds'),
+        calima: !!calima && calima.director >= 0.95 && calima.bed > 0.2 && calima.tradeAfter < calima.tradeBefore * 0.5 && calima.far100 < 0.4,
+        events: silent.length === 0,
+      };
+      const failed = Object.keys(checks).filter(k => !checks[k]);
+      return { pass: failed.length === 0, detail: { failed, checks, bank: { rows, decoded, worstMs: +worstMs.toFixed(1) }, atHome0, atNine, atHome1, crossings, calima, played, silent } };
     })()`,
   },
 ];
