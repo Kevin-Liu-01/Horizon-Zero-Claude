@@ -283,7 +283,7 @@ let total = 0, bad = 0, badFacing = 0, handsFree = 0, ownPose = 0;
 const byWhere = {}, overStep = []; let overStepN = 0;
 let wStepMax = 0, wStepAt = null, palmMax = 0, palmAt = null, palmN = 0;
 // wave 2b
-const W2B = { slab: { steps: 0, flat: 0, maxFurlFlat: 0, at: null }, cover: { steps: 0, bow: 0, lance: 0, quiver: 0 }, r10: { behind: 0, atOrAboveShoulder: 0, minUnderShoulderM: Infinity, overPelvisM: [Infinity, -Infinity], first: [] }, binding: { steps: 0, bad: 0, first: [] }, strictBehind: { steps: 0, onBackReach: 0, offBackReach: 0, minUnderHeadM: Infinity, first: [] },
+const W2B = { kitNeg: { steps: 0, first: [] }, slab: { steps: 0, flat: 0, maxFurlFlat: 0, at: null }, cover: { steps: 0, bow: 0, lance: 0, quiver: 0 }, r10: { behind: 0, atOrAboveShoulder: 0, minUnderShoulderM: Infinity, overPelvisM: [Infinity, -Infinity], first: [] }, binding: { steps: 0, bad: 0, first: [] }, strictBehind: { steps: 0, onBackReach: 0, offBackReach: 0, minUnderHeadM: Infinity, first: [] },
   socket: { n: 0, max: 0, at: null, over010: 0, byHold: {} }, noHand: { steps: 0, maxMoveM: 0, maxRotDeg: 0, at: null },
   face: { steps: 0, verts: 0, minGapM: Infinity, at: null, byClip: {} }, armKit: { steps: 0, min: Infinity, at: null }, take: [], planOffMax: {} };
 const bindingBad = (st) => {
@@ -331,6 +331,7 @@ for (const sc of S) for (const st of sc.steps) {
   if (st.armKit != null) { W2B.armKit.steps++; if (st.armKit < 0) { W2B.armKit.inside = (W2B.armKit.inside || 0) + 1; const k = `${st.clip}:${st.armKitPiece}`; (W2B.armKit.by || (W2B.armKit.by = {}))[k] = Math.min(W2B.armKit.by?.[k] ?? 0, r3(st.armKit)); } if (st.armKit < W2B.armKit.min) { W2B.armKit.min = st.armKit; W2B.armKit.at = { scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), piece: st.armKitPiece }; } }
   if (st.planOff != null) W2B.planOffMax[st.clip] = Math.max(W2B.planOffMax[st.clip] ?? 0, st.planOff);
   if (st.kiteTiltDeg != null && st.state !== 'none') { const S3 = W2B.slab; S3.steps++; if (st.kiteTiltDeg > 60 && st.furl > 0.5) { S3.flat++; if (!S3.at) S3.at = { scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), tilt: +st.kiteTiltDeg.toFixed(1), furl: r3(st.furl) }; } if (st.kiteTiltDeg > 60) S3.maxFurlFlat = Math.max(S3.maxFurlFlat, st.furl); }
+  if (st.kit != null && st.kit < 0) { const KN = W2B.kitNeg; KN.steps++; if (KN.first.length < 16) KN.first.push({ scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), kit: r3(st.kit), piece: st.kitPiece, u: st.kitU }); }
   if (st.cover) { const C2 = W2B.cover; C2.steps++; for (const k of ['bow', 'lance', 'quiver']) if (st.cover[k] != null) C2[k] = Math.max(C2[k], st.cover[k]); }
 }
 // the take: the right palm's distance to the roll's socket on the mount on the step the hand closes (before the roll is
@@ -423,6 +424,7 @@ const w2b = {
   r10: { behindAPlane: W2B.r10.behind, atOrAboveShoulder: W2B.r10.atOrAboveShoulder, minUnderShoulderM: r3(W2B.r10.minUnderShoulderM), wristOverPelvisM: W2B.r10.overPelvisM.map(r3), first: W2B.r10.first,
     pass: W2B.binding.steps > 0 && W2B.binding.bad === 0 && W2B.r10.atOrAboveShoulder === 0,
     note: "R10: KF1's head-plane clause read above her shoulders: 0 wrist-steps behind either head plane at or above the lower shoulder joint's height; under it a hand behind her body (the reach to the back mount, at hip height) is allowed; never an arm or hand behind or above her head (the binding read above: the M1.3f sweep, no wrist over the head bone, no elbow over its shoulder)" },
+  rollIntoKit: { steps: W2B.kitNeg.steps, first: W2B.kitNeg.first, note: 'wave 3: every step the furled roll\'s surface is inside the stowed kit (KF0d), listed' },
   slab: { steps: W2B.slab.steps, flatOpenSteps: W2B.slab.flat, maxFurlWhileFlat: r3(W2B.slab.maxFurlFlat), first: W2B.slab.at, pass: W2B.slab.steps > 0 && W2B.slab.flat === 0,
     note: 'wave 3 (the review of 2b: "the kite tips forward into a flat slab at the end of the open and the start of the fold"): steps with the kite tilted more than 60 deg from her up AND more than half open (furl > 0.5); must be 0' },
   bowCover: { steps: W2B.cover.steps, bowMax: r3(W2B.cover.bow), lanceMax: r3(W2B.cover.lance), quiverMax: r3(W2B.cover.quiver), bar: 0.05, pass: W2B.cover.steps > 0 && W2B.cover.bow <= 0.05,

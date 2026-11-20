@@ -387,7 +387,9 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
   } else { onBack(MOUNT.c, 1, o.pos, MOUNT.q, o.quat); o.furl = 0; }
   // (landing, she holds the roll out from her body while her trunk bows in the crouch, until it goes round her hip)
   // (wave 3: 0.1 -> 0.03 m: further out, the roll's left end met the belt kit at her left hip in the crouch)
-  if (land) o.pos.z += 0.03 * u * (1 - ss(0, 0.2, ur));
+  // (wave 3: and 0.15 m to her left: across her belly in the crouch the roll's left end met the belt kit at her left hip
+  //  by up to 0.014 m on 9 steps of a landing; slid left, its left end rides past it, >= 0.02 m clear)
+  if (land) { const kk = u * (1 - ss(0, 0.2, ur)); o.pos.z += 0.03 * kk; o.pos.x += 0.15 * kk; }
   // the right hand: on the bar's grip, then its palm onto the roll's surface (the roll's socket) as the cells close, and
   // with the roll back round her hip to the mount; it lets go there (the after-layer brings it round to the front)
   if (s < B.seat) {
