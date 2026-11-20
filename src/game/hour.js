@@ -46,6 +46,8 @@ import { Counter } from './trade/counter.js';
 const LEE_STEP_S = 0.25;
 const LEE_HOLD_S = 0.5;
 const HERD_N = 5;
+/** C5: the seconds between the herd's Tillers standing up (five in 1 s; see _spawn). */
+const HERD_STEP_S = 0.2;
 const LOOKER_STATIONS = Object.freeze([{ b: 110, r: 27 }, { b: 180, r: 27 }, { b: 250, r: 27 }]);
 /**
  * THE TERRACE PLUMB'S READING (M2 fix wave, area E, HR1/HR8: the terrace beat survivable for a careful player). At
@@ -349,19 +351,26 @@ export class FirstHour {
         if (m) { this.sys.siteRefill?.own(m, SCAR_ID); this._keepForTopple(m); this._terraceReads(m); this.spawned.plumb2.push(m); }
       }
       const [a, b] = this.herdLine;
-      if (can('tiller') && !this._near('tiller', { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }, 150).length) {
+      if (can('tiller') && !this._herdQ?.length && !this._near('tiller', { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 }, 150).length) {
         const herd = { center: vec3((a.x + b.x) / 2, 0, (a.z + b.z) / 2), vector: vec3(b.x - a.x, 0, b.z - a.z).normalize(), alarmed: false, rearguard: null, members: [] };
         M.squads?.registerHerd?.(herd);
         const L = Math.hypot(b.x - a.x, b.z - a.z) || 1, ux = (b.x - a.x) / L, uz = (b.z - a.z) / L, heading = Math.atan2(ux, uz);
+        // C5 (engine lane, the smallest change in this file): the five stand up one at a time, HERD_STEP_S apart (update),
+        // not in the frame the walk ends. At 865e8c6 the Plumb and the five Tillers built in one frame took 32 ms of its 92
+        // (first-hour leg 2, run hh-c5-865e8c6), and each new machine's hit hulls are built the frame after it stands
+        this._herdQ = [];
+        this._herdQT = HERD_STEP_S;
         for (let i = 0; i < HERD_N; i++) {
           // in file from the slope's foot, 9.5 m apart (tiller-herd.js FILE.gap), the leader highest
           const s = Math.max(0, 6 + (HERD_N - 1 - i) * 9.5);
           const x = a.x + ux * s, z = a.z + uz * s;
-          const m = M.spawn('tiller', x, z, { herd, heading, route: [vec3(x, 0, z), vec3(b.x, 0, b.z)] });
-          if (!m) continue;
-          M.squads?.join?.(m, herd, 'herd');
-          this.sys.siteRefill?.own(m, SCAR_ID);
-          this.spawned.herd.push(m);
+          this._herdQ.push(() => {
+            const m = M.spawn('tiller', x, z, { herd, heading, route: [vec3(x, 0, z), vec3(b.x, 0, b.z)] });
+            if (!m) return;
+            M.squads?.join?.(m, herd, 'herd');
+            this.sys.siteRefill?.own(m, SCAR_ID);
+            this.spawned.herd.push(m);
+          });
         }
       }
     } else if (what === 'oro') {
@@ -464,6 +473,12 @@ export class FirstHour {
     this._gate();
     if (ctx.state !== 'playing') return;
     for (const sp of this.spines) if (sp.started && !sp.done) sp.update(dt, this.sys.world);
+    // C5: the herd's next Tiller, while a stage still stands the herd up (a New Game or a load in between drops the rest)
+    if (this._herdQ?.length && (this._herdQT -= dt) <= 0) {
+      this._herdQT = HERD_STEP_S;
+      if (this.spines.some((sp) => this._standsFor(sp.current()) === 'herd')) this._herdQ.shift()();
+      else this._herdQ.length = 0;
+    }
     // what a running stage stands up, again if its kinds were still loading when it began (every 3 s; each is guarded)
     this._spawnT = (this._spawnT ?? 0) + dt;
     if (this._spawnT > 3) {
