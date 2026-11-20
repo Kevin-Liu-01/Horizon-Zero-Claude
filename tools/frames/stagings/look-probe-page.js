@@ -18,6 +18,7 @@
  *   F39-people   each of the five sheltering people: inside the frustum, pixels drawn, screen point
  *   F39-look     (polish 3) the same, with each person's height on screen (its mask's box), and the fight's: the Screed's,
  *                each Sickle's and Brea's pixels and box heights
+ *                (F39-look restaged in wall-1's lee: also where the staging put each of the five, `staging`)
  *   F42          (polish 3) also the hook-rip held for the frame (verb, phase, its clock) and the staging's report: the
  *                part on the hook and the gap from the hook's tip to it
  *   F44          (polish 3) also her own pixels and box, and the lens's view bearing and pitch
@@ -234,6 +235,7 @@ export async function probe(frame) {
       });
       out.peopleInLens = out.people.filter((q) => q.pixels > 0).length;
       if (id === 'F39-look') {
+        out.staging = window.__f39look || null;   // where the staging put the five: bearing, metres to the Screed and to its threat lines
         out.fight = (C.machines?.list || []).filter((m) => m && !m._disposed && m.root && (m.kind === 'screed' || m.kind === 'sickle') && m.root.visible).map((m) => { const r = maskRead(m.root); return { kind: m.kind, pixels: r.pixels, boxH: r.box ? r.box[3] - r.box[1] : null, toLensM: r1(Math.hypot(m.position.x - cam.position.x, m.position.z - cam.position.z)) }; });
         const hr = C.player?.model ? maskRead(C.player.model) : null;
         out.brea = hr ? { pixels: hr.pixels, boxH: hr.box ? hr.box[3] - hr.box[1] : null } : null;
