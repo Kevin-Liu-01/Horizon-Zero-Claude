@@ -45,7 +45,7 @@ export const MALPAIS_TERM = /* glsl */ `
       // the zones: a lobe's edge is crisp and lobate (the sheet field cut at 0.50-0.58, its edge broken at a few metres)
       float pah = smoothstep(0.50, 0.58, Z.g + (nz.g - 0.5) * 0.05);
       float band = vWPos.y / 7.0 + (Z.b - 0.5) * 1.6;
-      float cin = smoothstep(0.80, 0.92, fract(band)) * (1.0 - pah);
+      float cin = smoothstep(0.84, 0.93, fract(band)) * (1.0 - pah);
       float steep = smoothstep(0.45, 0.85, slope);
       float cone = Z.a;
       float wSc = cone * (0.5 + 0.5 * steep);
@@ -66,6 +66,8 @@ export const MALPAIS_TERM = /* glsl */ `
         t2 = vec2(t2.x * 0.766 - t2.y * 0.643, t2.x * 0.643 + t2.y * 0.766);
         vec2 t = mix(t1, t2, b);
         vec3 c = pow(a.rgb, vec3(2.2));
+        // (wave 2 film at e664972: the aa read red-brown in the low sun) a quarter of its chroma out: dark grey-brown
+        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.75);
         // lichen crust: grey-green flecks on the clinker's tops, a few metres of them here and there
         float lich = smoothstep(0.66, 0.8, nz.b) * smoothstep(0.55, 0.85, a.a) * 0.55;
         c = mix(c, vec3(0.105, 0.118, 0.088), lich);
@@ -85,21 +87,27 @@ export const MALPAIS_TERM = /* glsl */ `
         vec2 u = vec2(dot(xz, vec2(0.276, 0.961)), dot(xz, vec2(-0.961, 0.276))) * uMalTile.z;
         vec4 a = malA(2.0, u, dx * uMalTile.z, dy * uMalTile.z), n = malN(2.0, u, dx * uMalTile.z, dy * uMalTile.z);
         vec2 t = n.xy * 2.0 - 1.0; t = vec2(t.x * 0.276 + t.y * 0.961, -t.x * 0.961 + t.y * 0.276) * vec2(1.0, 1.0);
-        mc += pow(a.rgb, vec3(2.2)) * wCi; mp += vec3(t.x, 0.0, t.y) * wCi; mr += n.z * wCi; mo += n.a * wCi; ws += wCi;
+        // (e664972: the bands read as red streams across the flow) dark, a red-brown tinge only
+        vec3 cc = pow(a.rgb, vec3(2.2));
+        cc = mix(vec3(dot(cc, vec3(0.2126, 0.7152, 0.0722))), cc, 0.55) * 0.75;
+        mc += cc * wCi; mp += vec3(t.x, 0.0, t.y) * wCi; mr += n.z * wCi; mo += n.a * wCi; ws += wCi;
       }
       if (wSc > 0.01) {
-        // scree lies down the fall line: the clasts read streaked downhill on the cone's 30-34 deg faces
-        vec2 fall = normalize(wn.xz + vec2(1e-4, 0.0));
-        vec2 q = vec2(dot(xz, vec2(-fall.y, fall.x)), dot(xz, fall) * 0.8) * uMalTile.w;
-        vec2 qx = vec2(dot(dx, vec2(-fall.y, fall.x)), dot(dx, fall) * 0.8) * uMalTile.w, qy = vec2(dot(dy, vec2(-fall.y, fall.x)), dot(dy, fall) * 0.8) * uMalTile.w;
-        vec4 a = malA(3.0, q, qx, qy), n = malN(3.0, q, qx, qy);
-        vec2 t = n.xy * 2.0 - 1.0;
-        vec2 tw = t.x * vec2(-fall.y, fall.x) + t.y * fall;
-        // the cone's oxidised bands: redder at mid height, darker cinder toward its crater
-        vec3 c = pow(a.rgb, vec3(2.2)) * (0.85 + 0.3 * nz.a);
-        mc += c * wSc; mp += vec3(tw.x, 0.0, tw.y) * wSc; mr += n.z * wSc; mo += n.a * wSc; ws += wSc;
+        // (e664972: read down the fall line the scree streaked into stripes where the lens looks along the cone's face)
+        // a plain turned read; the rust red kept, its glow taken down (0.6 of its chroma, 0.7 of its light)
+        vec2 u = vec2(dot(xz, vec2(0.906, 0.423)), dot(xz, vec2(-0.423, 0.906))) * uMalTile.w;
+        vec4 a = malA(3.0, u, dx * uMalTile.w, dy * uMalTile.w), n = malN(3.0, u, dx * uMalTile.w, dy * uMalTile.w);
+        vec2 t = n.xy * 2.0 - 1.0; t = vec2(t.x * 0.906 - t.y * 0.423, t.x * 0.423 + t.y * 0.906);
+        vec3 c = pow(a.rgb, vec3(2.2));
+        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.6) * 0.7 * (0.85 + 0.3 * nz.a);
+        mc += c * wSc; mp += vec3(t.x, 0.0, t.y) * wSc; mr += n.z * wSc; mo += n.a * wSc; ws += wSc;
       }
       mc /= max(ws, 1e-4); mp /= max(ws, 1e-4); mr /= max(ws, 1e-4); mo /= max(ws, 1e-4);
+      // (e664972: the pahoehoe's glassy ropes glinted in a grid at 100 m, the tile's repeat) the relief and the gloss fade
+      // with range, where the texel's detail is under a pixel anyway
+      float farK = smoothstep(20.0, 90.0, dCam);
+      mp *= 1.0 - 0.65 * farK;
+      mr = mix(mr, max(mr, 0.82), farK);
       // the large scale: each place its own shade (10-30 m), the cone keeps its red
       mc *= 0.82 + 0.36 * macA;
       float ao = clamp(mo * 1.15, 0.0, 1.0);

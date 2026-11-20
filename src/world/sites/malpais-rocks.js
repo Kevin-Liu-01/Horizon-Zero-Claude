@@ -9,7 +9,7 @@ import { HORNITOS, TUBE_SHELTER, RUST_CONE, BENCH_B6 } from './malpais-layout.js
  * THE MALPAIS' ROCK (Milestone 3 wave 2, area A: the look; BIBLE §3.3; the KEY Malpais strip for form only). Three forms,
  * all built from code on the region's approach (./malpais-region.js), none at boot:
  *
- *   CLINKER    aa's rubble: loose jagged clasts 0.25-1.1 m on the aa (not on a pahoehoe sheet, a cinder band, Rust Cone,
+ *   CLINKER    aa's rubble: loose jagged clasts 0.3-1.5 m on the aa (not on a pahoehoe sheet, a cinder band, Rust Cone,
  *              the Yards' bench or the walk grid), denser where the flow front piled them; instanced, one draw per
  *              96 m tile, tiles past CLINKER.far m hidden. No colliders: she walks over rubble (aa is slow ground, MP9)
  *   PINNACLES  the flow's jagged spires and pressure ridges, 2.5-8 m, on the aa: one merged mesh, each a capsule collider
@@ -28,7 +28,7 @@ export const CLINKER = Object.freeze({
   /** the Malpais box the scatter walks (engine x, z), the cell (m), the far distance (m) past which a tile is hidden */
   box: Object.freeze({ x0: 60, x1: 500, z0: -360, z1: 440 }), cell: 1.7, tile: 96, far: 230,
   /** a clast's size band (m), and the share of cells that hold one at the densest */
-  size: Object.freeze([0.22, 1.1]), dens: 0.9,
+  size: Object.freeze([0.3, 1.5]), dens: 0.9,
 });
 
 const D2R = Math.PI / 180;

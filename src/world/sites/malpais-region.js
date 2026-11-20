@@ -193,7 +193,8 @@ export class MalpaisRegion {
         return m;
       };
       const matClinker = rockMat('aa', 0, 1.6, 1.0, 0);
-      const matSpatter = rockMat('spatter', 3, 1.2, 0.55, 0.0);
+      // (e664972: the scree layer on the hornitos read as red foliage) spatter is the aa's dark clinker, a little warmer
+      const matSpatter = rockMat('spatter', 0, 0.9, 1.1, 0.0);
 
       const group = new THREE.Group();
       group.name = 'malpais';

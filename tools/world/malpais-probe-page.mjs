@@ -13,6 +13,7 @@ export function probe(f) {
   try {
     const M = C?.terrain?.malpais;
     out.malpais = M ? { state: M.state, stats: JSON.parse(JSON.stringify(M.stats)) } : null;
+    if (M?._held?.tiles) { let on = 0, inst = 0; for (const t of M._held.tiles) if (t.mesh.visible) { on++; inst += t.mesh.count; } out.malpais.clinkerShown = { tiles: on, of: M._held.tiles.length, clasts: inst }; }
   } catch (e) { out.malpais = { error: String(e) }; }
   try {
     const progs = {};

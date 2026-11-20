@@ -49,8 +49,10 @@ export const FRAMES = Object.freeze([
     // stacks, so the stub read as a dark spire. Node, this lens: rims and stack tops at x 0.00-0.63, y 0.16-0.88 of the
     // half-frame, the four caps at y -0.87, none behind ground
     // M3 wave 2: pitched up 20 deg (was 24) and widened to fov 60 (was 55), so the four wellheads' caps stand inside the
-    // safe area (rule 17's check at a91c4f7: at 24 deg the caps sat 29-52 % in it, on the frame's lower edge)
-    at: { en: [224.2, -32.4] }, bearing: 310, camera: { mode: 'eye', eye: 1.7, pitch: 20, fov: 60 }, state: { pose: 'idle', hud: false },
+    // safe area (rule 17's check at a91c4f7: at 24 deg the caps sat 29-52 % in it, on the frame's lower edge); and 3.4 m
+    // west along the bench's edge, turned to 315 (was (224.2, -32.4), 310): in the page at e664972 the stacks stood in
+    // front of tower-b and left 67 % of it unoccluded (the check asks 70 %); from here they cover 31 % of its width, not 39
+    at: { en: [221, -34] }, bearing: 315, camera: { mode: 'eye', eye: 1.7, pitch: 20, fov: 60 }, state: { pose: 'idle', hud: false },
     ref: { crops: ['board-kilnyards'], written: "the BOARD Kiln Yards panel. Wave 1 blockout: from the apron's south-east corner looking north-west and up: the four wellheads' caps along the bench's lower edge, the manifold rack, the four flue stacks with their tops in frame, the two tower stubs whole on the shelf; only the wellheads' caps glowing. Wave 2: two tiled stubs 22-28 m, 3-5 stacks, pipe racks, 4 wellheads (MP5, MP7)" },
   },
   {
