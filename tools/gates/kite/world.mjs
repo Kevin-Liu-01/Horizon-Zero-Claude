@@ -1,11 +1,10 @@
 // M3 area B: the kite's Node world. The flight law (src/game/kite/flight.js) stepped on the game's own modules (rule 21:
 // a twin imports the game's module, not a copy of its law): the island's height (src/world/island/recipe.js heightAt),
 // the environment's own windAt (src/world/environment.js, called on a stand-in `this` holding the trade's numbers,
-// read from the environment's own weather table), the lift seam's stub (src/game/kite/lift.js) until area A's
-// src/world/island/lift.js lands. No browser.
+// read from the environment's own weather table), area A's lift field (src/world/island/lift.js liftAt). No browser.
 import { heightAt, GLASS_LEVEL, SEA_LEVEL } from '../../../src/world/island/recipe.js';
 import { Environment } from '../../../src/world/environment.js';
-import { makeRidgeLift } from '../../../src/game/kite/lift.js';
+import { liftAt as worldLiftAt, LIFT as WORLD_LIFT, faceAt } from '../../../src/world/island/lift.js';
 import { flyableIn, createFlightBody, openAt, stepFlight, KITE } from '../../../src/game/kite/flight.js';
 
 /** The environment's weather table (its `states` getter reads no instance state). */
@@ -27,7 +26,9 @@ export function steadyWind(ms, fromDeg = 45) {
   return (x, z, out) => { out.x = wx * ms; out.z = wz * ms; return ms; };
 }
 
-export const islandLift = makeRidgeLift(heightAt);
+/** area A's liftAt in the trade (its default wind), as the flight law calls it */
+export const islandLift = (x, y, z) => worldLiftAt(x, y, z);
+export { WORLD_LIFT, faceAt, worldLiftAt };
 export const waterDepthAt = (x, z) => { const g = heightAt(x, z); return Math.max(0, Math.max(SEA_LEVEL, GLASS_LEVEL) - g); };
 
 /**

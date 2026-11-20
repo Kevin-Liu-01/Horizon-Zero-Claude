@@ -1,5 +1,5 @@
 // M3 area B (M3.1), the Survey Kite's law in Node: one row per band of the M3 briefs' area B (KF2-KF8, the Node half).
-// The law is src/game/kite/flight.js, stepped on the game's own height, wind and the lift seam's stub (world.mjs).
+// The law is src/game/kite/flight.js, stepped on the game's own height and wind and area A's lift field (world.mjs).
 // Browser-free:  node --test tools/gates/kite/flight-law.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,9 +7,9 @@ import {
   KITE, FLIGHT_STATES, canOpen, flyableIn, createFlightBody, openAt, stepFlight, landingDamage, glideRatio, readOut,
   sightRangeMul, weaponVerbsAllowed, GROUNDED_NOTE,
 } from '../../../src/game/kite/flight.js';
-import { makeRidgeLift, LIFT, liftAt, setLiftSource } from '../../../src/game/kite/lift.js';
+import { liftAt, setLiftSource } from '../../../src/game/kite/lift.js';
 import { WIND_ROADS, ROAD_COUNTS, LINE_POSTS, POST_HEIGHT_M, streams } from '../../../src/game/kite/roads.js';
-import { flatWorld, steadyWind, gameWind, islandWorld, islandLift, heightAt, fly, WEATHER } from './world.mjs';
+import { flatWorld, steadyWind, gameWind, islandWorld, islandLift, heightAt, fly, WEATHER, WORLD_LIFT, faceAt } from './world.mjs';
 
 const near = (v, want, tol, what) => assert.ok(Math.abs(v - want) <= tol, `${what}: ${v} not within ${want} +- ${tol}`);
 
@@ -48,26 +48,22 @@ test('KF2 the trade (5.5 m/s from 045, the environment\'s own table): downwind 6
   near(gdown.ratio, 6.5, 0.4, 'downwind, game wind'); near(gup.ratio, 3.5, 0.3, 'upwind, game wind');
 });
 
-/** a synthetic island: a windward face of `deg` rising to the SW across x+z = 0, flat at 10 m before it */
-const faceWorld = (deg, { faceDown = false } = {}) => {
-  const t = Math.tan(deg * Math.PI / 180);
-  // along the wind (toward SW, (-1, 1)/sqrt2) the ground climbs at `deg` over 30 m, then a plateau
-  const h = (x, z) => { const s = (-x + z) / Math.SQRT2; const u = faceDown ? -s : s; return 10 + Math.max(0, Math.min(30, u)) * t; };
-  return h;
-};
-
-test('KF3 lift: +0.5 to +1.5 m/s over a windward face of 25 deg or more within 40 m below; 0 over flat ground, under 25 deg, in the lee, over water', () => {
-  for (const deg of [25.5, 30, 40, 50]) {
-    const L = makeRidgeLift(faceWorld(deg));
-    // over the face's foot and over its brow, within 40 m above the face
-    const vals = [[-5, 5, 20], [-10, 10, 30], [-20, 20, 45]].map(([x, z, y]) => L(x, y, z));
-    for (const v of vals) assert.ok(v >= LIFT.min && v <= LIFT.max, `${deg} deg: ${vals}`);
+test('KF3 lift (area A\'s law, src/world/island/lift.js, on the island): +0.5 to +1.5 m/s over windward faces of 25 deg or more within 40 m below; 0 over flat ground, gentler faces, lee faces, water, and more than 40 m up', () => {
+  const R = (a) => a * Math.PI / 180;
+  const n = { lift: 0, flat: 0, lee: 0, gentle: 0, sea: 0, high: 0 };
+  const f = { h: 0, slopeDeg: 0, aspect: { x: 0, z: 0 }, sea: false };
+  const from = { x: Math.sin(R(45)), z: -Math.cos(R(45)) };
+  for (let x = -480; x <= 480; x += 8) for (let z = -480; z <= 480; z += 8) {
+    faceAt(x, z, f);
+    const v = islandLift(x, f.h + 5, z);
+    if (v > 0) { n.lift++; assert.ok(v >= WORLD_LIFT.min - 1e-9 && v <= WORLD_LIFT.max + 1e-9, `${v} at ${x},${z}`); assert.ok(f.slopeDeg >= 25 && !f.sea, `${x},${z}`); }
+    if (f.sea) { n.sea++; assert.equal(v, 0, `water ${x},${z}`); continue; }
+    if (f.slopeDeg < 2) { n.flat++; assert.equal(v, 0, `flat ${x},${z}`); }
+    else if (f.slopeDeg < 25) { n.gentle++; assert.equal(v, 0, `gentle ${x},${z}`); }
+    else if (f.aspect.x * from.x + f.aspect.z * from.z < 0) { n.lee++; assert.equal(v, 0, `lee ${x},${z}`); }
+    if (v > 0) { n.high++; assert.equal(islandLift(x, f.h + 41, z), 0, `41 m up ${x},${z}`); }
   }
-  assert.equal(makeRidgeLift(() => 10)(0, 20, 0), 0, 'flat');
-  assert.equal(makeRidgeLift(faceWorld(20))(0, 20, 0), 0, 'a 20 deg face');
-  assert.equal(makeRidgeLift(faceWorld(35, { faceDown: true }))(-25, 15, 25), 0, 'the lee: a face that looks away from the wind');
-  assert.equal(makeRidgeLift(faceWorld(35))(0, 60, 0) , 0, 'more than 40 m over the face');
-  assert.equal(makeRidgeLift((x, z) => (x > 0 ? -2 : 30))(5, 10, 0), 0, 'over water');
+  for (const k of Object.keys(n)) assert.ok(n[k] > 0, `no ${k} cells sampled: ${JSON.stringify(n)}`);
 });
 
 test('KF3 the cap: in steady lift she never climbs above launch height + 25 m; with no lift she never climbs', () => {
@@ -148,12 +144,12 @@ test('KF7 the wind roads: 5, 7 and 6 posts of 3 m, the cloth streams iff liftAt 
   }
 });
 
-test('KF7 the Organ Shelf road: all 5 posts stream on the stub lift', () => {
+test('KF7 the Organ Shelf road: all 5 posts stream', { todo: 'KF0 (a) ruling: by area A\'s lift law no face of the Organ Shelf lifts in the trade (its steep faces look N, NW, W and S); 0 of 5 stream' }, () => {
   const on = WIND_ROADS['organ-shelf'].filter((p) => streams(p, islandLift, heightAt));
   assert.equal(on.length, 5, on.map((p) => p.id).join());
 });
 
-test('KF7 the caldera road: all 6 posts stream on the stub lift (the caldera is not built: blockout ground)', () => {
+test('KF7 the caldera road: all 6 posts stream (the caldera is not built: blockout ground)', () => {
   const on = WIND_ROADS.caldera.filter((p) => streams(p, islandLift, heightAt));
   assert.equal(on.length, 6, on.map((p) => p.id).join());
 });

@@ -1,5 +1,5 @@
 // M3 area B, KF0 (row 0: geometry, time and sky) on the blockout, in Node: the flight law (src/game/kite/flight.js) on
-// the island's own height, the environment's own trade wind and the lift seam's stub (world.mjs).
+// the island's own height, the environment's own trade wind and area A's lift field (world.mjs).
 //   node tools/gates/kite/row0.mjs [--json <file>]
 // (a) the test flight, T1 to the Sounding Ring: straight, and by the Organ Shelf road's lift first;
 // (b) the Scar's 7 posts: the drop along the line and a downwind glide from its upper end, on the line and on the lip;
@@ -22,7 +22,7 @@ const regions = new RegionMap().build();
 /** jumping off a 4 m pillar's edge: Space at 0.35 s of air is about 1.4 m over the top (the jump's 1.5 m peak at 0.37 s) */
 const JUMP_AT_OPEN = 1.4;
 
-const R = { at: new Date().toISOString(), law: { air: KITE.air, sink: KITE.sink, windK: KITE.windK, liftCapM: KITE.liftCapM }, lift: 'stub (src/game/kite/lift.js makeRidgeLift on recipe heightAt); area A\'s src/world/island/lift.js not in the tree' };
+const R = { at: new Date().toISOString(), law: { air: KITE.air, sink: KITE.sink, windK: KITE.windK, liftCapM: KITE.liftCapM }, lift: 'area A src/world/island/lift.js liftAt (the trade)' };
 
 /* (a) the test flight */
 {

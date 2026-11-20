@@ -8,11 +8,12 @@
  * which `src/world/island/extent.js` owns: the world lane snaps and scales them when it builds the meshes). Heights are
  * not stored: a post stands on the ground where it is placed (the world lane snaps it).
  *
- * BLOCKOUT VALUES (wave 1). The Organ Shelf's five stand on the shelf's north rim where the stub lift is on at the
- * post's top (tools/gates/kite/row0.mjs, the shelf's faces look N, NW, W and S: only its north rim looks into the
- * NE trade); the Scar's seven stand 15 m off its north-west lip, evenly from 0.10 to 0.90 of its length (the Scar runs
- * on bearing 225, straight downwind, so by the one lift law its lip makes none: brief §1, a ruling for MP0/KF0);
- * the caldera's six on the caldera's outer north-east flank, the wall that faces the wind (the caldera is not built).
+ * BLOCKOUT VALUES (wave 1). The Organ Shelf's five stand on the shelf's north rim, east to west toward the Sounding Ring
+ * (the shelf's steep faces look N, NW, W and S; by area A's lift law, src/world/island/lift.js at f6d3eb7, none of
+ * them lifts in the trade: 0 of 5 stream, sent for a ruling, KF0 (a)); the Scar's seven stand 15 m off its north-west
+ * lip, evenly from 0.10 to 0.90 of its length (the Scar runs on bearing 225, straight downwind, so its lip makes no
+ * lift by the one law: brief §1, KF0 (b)); the caldera's six on the caldera's outer north-east flank, the wall that
+ * faces the wind, each on a cell area A's law lifts (the caldera is not built: blockout ground).
  */
 
 /** @typedef {'organ-shelf' | 'scar' | 'caldera'} RoadId */
@@ -41,7 +42,7 @@ export const WIND_ROADS = Object.freeze({
   // from the Kiln Yards' end down toward Saltrow (downwind)
   scar: Object.freeze(posts('scar', [0.10, 0.233, 0.367, 0.5, 0.633, 0.767, 0.9].map(scarLip))),
   // the caldera's outer north-east flank, north-west to south-east
-  caldera: Object.freeze(posts('caldera', [[60, 190], [80, 190], [90, 180], [110, 180], [120, 170], [130, 180]])),
+  caldera: Object.freeze(posts('caldera', [[80, 202], [96, 194], [104, 194], [120, 194], [136, 194], [152, 186]])),
 });
 
 /** The counts the bible gives. */
