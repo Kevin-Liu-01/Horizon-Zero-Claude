@@ -80,6 +80,8 @@ const B1 = BENCHMARKS.find((b) => b.id === 'bm-01');
 const T2 = TRIG.find((t) => t.id === 'T2');
 const PLACES = {
   ninewalls: { x: NW.x, z: NW.z }, b1: { x: B1.x, z: B1.z }, t2: { x: T2.x, z: T2.z },
+  // where leg 3's fixture stands her: south of the walls on the Scar's side (first-hour-fixtures.mjs fixture(3))
+  southGate: { x: NW.x + 8, z: NW.z + 40 },
   kilnYards: (() => { const s = siteById('kiln-yards'); return { x: s.x, z: s.z }; })(),
 };
 
@@ -848,6 +850,13 @@ async function driveRest(page, K) {
   // on their loop): she does not fight them on the way. At fa45e47 run 2 putting their lamps out cost 31 -> 4 hp here
   out.lookers = await page.evaluate(() => (window.__CTX__.systemsGame?.hour?.spawned?.lookers || []).filter((m) => m && m.alive !== false && !m._disposed).map((m) => ({ state: m.state, docile: !!m.docile })));
   // to the bowl itself (its prompt's radius is 2.6 m; f2a7b10 stopped by the seat 3 m off with no prompt up)
+  // (M2 fix wave 2) by the south gate (the way she came from it to Benchmark 1): at 37ca861 chained run 3 every try of
+  // the nav grid's line from the pad stopped 57 m short against the slope below the walls, and the road's 128.6 m short
+  out.gate = null;
+  if (Math.hypot(A.x - (await page.evaluate(where)).x, A.z - (await page.evaluate(where)).z) > 40) {
+    const g = await walkSure(page, PLACES.southGate, 4, 60, K);
+    out.gate = { ok: g.ok, why: g.why ?? null, tries: g.tries };
+  }
   const w = await walkSure(page, A, 1.3, 60, K);
   out.walk = { ok: w.ok, why: w.why ?? null, tries: w.tries };
   await sleep(300);
