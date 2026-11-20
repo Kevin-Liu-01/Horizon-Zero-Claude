@@ -84,19 +84,20 @@ export const BENCH_B5 = rec('B5', apronPoint(21, -7), { plan: Object.freeze({ e:
 /**
  * The plant (BIBLE §3.3): two tiled tower stubs on the shelf's gentle ground north of the cut (7-21 deg), four brick
  * flue stacks in a row 8 m beyond the cut's crest, three pipe racks (the bench's manifold, and one to each tower).
+ * Tower A stands 13.6 m off the T3-T4 sight ray (sites.js SIGHT_PAIRS), its foot's radius 11: the ray stays open.
  * r0 the stub's foot radius, r1 its broken top's, h its height over its foot; a stack's r and h; a rack's two ends.
  */
 const stack = (u, r, h) => rec(`stack-${u}`, apronPoint(u, 18), { r, h });
 export const YARDS = Object.freeze({
   towers: Object.freeze([
-    rec('tower-a', { e: 214, n: 8 }, { r0: 11, r1: 7.6, h: 26 }),
-    rec('tower-b', { e: 190, n: 14 }, { r0: 9.6, r1: 6.8, h: 22.5 }),
+    rec('tower-a', { e: 210, n: 10 }, { r0: 11, r1: 7.6, h: 26 }),
+    rec('tower-b', { e: 188, n: 16 }, { r0: 9.6, r1: 6.8, h: 22.5 }),
   ]),
   stacks: Object.freeze([stack(-4, 1.25, 29), stack(4, 1.05, 21), stack(12, 1.15, 25), stack(20, 0.95, 18)]),
   racks: Object.freeze([
     Object.freeze({ id: 'rack-manifold', a: rec('a', apronPoint(-18, 7)), b: rec('b', apronPoint(18, 7)) }),
-    Object.freeze({ id: 'rack-b', a: rec('a', apronPoint(-8, 7)), b: rec('b', { e: 192, n: 4 }) }),
-    Object.freeze({ id: 'rack-a', a: rec('a', apronPoint(12, 7)), b: rec('b', { e: 214, n: -3 }) }),
+    Object.freeze({ id: 'rack-b', a: rec('a', apronPoint(-8, 7)), b: rec('b', { e: 191, n: 5 }) }),
+    Object.freeze({ id: 'rack-a', a: rec('a', apronPoint(12, 7)), b: rec('b', { e: 211, n: -2 }) }),
   ]),
   /** a rack's pipes run at 4.2-4.9 m on posts every RACK_POST m (*) */
   rackPost: 7, rackPipeY: 4.2, rackPostHalf: Object.freeze([0.18, 0.8]),

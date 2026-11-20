@@ -76,14 +76,19 @@ const MALPAIS = Object.freeze({
 });
 /** The share of pahoehoe at an engine point (0 aa .. 1 pahoehoe): lobes from a 3-octave field at about 80 m. */
 export function malpaisSheet(x, z) { return ss(0.50, 0.58, fbm(x * 0.012 + 3.1, z * 0.012 - 8.3, 3)); }
+/** The cinder bands' weight (0..1) at an engine point of height h on the aa, before the pahoehoe share (M3 wave 1: the
+ * zones' data, src/world/sites/malpais-zones.js, reads the same law the tone does). */
+export function malpaisCinder(x, z, h) {
+  const band = h / 7 + (fbm(x * 0.03, z * 0.03 + 4, 2) - 0.5) * 1.6;
+  return ss(0.80, 0.92, band - Math.floor(band));
+}
 const _mal = [0, 0, 0];
 /** The Malpais' ground tone (sRGB bytes) at an engine point of height h, into `out`. */
 export function malpaisTone(x, z, h, out = [0, 0, 0]) {
   const pah = malpaisSheet(x, z);
   const br = fbm(x * 0.09 - 4, z * 0.09 + 2, 2);                   // the clinker's broken tops, about 11 m
   const sk = fbm(x * 0.05 + 6, z * 0.05 - 1, 2);                   // the sheets' skins
-  const band = h / 7 + (fbm(x * 0.03, z * 0.03 + 4, 2) - 0.5) * 1.6;
-  const cinder = ss(0.80, 0.92, band - Math.floor(band)) * (1 - pah) * 0.6;
+  const cinder = malpaisCinder(x, z, h) * (1 - pah) * 0.6;
   const lichen = ss(0.66, 0.78, fbm(x * 0.21 + 5, z * 0.21, 2)) * (1 - pah) * 0.5;
   const M = MALPAIS;
   for (let c = 0; c < 3; c++) {

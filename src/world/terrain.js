@@ -3,6 +3,7 @@ import { AERIAL, AERIAL_B, AERIAL_DOME, AERIAL_PARS, patchAerial, patchDeck } fr
 import { WORLD_SIZE, WORLD_HALF, PLAY_RADIUS, MESH_SPAN, MESH_SEGS } from './island/extent.js';
 import { REST_SITE, TUBES, SALT_FIELD, siteById } from './island/sites.js';
 import { buildKilnYards } from './island/kilnyards.js';
+import { MalpaisBlockout } from './sites/malpais.js';
 import { BIOMES, CURRENT_DEPTH, biomesAt, heightAt, coverAt, authored } from './island/recipe.js';
 import { GRID, MASK_N, PAN_N, PAN_BOX, SHORE_ENC, SKYLINE_N, bakeShade, maskTexel } from './island/bake.js';
 import { bakeIsland } from './island/pool.js';
@@ -392,6 +393,8 @@ export class Terrain {
     ctx.scene.add(this.group);
     // (M2 wave 4, area A, HG6) the Kiln Yards' far form on the Malpais: its own top-level child (two draws), not the ground
     { const ky = siteById('kiln-yards'); this.kilnYards = buildKilnYards({ x: ky.x, z: ky.z, ground: (x, z) => this.getHeight(x, z) }); ctx.scene.add(this.kilnYards.group); for (const m of this.kilnYards.materials) ctx.environment?.registerMaterial?.(m); }
+    // (M3 wave 1, area A) the Malpais at blockout: the hornitos, the tube shelter, and the Yards' and the Malpais' blockers
+    this.malpais = new MalpaisBlockout(ctx, ctx.scene, (x, z) => this.getHeight(x, z));
 
     /* The sea and the Glass live here so `ctx.terrain` is whole on its own. world-sky's
      * environment.js reaches them through the RiverWater alias or ctx.water (water.js). */
@@ -1418,6 +1421,7 @@ export class Terrain {
       if (this.ctx.collision) this._registerColliders();
     }
     if (!this.oldSiteRetired) this._retireOldSite();
+    this.malpais?.update();
     if (!this._routeCoverDone) {
       this._routeCoverTries = (this._routeCoverTries || 0) + 1;
       const ready = this.ctx.machines?.varietyReady || this._routeCoverTries > 600;

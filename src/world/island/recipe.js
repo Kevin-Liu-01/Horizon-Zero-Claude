@@ -24,6 +24,7 @@ import { ISLAND_SCALE as S } from './extent.js';
 import { SITES, TRIG, TRIG_TOP, SIGHT_PAIRS, SALT_FIELD as SF, CISTERN } from './sites.js';
 import { buildHoldsProfile, holdsHeight, scarWeight } from '../holds/blockout.js';
 import { buildNinewallsGround, ninewallsHeight } from '../settlements/ninewalls-ground.js';
+import { malpaisHeight } from '../sites/malpais-ground.js';
 
 export const BIOMES = Object.freeze(['pans', 'holds', 'malpais', 'cloudline', 'flank', 'caldera']);
 export const SEA_LEVEL = 0;
@@ -1079,7 +1080,9 @@ function heightAuthored(e, n) {
 export function heightAt(x, z) {
   if (!M.ready) ensureMacro();
   const e = x / S, n = -z / S;
-  return ninewallsHeight(e, n, holdsHeight(e, n, heightAuthored(e, n)));
+  // (M3 wave 1, area A) the Kiln Yards' apron and the tube shelter's trench (src/world/sites/malpais-ground.js), inside
+  // their own footprint only; under the Holds' blockout, whose Scar profile reads the ground without them
+  return ninewallsHeight(e, n, holdsHeight(e, n, malpaisHeight(e, n, heightAuthored(e, n))));
 }
 
 /** Biome weights at an engine point into `out` [pans, holds, malpais, cloudline, flank, caldera]. */

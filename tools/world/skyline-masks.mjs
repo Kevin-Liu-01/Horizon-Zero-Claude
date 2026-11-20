@@ -20,6 +20,10 @@
  *   --preview  with --run: also <id>-depth.png, the Node lens's view of the ground (to check it against the film)
  *
  * The masks live outside the repo (default <review>/masks/<run name>/); the region and headrooms are MASK_REGION below.
+ *
+ *   --region m3   (Milestone 3 wave 1, area A: the smallest change) the Malpais' region instead of the Holds': every
+ *                 cell whose dominant biome is the Malpais, at the headrooms of tools/frames/stagings/m3-world.mjs MASKS
+ *                 (its ground everywhere, the Yards' towers and stacks, the hornitos and their steam)
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -30,6 +34,7 @@ import { GRID } from '../../src/world/island/bake.js';
 import { siteById } from '../../src/world/island/sites.js';
 import { SCAR_LINE, FOOTPRINT, scarFrame } from '../../src/world/holds/blockout.js';
 import { REVIEW, assertOutsideRepo } from '../frames/paths.mjs';
+import { MASKS as M3_MASKS } from '../frames/stagings/m3-world.mjs';
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
 const args = process.argv.slice(2);
@@ -108,6 +113,27 @@ function regionGrid() {
   };
 }
 
+/* ---------------------------------------------------------------- the Malpais' region (--region m3) */
+function regionGridM3() {
+  const R = M3_MASKS.region, c = MASK_REGION.cell, half = 560, n = Math.round((2 * half) / c) + 1;
+  const head = new Float32Array(n * n), w = new Float64Array(6);
+  const yards = siteById(R.yards.site), horn = siteById(R.hornitos.site);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = -half + i * c, z = -half + j * c, k = j * n + i;
+    if (heightAt(x, z) <= 0) continue;
+    biomesAt(x, z, w);
+    let bi = 0; for (let b = 1; b < 6; b++) if (w[b] > w[bi]) bi = b;
+    if (bi === 2) head[k] = R.malpais;
+    if (yards && Math.hypot(x - yards.x, z - yards.z) <= R.yards.r) head[k] = Math.max(head[k], R.yards.headroom);
+    if (horn && Math.hypot(x - horn.x, z - horn.z) <= R.hornitos.r) head[k] = Math.max(head[k], R.hornitos.headroom);
+  }
+  return (x, z) => {
+    const i = Math.round((x + half) / c), j = Math.round((z + half) / c);
+    if (i < 0 || j < 0 || i >= n || j >= n) return 0;
+    return head[j * n + i];
+  };
+}
+
 /* ---------------------------------------------------------------- the rays */
 function rayDirs(probe, W, Hh) {
   const [qx, qy, qz, qw] = probe.quaternion;
@@ -163,7 +189,8 @@ async function build() {
   assertOutsideRepo(out, REPO);
   mkdirSync(out, { recursive: true });
   ensureMacro();
-  const ground = bakeGrid(heightAt), head = regionGrid();
+  const M3 = flag('--region') === 'm3';
+  const ground = bakeGrid(heightAt), head = M3 ? regionGridM3() : regionGrid();
   let groundBase = null;
   if (flag('--base')) {
     const base = await import(pathToFileURL(path.resolve(flag('--base'), 'src/world/island/recipe.js')).href);
@@ -171,7 +198,7 @@ async function build() {
     groundBase = bakeGrid(base.heightAt);
   }
   const vw = run.viewport?.width || 1600, vh = run.viewport?.height || 900, S = 4, w = vw / S, h = vh / S;
-  const manifest = { tool: 'tools/world/skyline-masks.mjs', run: path.basename(runDir), commit: run.commit, dirty: run.dirty, region: MASK_REGION, frames: {} };
+  const manifest = { tool: 'tools/world/skyline-masks.mjs', run: path.basename(runDir), commit: run.commit, dirty: run.dirty, region: M3 ? { m3: M3_MASKS.region } : MASK_REGION, frames: {} };
   for (const fr of run.frames) {
     const pr = fr.probe;
     if (!fr.ok || !pr || pr.error || (fr.repeat || 1) > 1) continue;

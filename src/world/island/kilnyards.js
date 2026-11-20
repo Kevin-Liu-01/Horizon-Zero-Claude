@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { patchAerial, patchDeck } from './aerial.js';
+import { YARDS, WELLHEADS, rackPosts } from '../sites/kilnyards-layout.js';
 
 /**
  * THE KILN YARDS' FAR FORM (M2 wave 4, area A, HG6; bible §3 Malpais: "the Kiln Yards: ruined geothermal plant: two
@@ -22,13 +23,20 @@ const TILE = new THREE.Color(0x55574f), TILE_DARK = new THREE.Color(0x3a3b37), B
   BRICK_SOOT = new THREE.Color(0x221d1b), STEEL = new THREE.Color(0x3d3f40), HEAD = new THREE.Color(0x2f2c2a);
 const GLOW = 0xf2ead3;
 
-/** Two tower stubs, four stacks, three racks, three wellheads: offsets (m) from the Yards' centre, engine x/z. */
-export const KILN_LAYOUT = Object.freeze({
-  towers: Object.freeze([{ dx: 14, dz: -18, r0: 11, r1: 7.6, h: 26 }, { dx: -17, dz: -5, r0: 9.6, r1: 6.8, h: 22.5 }]),
-  stacks: Object.freeze([{ dx: 4, dz: 13, r: 1.25, h: 29 }, { dx: -5, dz: 20, r: 1.05, h: 21 }, { dx: 21, dz: 9, r: 1.15, h: 25 }, { dx: 29, dz: 23, r: 0.95, h: 18 }]),
-  racks: Object.freeze([{ ax: -10, az: 8, bx: 22, bz: 14 }, { ax: 4, az: 13, bx: 9, bz: -10 }, { ax: 21, az: 9, bx: 29, bz: 23 }]),
-  wells: Object.freeze([{ dx: 7, dz: 9 }, { dx: 12, dz: 4 }, { dx: -2, dz: 12 }]),
-});
+/**
+ * The plant's layout (M3 wave 1: read from the wellheads seam, src/world/sites/kilnyards-layout.js, so the far form and
+ * the near form are one record: MP5 "the far form of F45 and the near form agree in count and place"). Offsets (m) from
+ * the Yards' site, engine x/z, as the far form has always built them. M2 drew three wellheads on the slope below the
+ * site; BUILD M3.3 and the bible say four, on the apron the island recipe now levels (src/world/sites/malpais-ground.js).
+ */
+export function kilnLayout(x, z) {
+  return Object.freeze({
+    towers: Object.freeze(YARDS.towers.map((t) => ({ dx: t.x - x, dz: t.z - z, r0: t.r0, r1: t.r1, h: t.h }))),
+    stacks: Object.freeze(YARDS.stacks.map((t) => ({ dx: t.x - x, dz: t.z - z, r: t.r, h: t.h }))),
+    racks: Object.freeze(YARDS.racks.map((r) => ({ id: r.id, ax: r.a.x - x, az: r.a.z - z, bx: r.b.x - x, bz: r.b.z - z }))),
+    wells: Object.freeze(WELLHEADS.map((w) => ({ dx: w.x - x, dz: w.z - z }))),
+  });
+}
 
 function paint(geo, colorAt) {
   const p = geo.attributes.position, n = p.count, c = new Float32Array(n * 3), col = new THREE.Color();
@@ -70,32 +78,38 @@ function stack({ r, h }) {
   return paint(geo, (x, y, z, c) => { c.copy(BRICK).lerp(BRICK_SOOT, THREE.MathUtils.smoothstep(y / h, 0.7, 1.0)); });
 }
 
-function rack({ ax, az, bx, bz }) {
-  const L = Math.hypot(bx - ax, bz - az), ang = Math.atan2(bz - az, bx - ax);
+/**
+ * A pipe rack between two ends, each end on its own ground (M3 wave 1: a rack runs from the apron up the cut to a tower,
+ * so it bends to the ground rather than standing at the mean of its ends): three pipes at 4.2-4.9 m over the line
+ * between the ends' grounds, and a post (0.35 x 1.6 m) at each of the seam's rack posts, standing on its own ground up
+ * to the pipes.
+ */
+function rack(r, x, z, ground) {
+  const A = { x: x + r.ax, z: z + r.az }, B = { x: x + r.bx, z: z + r.bz };
+  const ga = ground(A.x, A.z), gb = ground(B.x, B.z);
+  const L = Math.hypot(B.x - A.x, B.z - A.z), ang = Math.atan2(B.z - A.z, B.x - A.x), slope = Math.atan2(gb - ga, L);
   const parts = [];
-  const pipe = new THREE.CylinderGeometry(0.35, 0.35, L, 6, 1, true);
+  const Ls = Math.hypot(L, gb - ga);
+  const pipe = new THREE.CylinderGeometry(0.35, 0.35, Ls, 6, 1, true);
   pipe.rotateZ(Math.PI / 2);
-  for (const [oy, oz] of [[4.2, -0.5], [4.2, 0.5], [4.9, 0]]) { const g = pipe.clone(); g.translate(L / 2, oy, oz); parts.push(g); }
-  const posts = Math.max(2, Math.round(L / 7));
-  for (let i = 0; i <= posts; i++) { const g = new THREE.BoxGeometry(0.35, 4.4, 1.6); g.translate((i / posts) * L, 2.2, 0); parts.push(g); }
-  const geo = mergeGeometries(parts.map((g) => g.toNonIndexed()));
-  geo.rotateY(-ang);
-  geo.translate(ax, 0, az);
-  return paint(geo, (x, y, z, c) => c.copy(STEEL));
+  for (const [oy, oz] of [[4.2, -0.5], [4.2, 0.5], [4.9, 0]]) {
+    const g = pipe.clone(); g.translate(Ls / 2, 0, oz); g.rotateZ(slope); g.translate(0, oy, 0); g.rotateY(-ang); g.translate(A.x, ga, A.z); parts.push(g.toNonIndexed());
+  }
+  for (const p of rackPosts().filter((q) => q.rack === r.id)) {
+    const t = Math.min(1, Math.max(0, ((p.x - A.x) * (B.x - A.x) + (p.z - A.z) * (B.z - A.z)) / (L * L)));
+    const top = ga + (gb - ga) * t + 4.4, g0 = ground(p.x, p.z) - 0.3, hgt = Math.max(0.5, top - g0);
+    const g = new THREE.BoxGeometry(0.35, hgt, 1.6); g.translate(0, hgt / 2, 0); g.rotateY(-ang); g.translate(p.x, g0, p.z); parts.push(g.toNonIndexed());
+  }
+  const geo = mergeGeometries(parts);
+  return paint(geo, (px, py, pz, c) => c.copy(STEEL));
 }
 
 export function buildKilnYards({ x, z, ground = () => 0 }) {
-  const L = KILN_LAYOUT, parts = [], glow = [];
+  const L = kilnLayout(x, z), parts = [], glow = [];
   const at = (g, dx, dz, sink = 0.6) => { g.translate(x + dx, ground(x + dx, z + dz) - sink, z + dz); return g; };
   L.towers.forEach((t, i) => parts.push(at(towerStub(t, i * 1.7 + 0.4).toNonIndexed(), t.dx, t.dz, 1.2)));
   L.stacks.forEach((s) => parts.push(at(stack(s).toNonIndexed(), s.dx, s.dz)));
-  // a rack's ends stand on the ground under each end (the average: the far form does not bend)
-  L.racks.forEach((r) => {
-    const g = rack({ ax: 0, az: 0, bx: r.bx - r.ax, bz: r.bz - r.az });
-    const y = (ground(x + r.ax, z + r.az) + ground(x + r.bx, z + r.bz)) / 2;
-    g.translate(x + r.ax, y - 0.3, z + r.az);
-    parts.push(g);
-  });
+  L.racks.forEach((r) => parts.push(rack(r, x, z, ground)));
   L.wells.forEach((w) => {
     const body = paint(new THREE.CylinderGeometry(0.75, 0.95, 1.6, 10), (a, b, c2, c) => c.copy(HEAD));
     body.translate(0, 0.8, 0);

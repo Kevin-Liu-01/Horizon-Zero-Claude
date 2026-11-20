@@ -25,6 +25,8 @@
  * stands in, so nothing crashes; the gates then report the island as missing.
  */
 import * as Island from '../island/sites.js';
+import { BENCH_B5 } from './kilnyards-layout.js';
+import { BENCH_B6 } from './malpais-layout.js';
 
 /** The island scale (world-ground's ISLAND_SCALE through its site records), 1 on the stub. */
 const S = (() => {
@@ -144,8 +146,11 @@ export const BENCHMARKS = [
   { id: 'bm-02', name: 'Jameo benchmark', region: 'jameo', biome: 'holds', x: 87, z: 147, r: 14 },
   { id: 'bm-03', name: 'Beach benchmark', region: 'black-sand-beach', biome: 'pans', x: -211, z: 397, r: 5 },
   { id: 'bm-04', name: 'Glass benchmark', region: 'the-glass', biome: 'pans', x: -365, z: 140, r: 5 },
-  { id: 'bm-05', name: 'Kiln Yards benchmark', region: 'kiln-yards', biome: 'malpais', x: 204, z: 3, r: 14 },
-  { id: 'bm-06', name: 'Hornito benchmark', region: 'hornito-field', biome: 'malpais', x: 296, z: 201, r: 14 },
+  // M3 wave 1 (area A, MP0): B5 and B6 at bible §3.4's places, snapped (src/world/sites/kilnyards-layout.js BENCH_B5: onto
+  // the Yards' apron, 7.3 m from the plan's (226, -36); malpais-layout.js BENCH_B6: off Rust Cone's 48 deg south foot onto
+  // the hornito field's lava flat, 16 m from (268, -180)). They stood at (204, -3) and (296, -201)
+  { id: 'bm-05', name: 'Kiln Yards benchmark', region: 'kiln-yards', biome: 'malpais', x: BENCH_B5.x, z: BENCH_B5.z, r: 0.6 },
+  { id: 'bm-06', name: 'Hornito benchmark', region: 'hornito-field', biome: 'malpais', x: BENCH_B6.x, z: BENCH_B6.z, r: 0.6 },
   { id: 'bm-07', name: 'Mistfold benchmark', region: 'mistfold', biome: 'cloudline', x: 212, z: -260, r: 14 },
   { id: 'bm-08', name: 'Cloudline benchmark', region: 'fog-harp', biome: 'cloudline', x: 120, z: -215, r: 14 },
   { id: 'bm-09', name: 'Pinned Cliff benchmark', region: 'pinned-cliff', biome: 'flank', x: -205, z: -100, r: 14 },
