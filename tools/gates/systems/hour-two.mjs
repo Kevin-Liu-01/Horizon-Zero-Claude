@@ -50,6 +50,8 @@ import { fixture } from './hour-two-fixtures.mjs';
 import * as SH from './slice-hour.mjs';
 import { DRIVE4 } from '../kite/glass-line-drive.mjs';   // (M3 wave 3, area B: leg 4's drivers, the smallest change)
 import { WELLHEADS, apronPoint } from '../../../src/world/sites/kilnyards-layout.js';
+import { walkRoute } from '../../../src/game/hour2/walk-route.js';
+import { heightAt } from '../../../src/world/island/recipe.js';
 import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, LEG_CAP_S, beatsOfLeg } from '../../../src/game/hour2/plan.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -164,20 +166,52 @@ async function castAt(page, K, id) {
   return { aim, landed: !!landed };
 }
 
+/**
+ * A long walk along a walkable line over the island's ground (src/game/hour2/walk-route.js on the recipe's heights, no
+ * step over 26 deg), one waypoint at a time with W held and the look turned to each; a waypoint she stalls on is tried
+ * once more on the game's nav grid. `via` are points walked first (Ninewalls' road). Run 20261120T202939Z-3f3c32e: the
+ * nav walk from the fishing hut stopped against Ninewalls' outer wall and the straight climb 104 m short on the shelf.
+ */
+async function walkLong(page, K, target, radius, maxS, via = []) {
+  const t0 = Date.now(), left = () => maxS - (Date.now() - t0) / 1000, legs = [];
+  const go = async (pts, r) => {
+    for (let i = 0; i < pts.length; i++) {
+      if (left() <= 0) return false;
+      const last = i === pts.length - 1;
+      let w = await SH.walkTo(page, K, pts[i], last ? r : 2.5, { maxS: Math.min(30, left()) });
+      if (!w.ok && !w.interrupted) w = await SH.walkPath(page, K, pts[i], last ? r : 3, { maxS: Math.min(30, left()) });
+      if (!w.ok && !w.interrupted) { legs.push({ at: pts[i], why: w.why ?? null }); if (last) return false; }
+    }
+    return true;
+  };
+  for (const v of via) await go([v], 3);
+  const p = (await page.evaluate(yardsNow)).p;
+  const pts = walkRoute(heightAt, p, target) || [target];
+  const ok = await go(pts.slice(1), radius);
+  const at = (await page.evaluate(yardsNow)).p;
+  return { ok: ok && Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5, at, waypoints: pts.length, stalls: legs.slice(0, 4), s: +((Date.now() - t0) / 1000).toFixed(1) };
+}
+
 const DRIVE = {
   'oro-yards': async (page, K, b, maxS) => {
     const A = await page.evaluate(() => window.__CTX__.systemsGame?.A?.oro ?? null);
     if (!A) return { ok: false, why: 'no Oro anchor (systemsGame.A.oro)' };
-    const w = await SH.walkPath(page, K, A, 2.4, { maxS });
+    // Ninewalls' own road into the village when it publishes one (settlements.ninewalls.road, [x, z, h]), its far end first
+    const road = await page.evaluate(() => { const R = window.__CTX__.settlements?.ninewalls?.road; return Array.isArray(R) && R.length > 1 ? R.map((q) => ({ x: q[0], z: q[1] })) : []; });
+    const P = (await page.evaluate(yardsNow)).p;
+    const ends = road.length ? [road[0], road.at(-1)].sort((u, v) => Math.hypot(u.x - P.x, u.z - P.z) - Math.hypot(v.x - P.x, v.z - P.z)) : [];
+    const along = road.length && Math.hypot(ends[0].x - road[0].x, ends[0].z - road[0].z) < 1e-6 ? road : road.slice().reverse();
+    const thinned = along.filter((q, i) => i % 3 === 0 || i === along.length - 1);
+    const w = await walkLong(page, K, A, 2.4, maxS, thinned);
     await sleep(300);
     await SH.holdE(page, K, 500);
     await sleep(500);
     const played = await SH.playScene(page, K, 60);
-    return { walk: { ok: w.ok, why: w.why ?? null, d: w.d ?? null }, played };
+    return { walk: w, road: road.length, played };
   },
   climb: async (page, K, b, maxS) => {
-    const w = await SH.walkPath(page, K, YARDS_SW, 3, { maxS });
-    return { walk: { ok: w.ok, why: w.why ?? null, d: w.d ?? null }, at: (await page.evaluate(yardsNow)).p };
+    const w = await walkLong(page, K, YARDS_SW, 3, maxS);
+    return { walk: w };
   },
   plugged: async (page, K, b, maxS) => {
     const t0 = Date.now(), tries = [];
