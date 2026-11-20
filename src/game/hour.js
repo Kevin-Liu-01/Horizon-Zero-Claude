@@ -48,6 +48,8 @@ const LEE_HOLD_S = 0.5;
 const HERD_N = 5;
 /** C5: the seconds between the herd's Tillers standing up (five in 1 s; see _spawn). */
 const HERD_STEP_S = 0.2;
+/** (M2 fix wave 2) How far past its line's half-length a herd member chases her before it walks back (_herdLeash). */
+export const HERD_LEASH_M = 30;
 const LOOKER_STATIONS = Object.freeze([{ b: 110, r: 27 }, { b: 180, r: 27 }, { b: 250, r: 27 }]);
 /**
  * THE TERRACE PLUMB'S READING (M2 fix wave, area E, HR1/HR8: the terrace beat survivable for a careful player). At
@@ -342,6 +344,21 @@ export class FirstHour {
   /** What a running stage stands up (its own spawn, or what an earlier stage stood up that it still fights). */
   _standsFor(stage) { return stage ? (stage.spawn ?? STANDS_FOR[stage.id] ?? null) : null; }
 
+  /**
+   * (M2 fix wave 2, HR8) THE HERD'S LEASH. A member that turns on her (she stood on its bearing, or struck it) gives up
+   * the chase HERD_LEASH_M past the half-length of its own line, measured from the line's middle (engage.js leashed():
+   * territory.r + cfg.leash; the kind's table leaves 150 m), and walks back to its file. At 13030d5 chained run 3 two
+   * Tillers that turned on her by the terrace followed her 110 m into Ninewalls and shoved and burst her from 80 hp to 0
+   * in 8 s beside Oro (7 blows); at 2944784 run 2 one did the same at the terrace (100 hp in 23 s). A grazing herd
+   * defends its line; it does not hunt her through a village. The terrace (75 m from the line's middle) is still inside.
+   */
+  _herdLeash(m, a, b) {
+    const L = Math.hypot(b.x - a.x, b.z - a.z);
+    m.territory = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, r: L / 2 };
+    const E = m.ai?.engage;
+    if (E?.cfg) E.cfg = Object.freeze({ ...E.cfg, leash: HERD_LEASH_M });
+  }
+
   _near(kind, at, r) {
     return this._live(this.ctx.machines?.list).filter((m) => m.kind === kind && Math.hypot(m.position.x - at.x, m.position.z - at.z) <= r);
   }
@@ -374,6 +391,7 @@ export class FirstHour {
           this._herdQ.push(() => {
             const m = M.spawn('tiller', x, z, { herd, heading, route: [vec3(x, 0, z), vec3(b.x, 0, b.z)] });
             if (!m) return;
+            this._herdLeash(m, a, b);
             M.squads?.join?.(m, herd, 'herd');
             this.sys.siteRefill?.own(m, SCAR_ID);
             this.spawned.herd.push(m);
