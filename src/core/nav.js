@@ -698,13 +698,15 @@ const WDC = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
  * re-routes to a mark behind the herd, across the village's walls, held one frame for 20-27 ms about once a second on the
  * walk into the Holds (first-hour leg 2, run hh-c5-865e8c6; up to 91,000 cells in Node). Every search of WALK_EXACT_EXP
  * cells or fewer is the search it was, cell for cell (every Saltrow route the routines' Node row draws: 24,092 at most).
- * A grid's landmarks are only made once one of its searches has needed them, a few cells' worth at a time in
- * `Nav.update()` (WALK_LM_SLICE_MS a call), and again after each build; until they stand, the long search runs to its end
- * as before. tools/perf/walk-path-bench.mjs measures both.
+ * A grid's landmarks are made a few cells' worth at a time in `Nav.update()` (WALK_LM_SLICE_MS a call) from its build on
+ * when it has WALK_LM_MIN_CELLS cells or more, else once one of its searches has needed them, and again after each build;
+ * until they stand, the long search runs on to its end exactly as before. tools/perf/walk-path-bench.mjs measures both.
  */
 const WALK_EXACT_EXP = 32000;
 const WALK_LANDMARKS = 6;
 const WALK_LM_SLICE_MS = 1.0;
+/** A grid this large wants its landmarks from its build on (Ninewalls' 135,529 cells; Saltrow's 91,089 waits for a long search). */
+const WALK_LM_MIN_CELLS = 120000;
 
 /** Squared 2D distance from point (px, pz) to the triangle a b c (0 inside). */
 function triDist2(px, pz, ax, az, bx, bz, cx, cz) {
@@ -826,6 +828,7 @@ export class WalkGrid {
     this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
     // landmarks measured on the grid before are not this grid's: made again (when wanted) from the next tick
     this._lm = null;
+    if (this.open.length >= WALK_LM_MIN_CELLS) this._lmWanted = true;
     return this;
   }
 
@@ -957,22 +960,28 @@ export class WalkGrid {
    * took 20-27 ms in one frame about once a second on the walk into the Holds (first-hour leg 2, run hh-c5-865e8c6), up to
    * 91,000 cells in Node; tools/perf/walk-path-bench.mjs replays those routes and checks every path is unchanged.
    */
-  _search(start, goal, maxExp) {
+  _search(start, goal, maxExp, resume = false) {
     const nx = this.nx, nz = this.nz, open = this.open;
     if (this._alt) return this._searchAlt(start, goal, maxExp);
-    const visit = ++this._visit, g = this._g, fr = this._from, seen = this._seen, closed = this._closed;
+    const g = this._g, fr = this._from, seen = this._seen, closed = this._closed;
     const H = this._heap, hs = H.score, hn = H.node, cap = H.cap;
     const gx = goal % nx, gz = (goal / nx) | 0;
     const R2 = 0.41421356;
-    let n = 0;
-    // push(score, node), sift up (Heap.push)
-    let dx0 = Math.abs((start % nx) - gx), dz0 = Math.abs(((start / nx) | 0) - gz);
-    seen[start] = visit; g[start] = 0; fr[start] = -1;
-    hs[0] = dx0 > dz0 ? dx0 + R2 * dz0 : dz0 + R2 * dx0; hn[0] = start; n = 1;
-    let exp = 0, found = false;
-    while (n > 0) {
+    let visit, n, exp, pend;
+    if (resume) { visit = this._visit; n = H.n; exp = this._exp; pend = this._pend; }
+    else {
+      visit = ++this._visit; exp = 0; pend = -1;
+      const dx0 = Math.abs((start % nx) - gx), dz0 = Math.abs(((start / nx) | 0) - gz);
+      seen[start] = visit; g[start] = 0; fr[start] = -1;
+      hs[0] = dx0 > dz0 ? dx0 + R2 * dz0 : dz0 + R2 * dx0; hn[0] = start; n = 1;
+    }
+    this._pend = -1;
+    let found = false;
+    while (n > 0 || pend >= 0) {
+      let cur;
+      if (pend >= 0) { cur = pend; pend = -1; } else {
       // pop (Heap.pop)
-      const cur = hn[0];
+      cur = hn[0];
       n--;
       if (n > 0) {
         hs[0] = hs[n]; hn[0] = hn[n];
@@ -991,8 +1000,11 @@ export class WalkGrid {
       }
       if (cur === goal) { found = true; break; }
       if (closed[cur] === visit) continue;
+      }
+      // the budget: this cell waits, popped, for a resume (the search then runs on exactly as one unbroken search would)
+      if (exp >= maxExp) { this._pend = cur; break; }
       closed[cur] = visit;
-      if (++exp > maxExp) break;
+      exp++;
       const cx = cur % nx, cz = (cur / nx) | 0, gc = g[cur];
       for (let d = 0; d < 8; d++) {
         const ax = cx + WDX[d], az = cz + WDZ[d];
@@ -1183,13 +1195,13 @@ export class WalkGrid {
     { const comp = this._components(); if (comp[start] !== comp[goal]) { this.stats.misses++; this.stats.partMisses = (this.stats.partMisses || 0) + 1; return null; } }
     const exact = Math.min(maxExp, WALK_EXACT_EXP);
     let found = this._search(start, goal, exact), exp = this._exp;
-    if (!found && exp > exact && exact < maxExp) {
+    if (!found && this._pend >= 0 && exact < maxExp) {
       // a long way: with the landmarks when they stand (the cheapest path, a fraction of the cells), else the search runs on
-      // to its end as it did. Either way the grid wants landmarks from now on.
+      // from where it stopped to its end, as it always did. Either way the grid wants landmarks from now on.
       this._lmWanted = true;
       const lm = this._lm && this._lm.ready ? this._lm : null;
       if (lm) { this._alt = lm; try { found = this._search(start, goal, maxExp); } finally { this._alt = null; } exp += this._exp; this.stats.alt = (this.stats.alt || 0) + 1; }
-      else { found = this._search(start, goal, maxExp); exp += this._exp; this.stats.long = (this.stats.long || 0) + 1; }
+      else { found = this._search(start, goal, maxExp, true); exp = this._exp; this.stats.long = (this.stats.long || 0) + 1; }
     }
     this.stats.lastExp = exp;
     if (!found) { this.stats.misses++; return null; }
