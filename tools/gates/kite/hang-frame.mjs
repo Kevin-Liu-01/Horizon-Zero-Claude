@@ -50,7 +50,8 @@ const HANG_ON = async () => {
   const { buildGreyKite, placeAtBar } = await import('/src/entities/anim/kite/greyKite.js');
   const K = buildGreyKite();
   const root = an.space?.root || p.model;
-  C.scene.add(K.group);
+  // parented to the hang pose's own frame (the bar is given in it), so the kite rides with her model
+  root.add(K.group);
   const info = an.hangPoseInfo();
   placeAtBar(K.group, root, info.bar);
   window.__KITE_BLOCKOUT__ = K.group;
@@ -64,7 +65,11 @@ const HANG_ON = async () => {
     const w = wp(b[`hand${s}`].bone), e = wp(b[`loArm${s}`].bone), sh = wp(b[`upArm${s}`].bone);
     return { wristFrontOfHeadM: +new V().subVectors(w, head).dot(fwd).toFixed(3), wristBelowHeadBoneM: +(head.y - w.y).toFixed(3), elbowOverShoulderM: +(e.y - sh.y).toFixed(3) };
   };
-  return { L: side('L'), R: side('R'), bar: info, kiteTris: K.triangles, hang: !!an._hangOn };
+  const r2 = (v) => [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
+  const kw = K.group.getWorldPosition(new V()), rw = root.getWorldPosition(new V()), rs = root.getWorldScale(new V());
+  let inScene = false; for (let o = K.group; o; o = o.parent) if (o === C.scene) inScene = true;
+  return { L: side('L'), R: side('R'), bar: info, kiteTris: K.triangles, hang: !!an._hangOn,
+    where: { kite: r2(kw), root: r2(rw), rootScale: r2(rs), rootName: root.name || root.type, player: r2(p.position), head: r2(head), inScene, visible: K.mesh.visible, cam: r2(C.camera.position) } };
 };
 const HANG_OFF = () => {
   const C = window.__CTX__;
@@ -124,7 +129,7 @@ try {
       const file = `${L.id}.png`;
       writeFileSync(path.join(runDir, file), await page.screenshot({ type: 'png' }));
       out.shots.push({ id: L.id, file, read, camera: staged.camera, standIns: staged.standIns || [] });
-      log(`${L.id}: ${JSON.stringify(read.L)} ${JSON.stringify(read.R)}`);
+      log(`${L.id}: ${JSON.stringify(read.L)} ${JSON.stringify(read.R)} ${JSON.stringify(read.where)}`);
       await page.evaluate(HANG_OFF);
       await page.evaluate(unstageFrame);
     } catch (e) { out.shots.push({ id: L.id, error: String(e?.message || e).slice(0, 300) }); try { await page.evaluate(HANG_OFF); await page.evaluate(unstageFrame); } catch { /* */ } }
