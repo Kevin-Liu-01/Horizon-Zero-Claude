@@ -22,7 +22,7 @@ const KIND = new Map([
   ...[HOLDS.wood, PAN.wood].map((h) => [U(h), 'wood']),
 ]);
 /** A dyed cloth (not the undyed wool and linen): it carries the tick line along its open edges. */
-const DYED = new Set([HOLDS.rust, HOLDS.rustDeep, HOLDS.carmine, HOLDS.carmineStain, HOLDS.olive, HOLDS.violet, HOLDS.violetDeep, HOLDS.lapilli].map(U));
+const DYED = new Set([HOLDS.rust, HOLDS.rustDeep, HOLDS.carmine, HOLDS.carmineStain, HOLDS.olive, HOLDS.violet, HOLDS.violetDeep, HOLDS.lapilli, HOLDS.madder, HOLDS.cochineal, HOLDS.charcoal].map(U));
 const GOLD = hexRGB('#B8914A'), GOLD_DEEP = hexRGB('#8A5D1E'), ASH = [138, 134, 126];
 
 const kindOf = (pc) => (pc.dyeHex ? KIND.get(U(pc.dyeHex)) || 'cloth' : 'cloth');

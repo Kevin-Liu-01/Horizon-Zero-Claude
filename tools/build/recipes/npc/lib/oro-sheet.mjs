@@ -10,8 +10,11 @@
  *                         gold-ochre graduated-tick line, a row of embroidered crescents across the back
  *   apron                 heavy oiled leather: scorched toward the hem, spatter burns, soot where his hands wipe at the hip,
  *                         a saddle stitch round every edge, the cut edges burnished; a bib pocket of paler leather
- *   sash                  the Holds' carmine wool, faded, its edges couched with the tick line; the hanging end carries a
- *                         row of crescents and a fringed tip
+ *   sash                  the Holds' carmine wool, faded, its edges couched with the tick line; round the waist a row of
+ *                         filled gold crescents, horns up, each 2.8 cm across with a dark couched rim (polish 2: the motif
+ *                         read at the dialogue distance, a 2 m portrait; the band carried only the tick line and the
+ *                         crescents sat on the end the apron hides); the hanging end carries a row of crescents and a
+ *                         fringed tip
  *   belt, straps, pouch   dark leather: stitched edges, burnished cuts, holes by the buckle
  *   iron                  buckles, rivets, the hammer's head, the tongs, the pocket's tools: dark, rust in the low places
  *   trousers, boots       dark wool with a patched left knee, ash risen from the ground; dark leather boots scuffed pale
@@ -189,12 +192,33 @@ function belt(t, o) {
   }
 }
 
+/**
+ * The sash's crescent row (polish 2): round the waist (the ring of outfits.mjs waistTie at SASH.y, its centre SASH.cz behind
+ * the origin), one each SASH.per m of arc, centred in the band; a gold disc less a disc lifted half its radius (horns up),
+ * filled in satin stitch, outlined in a dark couched thread so it reads against the carmine at a few metres.
+ */
+const SASH = { y: 1.06, cz: -0.012, R: 0.165, per: 0.062, r: 0.014, rim: 0.0016 };
+function sashCrescent(t, o) {
+  // (the arc's spacing on a nominal radius; the crescent's own width on the band's radius there, so it is round over the apron too)
+  const th = Math.atan2(t.X, t.Z - SASH.cz), k = Math.round(th * SASH.R / SASH.per);
+  const x = (th - k * SASH.per / SASH.R) * Math.hypot(t.X, t.Z - SASH.cz), y = t.Y - SASH.y;
+  const r = SASH.r, r1 = Math.hypot(x, y + 0.001), r2 = Math.hypot(x, y - r * 0.5);
+  const inA = r1 < r, outB = r2 > r * 0.8;
+  if (inA && outB) {
+    const rimD = Math.min(r - r1, r2 - r * 0.8);
+    if (rimD < SASH.rim) { over(o, [58, 22, 18], 0.9); o.h -= 0.0003; }
+    else { const st = 0.9 + 0.1 * Math.sin((x + y) * Math.PI * 2 / 0.0014); over(o, [C.gold[0] * st * 1.08, C.gold[1] * st * 1.06, C.gold[2] * st], 0.95); o.h += 0.0005; o.rough = mix(o.rough, 0.55, 1); }
+    o.det = 0.2;
+  } else if (r1 < r + SASH.rim && r2 > r * 0.8 - SASH.rim) { over(o, [58, 22, 18], 0.75); }
+}
+
 function sash(t, o) {
   wool(t, o, C.carmine, { seed: 61, mottle: 0.16, streak: 0.08 });
   // faded a little where it faces up and the sun takes it
   over(o, [150, 92, 88], 0.14 * sstep(0.1, 0.9, t.ny));
   const e = t.edge();
   ticks(t, o, e, { d0: 0.0085, per: 0.0075, long: 5, short: 0.004, longL: 0.007, w: 0.001, col: C.gold });
+  sashCrescent(t, o);
   fray(t, o, e, { reach: 0.004, pale: [176, 110, 100] });
   dust(t, o, { col: C.ash, from: 0, to: 0, k: 0, up: 0.16, seed: 62 });
   soot(t, o, () => 0.4, { col: [46, 26, 26], k: 0.35, seed: 64 });
@@ -206,7 +230,7 @@ function sashEnd(t, o) {
   if (e && Math.abs(e.ty) > 0.55) {
     // along its long edges: the tick line; down its middle: crescents
     ticks(t, o, e, { d0: 0.009, per: 0.0075, long: 5, short: 0.004, longL: 0.007, w: 0.001, col: C.gold });
-    crescents(t, o, e, { d: 0.032, per: 0.05, r: 0.0095, w: 0.001, col: C.gold, a: 0.85 });
+    crescents(t, o, e, { d: 0.032, per: 0.05, r: 0.0095, w: 0.001, col: C.gold, a: 0.85, fill: 0.85 });
   } else if (e && e.d < 0.028) {
     // the tip: a fringe of loose threads over a darker shadow between them
     const f = (e.s / 0.0032) % 1;

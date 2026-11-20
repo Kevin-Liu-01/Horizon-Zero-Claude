@@ -155,7 +155,9 @@ function cuffs(ctx, geo, xCut, dye) {
 function holdsHat(ctx) {
   if (ctx.spec?.hat !== 'palm') return;
   const [top, under] = P.palmHat({ joint: ctx.J.Head, uv: ctx.uvOf('palm'), rBrim: 0.215, crownH: 0.09 });
-  ctx.add(top, { dye: HOLDS.wicker, noHide: true }); ctx.add(under, { dye: HOLDS.wicker, noHide: true, shade: 0.8 });
+  // (polish 2: `spec.hatDye`, the brim pressed from the Holds' dark felt; the pale plait is the Pans' and read as one of theirs)
+  const dye = ctx.spec.hatDye || HOLDS.wicker;
+  ctx.add(top, { dye, noHide: true }); ctx.add(under, { dye, noHide: true, shade: 0.8 });
 }
 
 /* ================================================================= outfits */
@@ -383,15 +385,16 @@ export const OUTFITS = {
   follower: {
     sheet: { family: 'Ranger', painters: KIT_PAINTERS, maps: 256, density: { Male_Ranger_Feet_Boots: 0.7 } },
     parts: [
-      { part: 'Male_Ranger_Arms', dye: HOLDS.wool, target: 1500, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.wool },
+      // (polish 2: the tunic the madder rust, faded, a youth's hand-me-down; it was the pale oatmeal wool that read as Pan linen)
+      { part: 'Male_Ranger_Arms', dye: HOLDS.madder, target: 1500, dropMat: /Regular/, cutX: 0.665, cuff: HOLDS.madder },
       { part: 'Male_Ranger_Legs', dye: HOLDS.woolDark, target: 900 },
       { part: 'Male_Ranger_Feet_Boots', dye: HOLDS.leather, target: 1500 },
     ],
     legsHiddenFrom: 0.62,
     pieces(ctx) {
       // the tunic: shoulders to mid-thigh, full, no form
-      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('panelC'), rows: 6, seg: 26, phi0: 66, phiFB: 8, phiSide: 24, lift: 0.012 }), { dye: HOLDS.wool, hide: true });
-      ctx.add(P.skirt({ grid: ctx.trunkGrid(), J: ctx.J, y0: 1.37, y1: 0.68, rHem: 0.25, uv: ctx.rectUV('panelA'), rows: 10, seg: 34, rFloor: 0.17, rMax: 0.235, amp: 0.008, depth: 0.012, lift: 0.015, follow: 0.26, cz: -0.015, pleats: 7, hem: 0.0035, skin: P.smockSkin(ctx.J, { waist: 1.02, follow: 0.26, y1: 0.68 }) }), { dye: HOLDS.wool, hide: true });
+      ctx.add(P.capelet({ grid: ctx.grid(), skinNear: ctx.skinNear, uv: ctx.rectUV('panelC'), rows: 6, seg: 26, phi0: 66, phiFB: 8, phiSide: 24, lift: 0.012 }), { dye: HOLDS.madder, hide: true });
+      ctx.add(P.skirt({ grid: ctx.trunkGrid(), J: ctx.J, y0: 1.37, y1: 0.68, rHem: 0.25, uv: ctx.rectUV('panelA'), rows: 10, seg: 34, rFloor: 0.17, rMax: 0.235, amp: 0.008, depth: 0.012, lift: 0.015, follow: 0.26, cz: -0.015, pleats: 7, hem: 0.0035, skin: P.smockSkin(ctx.J, { waist: 1.02, follow: 0.26, y1: 0.68 }) }), { dye: HOLDS.madder, hide: true });
       belt(ctx, { y: 1.02, dye: HOLDS.rust, swatch: 'rope', buckle: false, h: 0.03 });
       // the bag at the left hip on a chain, its strap over the right shoulder
       const pts = [[0.2, 0.98, 0.05], [0.215, 0.9, 0.06], [0.22, 0.82, 0.06]];
@@ -406,7 +409,8 @@ export const OUTFITS = {
   picker: {
     sheet: { family: 'Ranger', painters: KIT_PAINTERS, maps: 256, density: { Female_Ranger_Feet: 0.75 } },
     parts: [
-      { part: 'Female_Ranger_Body', dye: HOLDS.wool, target: 1600 },
+      // (polish 2: her top the cochineal she picks, dyed in the yard; it was the pale oatmeal wool that read as Pan linen)
+      { part: 'Female_Ranger_Body', dye: HOLDS.cochineal, target: 1600 },
       { part: 'Female_Ranger_Body_Belt', from: 'Female_Ranger_Body', meshes: /Belt/, dye: HOLDS.leatherDark, target: 500 },
       { part: 'Female_Ranger_Arms', dye: HOLDS.woolDark, target: 1300, cutX: 0.40, cuff: HOLDS.woolDark, dropMat: /Regular/ },
       { part: 'Female_Ranger_Feet', dye: HOLDS.leather, target: 1500, cutTop: 0.3 },
@@ -422,7 +426,8 @@ export const OUTFITS = {
         const blot = smooth(0.42, 0.68, noise3(p[0] * 26 + 3, p[1] * 26, 2.5));
         return Math.min(1, (0.85 * wipe + 0.75 * drag) * (0.45 + 0.75 * blot) + 0.18 * blot);
       };
-      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: '#B9AC93', swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 12, cols: 17, foldN: 3.5, foldAmp: 0.012, hemWave: 0.002, hem: 0.0035, stain: { hex: HOLDS.carmineStain, at: stainAt } });
+      // (polish 2: the ash fleece, not the pale oatmeal: at F36 the apron was the whitest thing on her and she read as a Pan)
+      apron(ctx, { y0: 1.25, y1: 0.46, wTop: 0.13, wBot: 0.2, dye: HOLDS.apronWool, swatch: 'panelC', chainKey: 'apron', lift: 0.022, rows: 12, cols: 17, foldN: 3.5, foldAmp: 0.012, hemWave: 0.002, hem: 0.0035, stain: { hex: HOLDS.carmineStain, at: stainAt } });
       for (const s of [1, -1]) strapBuckled(ctx, [[s * 0.11, 1.25, frontZ(ctx, s * 0.11, 1.25) + 0.024], [s * 0.1, 1.38, 0.1], [s * 0.09, 1.47, 0.0], [s * 0.1, 1.38, -0.12], [s * 0.12, 1.12, -0.13]], { width: 0.022, dye: HOLDS.leatherDark, metal: HOLDS.brass, bu: 0.18, along: 14 });
       waistTie(ctx, { y: 1.04, dye: HOLDS.carmine });
       // a stain gourd on her hip
@@ -439,7 +444,7 @@ export const OUTFITS = {
   oro: {
     // (M2 polish, the review: "flat blocks of colour"): the same pieces on a 1024² sheet of his own, painted (lib/oro-sheet.mjs)
     // (texels where they are seen: the shirt's body is under the vest and the bib, the iron is small and dark)
-    sheet: { family: 'Ranger', painters: ORO_PAINTERS, density: { shirt: 0.55, boots: 0.8, iron: 0.6, handle: 0.7, apron: 1.2, apronHem: 0.8, sash: 1.25, sashEnd: 1.3, sashKnot: 0.9, vest: 1.1, pocket: 1.25, belt: 1.15, strap: 1.1, cuff: 1.0 } },
+    sheet: { family: 'Ranger', painters: ORO_PAINTERS, density: { shirt: 0.55, boots: 0.8, iron: 0.6, handle: 0.7, apron: 1.2, apronHem: 0.8, sash: 1.9, sashEnd: 1.3, sashKnot: 0.9, vest: 1.1, pocket: 1.25, belt: 1.15, strap: 1.1, cuff: 1.0 } },
     parts: [
       // (the shirt tucked in: its tail off under the belt; at 1a's film it hung pale to the knee beside the apron and read as a pale
       // trouser leg)

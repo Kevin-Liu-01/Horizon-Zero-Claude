@@ -19,7 +19,13 @@
  * cut that variant by bible §8.9's fallback: it is a young adult farmhand now (its row says why).
  */
 export const PAN = { orchil: '#6B3F73', orchilDeep: '#4F2A5C', orchilNight: '#3A2146', linen: '#D9CFBA', linenDirty: '#BFB29B', salt: '#E4E0D6', brass: '#B08A45', carmine: '#A3213A', basalt: '#4A4A50', esparto: '#B59A62', tar: '#17151A', palm: '#C2A566', leather: '#5C3D29', lapilli: '#1C1B1E', wood: '#6E5238', iron: '#3C3A3C' };
-export const HOLDS = { lapilli: '#1C1B1E', rust: '#8E3B23', rustDeep: '#6A2A1A', wool: '#BDB19A', woolDark: '#7C7262', olive: '#5E5B38', leather: '#4B3122', leatherDark: '#2F2018', mica: '#8D8267', carmine: '#A3213A', carmineStain: '#7A1A2C', brass: '#A07A3F', wood: '#5D4530', iron: '#343236', wicker: '#9A7F52', seed: '#9D9A68', violet: '#5B2F6B', violetDeep: '#41204E', ash: '#8E8A82' };
+export const HOLDS = { lapilli: '#1C1B1E', rust: '#8E3B23', rustDeep: '#6A2A1A', wool: '#BDB19A', woolDark: '#7C7262', olive: '#5E5B38', leather: '#4B3122', leatherDark: '#2F2018', mica: '#8D8267', carmine: '#A3213A', carmineStain: '#7A1A2C', brass: '#A07A3F', wood: '#5D4530', iron: '#343236', wicker: '#9A7F52', seed: '#9D9A68', violet: '#5B2F6B', violetDeep: '#41204E', ash: '#8E8A82',
+  // polish 2 (the Holds' own dyes against the Pans' salt-white linen; bible: "ash-grey and black wool with rust and carmine"). Three
+  // families, worn by trade and age: the undyed fleece (ash, the black lapilli wool, `charcoal` its sun-browned black), the madder
+  // rust (`madder`: a youth's faded hand-me-down), the pickers' own cochineal (`cochineal`: dyed in the yard, a hex of its own so
+  // the violet re-dye of the carmine tie does not take it). The pickers' apron is the ash fleece (`apronWool`), not the pale
+  // oatmeal that read as Pan linen at F36
+  charcoal: '#36312D', madder: '#94543A', cochineal: '#8C2232', apronWool: '#8A8378', felt: '#3B342E' };
 
 export const ARCHETYPES = [
   {
@@ -95,7 +101,8 @@ export const ARCHETYPES = [
     id: 'tiller-follower', n: 7, name: 'Tiller-Follower', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.74, age: 21, browK: 0.78,
     tone: '#83573A', iris: '#2C1F16', amber: '#5A3A1F', hair: '#181210',
     face: { noseBridge: [0, 0, -3.5], noseTip: [0, 5.0, -6.0], cheek: [4.0, 0, 5.2], cheekS: 0.027, jaw: [-5.0, 4.0, 0.5], chin: [0, 4.5, -4.5], brow: [0, 1.5, -4.0], upperLip: [0, 2.5, 2.5] },
-    head: { kind: 'band', dye: HOLDS.wool, lining: HOLDS.woolDark, seed: 77, hair: 'crop', tail: 'left', thin: true },
+    // (polish 2: the madder tunic of a youth (outfits.mjs follower), the band the ash fleece; it was the pale oatmeal wool)
+    head: { kind: 'band', dye: HOLDS.ash, lining: HOLDS.woolDark, seed: 77, hair: 'crop', tail: 'left', thin: true },
     // M2 wave 3: his violet the rope belt; his face sheet to Brea's texel density (0.832 of hers at the default, holds-cast.test.mjs)
     dyes: { [HOLDS.rust]: HOLDS.violet },
     faceK: 1.2,
@@ -215,7 +222,8 @@ export const ARCHETYPES = [
     dyes: { [HOLDS.rust]: HOLDS.ash, [HOLDS.rustDeep]: HOLDS.woolDark },
     faceK: 1.2,
     // (M2 polish, variety of build and hats: a stocky farmer under a wide palm hat)
-    hat: 'palm', build: { torso: 1.1, arm: 1.07, leg: 1.07 },
+    // (polish 2: the brim the Holds' dark felt, not the Pans' pale plait)
+    hat: 'palm', hatDye: HOLDS.felt, build: { torso: 1.1, arm: 1.07, leg: 1.07 },
     outfit: { key: 'farmer' },
     clips: { idle: ['Farm_Harvest', 'Farm_PlantSeed', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.96, lean: 0.05, swing: 0.92 }, hand: ['Farm_Watering'] },
   },
@@ -224,9 +232,10 @@ export const ARCHETYPES = [
     // (M2 polish: the cast's elder at the top of the calling's range, greying, heavy in the middle)
     tone: '#6C432C', iris: '#2A1D15', amber: '#4F3019', hair: '#57524C', hairPaint: '#6E6862', build: { torso: 1.08, arm: 0.98, leg: 1.0 },
     face: { noseBridge: [0, 3.0, 4.0], noseTip: [0, -6.0, 3.0], cheek: [-5.5, -3.5, -2.5], jaw: [-3.0, -9.0, 4.0], chin: [0, -9.5, -3.5], brow: [0, 4.5, 5.5], upperLip: [0, -4.0, 4.5] },
-    // his violet the sash's end; the cap undyed ash wool
-    head: { kind: 'cap', dye: HOLDS.woolDark, lining: HOLDS.lapilli, seed: 163, tail: 'right', beard: 'stubble' },
-    dyes: { [HOLDS.olive]: HOLDS.violet, [HOLDS.rust]: HOLDS.carmine, [HOLDS.rustDeep]: HOLDS.carmineStain },
+    // his violet the sash's end. (polish 2, by age: the elder in the black wool, its vest the sun-browned black, the cuffs carmine,
+    // the sleeves the ash fleece, the cap the carmine-stained wool; he wore the carmine vest the pickers wear)
+    head: { kind: 'cap', dye: HOLDS.carmineStain, lining: HOLDS.lapilli, seed: 163, tail: 'right', beard: 'stubble' },
+    dyes: { [HOLDS.olive]: HOLDS.violet, [HOLDS.rust]: HOLDS.charcoal, [HOLDS.rustDeep]: HOLDS.carmine, [HOLDS.woolDark]: HOLDS.ash },
     faceK: 1.15,
     outfit: { key: 'farmer' },
     clips: { idle: ['Farm_Watering', 'Farm_Harvest', 'Idle_Loop'], walk: { clip: 'Walk_Loop', ts: 0.88, lean: 0.08, swing: 0.8 }, hand: ['Farm_Watering'] },
@@ -235,12 +244,12 @@ export const ARCHETYPES = [
     id: 'tiller-follower-2', n: 7, rngN: 72, name: 'Tiller-Follower', faction: 'holds', family: 'Ranger', sex: 'M', height: 1.69, age: 19, browK: 0.74,
     tone: '#8E6142', iris: '#30231A', amber: '#5C3D22', hair: '#120E0C',
     face: { noseBridge: [0, 2.5, -6.0], noseTip: [0, -2.0, -8.5], cheek: [-4.5, 3.5, 3.0], cheekS: 0.026, jaw: [-6.5, -2.0, -3.5], chin: [0, -2.5, -7.5], brow: [0, 4.0, -6.0], upperLip: [0, -1.5, -5.0] },
-    // his violet the head band; the tunic the darker ash, the trousers the carmine-stained wool
+    // his violet the head band; the tunic the ash fleece (the madder of the outfit undyed), the trousers the carmine-stained wool
     head: { kind: 'band', dye: HOLDS.violet, lining: HOLDS.violetDeep, seed: 172, hair: 'crop', tail: 'right', thin: true },
-    dyes: { [HOLDS.wool]: HOLDS.ash, [HOLDS.woolDark]: HOLDS.carmineStain },
+    dyes: { [HOLDS.madder]: HOLDS.ash, [HOLDS.woolDark]: HOLDS.carmineStain },
     faceK: 1.1,
-    // (M2 polish: a palm hat against the sun on the herd's slope)
-    hat: 'palm', build: { torso: 0.96, arm: 0.95, leg: 0.97 },
+    // (M2 polish: a hat against the sun on the herd's slope; polish 2: its brim the Holds' dark felt)
+    hat: 'palm', hatDye: HOLDS.felt, build: { torso: 0.96, arm: 0.95, leg: 0.97 },
     outfit: { key: 'follower' },
     clips: { idle: ['Farm_PlantSeed', 'Idle_Rail_Loop', 'Idle_Loop'], stage: ['Farm_PlantSeed', 'Idle_Loop', 'Idle_Talking_Loop'], walk: { clip: 'Walk_Loop', ts: 1.04, lean: 0.03, swing: 1 } },
   },
@@ -248,9 +257,10 @@ export const ARCHETYPES = [
     id: 'cochineal-picker-2', n: 8, rngN: 82, name: 'Cochineal Picker', faction: 'holds', family: 'Ranger', sex: 'F', height: 1.64, age: 33, browK: 0.78,
     tone: '#7A4F35', iris: '#2A1D15', amber: '#553620', hair: '#1D1612',
     face: { noseBridge: [0, 2.0, 4.0], noseTip: [0, -3.0, 6.5], cheek: [-2.0, -2.5, -3.0], cheekS: 0.024, jaw: [3.5, -5.5, -3.0], chin: [0, -6.0, 5.0], brow: [0, -2.5, 4.0], upperLip: [0, -3.0, -1.5] },
-    // her violet the waist tie; the scarf the carmine-stained wool; the skirt the ash grey and the top the darker wool
+    // her violet the waist tie; the scarf the carmine-stained wool; (polish 2, the older picker) the top the ash fleece over the
+    // black lapilli skirt, the apron the darker fleece (the skirt was the ash, which the skirt's 1.5 shade made pale)
     head: { kind: 'scarf', dye: HOLDS.carmineStain, lining: HOLDS.rustDeep, seed: 182, tail: 'right', knot: true },
-    dyes: { [HOLDS.carmine]: HOLDS.violet, [HOLDS.lapilli]: HOLDS.ash, [HOLDS.wool]: HOLDS.woolDark },
+    dyes: { [HOLDS.carmine]: HOLDS.violet, [HOLDS.cochineal]: HOLDS.ash, [HOLDS.apronWool]: HOLDS.woolDark },
     marks: { carmine: true }, faceK: 1.05,
     build: { torso: 1.07, arm: 1.05, leg: 1.06 },
     outfit: { key: 'picker' },
