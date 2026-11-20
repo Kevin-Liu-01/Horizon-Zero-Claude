@@ -29,7 +29,8 @@ uniform vec4 uMalK;                   // x the term's strength (0 = the blockout
 vec4 malA(float i, vec2 uv, vec2 gx, vec2 gy) { return textureGrad(tMalA, vec3(uv, i), gx, gy); }
 vec4 malN(float i, vec2 uv, vec2 gx, vec2 gy) { return textureGrad(tMalN, vec3(uv, i), gx, gy); }
 /* (fix round 1: past 90 m the plain read flat) the flow's large relief as a height field (m): pressure ridges and
- * tumuli, ridged noise in cells of 28 and 14 m, 0 in the troughs to about 4 m on a crest; read three times for its slope */
+ * tumuli, ridged noise in cells of 28 and 14 m, 0 in the troughs to about 4 m on a crest; read once, its slope from the
+ * screen derivatives (wave 2b) */
 float malRidge(vec2 p) {
   vec4 n = gNoiseT(p * 0.018 + 0.61);
   float r = 1.0 - abs(2.0 * (0.65 * n.r + 0.35 * n.g) - 1.0);
@@ -130,10 +131,16 @@ export const MALPAIS_TERM = /* glsl */ `
       mr = mix(mr, max(mr, 0.82), farK);
       // (fix round 1) the flow's large relief, off Rust Cone and kept at every range: the ridges' slope bends the normal
       // and their troughs darken, so the plain reads as ridged rock to 300 m where the texel detail has faded out
+      // (wave 2b, MP10) its slope from the screen derivatives of one read (was two more reads 2 m off): the world gradient
+      // solved from d/dx and d/dy of the height and of xz
       {
-        float rH = malRidge(xz), rX = malRidge(xz + vec2(2.0, 0.0)), rZ = malRidge(xz + vec2(0.0, 2.0));
+        float rH = malRidge(xz);
+        vec2 gR = vec2(dFdx(rH), dFdy(rH));
+        float det = dx.x * dy.y - dx.y * dy.x;
+        vec2 gW = abs(det) > 1e-10 ? vec2(dy.y * gR.x - dx.y * gR.y, dx.x * gR.y - dy.x * gR.x) / det : vec2(0.0);
+        gW = clamp(gW, vec2(-1.5), vec2(1.5));
         float rk = (1.0 - cone) * (1.0 - pah * 0.6);
-        mp += vec3(-(rX - rH), 0.0, -(rZ - rH)) * 0.5 * 0.55 * rk;
+        mp += vec3(-gW.x, 0.0, -gW.y) * 0.55 * rk;
         mc *= mix(1.0, 0.62 + 0.12 * rH, rk);
         mo *= mix(1.0, 0.75 + 0.07 * rH, rk);
       }

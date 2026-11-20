@@ -523,6 +523,16 @@ diffuseColor.rgb = vec3(0.1); gN = vec3(0.0); gRough = 1.0; gAO = 1.0; gLiquid =
   #else
   bool gSkip = mB.a > 0.5 && smoothstep(0.02, 0.6, mB.a) * (1.0 - wSalt) * (1.0 - wRock) > 0.985;
   #endif
+  #ifdef CAL_G_MALPAIS
+  /* (M3 wave 2b, area A, MP10: the smallest change here, inside the Malpais' own program only) where the Malpais' term
+   * draws the ground wholly (its zone weight off the Holds, faded with range: MALPAIS_TERM's own mk), the island's layer
+   * stack under it is skipped, as it is under the meadow: the term replaces all of it there */
+  {
+    vec2 mzuv = (xz - uMalBox.xy) * uMalBox.zw;
+    if (mzuv.x > 0.0 && mzuv.x < 1.0 && mzuv.y > 0.0 && mzuv.y < 1.0
+      && texture(tMalZ, mzuv).r * (1.0 - hold) * uMalK.x * (1.0 - smoothstep(uMalK.y, uMalK.z, dCam)) > 0.985) gSkip = true;
+  }
+  #endif
   vec2 sWarp = vec2(0.0);
   /* M1a round 3 (F04 and the 1 m swatches: the black sand and the flat basalt read as wood grain and marble, the ripples
    * bent round 2.5-5 m whorls): the displacement is a broad field (16-40 m cells) of up to about 1.3 m, which still moves
