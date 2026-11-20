@@ -59,6 +59,8 @@ if (SIL) floor.material = new THREE.MeshBasicMaterial({ color: 0xe9e5dc });
 scene.add(floor);
 
 const SILMAT = new THREE.MeshBasicMaterial({ color: 0x2b2926 });
+/** Brea as a flat graphite scale figure: the body GLB alone carries no outfit (the game binds it), so it is not shown dressed here. */
+const FIGURE = new THREE.MeshStandardMaterial({ color: 0x4a4642, roughness: 0.8 });
 const mats = new Map();
 function mat(p) {
   if (SIL) return SILMAT;
@@ -155,7 +157,7 @@ async function loadBrea() {
   const ex = gltf.parser?.json?.asset?.extras?.r5Hero || {};
   root.scale.setScalar(ex.scale ?? 1);
   root.traverse((o) => {
-    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; if (SIL) o.material = SILMAT; }
+    if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; o.material = SIL ? SILMAT : FIGURE; }
     if (o.isBone && /^upperarm_[lr]$/.test(o.name)) o.userData.side = o.name.endsWith('_l') ? 1 : -1;
   });
   return { root, ex };
@@ -216,10 +218,10 @@ async function main() {
     sonde.updateMatrixWorld(true);
     const keel = new THREE.Vector3(...SONDE_KEEL).applyMatrix4(sonde.matrixWorld);
     scene.add(tether([px, SONDE_POST.h, 0], keel.toArray()));
-    LU.measured.sondeTether = { altM: +S.y.toFixed(2), leanM: +lean.toFixed(2), tetherM: +Math.hypot(keel.x - px, keel.y - SONDE_POST.h, keel.z).toFixed(2) };
+    LU.measured.sondeTether = { altM: +(S.keelY() - S.shackle().y).toFixed(2), leanM: +lean.toFixed(2), tetherM: +Math.hypot(keel.x - px, keel.y - SONDE_POST.h, keel.z).toFixed(2) };
     camera.fov = 50; camera.position.set(6, 3.0, 26); camera.lookAt(6, 8.0, 0);
-    tag('Sonde', `3.0 m, on its 18 m tether (${LU.measured.sondeTether.altM} m up, ${LU.measured.sondeTether.leanM} m downwind)`, [px + lean, S.y + 3.4, 0]);
-    tag('Brea', '1.72 m, at the post', [0, 2.0, 0]);
+    tag('Sonde', `3.0 m, on its 18 m tether (keel ${LU.measured.sondeTether.altM} m over the shackle, ${LU.measured.sondeTether.leanM} m downwind, tether ${LU.measured.sondeTether.tetherM} m)`, [px + lean, S.y + 3.4, 0]);
+    tag('Brea', 'scale figure · 1.72 m, at the post', [-0.6, 2.2, 0]);
     note.textContent = 'M3 wave 1 grey hulls (area C): the Sonde moored in the trade (5 m/s from 045) by its own rules, 18 m banded tether, lens about 26 m back. Proportion and silhouette only.';
   } else {
     // the Sonde moored low for scale beside the rest: its post and a short banded tether
@@ -231,9 +233,9 @@ async function main() {
     sonde.updateMatrixWorld(true);
     const keel = new THREE.Vector3(...SONDE_KEEL).applyMatrix4(sonde.matrixWorld);
     scene.add(tether([X.sonde + 2.6, SONDE_POST.h, 0.6], keel.toArray()));
-    camera.fov = 20; camera.position.set(9.6, 3.2, 52); camera.lookAt(9.6, 2.4, 0);
+    camera.fov = 20; camera.position.set(9.4, 3.0, 40); camera.lookAt(9.4, 2.6, 0);
     const m = LU.measured;
-    tag('Brea', `${m.brea.bodyHeight ?? 1.72} m body`, [X.brea, m.brea.H + 0.35, 0]);
+    tag('Brea', `scale figure · ${m.brea.bodyHeight ?? 1.72} m body`, [X.brea, m.brea.H + 0.35, 0]);
     tag('Kiln', `${m.kiln.H} m · large`, [X.kiln, m.kiln.H + 0.35, 0]);
     tag('Spindle', `${m.spindle.H} m · medium`, [X.spindle, m.spindle.H + 0.35, 0]);
     tag('Davit', `${m.davit.H} m · medium`, [X.davit, m.davit.H + 0.35, 0]);

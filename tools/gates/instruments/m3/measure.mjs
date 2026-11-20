@@ -333,7 +333,7 @@ export function ik7() {
   for (let t = 0; t < 40; t += DT) F61.step(DT, { wind: { speed: 5, fromDeg: 45 }, groundY: flat });
   F61.cutTether();
   for (let t = 0; t < 4; t += DT) F61.step(DT, { wind: { speed: 5, fromDeg: 45 }, groundY: flat });
-  const f61 = { distM: r3(Math.hypot(F61.x, F61.z)), bearing: r3(bearingOf(F61.x, F61.z)), altM: r3(F61.y), sinking: F61.y < SONDE_RULES.hoverAltM };
+  const f61 = { distM: r3(Math.hypot(F61.x, F61.z)), bearing: r3(bearingOf(F61.x, F61.z)), altM: r3(F61.keelY() - F61.shackle().y), sinking: F61.keelY() - F61.shackle().y < SONDE_RULES.hoverAltM };
   // calima: it drops to 6 m
   const K = new SondeBrain();
   for (let t = 0; t < 30; t += DT) K.step(DT, { wind: { speed: 3, fromDeg: 45 }, calima: true, groundY: flat });
@@ -341,10 +341,10 @@ export function ik7() {
   const night = new SondeBrain().flare({ night: true }), day = new SondeBrain().flare({ night: false });
   const sight = { none: sondeSightM('none'), opening: sondeSightM('opening'), gliding: sondeSightM('gliding'), folding: sondeSightM('folding'), landing: sondeSightM('landing') };
   const ok = maxTether <= SONDE_RULES.tetherM + 1e-6 && twoUp && P.state === 'down' && C.state === 'down' && Math.abs(sinkS - SONDE_RULES.fanSinkS) <= 0.3
-    && maxErr <= 10 && maxCrash <= SONDE_RULES.crashMaxS && Math.abs(K.y - SONDE_RULES.calimaAltM) <= 0.1 && night?.flagS === 8 && day === null
+    && maxErr <= 10 && maxCrash <= SONDE_RULES.crashMaxS && Math.abs(K.keelY() - K.shackle().y - SONDE_RULES.calimaAltM) <= 0.1 && night?.flagS === 8 && day === null
     && sight.gliding === 2 * sight.none && sight.opening === sight.none && sight.folding === sight.none && sight.landing === sight.none && f61.distM >= 10 && Math.abs(f61.bearing - 225) <= 10;
   return { ok, maxTetherM: r3(maxTether), aloftAfterTwoPunctures: twoUp, threePuncturesDown: P.state === 'down', cinderDown: C.state === 'down', fanSinkS: r3(sinkS),
-    cutDriftErrDeg: r3(maxErr), cutCrashMaxS: r3(maxCrash), f61, calimaAltM: r3(K.y), nightFlareFlagS: night?.flagS ?? null, dayFlare: day, sightM: sight, downwindOf045: downwind({ fromDeg: 45 }) };
+    cutDriftErrDeg: r3(maxErr), cutCrashMaxS: r3(maxCrash), f61, calimaAltM: r3(K.keelY() - K.shackle().y), nightFlareFlagS: night?.flagS ?? null, dayFlare: day, sightM: sight, downwindOf045: downwind({ fromDeg: 45 }) };
 }
 
 /** Clouded, the typed seam (src/combat/status.js): the generic half and a kind's own answer. */

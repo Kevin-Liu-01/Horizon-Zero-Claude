@@ -80,7 +80,7 @@ const R = rng(1);
   const S = new SondeBrain({ post: { x: 0, y: 0, z: 0 } });
   for (let t = 0; t < 60; t += 1 / 60) S.step(1 / 60, { wind: { speed: 5, fromDeg: 45 }, groundY: () => 0 });
   out.sondeAtRing = {
-    tetherM: SONDE_RULES.tetherM, mooredInTradeAltM: r2(S.y), leanM: r2(Math.hypot(S.x, S.z)), ringAcrossM: 34, riseM: '5-6',
+    tetherM: SONDE_RULES.tetherM, mooredInTradeKeelOverShackleM: r2(S.keelY() - S.shackle().y), tetherRunM: r2(S.tetherDist()), leanM: r2(Math.hypot(S.x, S.z)), ringAcrossM: 34, riseM: '5-6',
     cutPoint: 'the shackle on the post, 1.3 m over the rise: cut by hand at the post, or the tether shot through anywhere below the gondola',
     arrowFromRise: 'plan arithmetic: from the rise\'s foot 15-20 m off, the tether 5-14 m up stands 15-40 deg above level: inside the bow\'s ordinary arc; not measured with arrows.predict',
     postInAcceptedLens: 'UNMEASURED: tools/world/skyline-masks.mjs (area A) masks regions from a film\'s probed lenses; the Sonde at the Ring is not one of its MASK_REGION rows yet (rule 19 names it). The Sonde moves, so it is masked by its swept volume (an 18 m half-sphere over the post) or kept out of every lens',

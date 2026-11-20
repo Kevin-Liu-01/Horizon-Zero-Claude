@@ -6,8 +6,9 @@
  * A compact six-legged hull: each leg hangs from an outrigger and bends its knee in the sagittal plane. A cab with the
  * cab lamp (in a drum, off the centre line: never a face), the winch drum behind it (the weak point: Pry it and there
  * are no more repairs), a rack of THREE spare enamel plates on its back, standing upright 0.30 m apart so the count
- * reads at 20 m, a counterweight at the stern. Two folding crane arms rise from kingposts beside the cab, each a boom
- * and a jib to a sheave at 4.2 m, a hook block hanging on its cable. No head, no neck, no torso with arms, no tail.
+ * reads at 20 m, a counterweight at the stern. Two folding crane arms on kingposts beside the cab: the working one up, a
+ * boom and a jib to a sheave at 4.2 m with its hook block on its cable; the other stowed, folded along the deck (two
+ * raised together read as a figure's arms: never at rest). No head, no neck, no torso with arms, no tail.
  */
 
 export const DAVIT_ROSTER = Object.freeze({ L: 4.0, W: 2.4, H: 4.2, cls: 'medium', triCap: 50000, bones: 30 });
@@ -30,17 +31,31 @@ for (const [side, sx] of [['R', 1], ['L', -1]]) {
 }
 
 const ARMS = [];
-for (const [side, sx] of [['R', 1], ['L', -1]]) {
-  const kx = sx * 0.55, tx = sx * 0.66;
+{
+  // the working arm (right): a boom up from its kingpost, the jib out over the bow to a sheave at 4.2 m, a hook block
+  const kx = 0.55, tx = 0.66;
   ARMS.push(
-    cyl(`kingpost${side}`, [kx, 1.84, 0.50], 0.12, 0.36, 'y', { tone: 'joint' }),
-    strut(`boom${side}`, [kx, 1.95, 0.50], [sx * 0.62, 3.55, 0.05], 0.075),
-    cyl(`elbow${side}`, [sx * 0.62, 3.55, 0.05], 0.10, 0.18, 'x', { tone: 'brass' }),
-    strut(`jib${side}`, [sx * 0.62, 3.55, 0.05], [tx, 3.98, 1.78], 0.055),
-    cyl(`sheave${side}`, [tx, 4.05, 1.86], 0.15, 0.08, 'x', { tone: 'brass' }),
-    strut(`cable${side}`, [tx, 3.92, 1.92], [tx, 2.95, 1.92], 0.012, { tone: 'joint' }),
-    box(`hookBlock${side}`, [tx, 2.84, 1.92], [0.16, 0.22, 0.16], { tone: 'joint', hit: `hook${side}` }),
-    cyl(`hook${side}`, [tx, 2.66, 1.92], 0.03, 0.16, 'y', { tone: 'brass' }),
+    cyl('kingpostR', [kx, 1.84, 0.50], 0.12, 0.36, 'y', { tone: 'joint' }),
+    strut('boomR', [kx, 1.95, 0.50], [0.62, 3.55, 0.05], 0.075),
+    cyl('elbowR', [0.62, 3.55, 0.05], 0.10, 0.18, 'x', { tone: 'brass' }),
+    strut('jibR', [0.62, 3.55, 0.05], [tx, 3.98, 1.78], 0.055),
+    cyl('sheaveR', [tx, 4.05, 1.86], 0.15, 0.08, 'x', { tone: 'brass' }),
+    strut('cableR', [tx, 3.92, 1.92], [tx, 2.95, 1.92], 0.012, { tone: 'joint' }),
+    box('hookBlockR', [tx, 2.84, 1.92], [0.16, 0.22, 0.16], { tone: 'joint', hit: 'hookR' }),
+    cyl('hookR', [tx, 2.66, 1.92], 0.03, 0.16, 'y', { tone: 'brass' }),
+  );
+  // the stowed arm (left): the boom laid back along the deck beside the rack, the jib folded forward over it, its hook
+  // block hanging short at the cab's flank (the pair never stands up as a pair: never read as two raised arms)
+  const sx = -0.62;
+  ARMS.push(
+    cyl('kingpostL', [-0.55, 1.84, 0.50], 0.12, 0.36, 'y', { tone: 'joint' }),
+    strut('boomL', [-0.55, 1.95, 0.50], [sx, 2.45, -1.30], 0.075),
+    cyl('elbowL', [sx, 2.45, -1.30], 0.10, 0.18, 'x', { tone: 'brass' }),
+    strut('jibL', [sx, 2.45, -1.30], [-0.66, 2.62, 0.45], 0.055),
+    cyl('sheaveL', [-0.66, 2.64, 0.52], 0.12, 0.08, 'x', { tone: 'brass' }),
+    strut('cableL', [-0.66, 2.55, 0.56], [-0.66, 2.36, 0.56], 0.012, { tone: 'joint' }),
+    box('hookBlockL', [-0.66, 2.25, 0.56], [0.16, 0.22, 0.16], { tone: 'joint', hit: 'hookL' }),
+    cyl('hookL', [-0.66, 2.07, 0.56], 0.03, 0.16, 'y', { tone: 'brass' }),
   );
 }
 

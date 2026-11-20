@@ -1,11 +1,12 @@
-import { SONDE_ROSTER } from './form.js';
+import { SONDE_ROSTER, SONDE_KEEL, SONDE_POST } from './form.js';
 
 /**
  * THE SONDE'S RULES (M3 wave 1, area C; bible §7.4 #8; row IK7 of the M3 brief). Simulation time, no scene: the Node
  * rows (tools/gates/instruments/m3/sonde.test.mjs) and the live kind run the same code. Numbers marked * are starting
  * values.
  *
- * MOORED. It holds within `tetherM` (18 m) of its post: it stands `hoverAltM` over the post's ground and leans
+ * MOORED. It holds within `tetherM` (18 m) of its post, measured as the tether runs: from the shackle on the post's top
+ * to the keel ring under the gondola. Its keel stands `hoverAltM` over the shackle and it leans
  * downwind as the wind rises, its fans holding it at `fanMps`; the tether never stretches (a pull past 18 m is taken
  * back to 18). In calima it drops to `calimaAltM` (6 m) and hunts by sound (the behaviour wave's).
  * BROUGHT DOWN. Three punctures of the envelope, or Cinder on it (it burns), bring it down at `fallMps`. A net that
@@ -24,8 +25,8 @@ import { SONDE_ROSTER } from './form.js';
 
 export const SONDE_RULES = Object.freeze({
   tetherM: SONDE_ROSTER.tetherM,
-  hoverAltM: 15,                // * over the post's ground
-  calimaAltM: 6,                // IK7*
+  hoverAltM: 15,                // * its keel over the post's shackle
+  calimaAltM: 6,                // IK7* (the keel over the shackle)
   fanMps: 2.0,                  // * how fast its fans move it to its moored place
   leanMps: 8,                   // * wind speed at which it leans its whole free tether downwind
   punctures: 3,
@@ -57,7 +58,7 @@ export class SondeBrain {
   /** `post` { x, y, z }: the anchor post's foot. It starts moored over the post at its hover height. */
   constructor({ post = { x: 0, y: 0, z: 0 } } = {}) {
     this.post = { ...post };
-    this.x = post.x; this.z = post.z; this.y = post.y + SONDE_RULES.hoverAltM;
+    this.x = post.x; this.z = post.z; this.y = post.y + SONDE_POST.h + SONDE_RULES.hoverAltM - SONDE_KEEL[1];
     /** 'moored' | 'adrift' | 'sinking' | 'falling' | 'down' */
     this.state = 'moored';
     this.tethered = true;
@@ -69,8 +70,11 @@ export class SondeBrain {
 
   _ev(type, p) { this.events.push(p ? { type, ...p } : { type }); }
   get flying() { return this.state !== 'down'; }
-  /** Distance from the post (m). */
-  tetherDist() { return Math.hypot(this.x - this.post.x, this.y - this.post.y, this.z - this.post.z); }
+  /** The tether's two ends: the shackle on the post's top and the keel ring (the hull's y is its lowest point). */
+  shackle() { return { x: this.post.x, y: this.post.y + SONDE_POST.h, z: this.post.z }; }
+  keelY() { return this.y + SONDE_KEEL[1]; }
+  /** The tether's run, shackle to keel (m). */
+  tetherDist() { const s = this.shackle(); return Math.hypot(this.x - s.x, this.keelY() - s.y, this.z - s.z); }
 
   cutTether() { if (!this.tethered || !this.flying) return false; this.tethered = false; this.cutAt = this.t; if (this.state === 'moored') this.state = 'adrift'; this._ev('tether-cut'); return true; }
 
@@ -109,10 +113,10 @@ export class SondeBrain {
     if (this.state === 'down') return;
     const dw = downwind(env.wind), ws = env.wind?.speed ?? 0;
     if (this.state === 'moored') {
-      const alt = env.calima ? R.calimaAltM : R.hoverAltM;
+      const alt = env.calima ? R.calimaAltM : R.hoverAltM;   // the keel over the shackle
       const free = Math.sqrt(Math.max(0, (R.tetherM - 0.5) ** 2 - alt * alt));
       const lean = free * Math.min(1, ws / R.leanMps);
-      const tx = this.post.x + dw.x * lean, tz = this.post.z + dw.z * lean, ty = this.post.y + alt;
+      const tx = this.post.x + dw.x * lean, tz = this.post.z + dw.z * lean, ty = this.post.y + SONDE_POST.h + alt - SONDE_KEEL[1];
       const dx = tx - this.x, dy = ty - this.y, dz = tz - this.z, d = Math.hypot(dx, dy, dz);
       if (d > 1e-6) { const s = Math.min(d, R.fanMps * dt); this.x += (dx / d) * s; this.y += (dy / d) * s; this.z += (dz / d) * s; }
     } else if (this.state === 'adrift') {
@@ -129,8 +133,8 @@ export class SondeBrain {
     if (this.tethered) {
       const d = this.tetherDist();
       if (d > R.tetherM) {
-        const k = R.tetherM / d;
-        this.x = this.post.x + (this.x - this.post.x) * k; this.y = this.post.y + (this.y - this.post.y) * k; this.z = this.post.z + (this.z - this.post.z) * k;
+        const s = this.shackle(), k = R.tetherM / d;
+        this.x = s.x + (this.x - s.x) * k; this.z = s.z + (this.z - s.z) * k; this.y = s.y + (this.keelY() - s.y) * k - SONDE_KEEL[1];
       }
     }
     const g = gy(this.x, this.z);
