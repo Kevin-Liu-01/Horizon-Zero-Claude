@@ -173,6 +173,8 @@ async function runLeg(leg, startRec, startName) {
     if (!slot.ok) throw new Error(slot.why);
     slotTaken = true;
     L.slotTakenAt = new Date().toISOString();
+    L.slotWaitS = Math.round((Date.now() - t0) / 1000);
+    const tC = Date.now();   // the leg's cap and its Chrome seconds count from the slot, not from the wait for it
     vite = spawn('nice', ['-n', '10', 'npx', 'vite', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: REPO, stdio: 'ignore', detached: true });
     for (let i = 0; i < 240 && !(await portOpen(PORT)); i++) await sleep(250);
     if (!(await portOpen(PORT))) throw new Error(`vite did not open ${PORT}`);
@@ -196,7 +198,7 @@ async function runLeg(leg, startRec, startName) {
       dxz: +Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z).toFixed(3), hour: +L.start.hour.toFixed(3), recordHour: rec.hour };
     let k = 0;
     for (const b of beatsOfLeg(leg)) {
-      if ((Date.now() - t0) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: b.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
+      if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: b.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const needs = b.needs.map((id) => [id, NEEDS[id].probe]);
       const pr = await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs);
       // wave 1: no beat has a driver. A beat whose needs are all there and that is not reached fails "no driver" (rule 14)
@@ -219,7 +221,7 @@ async function runLeg(leg, startRec, startName) {
     L.error = String(e?.stack || e).slice(0, 1200);
     log(`leg ${leg} error: ${L.error.slice(0, 300)}`);
   } finally {
-    L.chromeSeconds = Math.round((Date.now() - t0) / 1000);
+    L.chromeSeconds = Math.round((Date.now() - t0) / 1000) - (L.slotWaitS ?? 0);
     try { await browser?.close(); } catch { /* */ }
     if (profile) disposeProfile(profile);
     if (vite) { try { process.kill(-vite.pid, 'SIGTERM'); } catch { /* */ } }
