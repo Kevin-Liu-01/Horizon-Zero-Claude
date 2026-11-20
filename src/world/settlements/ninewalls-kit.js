@@ -43,6 +43,10 @@ const hash = (a, b = 0, c = 0) => { const h = Math.sin(a * 127.1 + b * 311.7 + c
 /** A triangle soup with the kit's attributes; flat normals unless a vertex brings its own. */
 class Soup {
   constructor() { this.p = []; this.n = []; this.c = []; this.k = []; this.uv = []; this.pa = []; this.hasN = []; }
+  /** C5: another soup's triangles after these, as if they had been made here */
+  append(o) {
+    for (const key of ['p', 'n', 'c', 'k', 'uv', 'pa', 'hasN']) this[key] = this[key].length ? this[key].concat(o[key]) : o[key].slice();
+  }
   tri(a, b, c, o) {
     const { col, kind = 0, uv = null, paint = 0, nrm = null } = o;
     const P = [a, b, c];
@@ -143,10 +147,31 @@ const dusty = (y, foot) => { const k = Math.max(0, Math.min(1, (y - foot) / 0.9)
  * a few centimetres; a cut wall broken unevenly down to its line); the Datum Line a band of ink on both faces where
  * painted; the coping a low ridge; on the riser's low side the skin of stones over the ledge and down the bank.
  */
+/**
+ * C5 (engine lane, the smallest change here: the first hour's hitches): each wall's triangles are kept by its id, state,
+ * paint and step (per ground), so a wall the Screed cuts rebuilds that wall alone and the rest are copied in the same
+ * order: the soup, and the geometry made from it, are the same as a whole rebuild. At 71644c5 a cut rebuilt all nine in
+ * its frame (wallsGeometry 19 ms of a 40 ms frame, first-hour leg 2's seal stages, run hh-c5-71644c5-prof).
+ */
+const _wallMemo = new WeakMap();
 export function wallsGeometry(ground, stateOf, { step = 1.0 } = {}) {
-  const S = new Soup();
+  const out = new Soup();
+  let memo = _wallMemo.get(ground);
+  if (!memo) { memo = new Map(); _wallMemo.set(ground, memo); }
   for (const w of L.WALLS) {
-    const st = L.stations(w, step), { state, painted } = stateOf(w.id), cut = state === 'cut';
+    const { state, painted } = stateOf(w.id);
+    const key = `${w.id}|${state}|${painted ? 1 : 0}|${step}`;
+    let S = memo.get(key);
+    if (!S) { S = new Soup(); wallInto(S, w, ground, state, painted, step); memo.set(key, S); }
+    out.append(S);
+  }
+  return out;
+}
+
+/** One wall's triangles into S (what wallsGeometry's loop did for it). */
+function wallInto(S, w, ground, state, painted, step) {
+  {
+    const st = L.stations(w, step), cut = state === 'cut';
     const top0 = L.topOf(w, state), seed = w.order * 17.3;
     const sides = st.map((s) => L.wallSides(w, ground, s));
     const arcLen = (b) => (b - w.from) * D2R * w.r;
@@ -224,7 +249,6 @@ export function wallsGeometry(ground, stateOf, { step = 1.0 } = {}) {
       if (sg < 0) S.quad(A, B, Cc, Dd, { col: PAL.stone, kind: 0, uv }); else S.quad(B, A, Dd, Cc, { col: PAL.stone, kind: 0, uv: [uv[1], uv[0], uv[3], uv[2]] });
     }
   }
-  return S;
 }
 
 /* ------------------------------------------------------------------------------------------------ the dwellings */
