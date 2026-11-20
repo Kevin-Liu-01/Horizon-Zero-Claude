@@ -12,7 +12,7 @@ export const MALPAIS_LAYERS = Object.freeze({
   size: 512,
   ids: Object.freeze(['aa', 'pahoehoe', 'cinder', 'scree']),
   /** metres a tile, by layer (the shader reads layer i at xz / tile) */
-  tile: Object.freeze({ aa: 2.6, pahoehoe: 3.4, cinder: 1.6, scree: 2.2 }),
+  tile: Object.freeze({ aa: 2.6, pahoehoe: 3.4, cinder: 1.6, scree: 1.2 }),   // scree 1.2 (was 2.2: at 12b9a57 its clasts read a hand wide on the face beside the lens)
   files: Object.freeze({ a: 'textures/malpais/malpais_a.ktx2', n: 'textures/malpais/malpais_n.ktx2' }),
 });
 

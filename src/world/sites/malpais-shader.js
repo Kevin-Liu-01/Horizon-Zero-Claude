@@ -99,7 +99,7 @@ export const MALPAIS_TERM = /* glsl */ `
         vec4 a = malA(3.0, u, dx * uMalTile.w, dy * uMalTile.w), n = malN(3.0, u, dx * uMalTile.w, dy * uMalTile.w);
         vec2 t = n.xy * 2.0 - 1.0; t = vec2(t.x * 0.906 - t.y * 0.423, t.x * 0.423 + t.y * 0.906);
         vec3 c = pow(a.rgb, vec3(2.2));
-        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.6) * 0.7 * (0.85 + 0.3 * nz.a);
+        c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.5) * 0.55 * (0.85 + 0.3 * nz.a);
         mc += c * wSc; mp += vec3(t.x, 0.0, t.y) * wSc; mr += n.z * wSc; mo += n.a * wSc; ws += wSc;
       }
       mc /= max(ws, 1e-4); mp /= max(ws, 1e-4); mr /= max(ws, 1e-4); mo /= max(ws, 1e-4);
