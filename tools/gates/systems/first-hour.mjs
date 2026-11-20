@@ -658,9 +658,11 @@ async function volley(page, K, stage, maxS = 8) {
       // its charge, she out of its line: the arrow nocked and drawn, held full for the stall
       if (S.phase === 'charge' && !inLineOf(S) && S.sealsLeft.length) { await draw(); await sleep(40); continue; }
       if (!mayShoot(S)) break;
-      // the near seal first (the far one sits behind it from her side; at volley1 two of three far draws were let down)
+      // the far seal first while both are on: an arrow it cannot reach meets the near one, a hit either way. Once the near
+      // seal is off its hull still takes those arrows (at f0053bc final1 a draw the game's flight put on the far seal
+      // struck the spent near one), so the far one's hits are best taken while the near one still counts
       const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
-      const order = S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice();
+      const order = S.sealsLeft.length === 2 ? [far, near] : S.sealsLeft.slice();
       let part = null, sol = null;
       for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && (q.clear || onSeal(S, q.first))) { part = p; sol = q; break; } }
       if (!part) { blocked ??= Date.now(); if (Date.now() - blocked > 700) { shots.push({ t: +((Date.now() - t0) / 1000).toFixed(1), none: true, phase: S.phase }); break; } continue; }
@@ -746,7 +748,9 @@ async function driveScreed(page, K, stage, maxS = 120) {
       continue;
     }
     // seal-1 / seal-2
-    if (st.hp < 50 && S.phase !== 'windup' && S.phase !== 'charge') { await SH.drink(page, K, 92, 3500); continue; }
+    // a drink under 50 when the gourd holds one (SH.drink answers null at once on an empty gourd: at f0053bc final2 she
+    // asked again every pass with 41 hp and a dry gourd, stood still after the first stall and the Screed cut three walls)
+    if (st.hp < 50 && S.phase !== 'windup' && S.phase !== 'charge' && (await SH.drink(page, K, 92, 3500))) continue;
     const inLine = inLineOf(S);
     if (S.phase === 'charge') {
       // out of its line while it runs: the bow up, the first arrow ready for the stall
