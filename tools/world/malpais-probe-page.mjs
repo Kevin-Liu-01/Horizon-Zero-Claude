@@ -90,6 +90,59 @@ async function steamVisibility(C, st) {
   return out;
 }
 
+/**
+ * (M3 wave 3, MP4 "costs <= 0.15 ms* GPU in frame", per source) the steam's raster cost one plume at a time, timed on
+ * the GPU (EXT_disjoint_timer_query_webgl2) round N back-to-back draws of the scene into the scene target with everything
+ * but the steam hidden: each source's plume alone (steam.solo) against no steam, alternated, the median of `reps` pairs.
+ * With nothing else drawn no puff fragment is rejected by depth, so it is an upper bound on the plume's cost in the frame
+ * (the paired toggle of the whole frame, attrib.mjs, read +-1 ms of noise at 3 pairs on this machine: 7b06488). Restores
+ * everything.
+ */
+async function steamCost(C, st, { N = 24, reps = 3 } = {}) {
+  const E = C.engine, R = E.renderer, gl = R.getContext();
+  const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  if (!ext || !E.sceneTarget) return { error: 'no timer query or no scene target' };
+  const { STEAM } = await import('/src/world/sites/malpais-layout.js');
+  const inSteam = new Set(); st.group.traverse((o) => inSteam.add(o));
+  const hidden = [];
+  C.scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !inSteam.has(o)) { o.visible = false; hidden.push(o); } });
+  const was = st.group.children.map((m) => m.visible), gwas = st.group.visible;
+  const show = (id) => {
+    st.group.visible = true;
+    const solo = id && id !== 'all' ? st.solo(id) : null;
+    for (const m of st.group.children) m.visible = id === 'all' ? !m.name.startsWith('malpais-steam-solo-') : m === solo;
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const time = async (id) => {
+    show(id);
+    R.setRenderTarget(E.sceneTarget); R.render(C.scene, C.camera); gl.finish();
+    const q = gl.createQuery();
+    gl.beginQuery(ext.TIME_ELAPSED_EXT, q);
+    for (let i = 0; i < N; i++) { R.setRenderTarget(E.sceneTarget); R.render(C.scene, C.camera); }
+    gl.endQuery(ext.TIME_ELAPSED_EXT);
+    for (let k = 0; k < 300 && !gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE); k++) await sleep(5);
+    const ok = gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE) && !gl.getParameter(ext.GPU_DISJOINT_EXT);
+    const ns = ok ? gl.getQueryParameter(q, gl.QUERY_RESULT) : null;
+    gl.deleteQuery(q);
+    return ns == null ? null : ns / 1e6 / N;
+  };
+  const med = (a) => { const b = a.filter((v) => v != null).sort((x, y) => x - y); return b.length ? b[(b.length - 1) >> 1] : null; };
+  const out = { method: `GPU time of ${N} back-to-back draws of the scene into the scene target, only the steam drawn: a plume alone minus no steam, median of ${reps} alternated pairs (an upper bound: nothing occludes a puff)`, rows: [] };
+  try {
+    for (const id of ['all', ...STEAM.map((s) => s.id)]) {
+      const d = [];
+      for (let r = 0; r < reps; r++) { const a = await time(id); const b = await time(null); d.push(a != null && b != null ? a - b : null); }
+      const none = await time(null);
+      out.rows.push({ id, ms: med(d) == null ? null : +med(d).toFixed(3), pairs: d.map((v) => (v == null ? null : +v.toFixed(3))), noneMs: none == null ? null : +none.toFixed(3) });
+    }
+  } finally {
+    for (const o of hidden) o.visible = true;
+    st.group.children.forEach((m, i) => { m.visible = was[i]; }); st.group.visible = gwas;
+    R.setRenderTarget(null); E.render(0);
+  }
+  return out;
+}
+
 export async function probe(f) {
   const out = lens(f);
   if (f?.id === TOPDOWN.frame && window.__CTX__?.terrain?.malpais?.ready) {
@@ -119,7 +172,14 @@ export async function probe(f) {
       const T = await import('three');
       const cam = C.camera, fr = new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
       out.steam = { counts: st.counts, t: st.uniforms.uSteamT.value, wind: [st.uniforms.uSteamWind.value.x, st.uniforms.uSteamWind.value.y], meshes: st.group.children.map((m) => ({ name: m.name, visible: m.visible, parentVisible: st.group.visible, inScene: !!m.parent?.parent?.parent, sizeCulled: m.userData.__sizeCulled === true, inFrustum: fr.intersectsObject(m), puffs: m.geometry.instanceCount, renderOrder: m.renderOrder, programs: m.material.version })) };
+      // (wave 3) dynamic resolution held at scale 1 for both (at 7b06488 the Lambert swap's compile stall moved every pixel of
+      // F57: the scale changed under the readback)
+      const E = C.engine, drs = E.drsEnabled;
+      E.setDynamicResolution?.(false);
+      out.steam.renderScale = E.renderScale;
       try { out.steam.visibility = await steamVisibility(C, st); } catch (e) { out.steam.visibility = { error: String(e?.message || e).slice(0, 300) }; }
+      try { out.steam.cost = await steamCost(C, st); } catch (e) { out.steam.cost = { error: String(e?.message || e).slice(0, 300) }; }
+      E.setDynamicResolution?.(drs);
     }
   } catch (e) { out.steam = { error: String(e?.message || e).slice(0, 300) }; }
   try {

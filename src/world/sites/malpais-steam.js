@@ -27,7 +27,7 @@ import { patchAerial, patchDeck } from '../island/aerial.js';
  *                                          material, for a paired toggle against none (malpais-region.js perfSwitches)
  */
 /** Fumarole white (sRGB), and the plume's look: the most a puff covers, its life (s) by kind, how far the wind carries it. */
-export const STEAM_LOOK = Object.freeze({ color: 0xe4e8e8, opacity: Object.freeze({ flow: 0.3, yards: 0.85 }), shade: Object.freeze({ flow: 0.2, yards: 0.6 }), life: Object.freeze({ hornito: 9, vent: 7, stack: 8 }), carry: 0.32, grow: Object.freeze({ hornito: 4.0, vent: 2.6, stack: 4.0 }), puffs: 2.0 });
+export const STEAM_LOOK = Object.freeze({ color: 0xe4e8e8, opacity: Object.freeze({ flow: 0.3, yards: 0.85 }), shade: Object.freeze({ flow: 0.2, yards: 0.6 }), solid: Object.freeze({ flow: 0, yards: 1 }), life: Object.freeze({ hornito: 9, vent: 7, stack: 8 }), carry: 0.32, grow: Object.freeze({ hornito: 4.0, vent: 2.6, stack: 4.0 }), puffs: 2.0 });
 /* (M3 wave 3, MP4's cost per source: the vents nearest F56's lens, 34-42 m, carried most of the steam's 1.45 ms) a vent's
  * plume swells less (2.6 times its first radius, was 4) and has fewer puffs (./malpais-layout.js STEAM): a crack's breath,
  * not a chimney's */
@@ -65,7 +65,7 @@ const VERT_PROJECT = /* glsl */ `
 `;
 const FRAG_PARS = /* glsl */ `
 #include <common>
-uniform vec4 uSteamK;   // x the most a puff covers, y how dark its own shade (core and underside)
+uniform vec4 uSteamK;   // x the most a puff covers, y how dark its own shade (core and underside), z how solid (0 thin, 1 dense)
 varying vec2 vSt;
 varying float vStA;
 varying float vStSeed;
@@ -82,7 +82,10 @@ const FRAG_COLOR = /* glsl */ `
   vec2 o = vec2(vStSeed, vStSeed * 1.7);
   float n = 0.6 * stN(vSt * 2.3 + o) + 0.4 * stN(vSt * 5.9 + o * 2.3);
   float core = 1.0 - smoothstep(0.0, 1.0, r);
-  float a = core * core * smoothstep(0.15, 0.75, n + 0.35 * core) * vStA * uSteamK.x;
+  // (wave 3) uSteamK.z, how solid a plume is: 0 a fumarole's thin breath (wave 2b's cover), 1 a stack's dense column (its
+  // cover falls off with the radius, not its square, and the noise eats less of its heart: at 7b06488 the stacks' plumes
+  // were a faint wisp over F57's sky, 25,329 pixels moved by 4.5 luma on average)
+  float a = mix(core * core * smoothstep(0.15, 0.75, n + 0.35 * core), core * smoothstep(0.05, 0.6, n + 0.5 * core), uSteamK.z) * vStA * uSteamK.x;
   // a puff in its own shade: its underside, and (wave 3) its dense core, by the group's uSteamK.y. At a1359f9 a stack's
   // plume took the dusk sky's light evenly and came out the colour of the lit clouds behind it (+12.7 luma over 23,940 sky
   // pixels): a dense plume's heart is grey
@@ -112,7 +115,7 @@ export function buildSteam(sources, ground) {
   const mats = new Map();
   const matFor = (k) => {
     if (mats.has(k)) return mats.get(k);
-    const K = { value: new THREE.Vector4(STEAM_LOOK.opacity[k] ?? STEAM_LOOK.opacity.flow, STEAM_LOOK.shade[k] ?? STEAM_LOOK.shade.flow, 0, 0) };
+    const K = { value: new THREE.Vector4(STEAM_LOOK.opacity[k] ?? STEAM_LOOK.opacity.flow, STEAM_LOOK.shade[k] ?? STEAM_LOOK.shade.flow, STEAM_LOOK.solid[k] ?? 0, 0) };
     const mat = new THREE.MeshStandardMaterial({ color: STEAM_LOOK.color, roughness: 1, metalness: 0, transparent: true, depthWrite: false, emissive: 0x000000 });
     mat.name = `malpais-steam-${k}`;
     mat.onBeforeCompile = (shader) => {
