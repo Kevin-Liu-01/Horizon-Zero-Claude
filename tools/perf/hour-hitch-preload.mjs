@@ -389,9 +389,7 @@ puppeteer.launch = async (opts) => {
   const L = { at: new Date().toISOString(), pages: 0, long: [], summary: null };
   run.launches.push(L); save();
   const pages = [];
-  const newPage0 = browser.newPage.bind(browser);
-  browser.newPage = async (...a) => {
-    const page = await newPage0(...a);
+  const instrument = async (page) => {
     L.pages++;
     pages.push(page);
     await page.exposeFunction('__hhSend', (json) => { try { L.long.push(...JSON.parse(json)); save(); } catch { /* */ } });
@@ -399,6 +397,13 @@ puppeteer.launch = async (opts) => {
     if (PROFILE) profilePage(page, L).catch((e) => { L.profileError = String(e?.message || e); save(); });
     return page;
   };
+  const wrapNewPage = (host) => { const f = host.newPage.bind(host); host.newPage = async (...a) => instrument(await f(...a)); };
+  wrapNewPage(browser);
+  // a page in a context of its own (slice-hour.mjs runs the slice in browser.createBrowserContext())
+  if (typeof browser.createBrowserContext === 'function') {
+    const cc = browser.createBrowserContext.bind(browser);
+    browser.createBrowserContext = async (...a) => { const c = await cc(...a); wrapNewPage(c); return c; };
+  }
   const close0 = browser.close.bind(browser);
   browser.close = async (...a) => {
     for (const p of pages) {
