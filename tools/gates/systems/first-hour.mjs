@@ -65,6 +65,10 @@ const CHAIN = args.includes('--chain');
 // (M2 fix wave) --from <beat>: leg 2 alone from a mid-leg record (first-hour-fixtures.mjs fixture(2, { from }): 'plumb-2'),
 // as the checkpoint at that stage's start writes it; the beats before it are not run (a lane's probe, never the row)
 const FROM = flag('--from');
+// (M2 fix wave 2) --start-hp N [--start-gourd G]: the fixture's vitals set before it is written (a lane's probe of the
+// careful start, restIfLow; never the row)
+const START_HP = flag('--start-hp') != null ? Number(flag('--start-hp')) : null;
+const START_GOURD = flag('--start-gourd') != null ? Number(flag('--start-gourd')) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[first-hour ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -909,6 +913,36 @@ async function driveRest(page, K) {
   return out;
 }
 
+/**
+ * (M2 fix wave 2) A CAREFUL START: leg 2 begins where the slice ended, at Saltrow. Under 60 hp she drinks; still under 60
+ * with the gourd dry, she rests at her cistern's Brazier first (the dialog's first row, dawn: a rest refills the
+ * gourds, BIBLE 17) and drinks to full. At d25575a chained run 3 the slice ended at 11 hp with a dry gourd, she set out
+ * for the Holds like that and the terrace Plumb's Sightline killed her on the way to Oro.
+ */
+async function restIfLow(page, K) {
+  const s0 = await page.evaluate(SH.probe);
+  if (s0.hp == null || s0.hp >= 60) return null;
+  const out = { hp0: s0.hp, gourd0: s0.gourd ?? null, hour0: await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3)) };
+  out.drink0 = await SH.drink(page, K, 98);
+  if ((await page.evaluate(SH.probe)).hp >= 60) return out;
+  const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('cistern'); return b ? { x: b.obj.position.x, z: b.obj.position.z } : null; });
+  if (!A) return { ...out, why: 'no cistern Brazier' };
+  const w = await walkSure(page, A, 1.3, 60, null);
+  out.walk = { ok: w.ok, why: w.why ?? null, tries: w.tries };
+  await sleep(300);
+  await SH.holdE(page, K, 600);
+  await sleep(600);
+  out.dialog = await page.evaluate(() => ({ open: !!window.__CTX__.systemsGame?.present?.busy, rows: [...document.querySelectorAll('#cal-sys .sys-row')].map((r) => ({ label: r.firstChild?.textContent ?? '', sel: r.classList.contains('sel') })) }));
+  await K.tap('Enter');
+  for (let i = 0; i < 40; i++) { await sleep(300); if (await page.evaluate(() => !window.__CTX__.braziers.resting && !window.__CTX__.systemsGame.present.busy)) break; }
+  await sleep(800);
+  await K.tap('KeyW'); await sleep(300);
+  out.drink1 = await SH.drink(page, K, 98, 9000);
+  const s1 = await page.evaluate(SH.probe);
+  Object.assign(out, { hp1: s1.hp, gourd1: s1.gourd ?? null, hour1: await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3)) });
+  return out;
+}
+
 /** CALIMA AT NOON, AND THE CROSSING: the weather read until it is calima (asked for at noon), then to the Malpais edge. */
 async function driveCross(page) {
   const out = {};
@@ -952,6 +986,7 @@ async function boot(page, leg, startRec = null) {
   await page.waitForFunction(() => window.__CTX__?.state === 'title' && !!window.__CTX__?.progression?.saves?.store, { timeout: 180000, polling: 200 });
   // the fixture, written as a save on disk is: into the store, then the game opened again (the title reads it at boot)
   const rec = startRec ? { ...startRec, savedAt: Date.now() } : { ...fixture(leg, leg === 2 && FROM ? { from: FROM } : {}), savedAt: Date.now() };
+  if (!startRec && START_HP != null) rec.vitals = { ...rec.vitals, health: START_HP, ...(START_GOURD != null ? { gourd: START_GOURD } : {}) };
   const wrote = await page.evaluate((r) => { const st = window.__CTX__.progression.saves.store; st.setActive(1); return st.write(r); }, rec);
   if (!wrote?.ok) throw new Error(`fixture ${leg} not written: ${JSON.stringify(wrote)}`);
   await page.goto('about:blank', { waitUntil: 'load', timeout: 30000 });
@@ -1014,6 +1049,7 @@ async function runLeg(leg, startRec = null) {
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), fixtureAt: rec.position, shot: await shot(page, `l${leg}-00-continued`) };
     L.rows.continued = { pass: Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z) < 0.5 && Math.abs(L.start.hour - rec.hour) < 0.05,
       dxz: +Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z).toFixed(3), hour: +L.start.hour.toFixed(3) };
+    if (leg === 2 && !(FROM && !startRec)) L.prep = await restIfLow(page, K);
     const stages = beatsOf(leg);
     const qid = leg === 2 ? SCAR_ID : TRUE_GROUND_ID;
     let k = 0, driveOn = true;
