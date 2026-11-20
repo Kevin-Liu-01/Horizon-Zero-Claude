@@ -858,6 +858,8 @@ const sealStand = async (mi, parts, margin, slack) => {
  * is out of its line) so the first arrow leaves as the stall begins. At 72b3f5e (chain1) the wall-2 stall gave three
  * clean hits in 5.2 s, one arrow at a time with the bow lowered between them; both seals take four.
  */
+/** the seal arrows loosed in this fight ({ part, at }: Date.now()), for the ones still in flight (volley) */
+const FIRED = [];
 async function volley(page, K, stage, maxS = 8) {
   const t0 = Date.now(), shots = [];
   let blocked = null, drawing = false, td = 0, needStand = false;
@@ -879,7 +881,12 @@ async function volley(page, K, stage, maxS = 8) {
       // (da66735 probes 6-8: far, far, near in the stall and the near one's second arrow held through the back-off, where
       // its chest came between them: three fail-soft. Now near, near, far in the stall: the far seal's line only opens
       // as it backs off, so its second arrow goes in the back-off)
-      const order = (S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice()).filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
+      // (936878f probes 13-14: at 0.55 draw the next arrow was chosen before the one in flight had landed, and two went at a
+      // seal its second hit had already taken off) a seal with hits + arrows loosed at it in the last 0.8 s >= 2 is done
+      const inFlight = (p) => FIRED.filter((f) => f.part === p && Date.now() - f.at < 800).length;
+      const wanted = (S.sealsLeft.length === 2 ? [near, far] : S.sealsLeft.slice()).filter((p) => (S.hits?.[p] ?? 0) + inFlight(p) < 2);
+      if (!wanted.length) { await sleep(120); continue; }
+      const order = wanted.filter((p) => (G?.[p]?.margin ?? 0) >= SEAL_MARGIN);
       let part = null, sol = null;
       for (const p of order) { const q = await page.evaluate(SH.solveShot, S.i, p, 0.12); if (q && q.first === `weak:${p}`) { part = p; sol = q; break; } }
       if (!part) {
@@ -901,7 +908,7 @@ async function volley(page, K, stage, maxS = 8) {
       const G2 = await page.evaluate((i) => window.__sealGeom(i), S.i);
       const rec = { t: +((Date.now() - t0) / 1000).toFixed(1), part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), hitsBefore: S.hits, first: sol?.first ?? null, missM: sol?.missM ?? null, ds: sol?.ds ?? null,
         mNock: G2?.[part]?.mNock ?? null, mLens: G2?.[part]?.mLens ?? null, heldS: held / 10 };
-      if (sol && sol.first === `weak:${part}` && (G2?.[part]?.margin ?? 0) >= SEAL_MARGIN) { await K.mouse('left', false); rec.fired = true; await sleep(100); }
+      if (sol && sol.first === `weak:${part}` && (G2?.[part]?.margin ?? 0) >= SEAL_MARGIN) { await K.mouse('left', false); rec.fired = true; FIRED.push({ part, at: Date.now() }); await sleep(100); }
       else { await K.mouse('right', false); await sleep(30); await K.mouse('left', false); await sleep(30); await K.mouse('right', true); await sleep(200); rec.letDown = true; }
       drawing = false;
       shots.push(rec);
