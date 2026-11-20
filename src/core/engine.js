@@ -2419,6 +2419,14 @@ export class Engine {
         try { this.compileAsDrawn(g, camera, scene); } finally { g.clear(); }
       }
       await this._awaitProgramsReady(timeoutMs);
+      // C5: and each extra DRAWN once, with the scene, into the scene pass's own target: a linked program still waited on
+      // its first draw (the GPU process finishes it there; 80bab35 found the same for the armour). At 57033ec the mouth's
+      // cavity, linked here, held its first frame 25.9 ms in getProgramInfoLog on the first bark of first-hour leg 2
+      // (once for a set of extras: the boot's warm-up, not the deferred one that runs while the title stands)
+      if (this._warmExtras.length && scene === this.scene && this._warmDrawnN !== this._warmExtras.length) {
+        this._warmDrawnN = this._warmExtras.length;
+        this._drawWarmExtras(scene, camera);
+      }
     } catch (err) {
       console.warn('[CAL] shader warm-up skipped:', err?.message || err);
     }
@@ -2545,6 +2553,25 @@ export class Engine {
   compileAsDrawn(root, camera = this.camera, scene = this.scene) {
     const r = this.renderer, prev = r.getRenderTarget();
     try { r.setRenderTarget(this.sceneTarget || null); return r.compile(root, camera, scene); } finally { r.setRenderTarget(prev); }
+  }
+
+  /**
+   * C5: draw the warm extras once with the scene (unculled, under the loading sheet), a whole frame as the loop draws it
+   * (this.render, as main.js's rung warm-up does), so the first frame that draws their programs in play does not wait for
+   * the GPU process to finish them. The frame is overwritten by the first real one.
+   */
+  _drawWarmExtras(scene, camera) {
+    const g = new THREE.Group();
+    g.name = 'warm-extras';
+    const was = this._warmExtras.map((m) => [m, m.frustumCulled, m.visible, m.userData.noSizeCull]);
+    for (const [m] of was) { m.frustumCulled = false; m.visible = true; m.userData.noSizeCull = true; g.add(m); }
+    scene.add(g);
+    try { if (camera === this.camera) this.render(0); }
+    catch (err) { console.warn('[CAL] warm extras draw skipped:', err?.message || err); }
+    finally {
+      scene.remove(g);
+      for (const [m, fc, vis, nsc] of was) { g.remove(m); m.frustumCulled = fc; m.visible = vis; if (nsc === undefined) delete m.userData.noSizeCull; else m.userData.noSizeCull = nsc; }
+    }
   }
 
   /**
