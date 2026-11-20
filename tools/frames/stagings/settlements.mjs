@@ -63,14 +63,24 @@ export const FRAMES = [
   },
 ];
 
-/** IN11's cost case: F39's lens and staging, plus five of the cast sheltering (a lane frame of its own; F39 stays instruments'). */
+/** IN11's cost case: F39's staging, plus five of the cast sheltering, in ONE lens (a lane frame of its own; F39 stays
+ * instruments'). POLISH (frames lane): at 02f7125 it used F39's own lens (bearing 321, behind her left shoulder) and the
+ * five sheltered 73-86 m behind it, at the doors on bearings 219-244 from her and 27-33 m lower: the frame drew what F39
+ * draws (116 draws against 117) and IN11 was not measured as written. The people keep their shelter (holds.js
+ * stageSheltered: the five spots farthest from the Screed's threat lines); the lens moves to hold them with the fight.
+ * The people system hides a person past 90 m from the CAMERA (people/index.js HIDE_R), so the lens stands within 79 m of
+ * all five and 76 m of the fight: 70 m from her toward the village's east side, 15 m over her ground (35 m over its
+ * own), turned down 36 deg toward bearing 339, fov 60 (found in Node on recipe.js heightAt; a lens 25 m behind her
+ * stood 115 m from them and drew none, run 20261120T002449Z-4e451a2-polish-x2-partial). The five at the doors fill the
+ * lower left, the fight (Screed, three Sickles, Brea) the upper right; each person draws 120-404 px (the look probe,
+ * run 20261120T013206Z-4e451a2-polish-x3-partial) */
 FRAMES.push({
-  id: 'F39-people', subject: 'IN11\'s cost case: the Screed fight with five of the Holds sheltering', in: 'M2', hour: 16.5, weather: 'trade',
+  id: 'F39-people', subject: 'IN11\'s cost case: the Screed fight with five of the Holds sheltering, all in the lens', in: 'M2', hour: 16.5, weather: 'trade',
   at: { en: [44.83, -169.9] }, bearing: 321,
-  camera: { mode: 'orbit', yawRel: 160, dist: 7.5, height: 2.6, target: { fwd: 7, side: 0.5, up: 1.8 }, fov: 60 },
+  camera: { mode: 'orbit', yawRel: 130, dist: 70, height: 15, target: { fwd: -21.91, side: 46.12, up: -2.63 }, fov: 60 },
   state: { pose: 'idle', hud: false },
-  ref: { written: 'IN11: F39\'s staging (Screed + 3 Sickles + Brea) with 5 people: p95 interval <= 16.7 ms, median GPU <= 14 ms' },
-  note: 'A cost frame, not a look frame: the people shelter at the doors 50-70 m behind the lens, as NW9 sends them.',
+  ref: { written: 'IN11: F39\'s staging (Screed + 3 Sickles + Brea) with 5 people, all in the lens: p95 interval <= 16.7 ms, median GPU <= 14 ms' },
+  note: 'A cost frame, not a look frame: the people shelter at the doors 73-86 m from her, as NW9 sends them, and the lens (within 90 m of them) holds them with the fight.',
 });
 
 /** F34-F36 are fixed lenses on a still village (wall clock is honest; --repeat 2 grades them). F37 is a slate. */

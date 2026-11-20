@@ -89,7 +89,7 @@ frames.push(
   },
   {
     id: 'F42', subject: 'the gaff hook-rip at contact on a Sickle, three-quarter front from her right', in: 'M2', hour: 16.5, weather: 'trade', at: 'place:openGround', bearing: 180,
-    camera: { mode: 'orbit', yawRel: 300, dist: 3.6, height: 1.2, target: { fwd: 0.7, side: 0, up: 0.9 }, fov: 45 },
+    camera: { mode: 'orbit', yawRel: 300, dist: 4.8, height: 1.4, target: { fwd: 1.6, side: 0, up: 0.9 }, fov: 45 },
     state: { pose: 'idle', hud: false },
     ref: { written: "Kevin's bars: the body performs it: the hook out in front at the Sickle's blade, the fist below her shoulder, her hips turned; never a hand behind the head" },
     note: 'M2 wave 3 (area D): gaffLayer.js hookRip, held at the contact (the end of its H phase).',
@@ -323,14 +323,29 @@ stagings.F42 = {
     const M = C.machines, p = C.player, h = p.heading || 0;
     const t0 = performance.now();
     while (!M?.expansionReady && performance.now() - t0 < 30000) await api.sleep(200);
-    // a Sickle 1.9 m in front of her, facing her, held where it stands
-    const x = p.position.x + Math.sin(h) * 1.9, z = p.position.z + Math.cos(h) * 1.9;
-    const m = M?.spawn?.('sickle', x, z, { heading: h + Math.PI });
+    // a Sickle in front of her, its hub 1.9 m out, facing her, held where it stands. POLISH (frames lane): its own rules
+    // (SickleBrain) walked it off its mark in the 0.3 s before it was held (02f7125: 4.9 m from her, its hull off the
+    // frame's right edge, the grass over what was left): its brain is put on the mark with it, it is calmed, its feet seated,
+    // and it is put back on the mark once more when it is held. The lens stands back to 4.8 m (was 3.6) so the Sickle's
+    // hub, blades and the front of its body are in frame with her
+    // (its body's centre 3.3 m out, so its hub and blades stand 1.9 m from her; turned to her: the kind's art faces
+    // its root's heading reversed, so at h + PI, as at 02f7125, it stood with its tail to her)
+    const x = p.position.x + Math.sin(h) * 3.3, z = p.position.z + Math.cos(h) * 3.3, hd = h;
+    const m = M?.spawn?.('sickle', x, z, { heading: hd });
     if (!m) api.standIn('no Sickle stood up'); else {
       api.undo(() => { try { if (M.sites?.dispose) M.sites.dispose(m); else m.dispose?.(); } catch { try { m.dispose?.(); } catch { /* */ } } });
-      m.heading = h + Math.PI; m.root.position.set(x, C.terrain.getHeight(x, z), z); m.root.rotation.y = h + Math.PI;
+      const mark = () => {
+        const B = m.brain; if (B) { B.x = x; B.z = z; B.heading = hd; }
+        m.heading = hd; m.position?.set?.(x, C.terrain.getHeight(x, z), z);
+        m.root.position.set(x, C.terrain.getHeight(x, z), z); m.root.rotation.y = hd;
+        m.suspicion = 0; if (m.sc) { m.sc.suspicion = 0; m.sc.heading = hd; }
+      };
+      mark();
       await api.sleep(300);
+      mark();
+      try { m.seatFeet?.(); } catch { /* */ }
       const u0 = m.update; m.update = function () {}; api.undo(() => { m.update = u0; });
+      m.root.updateMatrixWorld?.(true);
     }
     const V = C.combat.gaff.verbs, G = await import('/src/combat/gaff.js');
     const at = G.verbContactAt(G.HOOK_RIP);
