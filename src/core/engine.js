@@ -280,6 +280,28 @@ THREE.SkinnedMesh.prototype.computeBoundingSphere = function computeBoundingSphe
   s.radius += SKIN_SPHERE_PAD_M;
 };
 
+/**
+ * C5: a one-triangle skinned mesh that casts shadows, for the warm extras. The shadow pass links a depth program with
+ * skinning the first time a skinned mesh casts (Brea's and the people's shadows are cast by plain meshes): at 71644c5 the
+ * first was the Scar's terrace Plumb, on the walk into the Holds, 15.8 ms in getProgramInfoLog (first-hour leg 2, run
+ * hh-c5-71644c5-prof; the new program's key differed from the plain depth program's in the skinning bit alone).
+ */
+function warmSkinnedCaster() {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0.1, 0, 0, 0, 0.1, 0], 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4));
+  const m = new THREE.SkinnedMesh(geo, new THREE.MeshStandardMaterial());
+  const bone = new THREE.Bone();
+  m.add(bone);
+  m.bind(new THREE.Skeleton([bone]));
+  m.name = 'warm-skinned-caster';
+  m.castShadow = true; m.receiveShadow = false;
+  m.userData.warmNearCamera = true;
+  return m;
+}
+
 /** Highest wins. Anything not listed sorts just above `legacy`. */
 const TS_PRIORITY = ['studio', 'wheel', 'hitstop', 'concentration', 'legacy'];
 
@@ -1079,6 +1101,8 @@ export class Engine {
     this.onAfterRender = [];
     /* M2 wave 3: meshes outside the scene whose programs warmUp links too (addWarmExtra) */
     this._warmExtras = [];
+    // C5: a skinned shadow caster, so the boot's warm-up draws the shadow pass's skinned depth program (warmSkinnedCaster)
+    this._warmExtras.push(warmSkinnedCaster());
 
     // ---- perf ring buffer ----
     /**
@@ -2565,6 +2589,10 @@ export class Engine {
     g.name = 'warm-extras';
     const was = this._warmExtras.map((m) => [m, m.frustumCulled, m.visible, m.userData.noSizeCull]);
     for (const [m] of was) { m.frustumCulled = false; m.visible = true; m.userData.noSizeCull = true; g.add(m); }
+    // a caster stands 2 m in front of the camera, inside the nearest cascade and the caster distance
+    camera.updateMatrixWorld();
+    const ahead = new THREE.Vector3(0, 0, -2).applyMatrix4(camera.matrixWorld);
+    for (const [m] of was) if (m.userData.warmNearCamera) { m.position.copy(ahead); m.updateMatrixWorld(true); }
     scene.add(g);
     try { if (camera === this.camera) this.render(0); }
     catch (err) { console.warn('[CAL] warm extras draw skipped:', err?.message || err); }
