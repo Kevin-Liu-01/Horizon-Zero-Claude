@@ -16,6 +16,10 @@
  * Writes <HH_OUT>/hour-hitch.json (rewritten on every long frame and at each browser close). Run it inside
  * tools/perf/clean-measure.sh so its numbers are a commit's.
  *
+ * A-late-programs (C5): every program linked while she plays, and every first use that waited over 5 ms, after the
+ * boot's warm-up, named by the material build that made it; `run.verdict` (and a line at exit) is FAIL when there is any.
+ * `node tools/perf/hour-hitch-preload.mjs --verdict <HH_OUT>` prints that verdict again and exits 1 on FAIL.
+ *
  * HH_PROFILE=1 (C5): V8's sampling profiler runs on every page in HH_PROFILE_S chunks (default 12 s; HH_PROFILE_US, default 250 us a sample; each stop and start holds the page ~0.2 s);
  * each long frame then also carries `cpu`: the functions that held the main thread inside its interval (self ms and
  * inclusive ms by name, file and line), read off the chunk that holds it. The chunk's clock is put on the page's
@@ -42,13 +46,55 @@ const recorder = (over) => {
     'texImage2D', 'texImage3D', 'texSubImage2D', 'texSubImage3D', 'texStorage2D', 'texStorage3D', 'compressedTexImage2D',
     'compressedTexSubImage2D', 'compressedTexImage3D', 'compressedTexSubImage3D', 'bufferData', 'bufferSubData', 'generateMipmap',
     'readPixels', 'getError', 'getUniformLocation', 'getActiveUniform', 'clientWaitSync', 'getQueryParameter', 'framebufferTexture2D', 'checkFramebufferStatus'];
+  // C5 (the late-program row): every program LINKED while she plays, and every program whose FIRST USE (three calls
+  // getProgramInfoLog once per program, on its first use) waited over LATE_USE_MS while she plays, after the boot's
+  // warm-up. Each is named by the build that made it (Material.prototype.onBuild, patched once the game's three is
+  // reachable: the object, its two parents, the material's type and name, and the program's key).
+  R.playing = false; R.late = []; R.latePending = []; R.built = new WeakMap(); R.build = null; R.used = new WeakSet();
+  const LATE_USE_MS = 5;
+  const lateNote = (kind, glp, ms) => {
+    if (!R.playing || R.late.length >= 200) return;
+    const b = R.built.get(glp) || null;
+    R.latePending.push([R.late.length, glp]);
+    R.late.push({ kind, t: Math.round(performance.now()), ms: Math.round(ms * 10) / 10, who: b?.who ?? null, mat: b?.mat ?? null, key: b?.key ?? null,
+      at: (() => { const p = window.__CTX__?.player?.position; return p ? { x: Math.round(p.x), z: Math.round(p.z) } : null; })(),
+      hour: window.__CTX__?.environment?.time != null ? +window.__CTX__.environment.time.toFixed(2) : null });
+  };
   for (const k of WRAP) {
     const f = P[k]; if (typeof f !== 'function') continue;
     const c = (R.gl[k] = { n: 0, ms: 0 });
     // C5: a program whose first use waited (getProgramInfoLog over 5 ms) is kept for the frame's record (whose it is)
-    const slow = k === 'getProgramInfoLog';
-    P[k] = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { const d = performance.now() - t; c.n++; c.ms += d; if (slow && d > 5 && R.slow.length < 8) R.slow.push([a[0], Math.round(d * 10) / 10]); } };
+    const slow = k === 'getProgramInfoLog', link = k === 'linkProgram';
+    P[k] = function (...a) {
+      const t = performance.now();
+      try { return f.apply(this, a); } finally {
+        const d = performance.now() - t; c.n++; c.ms += d;
+        if (slow) {
+          if (d > 5 && R.slow.length < 8) R.slow.push([a[0], Math.round(d * 10) / 10]);
+          if (!R.used.has(a[0])) { R.used.add(a[0]); if (d > LATE_USE_MS) lateNote('first-use', a[0], d); }
+        }
+        if (link) { if (R.build) R.built.set(a[0], R.build); R.build = null; lateNote('link', a[0], d); }
+      }
+    };
   }
+  // the build that the next linkProgram belongs to (three: getProgram -> material.onBuild -> acquireProgram -> link)
+  const hookBuild = () => {
+    const C = window.__CTX__; if (!C?.scene || R.buildHooked) return;
+    let m = null; C.scene.traverse((o) => { if (!m && o.material && !Array.isArray(o.material)) m = o.material; });
+    if (!m) return;
+    let proto = Object.getPrototypeOf(m);
+    while (proto && !Object.prototype.hasOwnProperty.call(proto, 'onBuild')) proto = Object.getPrototypeOf(proto);
+    if (!proto) return;
+    const f = proto.onBuild, nm = (o) => (o ? (o.name || o.type) : '');
+    proto.onBuild = function (object, parameters, renderer) {
+      try {
+        R.build = { who: object ? `${nm(object.parent?.parent)}/${nm(object.parent)}/${nm(object)}` : null, mat: `${this.type}${this.name ? ':' + this.name : ''}`,
+          key: [parameters?.shaderID ?? parameters?.shaderName, parameters?.outputColorSpace, parameters?.skinning ? 'skin' : null, parameters?.customProgramCacheKey?.slice?.(0, 40) || null].filter((x) => x != null).join(',') };
+      } catch { /* */ }
+      return f.call(this, object, parameters, renderer);
+    };
+    R.buildHooked = true;
+  };
   try {
     new PerformanceObserver((l) => { for (const e of l.getEntries()) {
       if (R.loaf.length > 200) R.loaf.shift();
@@ -61,14 +107,24 @@ const recorder = (over) => {
   const instrument = () => {
     const G = window.__GAME__; if (!G?.systems || R.sys) return;
     R.sys = {};
-    for (const s of G.systems) {
-      const name = s.constructor?.name || 'anon';
+    G.systems.forEach((s, i) => {
+      // C5: a system that is a plain object (constructor Object) is named by its slot and its own fields
+      let name = s.constructor?.name || 'anon';
+      if (name === 'Object') name = `Object#${i}(${s.name || s.id || Object.keys(s).filter((k) => typeof s[k] !== 'function').slice(0, 3).join('/') || Object.keys(s).slice(0, 3).join('/')})`;
       for (const ph of ['update', 'interpolate']) {
         const f = s[ph]; if (typeof f !== 'function' || f.__hh) continue;
         const key = `${name}.${ph}`; R.sys[key] = 0;
         const w = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { R.sys[key] += performance.now() - t; } };
         w.__hh = true; s[ph] = w;
       }
+    });
+    // C5: the spatial system's three parts apart (the 18.2 ms "Object.update" at Oro, ddc31c1, was the spatial system's)
+    const S = window.__CTX__?.spatial;
+    if (S) for (const part of ['collision', 'nav', 'hitHulls']) {
+      const o = S[part], f = o?.update; if (typeof f !== 'function' || f.__hh) continue;
+      const key = `spatial.${part}.update`; R.sys[key] = 0;
+      const w = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { R.sys[key] += performance.now() - t; } };
+      w.__hh = true; o.update = w;
     }
   };
   const flush = () => {
@@ -86,6 +142,22 @@ const recorder = (over) => {
     if (!R.sys && window.__GAME__) instrument();
     const L = document.getElementById('loading'), sheet = !!L && !L.classList.contains('hidden');
     const playing = C?.state === 'playing' && !sheet;
+    if (!R.buildHooked) hookBuild();
+    R.playing = playing;
+    // each late program's full key and what sets it apart from the nearest other program (field: theirs -> its)
+    if (R.latePending.length && E?.renderer?.info?.programs) {
+      const all = E.renderer.info.programs;
+      for (const [i, glp] of R.latePending.splice(0)) {
+        const q = all.find((x) => x.program === glp), e = R.late[i];
+        if (!q || !e) continue;
+        const a = (q.cacheKey || '').split(',');
+        let best = null, bd = Infinity;
+        for (const o of all) { if (o === q) continue; const b = (o.cacheKey || '').split(','); if (b[0] !== a[0]) continue; let d = 0; for (let j = 0; j < Math.max(a.length, b.length); j++) if (a[j] !== b[j]) d++; if (d < bd) { bd = d; best = b; } }
+        e.name = q.name; e.kind0 = a[0]; e.fields = a.length;
+        e.diff = best ? a.map((v, j) => (v !== best[j] ? `${j}:${(best[j] ?? '').slice(0, 40)}->${(v ?? '').slice(0, 40)}` : null)).filter(Boolean).slice(0, 12) : null;
+        e.cacheKey = (q.cacheKey || '').length > 400 ? `${q.cacheKey.slice(0, 400)}...` : q.cacheKey;
+      }
+    }
     const g = snapGl();
     const info = E?.renderer?.info, cur = info ? { p: info.programs?.length ?? 0, g: info.memory.geometries, x: info.memory.textures } : null;
     const heap = performance.memory?.usedJSHeapSize ?? 0;
@@ -280,6 +352,25 @@ async function profilePage(page, L) {
   }
 }
 
+/**
+ * C5's row, A-late-programs: FAIL when any program was linked, or waited over 5 ms on its first use, while she played
+ * (after the boot's warm-up, the loading sheet closed). Each late program is named (whose build made it, its key).
+ */
+function verdict() {
+  const late = run.launches.flatMap((L, i) => (L.late || []).map((e) => ({ launch: i, ...e })));
+  run.late = late;
+  run.verdict = { row: 'A-late-programs', pass: late.length === 0, links: late.filter((e) => e.kind === 'link').length, firstUses: late.filter((e) => e.kind === 'first-use').length };
+  return run.verdict;
+}
+let said = false;
+process.on('exit', () => {
+  if (said || !run.launches.length) return;
+  said = true;
+  const v = verdict(); save();
+  console.log(`[hour-hitch] A-late-programs: ${v.pass ? 'PASS' : 'FAIL'} (${v.links} linked in play, ${v.firstUses} first uses over 5 ms in play)`);
+  for (const e of run.late) console.log(`[hour-hitch]   launch ${e.launch} ${e.kind} ${e.ms} ms at ${e.at ? `${e.at.x},${e.at.z}` : '?'} hour ${e.hour}: ${e.who ?? '?'} ${e.mat ?? '?'} [${e.key ?? '?'}]`);
+});
+
 const launch0 = puppeteer.launch.bind(puppeteer);
 puppeteer.launch = async (opts) => {
   const browser = await launch0(opts);
@@ -302,8 +393,24 @@ puppeteer.launch = async (opts) => {
       try { L.summary = await p.evaluate(() => ({ frames: window.__hh?.n ?? null, long: window.__hh?.nLong ?? null, hitch: window.__hitch ? { n: window.__hitch.n, over33: window.__hitch.over33, over50: window.__hitch.over50, max: +window.__hitch.max.toFixed(1) } : null,
         walk: (window.__CTX__?.nav?._walk || []).map((w) => ({ id: w.id, cells: w.open?.length ?? null, paths: w.stats.paths, misses: w.stats.misses, long: w.stats.long || 0, alt: w.stats.alt || 0, landmarks: w.stats.landmarks || null, lmReady: !!w._lm?.ready })) })); } catch { /* */ }
     }
-    L.closedAt = new Date().toISOString(); save();
+    for (const p of pages) {
+      try { const late = await p.evaluate(() => window.__hh?.late ?? []); L.late = (L.late || []).concat(late); } catch { /* */ }
+    }
+    L.closedAt = new Date().toISOString();
+    verdict(); save();
     return close0(...a);
   };
   return browser;
 };
+
+// `node tools/perf/hour-hitch-preload.mjs --verdict <dir>`: the row read back from <dir>/hour-hitch.json (exit 1 on FAIL)
+if (process.argv[1] && /hour-hitch-preload\.mjs$/.test(process.argv[1]) && process.argv.includes('--verdict')) {
+  said = true;
+  const dir = process.argv[process.argv.indexOf('--verdict') + 1];
+  const { readFileSync } = await import('node:fs');
+  const j = JSON.parse(readFileSync(path.join(dir, 'hour-hitch.json'), 'utf8'));
+  const late = (j.launches || []).flatMap((L, i) => (L.late || []).map((e) => ({ launch: i, ...e })));
+  console.log(`A-late-programs at ${j.commit ?? '?'}: ${late.length ? 'FAIL' : 'PASS'} (${late.length} late in ${(j.launches || []).length} launches)`);
+  for (const e of late) console.log(`  launch ${e.launch} ${e.kind} ${e.ms} ms at ${e.at ? `${e.at.x},${e.at.z}` : '?'} hour ${e.hour}: ${e.who ?? '?'} ${e.mat ?? '?'} [${e.key ?? '?'}]`);
+  process.exit(late.length ? 1 : 0);
+}

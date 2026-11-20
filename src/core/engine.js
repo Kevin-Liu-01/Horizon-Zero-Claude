@@ -56,6 +56,10 @@ class FrameClock {
  *   engine.onAfterRender[]                  callbacks run right after the composer
  *   engine.perfReset() / engine.perfSnapshot(n)   honest per-frame stats (perf-tech-02)
  *   engine.warmUp(scene, camera)            shader pre-compile (perf-tech-10)
+ *   engine.addWarmPass(fn)                  C5: a system's programs drawn outside the scene, compiled by warmUp
+ *   engine.compileFor(root, target, camera) C5: compile with a given target bound (null = the screen)
+ *   engine.resolvePrograms()                C5: each linked program's first use, behind the sheet
+ *   engine.compileOffFrame(root)            C5: link a late load's programs on later frames (KHR_parallel_shader_compile)
  *
  * ROUND 5 (engine-gpu W0a) — render-target measurement hooks, gate A-rt-ledger,
  * docs/ROUND5-ENGINE.md. On demand only: nothing here runs per frame.
@@ -1106,6 +1110,10 @@ export class Engine {
     this._warmExtras = [];
     // C5: a skinned shadow caster, so the boot's warm-up draws the shadow pass's skinned depth program (warmSkinnedCaster)
     this._warmExtras.push(warmSkinnedCaster());
+    /* C5: systems whose programs are drawn outside the scene (their own scene or target): addWarmPass */
+    this._warmPasses = [];
+    /* C5: what resolvePrograms did (programs given their first use behind the sheet, and the ms it took) */
+    this.programResolve = { runs: 0, n: 0, ms: 0, waitMs: 0 };
 
     // ---- perf ring buffer ----
     /**
@@ -2445,6 +2453,8 @@ export class Engine {
         for (const m of this._warmExtras) g.add(m);
         try { this.compileAsDrawn(g, camera, scene); } finally { g.clear(); }
       }
+      // C5: the programs systems draw outside the scene (the alidade's overlay and mask, the light shafts)
+      if (this._warmPasses.length && scene === this.scene) this._runWarmPasses(camera);
       await this._awaitProgramsReady(timeoutMs);
       // C5: and each extra DRAWN once, with the scene, into the scene pass's own target: a linked program still waited on
       // its first draw (the GPU process finishes it there; 80bab35 found the same for the armour). At 57033ec the mouth's
@@ -2454,6 +2464,12 @@ export class Engine {
         this._warmDrawnN = this._warmExtras.length;
         this._drawWarmExtras(scene, camera);
       }
+      // C5: then every program's first use, here: three gives a program its first use (getProgramInfoLog, the
+      // uniform and attribute reads: synchronous GL calls) on its first draw, and a synchronous call in a frame waits for
+      // the GPU process to finish the frame so far. Linked here and first used in play, the Kiln Yards' wellheads waited
+      // 23.9 ms and the hand prop at the fade 22.9 ms at ddc31c1 (first-hour leg 3); given its first use after the link
+      // has completed, a program costs 0.1-0.3 ms (tools/perf/program-probe.mjs: 63 programs in 47 ms at the title)
+      this.resolvePrograms();
     } catch (err) {
       console.warn('[CAL] shader warm-up skipped:', err?.message || err);
     }
@@ -2603,6 +2619,90 @@ export class Engine {
       scene.remove(g);
       for (const [m, fc, vis, nsc] of was) { g.remove(m); m.frustumCulled = fc; m.visible = vis; if (nsc === undefined) delete m.userData.noSizeCull; else m.userData.noSizeCull = nsc; }
     }
+  }
+
+  /**
+   * C5: a system that draws programs outside the scene (its own scene or render target: the alidade's overlay and its
+   * figure mask, the light shafts' quads) registers `fn(engine, camera)`; warmUp calls it after the scene's compile and
+   * before the readiness wait, behind the loading sheet (and again in the deferred warm-up: a compile of a program that
+   * exists is a lookup). It compiles what it will draw, as it will draw it (`compileFor`, with its own target bound, its
+   * own scene as the lights' scene), and keeps whatever material holds a program it releases between uses. At ddc31c1
+   * the alidade raised at Benchmark 1 linked 9 programs in one 41.4 ms frame (first-hour leg 3). Returns an unregister.
+   */
+  addWarmPass(fn) {
+    if (typeof fn !== 'function') return () => {};
+    this._warmPasses.push(fn);
+    return () => { const i = this._warmPasses.indexOf(fn); if (i >= 0) this._warmPasses.splice(i, 1); };
+  }
+
+  _runWarmPasses(camera) {
+    const r = this.renderer, prev = r.getRenderTarget();
+    for (const fn of this._warmPasses) {
+      try { fn(this, camera); } catch (err) { console.warn('[CAL] warm pass skipped:', err?.message || err); }
+      finally { r.setRenderTarget(prev); }
+    }
+  }
+
+  /**
+   * C5: compile `root`'s programs with `target` bound (null: the screen, as an after-render overlay draws), the lights of
+   * `lightsScene` (default `root` itself: a private scene drawn with `renderer.render(privateScene, camera)` has no
+   * lights). three picks the output colour space and tone mapping from the bound target, so a program compiled with the
+   * wrong one bound is not the program the draw asks for.
+   */
+  compileFor(root, target = null, camera = this.camera, lightsScene = root) {
+    const r = this.renderer, prev = r.getRenderTarget();
+    try { r.setRenderTarget(target); return r.compile(root, camera, lightsScene); } finally { r.setRenderTarget(prev); }
+  }
+
+  /**
+   * C5: give every linked program its first use now (WebGLProgram.getUniforms: the info logs, the uniforms' and
+   * attributes' locations; a lookup for a program already used). A program whose parallel link has not completed is
+   * left for the next call unless `force` (its first use would wait for the link). Returns { n, ms, left }.
+   */
+  resolvePrograms({ force = false } = {}) {
+    const programs = this.renderer?.info?.programs;
+    if (!programs) return { n: 0, ms: 0, left: 0 };
+    const seen = this._resolvedPrograms || (this._resolvedPrograms = new WeakSet());
+    const t0 = performance.now();
+    let n = 0, left = 0;
+    for (let i = 0; i < programs.length; i++) {
+      const p = programs[i];
+      if (!p || seen.has(p) || typeof p.getUniforms !== 'function') continue;
+      let ready = true;
+      try { ready = p.isReady(); } catch { /* released under us */ continue; }
+      if (!ready && !force) { left++; continue; }
+      try { p.getUniforms(); p.getAttributes(); } catch { /* a released program */ }
+      seen.add(p); n++;
+    }
+    const ms = performance.now() - t0;
+    const R = this.programResolve;
+    R.runs++; R.n += n; R.ms = Math.round((R.ms + ms) * 10) / 10;
+    return { n, ms: Math.round(ms * 10) / 10, left };
+  }
+
+  /**
+   * C5: link the programs of something loaded IN PLAY without holding a frame: compile `root` as the scene pass draws
+   * it (the link is issued; with KHR_parallel_shader_compile it runs off the main thread), wait on later frames until
+   * each new program reports COMPLETION_STATUS, then give each its first use (resolvePrograms: 0.1-1 ms once complete,
+   * 13 ms if read at once; tools/perf/program-probe.mjs). The caller adds `root` to the scene when this resolves. At
+   * ddc31c1 the Transit's far form, added as its GLB landed, linked on its first frame: 35.4 ms (first-hour leg 3).
+   * `register(mesh)` (optional) is what the world does to a new material (environment.registerMaterial), run first.
+   * Bounded by `timeoutMs`: it never holds the load.
+   */
+  async compileOffFrame(root, { camera = this.camera, scene = this.scene, register = null, timeoutMs = 3000 } = {}) {
+    if (!root || !this.renderer) return { ms: 0, programs: 0 };
+    const t0 = performance.now(), p0 = this.renderer.info.programs?.length ?? 0;
+    if (register) root.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine) { try { register(o); } catch { /* */ } } });
+    try { this.compileAsDrawn(root, camera, scene); } catch (err) { console.warn('[CAL] compileOffFrame:', err?.message || err); }
+    const wait = () => new Promise((res) => setTimeout(res, 16));
+    for (;;) {
+      const r = this.resolvePrograms();
+      if (!r.left || performance.now() - t0 > timeoutMs) break;
+      await wait();
+    }
+    const ms = Math.round(performance.now() - t0);
+    this.programResolve.waitMs += ms;
+    return { ms, programs: (this.renderer.info.programs?.length ?? 0) - p0 };
   }
 
   /**
