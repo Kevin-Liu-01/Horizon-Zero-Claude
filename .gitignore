@@ -50,3 +50,6 @@ models-staging/orig/
 # orchestrator symlinks this directory into each lane worktree, and git
 # treats a symlink as a file, which a `dir/` pattern would not match.
 models-staging/r5-src
+
+# Vite dependency cache, one per worktree (vite.config.js cacheDir)
+.vite-cache/
