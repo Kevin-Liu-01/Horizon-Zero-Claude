@@ -257,7 +257,19 @@ export function buildSurveyKite({ furl = 1 } = {}) {
       pa[i] = fP[i] + (oP[i] - fP[i]) * kx; pa[i + 1] = fP[i + 1] + (oP[i + 1] - fP[i + 1]) * ky; pa[i + 2] = fP[i + 2] + (oP[i + 2] - fP[i + 2]) * kz;
       na[i] = fN[i] + (oN[i] - fN[i]) * k; na[i + 1] = fN[i + 1] + (oN[i + 1] - fN[i + 1]) * k; na[i + 2] = fN[i + 2] + (oN[i + 2] - fN[i + 2]) * k;
     }
-    for (let i = 0; i < count; i++) { const j = i * 3, l = Math.hypot(na[j], na[j + 1], na[j + 2]) || 1; na[j] /= l; na[j + 1] /= l; na[j + 2] /= l; }
+    // (fix round 1: where the open and the furled normal point opposite ways their mix is ~0 at k 0.5, and a zero normal
+    //  is NaN in the shader: the frame went black under the bloom at 0.75 of the open; such a vertex takes the nearer
+    //  place's own normal)
+    for (let i = 0; i < count; i++) {
+      const j = i * 3, l = Math.hypot(na[j], na[j + 1], na[j + 2]);
+      if (l < 1e-3) {
+        let src = k >= 0.5 ? oN : fN;
+        if (Math.hypot(src[j], src[j + 1], src[j + 2]) < 1e-3) src = src === oN ? fN : oN;
+        if (Math.hypot(src[j], src[j + 1], src[j + 2]) < 1e-3) { na[j] = 0; na[j + 1] = 1; na[j + 2] = 0; continue; }
+        na[j] = src[j]; na[j + 1] = src[j + 1]; na[j + 2] = src[j + 2]; continue;
+      }
+      na[j] /= l; na[j + 1] /= l; na[j + 2] /= l;
+    }
     P.needsUpdate = true; N.needsUpdate = true;
   };
   // bounds: the open kite (furled lies inside)
