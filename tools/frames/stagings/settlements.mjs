@@ -88,27 +88,23 @@ FRAMES.push({
  * lens: the fight stands OUTSIDE wall-1, 30-35 m above the doors and 73-86 m from them, and no lens held both (at 8572260,
  * run 20261120T033426Z-8572260-frames-p3b-partial-x2, the five 36-92 px tall, the Screed 19 px on the skyline, Brea
  * behind wall-1). So this frame stages its own people NEARER the fight: five of the same cast in wall-1's LEE, backs to
- * its inner face at the bank's foot (64.7 m from the centre, the wall's centreline at 67.2), on bearings 48.5-56.5 from
- * the centre, 7.5-14.9 m from the Screed and 3.9-6.1 m off its threat lines (holds.js threatDistance: the charge line on
- * its heading and the line to her), all within 25 m of them; the wall stands 4.4 m over that terrace and 2.4 m over the
- * Screed's ground, so the wall is between them and its blade. Each holds the game's shelter clip (Idle_FoldArms_Loop),
- * turned to the village below; the one nearest the blade looks up at it. The lens is from the people toward the fight:
- * on the next terrace in (bearing 48, 53 m out), 13 m over its ground, aimed 0.55 of the way from the five to the fight,
- * fov 40: the Screed over wall-1 upper left, Brea beyond the wall, the five in a line along its foot. Chosen in Node on
- * recipe.js heightAt with the walls' collider boxes (a sampled hull 6.5 x 3.6 m with its mast to 3.8 m, a 1.7 m person):
- * the Screed 333 px tall and 88 % of it seen, each person 118-127 px, Brea 97 px; the same model gave the 8572260 lens's
- * Screed 31 px where the film read 19. */
-const F39_LOOK_PEOPLE = [
-  { id: 'pit-farmer', b: 48.5, face: 'screed' }, { id: 'pit-farmer-2', b: 50.5, turn: -14 }, { id: 'pit-farmer-3', b: 52.5, turn: 8 },
-  { id: 'cochineal-picker', b: 54.5, turn: -6 }, { id: 'tiller-follower-2', b: 56.5, turn: 16 },
-];
+ * its inner face at the foot of its bank (64.25-64.7 m from the centre; the wall's centreline is at 67.2), on bearings
+ * 48.6-55.6 from the centre, 7.6-14 m from the Screed and 4.1-6.3 m off its threat lines (holds.js threatDistance: the
+ * charge line on its heading and the line to her), all within 25 m of them. The wall stands about 4.4 m over that terrace
+ * and 2.4 m over the Screed's ground, between them and its blade. Each holds the game's shelter clip (Idle_FoldArms_Loop),
+ * turned to the village below; the one nearest the blade looks at it. A Sickle the F39 circle puts inside wall-1 is
+ * mirrored out across it for this frame (see the staging). The lens is from the people toward the fight: on the same
+ * terrace past the fifth of them (bearing 65 from the centre, 63.5 m out), 7.5 m over its ground, aimed 0.3 of the way
+ * from the five to the Screed, fov 36: the wall's curve leads from the five in the lower middle to the Screed over it, Brea
+ * beyond it on the right. Chosen from filmed variants (a crane lens 13 m over the next terrace in, at b87afe7, showed mostly
+ * the wall's face and the staging threw; lenses 13-20 m off along the terrace were filmed from an uncommitted tree). */
 FRAMES.push({
   id: 'F39-look', subject: 'the Holds fight with five of the people sheltering in wall-1\'s lee below it (a look frame)', in: 'M2', hour: 16.5, weather: 'trade',
   at: { en: [44.83, -169.9] }, bearing: 321,
-  camera: { mode: 'orbit', yawRel: 75.91, dist: 18.13, height: 7.85, target: { fwd: 3.46, side: 2.64, up: 0.81 }, fov: 40 },
+  camera: { mode: 'orbit', yawRel: 147.04, dist: 16.35, height: 1.87, target: { fwd: 2.68, side: 4.12, up: -0.5 }, fov: 36 },
   state: { pose: 'idle', hud: false },
   ref: { written: 'the Screed stalled on wall-1 with its Sickles and Brea; the Holds people sheltering in the wall\'s lee in their dyed wool, readable as people; the Screed >= 150 px tall and >= 3 people in the one frame' },
-  note: 'F39\'s fight; five of the cast staged in wall-1\'s lee 7.5-14.9 m from the Screed (not where NW9 sends them: F39-people keeps that); the lens from the next terrace in, 13 m over it, toward the fight; the look probe reads each person\'s height on screen and the fight\'s.',
+  note: 'F39\'s fight (a Sickle inside wall-1 mirrored out of the people\'s terrace); five of the cast staged in wall-1\'s lee 7.6-14 m from the Screed (not where NW9 sends them: F39-people keeps that); the lens on their terrace past them, 7.5 m up, toward the fight; the look probe reads each person\'s height on screen and the fight\'s.',
 });
 
 /** F34-F36 are fixed lenses on a still village (wall clock is honest; --repeat 2 grades them). F37 is a slate. */
@@ -165,7 +161,8 @@ export const STAGINGS = {
     },
   },
 };
-/* F39-look: F39's fight, then five of the cast in wall-1's lee (F39_LOOK_PEOPLE), held in the shelter clip */
+/* F39-look: F39's fight, then five of the cast in wall-1's lee, held in the shelter clip (the list lives in the hook: a
+ * hook is serialised on its own, so a module constant is not in the page; at b87afe7 it was, and the staging threw) */
 STAGINGS['F39-look'] = {
   async world(f, api) {
     const base = window.__laneStagings?.F39;
@@ -178,8 +175,30 @@ STAGINGS['F39-look'] = {
     const sc = (api.C.machines?.list || []).find((m) => m && m.kind === 'screed' && !m._disposed && m.position);
     const S = sc ? { x: sc.position.x, z: sc.position.z } : { x: 39.17, z: 162.83 };
     const P = api.C.player.position, D2R = Math.PI / 180;
-    const list = F39_LOOK_PEOPLE.map((q, i) => {
-      const at = NW.polar(q.b, 64.7);
+    // bearing from the centre (64.7 m out, the foot of wall-1's bank); turned to the village below by `turn` deg, or to the blade
+    const FIVE = [
+      { id: 'pit-farmer', b: 48.6, r: 64.7, face: 'screed' }, { id: 'pit-farmer-2', b: 50.0, r: 64.25, turn: -14 },
+      { id: 'pit-farmer-3', b: 52.2, r: 64.7, turn: 8 }, { id: 'cochineal-picker', b: 53.3, r: 64.3, turn: -24 },
+      { id: 'tiller-follower-2', b: 55.6, r: 64.6, turn: 16 },
+    ];
+    // a Sickle the circle (sickle-rules.js circlePos, F39) puts on the people's terrace, inside wall-1's inner face (66.5 m), is
+    // mirrored out across the wall's line (137 m less its distance from the centre; its ring about her runs 10 m and she
+    // stands 3 m outside the wall): people do not stand at ease 5 m from a Sickle. F39 and F39-people keep it where it is.
+    const moved = [];
+    for (const m of api.C.machines?.list || []) {
+      if (!m || m.kind !== 'sickle' || m._disposed || !m.root) continue;
+      const rr = Math.hypot(m.root.position.x - NW.CENTRE.x, m.root.position.z - NW.CENTRE.z);
+      if (rr >= 66.5) continue;
+      const b = NW.bearingOf(m.root.position.x, m.root.position.z), q = NW.polar(b, 137 - rr), was = [m.root.position.x, m.root.position.z];
+      const h = Math.atan2(P.x - q.x, P.z - q.z);
+      m.heading = h; m.root.position.set(q.x, api.C.terrain.getHeight(q.x, q.z), q.z); m.root.rotation.y = h;
+      try { m.seatFeet?.(); } catch { /* */ }
+      m.root.updateMatrixWorld?.(true);
+      api.undo(() => { m.root.position.set(was[0], api.C.terrain.getHeight(was[0], was[1]), was[1]); });
+      moved.push({ from: [+was[0].toFixed(2), +was[1].toFixed(2), +rr.toFixed(1)], to: [+q.x.toFixed(2), +q.z.toFixed(2), +(137 - rr).toFixed(1)] });
+    }
+    const list = FIVE.map((q, i) => {
+      const at = NW.polar(q.b, q.r);
       // turned to the village below (the centre), by `turn` deg; or to the Screed's blade
       let face = NW.CENTRE;
       if (q.face === 'screed') face = S;
@@ -189,8 +208,8 @@ STAGINGS['F39-look'] = {
     api.undo(() => H.unstage());
     const people = await H.stageAtWork(list);
     if (people.length < 5) api.standIn(`${people.length} of 5 people sheltering`);
-    window.__f39look = list.map((w) => ({ id: w.id, x: +w.place.x.toFixed(2), z: +w.place.z.toFixed(2), bearing: +NW.bearingOf(w.place.x, w.place.z).toFixed(1),
-      toScreedM: +Math.hypot(w.place.x - S.x, w.place.z - S.z).toFixed(1), toLinesM: sc ? +HP.threatDistance(w.place.x, w.place.z, sc, P).toFixed(1) : null }));
+    window.__f39look = { people: list.map((w) => ({ id: w.id, x: +w.place.x.toFixed(2), z: +w.place.z.toFixed(2), bearing: +NW.bearingOf(w.place.x, w.place.z).toFixed(1),
+      toScreedM: +Math.hypot(w.place.x - S.x, w.place.z - S.z).toFixed(1), toLinesM: sc ? +HP.threatDistance(w.place.x, w.place.z, sc, P).toFixed(1) : null })), sickleMoved: moved };
     await api.frames(3);
   },
 };
