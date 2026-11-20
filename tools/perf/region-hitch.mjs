@@ -181,7 +181,8 @@ const installStandIn = (rows, upload, place, warm) => {
     for (const r of held.roots) E.scene.add(r);
     mark('added');
   };
-  R.loader.unload = () => {
+  R.loader.unload = (region) => {
+    if (region?.id !== 'malpais') return;   // the loader calls unload on every depart (pans, caldera): only the Malpais is stood in
     for (const n of held.names.splice(0)) { try { A.unload(n); } catch { /* */ } }
     held.roots.length = 0;
     mark('unloaded');
@@ -255,6 +256,7 @@ try {
   if (!slot.ok) throw new Error(slot.why);
   slotTaken = true;
   report.slotTakenAt = new Date().toISOString();
+  report.slotWaitS = Math.round((Date.now() - tStart) / 1000);
   await serve();
   installProfileCleanup();
   profile = profileDir(PORT);
@@ -331,7 +333,7 @@ try {
   report.error = String(e?.stack || e).slice(0, 1200);
   log(`error: ${report.error.slice(0, 300)}`);
 } finally {
-  report.chromeSeconds = Math.round((Date.now() - tStart) / 1000);
+  report.chromeSeconds = Math.round((Date.now() - tStart) / 1000) - (report.slotWaitS ?? 0);
   try { await browser?.close(); } catch { /* */ }
   if (profile) disposeProfile(profile);
   stopServer();
