@@ -42,7 +42,10 @@ test('the dialog prints exactly the bible\'s six strings', () => {
 
 test('the forecast line is one line in the bible\'s form; rest chooses the hour, not the weather', () => {
   assert.equal(forecastLine(T, REST_HOURS.dawn, { state: 'trade', windFrom: 45, speed: 5 }), 'TRADE · WIND 045 AT 5 m/s');
-  assert.equal(forecastLine(T, REST_HOURS.dawn, { state: 'trade', windFrom: 45, speed: 5, calimaAt: 12 }), 'CALIMA BY NOON');
+  // (M2 fix wave 2) a row is the weather at its own hour: dawn is five hours before a noon calima (the trade); the hour
+  // within CALIMA_SOON_H before it reads the calima's coming
+  assert.equal(forecastLine(T, REST_HOURS.dawn, { state: 'trade', windFrom: 45, speed: 5, calimaAt: 12 }), 'TRADE · WIND 045 AT 5 m/s');
+  assert.equal(forecastLine(T, 11.5, { state: 'trade', windFrom: 45, speed: 5, calimaAt: 12 }), 'CALIMA BY NOON');
   assert.equal(forecastLine(T, REST_HOURS.golden, { state: 'trade', windFrom: 45, speed: 5, calimaAt: 12 }), 'TRADE · WIND 045 AT 5 m/s');
   assert.deepEqual(Object.keys(REST_HOURS), ['dawn', 'golden', 'dusk', 'night']);
   assert.ok(REST_HOURS.golden > 18 && REST_HOURS.golden < 19);

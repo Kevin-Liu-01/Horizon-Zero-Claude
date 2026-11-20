@@ -85,6 +85,12 @@ const EDGE_IN_M = 22;
 const TRANSIT_OUT_M = 115;
 const TRANSIT_TOL_DEG = 3.0;
 const TRANSIT_HOLD_S = 0.6;
+/**
+ * (M2 fix wave 2, HR6) How long the Transit's card stays up after the read registers (s of sim time), the far form drawn
+ * with it. At 02f7125 the read completed "True Ground", the stage moved on that frame and the card was taken down the
+ * next: the shot at the read showed the quest's banner and no card.
+ */
+const FAR_CARD_HOLD_S = 6.0;
 const TRANSIT_RANGE_M = 600;
 
 export class FirstHour {
@@ -119,6 +125,7 @@ export class FirstHour {
     this.certs = new Certifications(ctx, { text: TEXT_W2.certs });
     this.counter = new Counter(ctx, { present: sys.present, text: TEXT_W2.trade, notices: TEXT_W2.notices });
     this._transitT = 0;
+    this._farHoldT = 0;
   }
 
   /* ----------------------------------------------------------- places */
@@ -651,10 +658,17 @@ export class FirstHour {
       this._calimaLet = true;
       env.setWeather('trade', 30);
     }
-    // the far form: drawn only while the beat can be read (EN4), read through the Alidade (HR6)
-    const want = (cur === 'calima-cross' || cur === 'read-transit') && inWindow;
+    // the far form: drawn only while the beat can be read (EN4), read through the Alidade (HR6), and while its card
+    // stays up after the read (FAR_CARD_HOLD_S)
+    const holding = this._farHoldT > 0;
+    const want = ((cur === 'calima-cross' || cur === 'read-transit') && inWindow) || holding;
     const far = want || this._standIn ? this._transitFar() : null;
     if (far?.show) far.show(want);
+    if (holding) {
+      this._farHoldT -= dt;
+      if (this._farHoldT <= 0) { this._farHoldT = 0; if (this.sys.present.farShown) this.sys.present.farCard(null); }
+      return;
+    }
     if (cur !== 'read-transit' || !want || !far) { this._transitT = 0; if (this.sys.present.farShown) this.sys.present.farCard(null); return; }
     const on = this._onFar(far);
     this._transitT = on ? this._transitT + dt : 0;
@@ -663,6 +677,7 @@ export class FirstHour {
       this.sys.present.farCard({ line: card.line, read: card.read });
       if (!this._sighted && card.line === TRANSIT_CARD) {
         this._sighted = { hour: +hour.toFixed(3), standIn: !!far.standIn };
+        this._farHoldT = FAR_CARD_HOLD_S;
         ctx.events?.emit?.('sighted', { card: card.line, kind: 'transit', hour, standIn: !!far.standIn });
       }
     } else if (!on && this.sys.present.farShown) this.sys.present.farCard(null);

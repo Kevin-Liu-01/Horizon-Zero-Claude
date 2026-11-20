@@ -55,6 +55,13 @@ export function refusedBy(x, z, machines, radius = REFUSE_RADIUS) {
 }
 
 /**
+ * (M2 fix wave 2) How near the calima's hour a row's hour must be for its forecast to be the calima's ("CALIMA BY NOON"):
+ * the forecast is the weather at the hour she wakes. At 02f7125 every row before the calima read CALIMA BY NOON, the
+ * DAWN row (07:00, five hours before it) too; at dawn the trade still blows.
+ */
+export const CALIMA_SOON_H = 1.0;
+
+/**
  * The forecast line for an hour. weather: { state ('trade'|'calima'|'squall'|...), windFrom (deg), speed (m/s),
  * calimaAt? (decimal hour the calima is due, or null) }. Templates from systems.json `forecast`.
  */
@@ -63,7 +70,8 @@ export function forecastLine(T, hour, weather = {}) {
   const state = weather.state || 'trade';
   const speed = Math.max(0, Math.round(Number(weather.speed ?? 5)));
   const bearing = Number(weather.windFrom ?? 45);
-  if (weather.calimaAt != null && hour < weather.calimaAt && weather.calimaAt <= 12.5) return f.calimaSoon;
+  const due = weather.calimaAt;
+  if (due != null && hour < due && due - hour <= CALIMA_SOON_H && due <= 12.5) return f.calimaSoon;
   if (state === 'calima') return fill(f.calima, { speed });
   if (state === 'squall') return fill(f.squall, { bearing, speed });
   return fill(f.trade, { bearing, speed });

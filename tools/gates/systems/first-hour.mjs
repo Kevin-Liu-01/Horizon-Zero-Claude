@@ -138,9 +138,13 @@ const beatProbe = (beat, questId, places, card) => {
     }
     case 'stall': case 'seal-1': case 'seal-2': {
       n.screedKind = can('screed'); n.screeds = live('screed').length;
+      const sc = live('screed')[0];
+      const f = sc?.fight?.() ?? null;
+      if (f) { n.fight = { mode: f.mode, phase: f.phase, stalls: f.stalls.map((x) => x.by), cuts: f.cuts, seals: f.seals, failSoft: f.failSoft, at: f.at }; }
       if (!n.screedKind) missing.push('no Screed kind registered');
-      else if (!n.screeds) missing.push('no Screed stood up on the walls');
-      else missing.push('the Screed fight is not driven by this runner yet (its rules are graded in Node: tools/instruments/screed-fight.test.mjs)');
+      else if (!n.screeds && !reached.includes('stall')) missing.push('no Screed stood up on the walls');
+      else if (f?.failSoft) missing.push(`fail-soft: the Screed cut ${f.cuts.length} walls (${f.cuts.join(', ')})`);
+      else missing.push(`stage '${beat}' not reached (stalls ${f ? f.stalls.length : '?'}, seals ${f ? JSON.stringify(f.seals) : '?'})`);
       break;
     }
     case 'scar': {
@@ -455,8 +459,12 @@ const herdSafeSrc = () => {
     }
     return true;
   };
+  // (M2 fix wave 2) the first 5 m of a walk are hers to leave the hull she stands by: at 02f7125 the chained topple began
+  // in a hull's lee 3.6 m behind it, every line's first sample (her own place) failed the 8 m clearance, and three scans
+  // of 144 stands found none
   window.__herdSafeLine = (ax, az, bx, bz) => {
-    for (let k = 0; k <= 10; k++) { const u = k / 10; if (!window.__herdSafe(ax + (bx - ax) * u, az + (bz - az) * u, 8, 3)) return false; }
+    const L = Math.hypot(bx - ax, bz - az) || 1;
+    for (let k = 1; k <= 10; k++) { const u = k / 10; if (u * L < 5) continue; if (!window.__herdSafe(ax + (bx - ax) * u, az + (bz - az) * u, 8, 3)) return false; }
     return true;
   };
   window.__standPts = (ti) => {
@@ -473,35 +481,74 @@ const herdSafeSrc = () => {
   window.__standOnly = true;
 };
 
-async function driveTopple(page, K) {
+async function driveTopple(page, K, { maxS = 420 } = {}) {
   await page.evaluate(() => { window.__probeQuest = 'the-scar'; });
   await page.evaluate(herdSafeSrc);
-  const out = { steps: [] };
-  try {
-    // out of the herd's way: the nearest point (rings of 14-30 m round her) clear of every hull and its bearing
-    const away = await page.evaluate(() => {
-      const C = window.__CTX__, P = C.player.position;
-      if (window.__herdSafe(P.x, P.z)) return null;
-      let best = null;
-      for (const r of [6, 10, 14, 20, 26]) for (let deg = 0; deg < 360; deg += 20) {
-        const a = deg * Math.PI / 180, x = P.x + Math.sin(a) * r, z = P.z + Math.cos(a) * r;
-        if (C.nav?.blockedAt?.(x, z)) continue;
-        if (!window.__herdSafe(x, z) || !window.__herdSafeLine(P.x, P.z, x, z)) continue;
-        if (!best || r < best.r) best = { x, z, r };
-      }
-      return best;
-    });
-    if (away) { const w = await walkTo(page, away, 2, 12, { sprint: false }); out.steps.push({ away: { r: away.r, ok: w.ok, why: w.why ?? null } }); }
-    out.drink = await SH.drink(page, K, 98);
-    for (let i = 0; i < 3; i++) {
-      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: 150, tolDeg: 0.08, reach: 220 });
-      out.steps.push({ ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
-      if (f.ok || f.why === 'died') break;
-      // no stand clear of the herd just now: it walks on; wait a little where she is
-      await sleep(2500);
+  const out = { steps: [], waits: [], moves: [] };
+  const t0 = Date.now(), T = () => +((Date.now() - t0) / 1000).toFixed(1);
+  // out of the herd's way: the nearest point (rings of 6-26 m round her) clear of every hull and its bearing
+  const away = () => page.evaluate(() => {
+    const C = window.__CTX__, P = C.player.position;
+    if (window.__herdSafe(P.x, P.z)) return null;
+    let best = null;
+    for (const r of [6, 10, 14, 20, 26]) for (let deg = 0; deg < 360; deg += 20) {
+      const a = deg * Math.PI / 180, x = P.x + Math.sin(a) * r, z = P.z + Math.cos(a) * r;
+      if (C.nav?.blockedAt?.(x, z)) continue;
+      if (!window.__herdSafe(x, z) || !window.__herdSafeLine(P.x, P.z, x, z)) continue;
+      if (!best || r < best.r) best = { x, z, r };
     }
-    const last = out.steps.at(-1) || {};
-    out.ok = !!last.ok; out.why = last.why ?? null;
+    return best;
+  });
+  // another place to wait: 20-26 m from the terrace Plumb on its side away from the herd's middle, clear of the herd
+  const elsewhere = () => page.evaluate(() => {
+    const C = window.__CTX__, P = C.player.position;
+    const live = (k) => (C.machines?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.kind === k);
+    const T = C.systemsGame?.hour?.sys?.A?.terrace;
+    const pl = live('plumb').filter((m) => T && Math.hypot(m.position.x - T.x, m.position.z - T.z) < 60)[0];
+    const herd = live('tiller');
+    if (!pl || !herd.length) return null;
+    const hx = herd.reduce((a, m) => a + m.position.x, 0) / herd.length, hz = herd.reduce((a, m) => a + m.position.z, 0) / herd.length;
+    const base = Math.atan2(pl.position.x - hx, pl.position.z - hz);
+    let best = null;
+    for (const off of [0, 25, -25, 50, -50, 75, -75]) for (const d of [20, 23, 26]) {
+      const a = base + off * Math.PI / 180, x = pl.position.x + Math.sin(a) * d, z = pl.position.z + Math.cos(a) * d;
+      if (C.nav?.blockedAt?.(x, z) || !window.__herdSafe(x, z)) continue;
+      const score = Math.abs(off) + Math.hypot(x - P.x, z - P.z) * 0.2;
+      if (!best || score < best.score) best = { x, z, off, d, score };
+    }
+    return best;
+  });
+  try {
+    const a0 = await away();
+    if (a0) { const w = await walkTo(page, a0, 2, 12, { sprint: false }); out.steps.push({ away: { r: a0.r, ok: w.ok, why: w.why ?? null } }); }
+    out.drink = await SH.drink(page, K, 98);
+    // THE HERD IN THE WAY (M2 fix wave 2): when no stand is clear of the herd she does not give up while she lives. She
+    // waits for it to walk on (it walks its line up and back, tiller-herd.js), leaves its way, and after 20 s without a
+    // stand walks to another place on the Plumb's far side from it; each wait is up to 60 s, and she waits again
+    let noStandFrom = null, movedAt = 0;
+    for (;;) {
+      if (await page.evaluate(() => !!window.__CTX__.quests['the-scar'].report().reached.includes('plumb-2'))) { out.ok = true; break; }
+      const st = await page.evaluate(where);
+      if (st.dead || st.state === 'dead') { out.ok = false; out.why = 'died'; break; }
+      if (T() > maxS) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd)`; break; }
+      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220 });
+      out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
+      if (f.ok) { out.ok = true; break; }
+      if (f.why === 'died') { out.ok = false; out.why = 'died'; break; }
+      if (!/no open stand|masked from every stand|stood up/.test(f.why || '')) { noStandFrom = null; continue; }
+      noStandFrom ??= Date.now();
+      const waited = (Date.now() - noStandFrom) / 1000;
+      const a = await away();
+      if (a) { const w = await walkTo(page, a, 2, 10, { sprint: false }); out.moves.push({ t: T(), away: a.r, ok: w.ok }); }
+      else if (waited > 20 && Date.now() - movedAt > 20000) {
+        const e = await elsewhere();
+        movedAt = Date.now();
+        if (e) { const w = await walkPath(page, e, 2.5, 40); out.moves.push({ t: T(), elsewhere: { off: e.off, d: e.d }, ok: w.ok, why: w.why ?? null }); }
+      } else await sleep(2000);
+      if (waited > 60) { out.waits.push({ t: T(), s: +waited.toFixed(1) }); noStandFrom = Date.now(); }
+    }
+    if (noStandFrom) out.waits.push({ t: T(), s: +((Date.now() - noStandFrom) / 1000).toFixed(1), open: true });
+    out.why ??= null;
     out.fired = out.steps.reduce((a, q) => a + (q.fired || 0), 0);
     out.cause = (await page.evaluate(where)).cause;
     out.stands = await page.evaluate(() => window.__standLog || null);
@@ -541,93 +588,167 @@ async function driveOro(page, K) {
   return { walk: { ok: w.ok, why: w.why ?? null }, reached: r.ok, kit: await page.evaluate(() => ({ gaff: !!window.__CTX__.player?.hero?.kit?.gaff, given: !!window.__CTX__.systemsGame?.hour?._kitGiven })) };
 }
 
-/** The Screed, as the runner sees it: where it stands, its heading, the fight's own report. */
-const screedNow = () => {
+/**
+ * The Screed, as the runner sees it, against Ninewalls' walls (the walls seam's own module: the page's instance, so its
+ * cut state is the game's): where it and she stand from the village's centre (r, compass bearing), its heading, the
+ * fight's own report, and the first whole wall between them (a charge at her meets it and stalls).
+ */
+const screedNow = async () => {
+  const W = await import('/src/world/settlements/ninewalls-layout.js');
   const C = window.__CTX__, P = C.player.position;
   const m = (C.machines?.list || []).find((q) => q && q.kind === 'screed' && q.alive !== false && !q._disposed);
   if (!m) return null;
   const f = m.fight?.() ?? {};
   const h = m.brain?.heading ?? 0;
   const seals = Object.entries(f.seals || {}).filter(([, v]) => v !== 'off').map(([k]) => k);
+  const wall = W.segmentHitsWall(m.position.x, m.position.z, P.x, P.z, 0);
+  const cs = W.CENTRE, w1 = W.WALLS[0], w2 = W.WALLS[1];
+  const q = window.__CTX__.quests['the-scar'];
   return { i: C.machines.list.indexOf(m), x: m.position.x, z: m.position.z, heading: h, fx: Math.sin(h), fz: Math.cos(h), phase: f.phase ?? null, mode: f.mode ?? null,
-    sealsLeft: seals, seals: f.seals, cuts: (f.cuts || []).length, stalls: (f.stalls || []).length, failSoft: !!f.failSoft,
+    sealsLeft: seals, seals: f.seals, hits: { sealL: m.brain?.parts?.sealL?.hits ?? null, sealR: m.brain?.parts?.sealR?.hits ?? null }, cuts: (f.cuts || []).length, stalls: (f.stalls || []).length, stallBy: (f.stalls || []).map((x) => x.by), failSoft: !!f.failSoft,
+    backT: +(m.fightRules?.backT ?? 0).toFixed(2), cd: +(m.fightRules?.cd ?? 0).toFixed(2),
     d: Math.hypot(m.position.x - P.x, m.position.z - P.z), px: P.x, pz: P.z, hp: Math.round(C.player.health),
     // her side of its heading (+ right) and how far in front of it she stands
     ahead: (P.x - m.position.x) * Math.sin(h) + (P.z - m.position.z) * Math.cos(h), side: (P.x - m.position.x) * Math.cos(h) - (P.z - m.position.z) * Math.sin(h),
-    stage: window.__CTX__.quests['the-scar'].current()?.id ?? 'done' };
+    rS: Math.hypot(m.position.x - cs.x, m.position.z - cs.z), bS: W.bearingOf(m.position.x, m.position.z), rP: Math.hypot(P.x - cs.x, P.z - cs.z), bP: W.bearingOf(P.x, P.z),
+    between: wall?.id ?? null,
+    // corridor 1/2 (between the outer wall and the second): its two faces and where its arcs end
+    c12: { rIn: w2.r + w2.t / 2, rOut: w1.r - w1.t / 2, end: Math.min(w1.to, w2.to), end2: Math.max(w1.to, w2.to), from: Math.max(w1.from, w2.from) },
+    stage: q.current()?.id ?? 'done', reached: q.report().reached };
 };
 
-/** One arrow on a part of machine i: RMB, Steady, the draw with the look on the game's own flight, loosed. */
-async function looseOn(page, K, i, part, { drawMs = 850, tolDeg = 0.12 } = {}) {
-  await K.mouse('right', true); await sleep(320);
-  await K.up('ShiftLeft'); await sleep(40); await K.down('ShiftLeft'); await sleep(50);
+/** in-page: a point at compass bearing b, r m from Ninewalls' centre (the walls seam's polar) */
+const polarNW = async (b, r) => { const W = await import('/src/world/settlements/ninewalls-layout.js'); const p = W.polar(b, r); return { x: p.x, z: p.z }; };
+
+/**
+ * One arrow on the first of `parts` of machine i the game's own flight reaches from here: RMB, Steady, the look on that
+ * part (solveShot), the draw re-solved until full; loosed only if the flight still meets the part first, else let down
+ * (RMB let go before LMB: combat.js keeps the arrow), as a player does who sees the shot is blocked.
+ */
+async function looseOn(page, K, i, parts, { drawMs = 450, tolDeg = 0.12 } = {}) {
+  await K.mouse('right', true); await sleep(200);
+  await K.up('ShiftLeft'); await sleep(30); await K.down('ShiftLeft'); await sleep(40);
+  let part = null, sol = null;
+  for (const p of parts) { const q = await page.evaluate(SH.solveShot, i, p, tolDeg); if (q?.clear) { part = p; sol = q; break; } }
+  if (!part) { await K.up('ShiftLeft'); try { await K.mouse('right', false); } catch { /* */ } return { part: null, why: 'no seal clear from here' }; }
   await K.mouse('left', true);
   const t0 = Date.now();
-  let sol = null;
+  let fired = false;
   try {
-    while (Date.now() - t0 < drawMs || (sol && sol.ds < 0.99 && Date.now() - t0 < drawMs + 700)) {
+    while (Date.now() - t0 < drawMs || (sol && sol.ds < 0.99 && Date.now() - t0 < drawMs + 800)) {
       sol = await page.evaluate(SH.solveShot, i, part, tolDeg);
       if (!sol) break;
     }
   } finally {
-    try { await K.mouse('left', false); } catch { /* */ }
-    await sleep(Math.max(450, 1000 * (sol?.tf ?? 0) + 200));
+    if (sol?.clear) { try { await K.mouse('left', false); } catch { /* */ } fired = true; await sleep(Math.max(300, 1000 * (sol?.tf ?? 0) + 120)); }
+    else { try { await K.mouse('right', false); } catch { /* */ } await sleep(40); try { await K.mouse('left', false); } catch { /* */ } }
     await K.up('ShiftLeft');
     try { await K.mouse('right', false); } catch { /* */ }
   }
-  return sol ? { first: sol.first, missM: sol.missM, clear: sol.clear, ds: sol.ds } : null;
+  return { part, fired, first: sol?.first ?? null, missM: sol?.missM ?? null, clear: !!sol?.clear, ds: sol?.ds ?? null };
 }
 
 /**
- * THE SCREED BY INPUT (stall, seal-1, seal-2), the wall trick as the Node twin plays it (tools/instruments/screed-fight
- * .test.mjs): out of the village to 10 m in front of it, between it and the outer wall; a 5 m sidestep in its wind-up;
- * its charge meets the wall and stalls; then arrows on the ram seals from beside it (two each), the nearest first.
+ * THE SCREED BY INPUT (M2 fix wave 2: stall, seal-1, seal-2), as a player on Ninewalls' terraces plays it. At 02f7125 the
+ * runner walked at a point 10 m in front of the Screed, outside the outer wall: from Oro (inside the ninth wall) that is
+ * round the walls' ends, it engaged her at 45 m on the way, walked in and cut three walls in 60 s with no charge
+ * (fail-soft: stall, seal-1 and seal-2 not reached). Now:
+ *   STALL   she goes out round the south end of the inner walls and into the corridor between the outer wall and the
+ *           second (its east mouth, by the Scar), and along it toward the Screed's bearing: the Screed engages, she
+ *           stands 7-24 m in front of it with the whole outer wall between them, and its charge at her meets the wall.
+ *   SEALS   it backs off, cuts the outer wall and comes into her corridor. She waits off its line, 4-6 m to one side
+ *           and 8-12 m in front of it; in its wind-up she steps 5 m further out of its line, and the charge meets the
+ *           second wall beside her. In that stall, and while it backs off, an arrow on the nearest seal on her side,
+ *           two each (screed-rules.js IN6), the near one first; with no wall between them she shoots it walking too.
  */
 async function driveScreed(page, K, stage, maxS = 120) {
   const t0 = Date.now(), log = [];
-  let sidestepped = false, shots = 0, lastPhase = null;
-  await K.tap('Digit1'); await sleep(200);
+  const T = () => +((Date.now() - t0) / 1000).toFixed(1);
+  let shots = 0, lastPhase = null, sidestepS = -1, approach = null;
+  const note = (S, extra = {}) => log.push({ t: T(), phase: S.phase, mode: S.mode, d: +S.d.toFixed(1), ahead: +S.ahead.toFixed(1), side: +S.side.toFixed(1), rS: +S.rS.toFixed(1), bS: +S.bS.toFixed(1), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1), between: S.between, hp: S.hp, cuts: S.cuts, stalls: S.stalls, seals: S.seals, ...extra });
+  if (stage !== 'stall') await SH.readyBow(page, K); else { await K.tap('Digit1'); await sleep(200); }
+  // every arrow that meets the Screed: where, against each seal's own place (screed.js takeDamage counts a hit within
+  // the seal's radius + 0.05 m)
+  await page.evaluate(() => {
+    if (window.__screedHits) return;
+    window.__screedHits = [];
+    const C = window.__CTX__, V = C.camera.position.constructor;
+    C.events.on('arrow-hit', (e) => {
+      const m = e.machine;
+      if (!m || m.kind !== 'screed') return;
+      const near = {};
+      for (const w of m._sealW || []) { const q = w.obj.getWorldPosition(new V()); near[w.name] = +q.distanceTo(e.point).toFixed(3); }
+      window.__screedHits.push({ t: +(performance.now() / 1000).toFixed(1), weak: !!e.weak, dmg: Math.round(e.damage ?? 0), near, r: +((m._sealW?.[0]?.radius ?? 0) + 0.05).toFixed(3) });
+    });
+  });
+  const done = (S) => (stage === 'stall' ? S.stage !== 'stall' : (S.stage !== 'seal-1' && S.stage !== 'seal-2'));
   for (;;) {
     const S = await page.evaluate(screedNow);
-    if (!S) return { ok: false, why: 'no Screed', log };
-    if (S.stage !== stage) return { ok: true, s: +((Date.now() - t0) / 1000).toFixed(1), shots, log: log.slice(-12), cuts: S.cuts, stalls: S.stalls };
-    if ((Date.now() - t0) / 1000 > maxS) return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-12) };
+    if (!S) return { ok: false, why: 'no Screed', log: log.slice(-40) };
+    if (done(S)) { note(S, { end: true, hits: S.hits }); return { ok: true, s: T(), shots, arrowHits: await page.evaluate(() => window.__screedHits.slice(-12)), log: log.slice(-40), cuts: S.cuts, stalls: S.stalls, stallBy: S.stallBy, approach }; }
+    if (T() > maxS) { note(S, { timeout: true }); return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-40), approach }; }
     const st = await page.evaluate(where);
-    if (st.dead || st.state === 'dead') return { ok: false, why: 'died', log };
-    if (S.phase !== lastPhase) { log.push({ t: +((Date.now() - t0) / 1000).toFixed(1), phase: S.phase, mode: S.mode, d: +S.d.toFixed(1), ahead: +S.ahead.toFixed(1), side: +S.side.toFixed(1), hp: S.hp, cuts: S.cuts }); lastPhase = S.phase; }
-    if (S.phase !== 'windup' && S.phase !== 'charge') sidestepped = false;
-    if (st.hp < 45) await SH.drink(page, K, 92);
-    // its wind-up: step out of its line, 5 m to the side she already leans to
-    if ((S.phase === 'windup' || S.phase === 'charge') && Math.abs(S.side) < 4 && S.ahead > 0 && !sidestepped) {
-      sidestepped = true;
-      const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
-      await walkTo(page, { x: S.px + rx * 5.5, z: S.pz + rz * 5.5 }, 0.8, 2.2);
-      continue;
-    }
+    if (st.dead || st.state === 'dead') return { ok: false, why: 'died', log: log.slice(-40), approach };
+    if (S.phase !== lastPhase) { note(S); lastPhase = S.phase; }
+    const C12 = S.c12, rMid = (C12.rIn + C12.rOut) / 2;
     if (stage === 'stall') {
-      // in front of it, 10 m, on its line, while it walks (or waits)
-      if (S.phase === 'walk' || S.phase === 'wait' || S.phase == null) {
-        const goal = { x: S.x + S.fx * 10, z: S.z + S.fz * 10 };
-        const dg = Math.hypot(goal.x - S.px, goal.z - S.pz);
-        if (dg > 2.2) { if (dg > 25) await walkPath(page, goal, 2, 12); else await walkTo(page, goal, 1.5, 4); }
-        else await sleep(150);
-        // face it (the charge reads her in front; the look does not matter to it, but she watches it)
-        await page.evaluate(face, S.x, S.z);
-      } else await sleep(100);
+      // out of the village and into corridor 1/2 by its east mouth, then along it to 4 deg past the Screed's bearing
+      if (!approach) {
+        approach = { mouth: await page.evaluate(polarNW, (C12.end + C12.end2) / 2, rMid) };
+        approach.walk = await walkPath(page, approach.mouth, 3, 90);
+        approach.at = { t: T(), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1) };
+        const S2 = await page.evaluate(screedNow);
+        note(S2, { mouth: true, walk: approach.walk.ok });
+        continue;
+      }
+      if (S.phase === 'windup' || S.phase === 'charge' || S.phase === 'stall') { await sleep(120); continue; }
+      const want = S.bS + 4;
+      if (S.bP - want > 2.5) {
+        const b = Math.max(want, S.bP - 6);
+        await walkTo(page, await page.evaluate(polarNW, b, rMid), 1.6, 3);
+      } else await sleep(150);
       continue;
     }
-    // seal-1 / seal-2: beside it, not in its line, and an arrow on the nearest seal not off
+    // seal-1 / seal-2
+    if (st.hp < 50 && S.phase !== 'windup' && S.phase !== 'charge') { await SH.drink(page, K, 92, 3500); continue; }
+    if (S.phase === 'charge') { await sleep(80); continue; }
+    const inLine = S.ahead > -2 && S.ahead < 28 && Math.abs(S.side) < 4.2;
+    if (S.phase === 'windup' && !S.between && inLine && sidestepS !== S.stalls * 100 + S.cuts) {
+      // its wind-up (1.2 s): 5 m further out of its line, square to its heading, to the side she already leans to
+      sidestepS = S.stalls * 100 + S.cuts;
+      const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
+      await walkTo(page, { x: S.px + rx * 5.5, z: S.pz + rz * 5.5 }, 0.8, 1.6);
+      note(await page.evaluate(screedNow), { sidestep: true });
+      continue;
+    }
     if (!S.sealsLeft.length) { await sleep(200); continue; }
-    if (Math.abs(S.side) < 4 && S.ahead > 0 && S.ahead < 26 && S.phase !== 'stall') {
-      const sgn = S.side >= 0 ? 1 : -1;
-      await walkTo(page, { x: S.x + S.fx * 8 + S.fz * sgn * 7, z: S.z + S.fz * 8 - S.fx * sgn * 7 }, 1.2, 3);
+    // an arrow when nothing whole stands between them, it is near, and its front is toward her (the rams face its heading)
+    const facing = S.ahead > 0.5 && Math.abs(Math.atan2(S.side, S.ahead)) < ((S.phase === 'stall' || S.backT > 0) ? 1.6 : 1.2);
+    // never with a charge able to come: in 'come' and walking, within its charge band and cone with its cooldown run
+    // (at the third probe a shot loosed in its walk took 1.5 s, its wind-up came inside it and the blade took 32 hp)
+    const ang = Math.abs(Math.atan2(S.side, S.ahead));
+    const chargeable = S.mode === 'come' && S.phase === 'walk' && S.backT <= 0 && S.cd < 2.0 && S.d > 5.5 && S.d < 26 && ang < 0.8;
+    if (!S.between && S.d < 24 && facing && S.phase !== 'windup' && !chargeable && (S.phase === 'stall' || S.backT > 0 || S.mode === 'done' || !inLine)) {
+      // the far seal first while the stall holds it square (it turns away as it backs off and walks), then the near one
+      const near = S.side >= 0 ? 'sealR' : 'sealL', far = near === 'sealR' ? 'sealL' : 'sealR';
+      const order = S.sealsLeft.length === 2 ? (S.phase === 'stall' ? [far, near] : [near, far]) : S.sealsLeft.slice();
+      const r = await looseOn(page, K, S.i, order);
+      if (r.fired) shots++;
+      const hit = r.fired ? await page.evaluate(() => window.__screedHits.at(-1) ?? null) : null;
+      log.push({ t: T(), shot: r.part, phase: S.phase, d: +S.d.toFixed(1), side: +S.side.toFixed(1), ...r, hit, hitsBefore: S.hits });
+      if (!r.part) await sleep(150);
       continue;
     }
-    if (S.d > 22) { await walkTo(page, { x: S.x + S.fx * 8 + S.fz * 7, z: S.z + S.fz * 8 - S.fx * 7 }, 2, 6); continue; }
-    const part = S.sealsLeft.length === 2 ? (S.side >= 0 ? 'sealR' : 'sealL') : S.sealsLeft[0];
-    const r = await looseOn(page, K, S.i, part);
-    shots++;
-    log.push({ t: +((Date.now() - t0) / 1000).toFixed(1), shot: part, phase: S.phase, d: +S.d.toFixed(1), ...(r || {}) });
+    // the ambush point: 10 m in front of it and 5 m to one side, kept on corridor 1/2's floor while it is outside or in it
+    const sgn = S.side >= 0 ? 1 : -1, rx = S.fz * sgn, rz = -S.fx * sgn;
+    let gx = S.x + S.fx * 10 + rx * 5, gz = S.z + S.fz * 10 + rz * 5;
+    if (S.rS > C12.rIn - 1) {
+      const W = await page.evaluate(async (x, z) => { const W = await import('/src/world/settlements/ninewalls-layout.js'); return { b: W.bearingOf(x, z), r: Math.hypot(x - W.CENTRE.x, z - W.CENTRE.z) }; }, gx, gz);
+      const r = Math.min(C12.rOut - 2.2, Math.max(C12.rIn + 1.3, W.r));
+      const q = await page.evaluate(polarNW, W.b, r); gx = q.x; gz = q.z;
+    }
+    if (Math.hypot(gx - S.px, gz - S.pz) > 1.6) await walkTo(page, { x: gx, z: gz }, 1.2, 2.2);
+    else { await page.evaluate(face, S.x, S.z); await sleep(120); }
   }
 }
 
@@ -818,7 +939,8 @@ async function runLeg(leg, startRec = null) {
       } else if (st.id === 'oro') {
         played.oro = await driveOro(page, K);
       } else if (st.id === 'stall' || st.id === 'seal-1' || st.id === 'seal-2') {
-        played.screed = await driveScreed(page, K, st.id, st.id === 'stall' ? 150 : 120);
+        // the seals are one fight: seal-1's drive runs until both are off (or the fight ends), seal-2 reads what it did
+        if (st.id !== 'seal-2' || !(await page.evaluate(() => window.__CTX__.quests['the-scar'].report().reached.includes('seal-2')))) played.screed = await driveScreed(page, K, st.id, st.id === 'stall' ? 150 : 120);
         if (st.id === 'seal-2') played.checkpoint = await waitReached(page, SCAR_ID, 'seal-2', 3000);
       } else if (st.id === 'rest-noon') {
         played.rest = await driveRest(page, K);

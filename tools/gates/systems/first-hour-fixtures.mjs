@@ -79,12 +79,12 @@ export function scarDone() {
 export function scarThrough(through) {
   const scar = new QuestSpine({ strings: questStrings(SCAR_ID), id: SCAR_ID, stages: SCAR_STAGES, reward: SCAR_REWARD, triangles: {}, closingCard: null, failSoft: FAIL_SOFT }).start();
   const probe = { near: () => false, aim: () => false, bearing: () => 0 };
-  const EV = { walk: ['region-enter', { region: 'holds' }], herd: ['herd-lee', { inShadow: true }] };
+  const EV = { walk: [['region-enter', { region: 'holds' }]], herd: [['herd-lee', { inShadow: true }]], 'plumb-2': [['plumb-topple', { kind: 'plumb' }]],
+    barbed: [['ammo-crafted', { ammo: 'hardpoint', n: 6 }]], oro: [['talk', 'oro'], ['scene-done', { scene: 'hand-over', exit: true }]] };
   for (const id of through) {
-    const ev = EV[id];
-    if (!ev) throw new Error(`fixture: no event to walk '${id}'`);
-    scar.notify(ev[0], ev[1]);
-    scar.update(0.1, probe);
+    const evs = EV[id];
+    if (!evs) throw new Error(`fixture: no event to walk '${id}'`);
+    for (const [ev, e] of evs) { if (ev === 'talk') scar.talk(e); else scar.notify(ev, e); scar.update(0.1, probe); }
   }
   const at = scar.current()?.id;
   if (at !== SCAR_STAGES[through.length]?.id) throw new Error(`fixture: "The Scar" is at ${at}, not ${SCAR_STAGES[through.length]?.id}`);
@@ -92,8 +92,14 @@ export function scarThrough(through) {
   return { [SCAR_ID]: scar.serialize(), [TRUE_GROUND_ID]: tg.serialize() };
 }
 
-/** Where a mid-leg record stands: at 'plumb-2', where the herd beat leaves her (exit run 2 at fa45e47: x -69.0, z 155.0). */
-const MID = Object.freeze({ 'plumb-2': Object.freeze({ through: ['walk', 'herd'], x: -69.0, z: 155.0, hour: 10.2 }) });
+/**
+ * Where a mid-leg record stands: at 'plumb-2', where the herd beat leaves her (exit run 2 at fa45e47: x -69.0, z 155.0);
+ * (M2 fix wave 2) at 'stall', by Oro at the tube mouth with his kit owned (hour.js grants it on load when 'oro' is done)
+ */
+const MID = Object.freeze({
+  'plumb-2': Object.freeze({ through: ['walk', 'herd'], x: -69.0, z: 155.0, hour: 10.2 }),
+  stall: Object.freeze({ through: ['walk', 'herd', 'plumb-2', 'barbed', 'oro'], x: 3.0, z: 206.5, hour: 10.6, kit: true }),
+});
 
 /** The nine walls as the walls seam saves them (ninewalls-layout.js wallsSave: { [id]: { state, painted } }). */
 const WALLS_LINE_ON_1_4 = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`wall-${i + 1}`, { state: 'whole', painted: i < 4 }]));
@@ -123,7 +129,8 @@ export function fixture(leg, { savedAt = 1_700_000_000_000, from = null } = {}) 
     return makeRecord({
       ...s, hour: m.hour, place: 'NINEWALLS',
       position: { x: m.x, y: heightAt(m.x, m.z) + 0.05, z: m.z, yaw: 0, pitch: 0, heading: 0 },
-      areas: { quests: scarThrough(m.through) },
+      ...(m.kit ? { ammo: { hunter: 14, hardpoint: 10 } } : {}),
+      areas: { quests: scarThrough(m.through), ...(m.kit ? { kit: { gaff: true, windwall: true, pots: { brine: 2, cinder: 1 }, given: ORO_KIT.map(([id, n]) => [id, n]) }, walls: WALLS_LINE_ON_1_4 } : {}) },
     }, { kind: 'checkpoint', reason: `the-scar:stage:${from}`, slot: 1, savedAt });
   }
   if (leg === 2) return makeRecord(sliceEnd(), { kind: 'named', reason: 'fixture-leg2', slot: 1, savedAt });

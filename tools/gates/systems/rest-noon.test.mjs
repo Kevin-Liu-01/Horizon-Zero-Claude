@@ -26,7 +26,11 @@ test('this one rest pre-selects noon; without the quest asking, the four', () =>
   assert.ok(NOON_WAKE >= 11.5 && NOON_WAKE < 12, `wakes at ${NOON_WAKE}`);
   assert.equal(d.rows[0].forecast, 'CALIMA BY NOON', 'the noon row forecasts the calima (at fa45e47 it read TRADE)');
   assert.deepEqual(d.rows.slice(1).map((r) => r.id), REST_ORDER);
-  assert.equal(d.rows[1].forecast, 'CALIMA BY NOON', 'the dawn row forecasts the calima');
+  // (M2 fix wave 2) the dawn row is the weather at dawn, five hours before the calima: the trade (at 02f7125 it read
+  // CALIMA BY NOON too)
+  assert.equal(d.rows[1].id, 'dawn');
+  assert.match(d.rows[1].forecast, /^TRADE · WIND \d+ AT \d+ m\/s$/, `the dawn row reads '${d.rows[1].forecast}'`);
+  for (const r of d.rows.slice(1)) assert.notEqual(r.forecast, 'CALIMA BY NOON', `${r.id} forecasts the calima`);
   const d4 = dialogFor(T, nw, st);
   assert.deepEqual(d4.rows.map((r) => r.id), REST_ORDER);
   assert.equal(d4.preselect, undefined);
