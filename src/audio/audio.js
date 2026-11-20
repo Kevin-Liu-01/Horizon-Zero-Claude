@@ -26,7 +26,7 @@
  * performance.now() time, so `engine.timeScale` never warps them.
  */
 
-import { SampleBank } from './bank.js';
+import { SampleBank, lateRank } from './bank.js';
 import { clockFor } from './clock.js';
 import { buildBuses, Ducker, DEFAULT_VOLUMES, VOLUME_BUSES } from './buses.js';
 import { SpatialPool, SpatialChain, LoopEmitter, syncListener } from './spatial.js';
@@ -51,6 +51,11 @@ const SETTINGS_KEY = 'cal.audio.v5';
  * landed: tools/perf/boot-transfer.mjs).
  */
 export const LATE_AFTER_FRAMES = 3;
+/**
+ * The late bank fetches the rows of a machine kind first when one of that kind stands within this distance of her (m):
+ * the Screed's blade is heard to 150 m (TECH §14), so a Screed inside that reach is the fight she is in.
+ */
+export const LATE_NEAR_M = 160;
 
 /**
  * Is `v` usable as a WeakMap key? The per-machine cue throttles are WeakMaps so
@@ -1546,7 +1551,19 @@ export class GameAudio {
     if (this.bankLate || !this.ac) return this.bankLate;
     const H = this.hour, p = this.ctx.player;
     if (H && p) H._zoneTargets(p);
-    const rank = (row) => (1 - (H ? H.placeWeight(row.place) : 0)) * 10 + (row.loop && row.ch === 2 ? 0 : 1);
+    // a live machine within LATE_NEAR_M of her: its kind's rows (the set's first word: 'screed', 'tiller') come first. A
+    // Continue at 'seal-1' starts beside a re-spawned Screed, whose stall, seals and cuts follow its first charge
+    const near = new Set();
+    const list = this.ctx.machines?.list;
+    if (list && p) {
+      for (let i = 0; i < list.length; i++) {
+        const m = list[i];
+        if (!m || m.alive === false || !m.position || !m.kind) continue;
+        if (Math.hypot(m.position.x - p.position.x, m.position.z - p.position.z) <= LATE_NEAR_M) near.add(m.kind);
+      }
+    }
+    this._lateNear = [...near];
+    const rank = (row) => lateRank(row, near, H ? (pl) => H.placeWeight(pl) : null);
     this.bankLate = this.bank.loadLate(this.ac, { rank, controlAt: this._controlAt ?? performance.now() })
       .then((b) => { this.hour?.lateLanded(); return b; })
       .catch(() => this.bank);
@@ -1554,7 +1571,7 @@ export class GameAudio {
   }
 
   /** The late bank's log (../bank.js lateAudit): decode and first-ask times after control, the leads, any miss. */
-  lateAudit() { return this.bank.lateAudit(); }
+  lateAudit() { const a = this.bank.lateAudit(); a.nearKinds = this._lateNear || []; return a; }
 
   /* --------------------------- gate-facing API -------------------------- */
 

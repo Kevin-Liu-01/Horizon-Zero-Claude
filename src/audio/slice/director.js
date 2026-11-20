@@ -52,7 +52,7 @@ export const KIND_CUES = Object.freeze({
   screed: { step: null, layer: 'screed/step', idle: 'screed/idle', weak: 'bow/hit-weak' },
 });
 /** attack id -> [phase, set] or a list of them */
-const ATTACK_CUES = Object.freeze({
+export const ATTACK_CUES = Object.freeze({
   mallet: ['strike', 'peg/mallet'],
   'peg-shot': ['strike', 'peg/shot'],
   'swarm-rush': ['windup', 'peg/rush'],

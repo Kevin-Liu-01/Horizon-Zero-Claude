@@ -8,7 +8,7 @@ Every file in `public/audio/` is **synthesized by this repository's own code** a
 | files | 224 |
 | sets | 137 (122 counted cues: 77 the slice's, 45 the first hour's) |
 | total size | 5.02 MB (budget 8 MB in Milestone 1, 12 MB in Milestone 2) |
-| load | boot 3.54 MB (164 files, before control); late 1.49 MB (60 files, after New Game or Continue gives control) |
+| load | boot 3.56 MB (166 files, before control); late 1.46 MB (58 files, after New Game or Continue gives control) |
 | format | Ogg Opus, 48 kHz (48 kb/s mono point sources, 96 kb/s stereo beds and music) |
 | recipes | `src/audio/slice/recipes.js`, `src/audio/m2/recipes.js` (deterministic; seeds per set in `tools/gates/audio/build-bank.mjs`) |
 | cue list | `src/audio/slice/cues.js` with `src/audio/m2/cues.js` (bus, range, place, level) |
@@ -229,12 +229,12 @@ Brea's breath and effort set (`brea/`) is the existing synthesized set, kept unt
 | `tiller/step-2.ogg` | `tiller/step` | 1 | 0.55 s | 2.7 KB | inst | late (holds) |
 | `tiller/step-3.ogg` | `tiller/step` | 1 | 0.55 s | 3.2 KB | inst | late (holds) |
 | `tiller/idle.ogg` | `tiller/idle` | 1 | 4.00 s | 24.3 KB | inst | late (holds) |
-| `tiller/trample.ogg` | `tiller/trample` | 1 | 1.50 s | 14.0 KB | inst | late (holds) |
+| `tiller/trample.ogg` | `tiller/trample` | 1 | 1.50 s | 14.0 KB | inst | boot |
 | `screed/step-1.ogg` | `screed/step` | 1 | 0.80 s | 5.3 KB | inst | late (ninewalls) |
 | `screed/step-2.ogg` | `screed/step` | 1 | 0.80 s | 5.3 KB | inst | late (ninewalls) |
 | `screed/step-3.ogg` | `screed/step` | 1 | 0.80 s | 5.3 KB | inst | late (ninewalls) |
 | `screed/idle.ogg` | `screed/idle` | 1 | 5.00 s | 28.2 KB | inst | late (ninewalls) |
-| `screed/charge.ogg` | `screed/charge` | 1 | 1.60 s | 14.2 KB | inst | late (ninewalls) |
+| `screed/charge.ogg` | `screed/charge` | 1 | 1.60 s | 14.2 KB | inst | boot |
 | `screed/stall.ogg` | `screed/stall` | 1 | 2.40 s | 15.8 KB | inst | late (ninewalls) |
 | `screed/seal.ogg` | `screed/seal` | 1 | 1.60 s | 9.1 KB | inst | late (ninewalls) |
 | `screed/seize.ogg` | `screed/seize` | 1 | 1.30 s | 9.1 KB | inst | late (ninewalls) |

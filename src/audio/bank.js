@@ -29,6 +29,18 @@ export const ALLOWED_LICENSES = ['CC0-1.0', 'CC-PD', 'Unlicense', 'PD'];
 
 const isLate = (e) => e.load === 'late';
 
+/**
+ * The late phase's order (lower first), GameAudio's rank: the rows of a machine kind standing near her (`near`: kinds, the
+ * set's first word) first, then the place she is in (`weight(place)` 0..1), its stereo beds before its one-shots.
+ * @param {{set:string, place?:string, loop?:boolean, ch?:number}} row
+ * @param {Set<string>} near
+ * @param {((place:string)=>number)|null} weight
+ */
+export function lateRank(row, near, weight) {
+  const kind = row.set.slice(0, row.set.indexOf('/'));
+  return (near && near.has(kind) ? 0 : 20) + (1 - (weight ? weight(row.place) : 0)) * 10 + (row.loop && row.ch === 2 ? 0 : 1);
+}
+
 export class SampleBank {
   constructor(manifest = MANIFEST, sets = SETS, base = AUDIO_BASE) {
     this.manifest = manifest;

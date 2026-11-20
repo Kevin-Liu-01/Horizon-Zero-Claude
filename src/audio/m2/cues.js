@@ -10,7 +10,13 @@
  *   load     'late' (the default here): fetched and decoded after New Game or Continue gives her control (GameAudio's late
  *            load, ../bank.js loadLate), so the first load carries only what the title and the first seconds need; the
  *            shipped ledger (tools/tier0/budgets.mjs) reads the same field from the manifest. 'boot': with the slice's bank,
- *            before control (the Kit Rack's UI clicks: the rack can be held open the moment she is under control).
+ *            before control (the Kit Rack's UI clicks: the rack can be held open the moment she is under control; and every
+ *            TELL, below).
+ *
+ *   tell     true: the cue warns of a blow before it lands (the trample's and the charge's wind-ups). A tell is always 'boot':
+ *            a Continue can put her in its machine's reach on the first frame of play (a 'seal-1' or 'seal-2' record: the
+ *            re-spawned Screed charges on its first step when she stands 7-24 m ahead of it, src/instruments/kinds/screed-rules.js),
+ *            before any late row can be fetched, and a tell that is late or silent is a blow with no warning.
  *
  * Ranges: TECH §14 names one of them, "Screed blade 150 m" (the charge, the stall and the cut are the blade's); every
  * other range here was CHOSEN by the audio lane and waits for approval (`rangeFrom`), as the slice's did.
@@ -66,11 +72,11 @@ export const M2_CUES = [
   /* the Tiller herd */
   P({ set: 'tiller/step', recipe: ['TILLER', 'step'], n: 3, bus: 'inst', range: 40, gain: 2.7, place: 'holds', on: 'its footfalls (a stilt)' }),
   P({ set: 'tiller/idle', recipe: ['TILLER', 'idle'], loop: true, bus: 'inst', range: 25, gain: 2.2, place: 'holds', on: 'idle bed: coring' }),
-  P({ set: 'tiller/trample', recipe: ['TILLER', 'trample'], bus: 'inst', range: 60, gain: 4.5, place: 'holds', on: 'the trample tell: herd-trample\'s wind-up (heard before contact)' }),
+  P({ set: 'tiller/trample', load: 'boot', tell: true, recipe: ['TILLER', 'trample'], bus: 'inst', range: 60, gain: 4.5, place: 'holds', on: 'the trample tell: herd-trample\'s wind-up (heard before contact)' }),
   /* the Screed */
   P({ set: 'screed/step', recipe: ['SCREED', 'step'], n: 3, bus: 'inst', range: 80, gain: 4.5, place: 'ninewalls', on: 'its footfalls: the hull\'s layer over mstep/heavy' }),
   P({ set: 'screed/idle', recipe: ['SCREED', 'idle'], loop: true, bus: 'inst', range: 60, gain: 4.6, place: 'ninewalls', on: 'idle bed: the moldboard working' }),
-  P({ set: 'screed/charge', recipe: ['SCREED', 'charge'], bus: 'inst', range: 150, gain: 12, place: 'ninewalls', on: 'screed-charge (the wind-up and the lock)' }),
+  P({ set: 'screed/charge', load: 'boot', tell: true, recipe: ['SCREED', 'charge'], bus: 'inst', range: 150, gain: 12, place: 'ninewalls', on: 'screed-charge (the wind-up and the lock)' }),
   P({ set: 'screed/stall', recipe: ['SCREED', 'stall'], bus: 'inst', range: 150, gain: 14, place: 'ninewalls', on: 'screed-stalled, screed-stalled-rock' }),
   P({ set: 'screed/seal', recipe: ['SCREED', 'seal'], bus: 'inst', range: 60, gain: 4.0, place: 'ninewalls', on: 'seal-off' }),
   P({ set: 'screed/seize', recipe: ['SCREED', 'seize'], bus: 'inst', range: 40, gain: 2.4, place: 'ninewalls', on: 'screed-seized' }),

@@ -11,8 +11,15 @@
  *
  *   new-game          the title, a key, NEW GAME, the first difficulty;
  *   continue:<from>   a save written first (tools/gates/systems/first-hour-fixtures.mjs fixture(2, { from }): 'stall' is
- *                     inside Ninewalls in the Holds with the kit, 'plumb-2' on the Holds' terraces by the herd), the page
- *                     opened again, then the title, a key, CONTINUE and the marked slot.
+ *                     inside Ninewalls in the Holds with the kit, 'plumb-2' on the Holds' terraces by the herd; 'seal-1'
+ *                     is built here from 'stall': "The Scar" one stage on (the Screed stalled), the checkpoint the stall
+ *                     writes, with her SEAL1_AHEAD m ahead of the re-spawned Screed on its line, where it charges on its
+ *                     first step), the page opened again, then the title, a key, CONTINUE and the marked slot.
+ *
+ * Input is a player's: the key on the title is a key press and every menu item is clicked with the mouse (puppeteer's
+ * element click: pointer and mouse events), so the audio context and the boot bank start where a player's would (the
+ * first click). Before 2026-11-20 the row clicked menu items through the DOM (no pointer events): the boot bank then
+ * started at game-start, and 3.5 MB of boot audio fell after control.
  *
  * Control is the frame two frames after `game-start` (the state 'playing', as tools/perf/exit-bar.mjs times it). For
  * each case: the requests started before control (files, bytes), whether any of them is a deferred file (the game's
@@ -22,10 +29,17 @@
  * spawn to the nearest ground each late place's weight reaches 0.01 (the director's own weights), against the time its
  * rows were decoded.
  *
- * PASS: every case <= 60 MB (decimal, 60e6 bytes) before control and no deferred file requested before control; the
- * late bank starts after control and decodes whole; New Game: no late set asked before its decode and every place's
- * rows decoded before she can reach it. A Continue's misses (a set wanted in its first second) are reported with their
- * lateness, not graded.
+ * The deferred set is the shipped ledger's (tools/tier0/budgets.mjs deferredFiles over budgets.json shipped.deferred),
+ * so the row checks the very files the ledger leaves out of the first load. The report lists every file fetched before
+ * control and every shipped public/ file that was not (the ledger's first load counts both).
+ *
+ * PASS: every case <= 60 MB before control (decimal megabytes, 60e6 bytes: the unit the shipped ledger grades the
+ * first load in too) and no deferred file requested before control; the late bank starts after control and decodes
+ * whole; New Game: no late set asked before its decode and every place's rows decoded before she can reach it; every
+ * case: no late ONE-SHOT asked before its decode, and every tell asked for in the watch (the Screed's charge, the
+ * trample's and the Plumb's wind-ups: each `playAt` of a tell set) had its buffer decoded; Continue at 'seal-1': the
+ * Screed charged and its charge got a voice. A Continue's late LOOPS (beds and idles fading in in its
+ * first second) are reported with their lateness, not graded.
  *
  * Writes <runs>/<UTC stamp>-<commit>-boot-transfer/report.json (outside the repo). Never port 5173.
  */
@@ -38,8 +52,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../chrome-profile.mjs';
 import { takeMachineSlot, releaseMachineSlot } from '../chrome-slot.mjs';
-import { DEFERRED_FILES, LATE_BYTES, BOOT_BYTES } from '../../src/audio/manifest.js';
+import { MANIFEST, LATE_BYTES, BOOT_BYTES } from '../../src/audio/manifest.js';
 import { fixture } from '../gates/systems/first-hour-fixtures.mjs';
+import { QuestSpine } from '../../src/game/quest/spine.js';
+import { SCAR_STAGES, SCAR_ID, SCAR_REWARD, FAIL_SOFT, TRUE_GROUND_ID, TRUE_GROUND_STAGES, TRUE_GROUND_REWARD } from '../../src/game/quest/scar-plan.js';
+import { CENTRE as NW_CENTRE, OUTER_R as NW_OUTER_R } from '../../src/world/settlements/ninewalls-layout.js';
+import { heightAt } from '../../src/world/island/recipe.js';
+import { questStrings } from '../gates/systems/lib.mjs';
+import { deferredFiles, loadBudgets } from '../tier0/budgets.mjs';
+import { listFiles, sizeOf } from '../tier0/lib/files.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
@@ -49,7 +70,11 @@ if (!PORT || PORT === 5173) throw new Error('boot-transfer: --port <lane port> i
 const CONTINUES = flag('--continues', 'stall,plumb-2').split(',').map((s) => s.trim()).filter(Boolean);
 const WATCH_S = Number(flag('--watch-s', 12));
 const CAP_BYTES = 60e6;
-const SPRINT_MS = 8.2;      // her sprint (m/s; src/audio/audio.js footstep scale, A28b canon band top)
+const SPRINT_MS = 8.2;
+const SEAL1_AHEAD = 15;     // m ahead of the re-spawned Screed on its line (its charge band is 7-24 m, src/instruments/kinds/screed-rules.js)
+/** The tell sets: a blow's warning (src/audio/m2/cues.js `tell`, the attack table's wind-ups; all boot rows). */
+const TELLS = new Set(['screed/charge', 'tiller/trample', 'plumb/bob', 'peg/rush', 'inst/windup']);
+const LOOP_SET = new Set(MANIFEST.filter((r) => r.loop).map((r) => r.set));      // her sprint (m/s; src/audio/audio.js footstep scale, A28b canon band top)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const utc = () => new Date().toISOString().replace(/\.\d+Z$/, 'Z');
 const log = (...a) => console.log(`[boot-transfer ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -61,11 +86,16 @@ const stamp = utc().replace(/[-:]/g, '');
 const OUT = path.join(os.homedir(), '.calima-r5/review/runs', `${stamp}-${commit}-boot-transfer`);
 if (path.resolve(OUT).startsWith(REPO + path.sep)) throw new Error('the run directory goes outside the repo');
 mkdirSync(OUT, { recursive: true });
-const DEFERRED = new Set(DEFERRED_FILES.map((f) => '/' + f));
+const LEDGER = await deferredFiles(REPO, loadBudgets(REPO).shipped.deferred || []);
+if (LEDGER.errors.length) throw new Error(`boot-transfer: the ledger's deferred set: ${LEDGER.errors.join('; ')}`);
+/** '/audio/holds/x.ogg' -> the module that defers it */
+const DEFERRED = new Map([...LEDGER.files].map(([f, mod]) => [f.replace(/^public/, ''), mod]));
+const SHIPPED = listFiles(REPO, ['public']).map((f) => ({ path: f.replace(/^public/, ''), bytes: sizeOf(REPO, f) }));
 const run = {
   row: 'P-boot-transfer', tool: 'tools/perf/boot-transfer.mjs', commit, clean: dirty.length === 0, dirty: dirty.slice(0, 20),
   tree: process.env.CLEAN_TREE || REPO, via: process.env.CLEAN_TREE ? 'tools/perf/clean-measure.sh' : 'in place', port: PORT, startedAt: utc(),
-  capBytes: CAP_BYTES, ledger: { deferredFiles: DEFERRED.size, lateBytes: LATE_BYTES, bootAudioBytes: BOOT_BYTES }, cases: [], console: [],
+  capBytes: CAP_BYTES, ledger: { deferredFiles: DEFERRED.size, deferredFrom: [...new Set(DEFERRED.values())], lateBytes: LATE_BYTES, bootAudioBytes: BOOT_BYTES,
+    shippedFiles: SHIPPED.length, shippedBytes: SHIPPED.reduce((a, f) => a + f.bytes, 0) }, cases: [], console: [],
 };
 const save = () => writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(run, null, 1));
 
@@ -85,6 +115,22 @@ const hookControl = () => {
       window.__gameStartWall = Date.now();
       requestAnimationFrame(() => requestAnimationFrame(() => { window.__controlWall = Date.now(); }));
     });
+    // the tells: every playAt of a tell set, and whether it got a voice (a set not decoded gets none)
+    window.__tells = [];
+    window.__events = { 'screed-charge': 0, 'screed-engage': 0 };
+    for (const n of Object.keys(window.__events)) C.events.on(n, () => { window.__events[n]++; });
+    const wrap = setInterval(() => {
+      const A = C.audio;
+      if (!A?.playAt) return;
+      clearInterval(wrap);
+      const orig = A.playAt.bind(A);
+      const T = new Set(['screed/charge', 'tiller/trample', 'plumb/bob', 'peg/rush', 'inst/windup']);
+      A.playAt = (set, ...rest) => {
+        const v = orig(set, ...rest);
+        if (T.has(set) && window.__tells.length < 64) window.__tells.push({ set, voiced: !!v, wall: Date.now(), decoded: !!A.bank?.peek?.(set) });
+        return v;
+      };
+    }, 2);
   }, 2);
 };
 
@@ -97,7 +143,8 @@ const watchAfter = async (s) => {
   while (last < end) { const t = await raf(); iv.push(t - last); last = t; }
   const A = window.__CTX__.audio;
   return { frames: iv.length, over33: iv.filter((v) => v > 33.4).length, over50: iv.filter((v) => v > 50).length, worstMs: +Math.max(...iv).toFixed(1),
-    late: A?.lateAudit ? A.lateAudit() : null, bankLate: !!A?.bankLate, ctxState: A?.ac?.state ?? null };
+    late: A?.lateAudit ? A.lateAudit() : null, bankLate: !!A?.bankLate, ctxState: A?.ac?.state ?? null,
+    tells: (window.__tells || []).slice(), events: { ...(window.__events || {}) } };
 };
 
 /** In the page: how soon she can reach each late place from where she stands (the director's own weights). */
@@ -123,6 +170,53 @@ const reachOf = (sprint) => {
   return { from: { x: +x0.toFixed(1), z: +z0.toFixed(1) }, places: out };
 };
 
+/** A player's click on the first element under `sel` whose text matches `re` (puppeteer's element click: mouse events). */
+async function clickOn(page, sel, re = null) {
+  for (let i = 0; i < 100; i++) {
+    for (const h of await page.$$(sel)) {
+      const ok = await h.evaluate((el, src) => {
+        if (src && !new RegExp(src).test(el.textContent)) return false;
+        if (el.disabled) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      }, re ? re.source : null);
+      if (ok) { await h.click(); return true; }
+    }
+    await sleep(100);
+  }
+  throw new Error(`no clickable ${sel}${re ? ` ${re}` : ''}`);
+}
+
+/** "The Scar" walked to the stage after `through` and one more event list (the save the next stage's checkpoint writes). */
+function scarAt(through, more) {
+  const scar = new QuestSpine({ strings: questStrings(SCAR_ID), id: SCAR_ID, stages: SCAR_STAGES, reward: SCAR_REWARD, triangles: {}, closingCard: null, failSoft: FAIL_SOFT }).start();
+  const probe = { near: () => false, aim: () => false, bearing: () => 0 };
+  const EV = { walk: [['region-enter', { region: 'holds' }]], herd: [['herd-lee', { inShadow: true }]], 'plumb-2': [['plumb-topple', { kind: 'plumb' }]],
+    barbed: [['ammo-crafted', { ammo: 'hardpoint', n: 6 }]], oro: [['talk', 'oro'], ['scene-done', { scene: 'hand-over', exit: true }]], stall: [['screed-stalled', {}]] };
+  for (const id of [...through, ...more]) for (const [ev, e] of EV[id]) { if (ev === 'talk') scar.talk(e); else scar.notify(ev, e); scar.update(0.1, probe); }
+  const at = scar.current()?.id;
+  const want = SCAR_STAGES[through.length + more.length]?.id;
+  if (at !== want) throw new Error(`seal-1 record: "The Scar" is at ${at}, not ${want}`);
+  const tg = new QuestSpine({ strings: questStrings(TRUE_GROUND_ID), id: TRUE_GROUND_ID, stages: TRUE_GROUND_STAGES, reward: TRUE_GROUND_REWARD, triangles: {}, closingCard: null });
+  return { [SCAR_ID]: scar.serialize(), [TRUE_GROUND_ID]: tg.serialize() };
+}
+
+/** The record a Continue reads: the fixture's, or (seal-1) the stall record one stage on with her on the Screed's line. */
+function recordFor(from) {
+  if (from !== 'seal-1') return fixture(2, { from });
+  const r = fixture(2, { from: 'stall' });
+  // hour.js _spawn('screed'): OUTER_R + 14 m from the centre at bearing 45 degrees, heading for the centre
+  const rr = NW_OUTER_R + 14, b = Math.PI / 4;
+  const at = { x: NW_CENTRE.x + Math.sin(b) * rr, z: NW_CENTRE.z - Math.cos(b) * rr };
+  const dx = NW_CENTRE.x - at.x, dz = NW_CENTRE.z - at.z, d = Math.hypot(dx, dz);
+  const x = at.x + (dx / d) * SEAL1_AHEAD, z = at.z + (dz / d) * SEAL1_AHEAD;
+  const heading = Math.atan2(-dx, -dz);
+  r.reason = 'the-scar:stage:seal-1';
+  r.position = { x: +x.toFixed(3), y: +(heightAt(x, z) + 0.05).toFixed(3), z: +z.toFixed(3), yaw: +heading.toFixed(3), pitch: 0, heading: +heading.toFixed(3) };
+  r.areas = { ...r.areas, quests: scarAt(['walk', 'herd', 'plumb-2', 'barbed', 'oro'], ['stall']) };
+  return r;
+}
+
 async function title(page) {
   await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 180000, polling: 50 });
   await sleep(400);
@@ -145,7 +239,7 @@ async function oneCase(browser, kind, from) {
     // the save first (its own page load, not measured), then the page opened again
     await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
     await page.waitForFunction(() => window.__CTX__?.state === 'title' && !!window.__CTX__?.progression?.saves?.store, { timeout: 180000, polling: 100 });
-    const save = { ...fixture(2, { from }), savedAt: Date.now() };
+    const save = { ...recordFor(from), savedAt: Date.now() };
     const wrote = await page.evaluate((r) => { const st = window.__CTX__.progression.saves.store; st.setActive(1); return st.write(r); }, save);
     if (!wrote?.ok) throw new Error(`fixture ${from} not written: ${JSON.stringify(wrote)}`);
     rec.save = { from, position: save.position, hour: save.hour };
@@ -162,21 +256,11 @@ async function oneCase(browser, kind, from) {
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await title(page);
   if (kind === 'new-game') {
-    const ok = await page.evaluate(() => { const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /NEW GAME/.test(x.textContent)); if (!b) return false; b.click(); return true; });
-    if (!ok) throw new Error('no NEW GAME item on the title menu');
-    await page.waitForSelector('.mn-diff', { timeout: 20000 });
-    await page.evaluate(() => document.querySelector('.mn-diff').click());
+    await clickOn(page, '.mn-title-item', /NEW GAME/);
+    await clickOn(page, '.mn-diff');
   } else {
-    const why = await page.evaluate(() => {
-      const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent));
-      if (!b || b.disabled) return 'no CONTINUE on the title';
-      b.click();
-      const go = document.querySelector('.gs-slot.cont .gs-slot-go');
-      if (!go) return 'no marked slot card';
-      go.click();
-      return null;
-    });
-    if (why) throw new Error(`continue: ${why}`);
+    await clickOn(page, '.mn-title-item', /CONTINUE/);
+    await clickOn(page, '.gs-slot.cont .gs-slot-go');
   }
   await page.waitForFunction(() => window.__CTX__?.state === 'playing' && !!window.__controlWall, { timeout: 60000, polling: 10 });
   const { gs, ctl } = await page.evaluate(() => ({ gs: window.__gameStartWall, ctl: window.__controlWall }));
@@ -199,7 +283,15 @@ async function oneCase(browser, kind, from) {
   const byKind = {};
   for (const r of before) { const ext = (pathOf(r.url).match(/\.([a-z0-9]+)$/i)?.[1] || 'other').toLowerCase(); byKind[ext] = (byKind[ext] || 0) + r.bytes; }
   rec.timing = { navToGameStartS: +((gs - tNav) / 1000).toFixed(2), gameStartToControlMs: ctl - gs };
+  const got = new Set(before.map((r) => pathOf(r.url)));
+  const notYet = SHIPPED.filter((f) => !got.has(f.path));
+  const byDir = {};
+  for (const f of notYet) { const k = f.path.split('/').slice(0, 3).join('/'); byDir[k] = (byDir[k] || 0) + f.bytes; }
+  rec.shippedNotBeforeControl = { files: notYet.length, mb: +(sum(notYet) / 1e6).toFixed(2), deferred: notYet.filter((f) => DEFERRED.has(f.path)).length,
+    byDirMb: Object.fromEntries(Object.entries(byDir).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, +(v / 1e6).toFixed(3)])),
+    list: notYet.sort((a, b) => b.bytes - a.bytes).map((f) => `${f.path} ${f.bytes}${DEFERRED.has(f.path) ? ' (deferred)' : ''}`) };
   rec.beforeControl = {
+    list: before.map((r) => `${pathOf(r.url)} ${r.bytes}${r.done ? '' : ' (in flight)'}`),
     files: before.length, bytes: sum(before), mb: +(sum(before) / 1e6).toFixed(2), mib: +(sum(before) / 1048576).toFixed(2),
     stillInFlightAtControl: before.filter((r) => !r.done).length, failed: before.filter((r) => r.failed).length,
     byKindMb: Object.fromEntries(Object.entries(byKind).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, +(v / 1e6).toFixed(2)])),
@@ -214,7 +306,10 @@ async function oneCase(browser, kind, from) {
   const L = w.late;
   rec.frames = { frames: w.frames, over33: w.over33, over50: w.over50, worstMs: w.worstMs, audioContext: w.ctxState };
   rec.late = L ? { state: L.state, rows: L.rows, decoded: L.decoded, megabytes: L.megabytes, startedS: L.startedS, lastDecodedS: L.lastDecodedS, doneS: L.doneS,
-    asked: L.asked, missed: L.missed, minLeadS: L.minLeadS, asks: L.sets.filter((s) => s.asks > 0) } : null;
+    nearKinds: L.nearKinds ?? null, asked: L.asked, missed: L.missed, missedOneShots: L.missed.filter((m) => !LOOP_SET.has(m.set)),
+    missedLoops: L.missed.filter((m) => LOOP_SET.has(m.set)), minLeadS: L.minLeadS, asks: L.sets.filter((s) => s.asks > 0) } : null;
+  rec.tells = { events: w.events, played: w.tells.length, silent: w.tells.filter((t) => !t.voiced).length,
+    log: w.tells.slice(0, 16).map((t) => ({ set: t.set, voiced: t.voiced, decoded: t.decoded, msAfterControl: t.wall - ctl })) };
   if (rec.reach && L) {
     const placeOf = {};
     const { MANIFEST } = await import('../../src/audio/manifest.js');
@@ -232,7 +327,10 @@ async function oneCase(browser, kind, from) {
     noDeferredBeforeControl: rec.beforeControl.deferredFiles === 0,
     lateAfterControl: !!late && late.startedS != null && late.startedS >= 0 && rec.afterControl.firstDeferredMsAfterControl != null && rec.afterControl.firstDeferredMsAfterControl >= 0,
     lateWhole: !!late && late.state === 'done' && late.decoded === late.rows && rec.afterControl.deferredFiles === DEFERRED.size,
+    noOneShotMiss: !!late && late.missedOneShots.length === 0,
+    tellsDecoded: w.tells.every((t) => t.decoded),
   };
+  if (from === 'seal-1') rec.checks.chargeHeard = w.events['screed-charge'] > 0 && w.tells.some((t) => t.set === 'screed/charge' && t.voiced);
   if (kind === 'new-game') {
     rec.checks.noMiss = !!late && late.missed.length === 0;
     rec.checks.decodedBeforeReach = !!rec.leadByPlace && Object.values(rec.leadByPlace).every((v) => v.leadS == null || v.leadS > 0) && Object.values(rec.leadByPlace).some((v) => v.leadS != null);
