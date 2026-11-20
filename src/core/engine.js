@@ -251,6 +251,9 @@ export const ROUND4_HIGH = Object.freeze({
 
 /** C5: the most one frame weighs in dynamic resolution's running average, ms (two 60 Hz frames). */
 const DRS_SPIKE_MS = 33.4;
+/** C5: a frame this long (ms) is a load; dynamic resolution then waits DRS_SETTLE_FRAMES frames before it reads again. */
+const DRS_SETTLE_AFTER_MS = 250;
+const DRS_SETTLE_FRAMES = 120;
 
 /**
  * C5 (the first hour's hitches): A SKINNED MESH'S CULLING SPHERE IS ITS GEOMETRY'S, AS THE RIGS WERE WRITTEN FOR.
@@ -3228,6 +3231,11 @@ export class Engine {
   /** perf-tech-05 — hold the frame budget by trading pixels, not systems. */
   _updateDynamicResolution(frameMs) {
     if (!this.drsEnabled) return;
+    // C5: a frame of a quarter second or more is a load (BEGIN, CONTINUE, a rest, a menu), not the scene's cost: the two
+    // seconds after it settle before dynamic resolution reads anything. At 71644c5 the second after CONTINUE stepped it
+    // down twice, each step reallocating the canvas and the targets in its frame (28 and 30 ms, WebGLRenderer.setSize;
+    // first-hour leg 2, run hh-c5-71644c5-prof), and on a 60 Hz display it never steps back up (no interval under 14.5 ms)
+    if (frameMs >= DRS_SETTLE_AFTER_MS) this._drsSkip = Math.max(this._drsSkip || 0, DRS_SETTLE_FRAMES);
     // M1.6m: a lost context's frames and the restore's recompile are not the scene's cost
     if (this.contextLost || this._drsSkip > 0) { if (!this.contextLost) this._drsSkip--; return; }
     // C5: one long frame is not a resolution problem. Each frame weighs in at most DRS_SPIKE_MS, so a lone hitch (a
