@@ -33,6 +33,8 @@ const hangF = path.join(tmp, 'hang.json'), row0F = path.join(tmp, 'row0.json'), 
 execFileSync(process.execPath, [path.join(HERE, 'clip-bench.mjs'), '--json', clipF], { stdio: 'ignore' });
 const CB = JSON.parse(readFileSync(clipF, 'utf8'));
 execFileSync(process.execPath, [path.join(HERE, 'hang-bench.mjs'), '--json', hangF], { stdio: 'ignore' });
+const lookF = path.join(tmp, 'look.json');
+execFileSync(process.execPath, [path.join(HERE, 'hang-look.mjs'), '--json', lookF], { stdio: 'ignore' });
 execFileSync(process.execPath, [path.join(HERE, 'row0.mjs'), '--json', row0F], { stdio: 'ignore' });
 const H = JSON.parse(readFileSync(hangF, 'utf8')).rows, R0 = JSON.parse(readFileSync(row0F, 'utf8'));
 
@@ -60,8 +62,15 @@ line('KF1', 'bar 0.30-0.40 m in front of the chest', pf(H.barInFrontOfChest.pass
   const W = CB.wave2b, Bd = W.binding, St = W.strictBehind;
   line('KF1', "Kevin's bar on every step of open, glide, banks L/R, fold, landing, reef (R5), open from standing and airborne, fold at 3 m, the step the state turns none, her fall after an airborne fold and the hand-back (Node, the law driving the clips): the M1.3f sweep's arm-behind-head read (behind 0, plane 0), no wrist over the head bone, no elbow over its shoulder, no wrist behind either head plane within 0.30 m of the head bone's height", Bd.pass && St.passOffBackReach ? 'PASS' : 'FAIL',
     `${Bd.bad} of ${Bd.steps} steps fail; open ${n('open')}; glide+banks ${n('glide')}; fold ${n('fold')}; landing ${n('land')}; reef ${n('reef')}; her fall after the fold ${n('after-air')}`);
+  line('KF1', "(old text, restated by R10) 0 steps with a wrist behind the head plane or above head height, or an elbow above its shoulder joint ... no hand passes behind the head in the open or the fold", 'RULED',
+    'wave 2b: 855 wrist-steps behind a head plane at the reach to the back mount, all >= 0.301 m under the head bone (the line below); R10 restates the head-plane clause (the next line)');
+  {
+    const r10 = W.r10;
+    line('KF1', "(R10) the head-plane clause applies above her shoulders: 0 steps with a wrist behind the head plane at or above her shoulder joints' height, or above head height, or an elbow above its shoulder joint; a hand that reaches behind her body at hip height to the back mount is allowed; never an arm or hand behind or above her head (the M1.3f sweep's read)", r10.pass ? 'PASS' : 'FAIL',
+      `${r10.atOrAboveShoulder} of ${r10.behindAPlane} wrist-steps behind a head plane are at or above the lower shoulder joint (all >= ${r10.minUnderShoulderM} m under it; the wrist ${r10.wristOverPelvisM[0]} to ${r10.wristOverPelvisM[1]} m over the pelvis bone: hip height); the sweep's read and the over-head and elbow bars: ${Bd.bad} of ${Bd.steps} steps fail`);
+  }
   line('KF1', "wave 1's strict read (no wrist behind the head's frontal plane or the head bone's facing plane at ANY height): the take off the mount and the seat back on it put the right hand at the small of her back by design (wave 2b: the roll is carried by her hand)", St.passOffBackReach ? 'RECORDED' : 'FAIL',
-    `${St.steps} wrist-steps behind a plane, all ${St.onBackReach} of them >= 0.30 m under the head bone (the lowest margin ${St.minUnderHeadM} m), ${St.offBackReach} within 0.30 m of its height; strict on all steps: ${CB.badSteps} of ${CB.steps} head-frame, ${CB.facing.badSteps} facing (a ruling on the reach to the back is asked: BACKLOG)`);
+    `${St.steps} wrist-steps behind a plane, all ${St.onBackReach} of them >= 0.30 m under the head bone (the lowest margin ${St.minUnderHeadM} m), ${St.offBackReach} within 0.30 m of its height; strict on all steps: ${CB.badSteps} of ${CB.steps} head-frame, ${CB.facing.badSteps} facing (ruled: R10, the line above)`);
   {
     const H2 = CB.handBackOnGround;
     line('KF1', "the hand-back on the ground (after touchdown, until the kite's layer is off): the sweep's arm-behind-head read, none behind a head plane within 0.30 m of the head bone's height, none over it, no elbow over its shoulder", H2.pass ? 'PASS' : 'FAIL',
@@ -110,6 +119,20 @@ line('KF4', "the roll's hand-off obeys W1's palm bar (the palm 0.010 m or less o
   line('KF4', 'the roll is carried by her hand between the mount and the bar: no step moves the roll (on her back\'s frame) with no hand on it; the hand takes it off the mount (the roll pulled off its mount by the take)', W.rollWithoutHand.pass ? 'PASS' : 'FAIL', `${W.rollWithoutHand.stepsMoved} steps moved it with no hand (max ${W.rollWithoutHand.maxMoveM} m, ${W.rollWithoutHand.maxRotDeg} deg); the take: the roll off its mount by ${Math.max(...W.take.map((x) => x.rollOffMountM))} m at most (${W.take.length} opens)`);
   line('KF1', 'the fold and the open never cross her face (no kite vertex in the column in front of her face: +-0.10 m of the head bone, 0.06 under it to 0.24 over it, 0.02-1.2 m in front)', W.face.pass ? 'PASS' : 'FAIL', `${W.face.steps} steps with a vertex in it (${W.face.verts} vertices); the nearest approach ${W.face.minGapM} m`);
   line('KF0d', 'the right forearm and hand clear of the stowed kit on the reach to the mount and back', W.armKitOnBackReach.stepsInside === 0 ? 'PASS' : 'FAIL', `${W.armKitOnBackReach.steps} steps on the reach; ${W.armKitOnBackReach.stepsInside} inside; the nearest ${W.armKitOnBackReach.minClearM} m (piece ${W.armKitOnBackReach.at?.piece}, ${W.armKitOnBackReach.at?.clip} at ${W.armKitOnBackReach.at?.phase})`);
+}
+// WAVE 3: the look items the review of wave 2b named on the page, read in Node (the page's film is apart)
+{
+  const W = CB.wave2b, HL = JSON.parse(readFileSync(lookF, 'utf8'));
+  line('LOOK', 'the open and the fold: the kite never pitched flat and open at once (tilted over 60 deg from her up while more than half open)', W.slab.pass ? 'PASS' : 'FAIL',
+    `${W.slab.flatOpenSteps} of ${W.slab.steps} steps; the most open while tilted over 60 deg: furl ${W.slab.maxFurlWhileFlat} (wave 2b: the whole open kite pitched 85 deg at the open's end and the fold's start)`);
+  line('LOOK', 'from behind, the furled roll on its mount does not cover the stowed bow (5 % or less of its vertices hidden)', W.bowCover.pass ? 'PASS' : 'FAIL',
+    `the bow ${(W.bowCover.bowMax * 100).toFixed(1)} % (was 13.6 % at the 2b mount), the lance ${(W.bowCover.lanceMax * 100).toFixed(1)} %, the quiver ${(W.bowCover.quiverMax * 100).toFixed(1)} % (${W.bowCover.steps} steps on the mount)`);
+  const g = HL.glide, st = HL.stand;
+  const headOk = g.headPitchDeg <= 15, legsOk = ['L', 'R'].every((k) => g.legs[k].footPitchDeg >= 30 && Math.abs(g.legs[k].thighFromVerticalDeg) <= 12);
+  line('LOOK', "the held glide: her head up over the bar (the head bone's forward 15 deg or less under the horizontal) and the bar under her chin", headOk && g.bar.k <= 0.15 ? 'PASS' : 'FAIL',
+    `head ${g.headPitchDeg} deg down (her idle ${st.headPitchDeg}; wave 2b's glide 51-54), the bar ${g.bar.underHeadBoneM} m under the head bone (2b: 0.10), k ${g.bar.k} of sternum to chin`);
+  line('LOOK', 'the held glide: her legs hang (each foot pointed 30 deg or more, toes down; thighs within 12 deg of vertical), not her standing pose', legsOk ? 'PASS' : 'FAIL',
+    `feet ${g.legs.L.footPitchDeg}/${g.legs.R.footPitchDeg} deg (standing ${st.legs.L.footPitchDeg}/${st.legs.R.footPitchDeg}; 2b's glide 8/8), thighs ${g.legs.L.thighFromVerticalDeg}/${g.legs.R.thighFromVerticalDeg} deg, knees ${g.legs.L.kneeBendDeg}/${g.legs.R.kneeBendDeg} deg`);
 }
 line('KF4', "W1's palm normal, fingertip and wrist deviation bars on the bar; the open and fold through handling.js", 'UNMEASURED', 'D3 is open (the M3 brief: through handling.js only once D3 closes); the kiteBar slot is typed in src/hero/sockets.js');
 line('KF5', 'calima and squall: 0 of 10 opens, a field note in the bible\'s words', pf(allOk(/^KF5 grounded: /)), 'GROUNDED_NOTE from BIBLE §3.2 and §16');

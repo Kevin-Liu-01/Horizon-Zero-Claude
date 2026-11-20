@@ -42,7 +42,13 @@ const X_AX = Object.freeze(new THREE.Vector3(1, 0, 0));
  */
 const CASE_ANGLE = 36;
 const AXIS = new THREE.Vector3(Math.cos((90 - CASE_ANGLE) * D2R), Math.sin((90 - CASE_ANGLE) * D2R), 0);
-const MOUNT = Object.freeze({ c: new THREE.Vector3(0.05, 1.22, -0.36), q: new THREE.Quaternion().setFromUnitVectors(X_AX, AXIS) });
+/* WAVE 3 (the review of 2b: "from behind, the furled roll covers the stowed bow"): the mount moves off the bow's line,
+ * 0.09 m across the case's diagonal toward her right shoulder and 0.04 m further out from her back: (0.05, 1.22, -0.36) ->
+ * (-0.02, 1.27, -0.40). From straight behind it hides 1.9 % of the bow's vertices (13.6 % before; the clip bench's
+ * `bowCover`); it crosses the lance (0 %) and lies over the quiver's mouth (19.8 %). Wave 2b's bench read the roll as a
+ * point (its V(1, 0, 0) was a zero vector) and missed the roll's end passing 0.02-0.05 m into the quiver round her hip:
+ * the road's turns below are re-keyed for it. */
+const MOUNT = Object.freeze({ c: new THREE.Vector3(-0.02, 1.27, -0.40), q: new THREE.Quaternion().setFromUnitVectors(X_AX, AXIS) });
 /**
  * THE MOUNT RIDES HER BACK (wave 2b). MOUNT and the road's first keys are written in her character frame as her back
  * stood when the mount was fitted to the stowed kit (734d435: the jump's air pose, the open's first step): spine_02 at
@@ -88,7 +94,7 @@ const TAKE_X = ROLL_TAKE.x;
  */
 const ROAD_P = [
   MOUNT.c.clone().addScaledVector(AXIS, TAKE_X),     // on the mount: the take
-  new THREE.Vector3(-0.36, 1.13, -0.34),             // off the mount, behind the quiver (her elbow over its mouth)
+  new THREE.Vector3(-0.40, 1.12, -0.42),             // off the mount, behind the quiver (her elbow over its mouth; wave 3: was (-0.36, 1.13, -0.34))
   new THREE.Vector3(-0.50, 1.05, -0.10),             // out past it, beside her right hip, wide (the roll's short end clear of her)
   new THREE.Vector3(-0.49, 1.03, 0.16),              // swung round her hip, out and forward
   new THREE.Vector3(-0.30, 1.06, 0.38),              // in front of it: the set (the left hand takes the roll's left grip)
@@ -98,9 +104,9 @@ const ROAD_P = [
  *  keys are written on her back as it stood at BACK_REF and ride it (`onBack`); the set is in her frame. */
 const ROAD_D = [
   [0, AXIS.clone()],
-  [0.25, new THREE.Vector3(0.15, 0.6, -0.78).normalize()],
-  [0.5, new THREE.Vector3(-0.35, 0.3, -0.89).normalize()],
-  [0.75, new THREE.Vector3(-0.55, 0.15, 0.82).normalize()],
+  [0.25, new THREE.Vector3(0.05, 0.85, -0.5).normalize()],     // (wave 3: was (0.15, 0.6, -0.78): the short end down into the quiver)
+  [0.5, new THREE.Vector3(-0.35, 0.6, -0.72).normalize()],     // (wave 3: was (-0.35, 0.3, -0.89))
+  [0.75, new THREE.Vector3(-0.6, 0.45, 0.66).normalize()],     // (wave 3: was (-0.55, 0.15, 0.82): swung round her hip, the short end lifted over the quiver's mouth)
   [1, new THREE.Vector3(1, 0, 0)],
 ];
 const ROAD = new THREE.CatmullRomCurve3(ROAD_P, false, 'centripetal');
@@ -171,6 +177,9 @@ const LAND = Object.freeze({ down: 0.2, free: 0.42, carry: 0.44, seat: 0.92 });
  *  her and never through the column in front of her face (the review at 9d1acc3: the half-furled frame crossed it at
  *  0.30 of the fold) */
 const PITCH = 85 * D2R;
+/** (wave 3) the furl the kite holds while it lies pitched out in front (its cells' foot 1.3 m off the bar: surveyKite.js
+ *  setFurl's height share at 0.35), and the shares of the open's lift and of the fold's way down it swings over */
+const FURL_OUT = 0.35, OPEN_SWING = 0.09, FOLD_SWING = 0.55;
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 /** a trapezoid's ease: even speed but for `a` of the time at each end (the peak is 1 / (1 - a) of the mean: W1's wrist bar) */
@@ -300,8 +309,12 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
     else {
       const u = trap((s - OPEN.set) / (1 - OPEN.set), 0.15);
       o.pos.copy(_set).lerp(bar, u);
-      o.quat.setFromAxisAngle(X_AX, PITCH * ss(OPEN.set, OPEN.set + 0.04, s) * (1 - ss(OPEN.set + 0.08, 1, s)));
-      o.furl = ss(OPEN.set, 0.95, s);
+      // (wave 3, the review of 2b: "at the end of the open the kite tips forward and reads as a flat box about 2 m in front
+      //  of her": the whole kite opened while still pitched flat. Now it opens only as far as its cells standing 1.3 m off
+      //  the bar while pitched (a short bundle out in front, its chord still closed: never in the column in front of her
+      //  face, which ends 1.2 m out), then swings up to the hang and spreads as it rises, as a kite let up into the wind)
+      o.quat.setFromAxisAngle(X_AX, PITCH * ss(OPEN.set, OPEN.set + 0.04, s) * (1 - ss(OPEN.set + OPEN_SWING, 1, s)));
+      o.furl = FURL_OUT * ss(OPEN.set + 0.02, OPEN.set + OPEN_SWING, s) + (1 - FURL_OUT) * ss(OPEN.set + OPEN_SWING, 1, s);
     }
     // the right hand: round her right hip to the take on the mount (from where the open found it: `start`), closes on
     // the roll, carries it (its socket on the roll: ROLL_TAKE), and settles on the bar's right grip as both hands set it
@@ -362,15 +375,19 @@ export function kiteClipPose(state, t, { bank = 0, forced = false, back = null, 
     // (the glide's bank goes out of the bar as it comes down: the fold starts from the glide's own pose, no cross-fade)
     // (pitched first, then furled: the cells, still tall, sweep down in front 1.3 m and more off her face and fold
     //  flat out there; furled first, they came down through the column in front of her face)
-    o.quat.setFromAxisAngle(_v.set(0, 0, 1), 0.2 * b).multiply(_qp.setFromAxisAngle(X_AX, PITCH * ss(0, 0.35, u)));
-    o.furl = furl0 * (1 - ss(0.2, 0.95, u));
+    // (wave 3: the open backwards. The review of 2b: "at the start of the fold the kite pitches forward and reads as a
+    //  flat box about 2 m in front of her": pitched flat while still open. Now the kite swings forward and down as its
+    //  cells close, to a short bundle out in front when it is flat, and furls into the roll from there)
+    o.quat.setFromAxisAngle(_v.set(0, 0, 1), 0.2 * b).multiply(_qp.setFromAxisAngle(X_AX, PITCH * ss(0, FOLD_SWING, u)));
+    o.furl = furl0 * (1 - (1 - FURL_OUT) * ss(0, FOLD_SWING, u) - FURL_OUT * ss(FOLD_SWING, 0.95, u));
   } else if (s < B.seat) {
     roadAt(1 - ur, o.pos, o.quat, _p); o.furl = 0;
     // (the pitch the fold left on the roll unwinds about its own axis as the road turns it: a roll is round)
     _qp.setFromAxisAngle(X_AX, PITCH * (1 - ss(0, 0.2, ur))); o.quat.multiply(_qp);
   } else { onBack(MOUNT.c, 1, o.pos, MOUNT.q, o.quat); o.furl = 0; }
   // (landing, she holds the roll out from her body while her trunk bows in the crouch, until it goes round her hip)
-  if (land) o.pos.z += 0.1 * u * (1 - ss(0, 0.2, ur));
+  // (wave 3: 0.1 -> 0.03 m: further out, the roll's left end met the belt kit at her left hip in the crouch)
+  if (land) o.pos.z += 0.03 * u * (1 - ss(0, 0.2, ur));
   // the right hand: on the bar's grip, then its palm onto the roll's surface (the roll's socket) as the cells close, and
   // with the roll back round her hip to the mount; it lets go there (the after-layer brings it round to the front)
   if (s < B.seat) {

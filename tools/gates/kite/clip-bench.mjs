@@ -55,7 +55,7 @@ const an = R.an, b = an.b, p = R.player;
 const root = an.space?.root || R.model;
 const K = buildSurveyKite({ furl: 0 });
 root.add(K.group);
-const V = () => new THREE.Vector3();
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);   // (wave 3: was argument-free, so V(1, 0, 0) was a zero vector: rollToKit and the gate segments read points, not the roll's and the grip's axes)
 const tmp = V(), tmp2 = V(), head = V(), hb = V(), fwd = V(), seg = new THREE.Line3();
 const pos = K.mesh.geometry.attributes.position;
 // the stowed kit on her back and hips (the lance, the bow's mount, the quiver: one skinned mesh), every 3rd vertex
@@ -68,8 +68,32 @@ function rollToKit(info) {
   const c = root.localToWorld(V().fromArray(info.kite.pos)), ax = V(1, 0, 0).applyQuaternion(rQ).multiplyScalar(0.475);
   rA.copy(c).sub(ax); rB.copy(c).add(ax); seg.set(rA, rB);
   let m = Infinity;
-  for (let i = 0, n = KIT.geometry.attributes.position.count; i < n; i += 3) { KIT.getVertexPosition(i, kitV); KIT.localToWorld(kitV); seg.closestPointToPoint(kitV, true, tmp2); m = Math.min(m, kitV.distanceTo(tmp2) - 0.06); }
+  const PCk = KIT.geometry.getAttribute('_piece');
+  for (let i = 0, n = KIT.geometry.attributes.position.count; i < n; i += 3) { KIT.getVertexPosition(i, kitV); KIT.localToWorld(kitV); seg.closestPointToPoint(kitV, true, tmp2); const d = kitV.distanceTo(tmp2) - 0.06; if (d < m) { m = d; rollToKit.piece = PCk ? Math.round(PCk.getX(i)) : null; rollToKit.u = +(seg.closestPointToPointParameter(kitV, true)).toFixed(2); } }
   return m;
+}
+/**
+ * WAVE 3 (the review of 2b: "from behind, the furled roll covers the stowed bow"): the share of the stowed bow (the kit's
+ * piece 2) hidden by the furled roll seen from straight behind her (her char -z, looking along +z): a bow vertex is
+ * covered when its (x, y) lies within the roll's radius of the roll's axis seen so, and the roll there is behind it.
+ * Read on the open's first steps while the roll is on its mount; the lance (piece 1) and the quiver (piece 4) beside it.
+ */
+const cA = V(), cB = V(), cP = V(), cQ = new THREE.Quaternion(), cT = new THREE.Line3();
+function coverFrom(info) {
+  if (!KIT || !info || info.kite.furl > 0.05) return null;
+  root.updateMatrixWorld(true);
+  cQ.fromArray(info.kite.quat); const c = V().fromArray(info.kite.pos), ax = V(1, 0, 0).applyQuaternion(cQ).multiplyScalar(0.475);
+  cA.copy(c).sub(ax); cB.copy(c).add(ax);
+  const a2 = V(cA.x, cA.y, 0), b2 = V(cB.x, cB.y, 0); cT.set(a2, b2);
+  const PC = KIT.geometry.getAttribute('_piece'), n = KIT.geometry.attributes.position.count, by = {};
+  for (let i = 0; i < n; i++) {
+    const pc = PC ? Math.round(PC.getX(i)) : 0; if (pc !== 1 && pc !== 2 && pc !== 4) continue;
+    KIT.getVertexPosition(i, kitV); KIT.localToWorld(kitV); root.worldToLocal(kitV);
+    const e = by[pc] || (by[pc] = { n: 0, covered: 0 }); e.n++;
+    cP.set(kitV.x, kitV.y, 0); const u = cT.closestPointToPointParameter(cP, true); cT.at(u, tmp2);
+    if (cP.distanceTo(tmp2) <= KITE_RECIPE.rollR) { const rz = cA.z + (cB.z - cA.z) * u; if (rz < kitV.z) e.covered++; }
+  }
+  return { bow: by[2] ? by[2].covered / by[2].n : null, lance: by[1] ? by[1].covered / by[1].n : null, quiver: by[4] ? by[4].covered / by[4].n : null };
 }
 const MID = { L: R.model.getObjectByName('middle_01_l'), R: R.model.getObjectByName('middle_01_r') };
 const lastW = { L: null, R: null };
@@ -91,7 +115,10 @@ function read() {
     const hc = h[s.toLowerCase()];
     const wc = an._charOf(b[`hand${s}`].bone, V());
     const wStep = lastW[s] ? wc.distanceTo(lastW[s]) : 0; lastW[s] = wc;
-    r[s] = { frontHeadFrame: hc.front, frontFacing: tmp.subVectors(w, hb).dot(fwd), belowHead: hc.belowHeadBoneM, elbowOver: e.y - sh.y, wStep, palmToGrip: null, palmToSocket: null, hold: null };
+    // (R10: the wrist's height against her shoulder joints (the lower of the two) and her pelvis, char frame)
+    const shY = Math.min(an._charOf(b.upArmL.bone, V()).y, an._charOf(b.upArmR.bone, V()).y), pelY = an._charOf(b.pelvis.bone, V()).y;
+    r[s] = { frontHeadFrame: hc.front, frontFacing: tmp.subVectors(w, hb).dot(fwd), belowHead: hc.belowHeadBoneM, elbowOver: e.y - sh.y, wStep, palmToGrip: null, palmToSocket: null, hold: null,
+      underShoulder: shY - wc.y, overPelvis: wc.y - pelY };
   }
   r.sweep = { behind: sw.behind, plane: sw.plane, behindAt: sw.behindAt, planeAt: sw.planeAt };
   // the palm on the bar's grip (char frame), while the clip has that hand on the bar
@@ -182,7 +209,10 @@ function read() {
   let hipsVsChest = (hipYaw - chestYaw) * 180 / Math.PI; hipsVsChest = ((hipsVsChest + 540) % 360) - 180;
   const kneeDy = Math.abs(kL.y - kR.y);
   const kit = an._kiteFl?.state !== 'none' ? rollToKit(info) : null;
-  return { ...r, hipsVsChest, kneeDy, headClear, trunkClear, kit, faceN, faceMin, headChar: [r3(hc.x), r3(hc.y), r3(hc.z)], kitePos: info?.kite?.pos?.map(r3) ?? null, clip: info?.kite?.clip ?? null, phase: info?.kite?.phase ?? null, furl: info?.kite?.furl ?? null };
+  const cover = info && info.kite.clip === 'open' && (info.kite.phase ?? 1) < 0.3 && an._kiteFl?.state !== 'none' ? coverFrom(info) : null;
+  // (wave 3) the kite's tilt: its up (local +y) from her up, deg (the slab read: pitched flat and open)
+  const kiteTiltDeg = info && an._kiteFl?.state !== 'none' ? Math.acos(Math.min(1, Math.max(-1, V(0, 1, 0).applyQuaternion(new THREE.Quaternion().fromArray(info.kite.quat)).y))) * 180 / Math.PI : null;
+  return { ...r, kiteTiltDeg, hipsVsChest, kneeDy, headClear, trunkClear, kit, kitPiece: kit != null ? rollToKit.piece : null, kitU: kit != null ? rollToKit.u : null, cover, faceN, faceMin, headChar: [r3(hc.x), r3(hc.y), r3(hc.z)], kitePos: info?.kite?.pos?.map(r3) ?? null, clip: info?.kite?.clip ?? null, phase: info?.kite?.phase ?? null, furl: info?.kite?.furl ?? null };
 }
 
 /**
@@ -253,7 +283,7 @@ let total = 0, bad = 0, badFacing = 0, handsFree = 0, ownPose = 0;
 const byWhere = {}, overStep = []; let overStepN = 0;
 let wStepMax = 0, wStepAt = null, palmMax = 0, palmAt = null, palmN = 0;
 // wave 2b
-const W2B = { binding: { steps: 0, bad: 0, first: [] }, strictBehind: { steps: 0, onBackReach: 0, offBackReach: 0, minUnderHeadM: Infinity, first: [] },
+const W2B = { slab: { steps: 0, flat: 0, maxFurlFlat: 0, at: null }, cover: { steps: 0, bow: 0, lance: 0, quiver: 0 }, r10: { behind: 0, atOrAboveShoulder: 0, minUnderShoulderM: Infinity, overPelvisM: [Infinity, -Infinity], first: [] }, binding: { steps: 0, bad: 0, first: [] }, strictBehind: { steps: 0, onBackReach: 0, offBackReach: 0, minUnderHeadM: Infinity, first: [] },
   socket: { n: 0, max: 0, at: null, over010: 0, byHold: {} }, noHand: { steps: 0, maxMoveM: 0, maxRotDeg: 0, at: null },
   face: { steps: 0, verts: 0, minGapM: Infinity, at: null, byClip: {} }, armKit: { steps: 0, min: Infinity, at: null }, take: [], planOffMax: {} };
 const bindingBad = (st) => {
@@ -277,6 +307,13 @@ for (const sc of S) for (const st of sc.steps) {
       const back = x.belowHead >= 0.30;
       if (back) W2B.strictBehind.onBackReach++; else { W2B.strictBehind.offBackReach++; if (W2B.strictBehind.first.length < 10) W2B.strictBehind.first.push({ scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), side: s, front: r3(x.frontHeadFrame), facing: r3(x.frontFacing), under: r3(x.belowHead) }); }
       W2B.strictBehind.minUnderHeadM = Math.min(W2B.strictBehind.minUnderHeadM, x.belowHead);
+      // R10 (the orchestrator's ruling, provisional): the head-plane clause applies above her shoulders; a hand behind
+      // her body at hip height on the reach to the back mount is allowed; never an arm or hand behind or above her head
+      const R10 = W2B.r10;
+      R10.behind++;
+      if (x.underShoulder <= 0) { R10.atOrAboveShoulder++; if (R10.first.length < 10) R10.first.push({ scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), side: s, underShoulder: r3(x.underShoulder) }); }
+      R10.minUnderShoulderM = Math.min(R10.minUnderShoulderM, x.underShoulder);
+      R10.overPelvisM[0] = Math.min(R10.overPelvisM[0], x.overPelvis); R10.overPelvisM[1] = Math.max(R10.overPelvisM[1], x.overPelvis);
     }
     if (x.palmToSocket != null) {
       const S2 = W2B.socket; S2.n++; if (x.palmToSocket > 0.010) S2.over010++;
@@ -293,6 +330,8 @@ for (const sc of S) for (const st of sc.steps) {
   if (Number.isFinite(st.faceMin)) W2B.face.minGapM = Math.min(W2B.face.minGapM, st.faceMin);
   if (st.armKit != null) { W2B.armKit.steps++; if (st.armKit < 0) { W2B.armKit.inside = (W2B.armKit.inside || 0) + 1; const k = `${st.clip}:${st.armKitPiece}`; (W2B.armKit.by || (W2B.armKit.by = {}))[k] = Math.min(W2B.armKit.by?.[k] ?? 0, r3(st.armKit)); } if (st.armKit < W2B.armKit.min) { W2B.armKit.min = st.armKit; W2B.armKit.at = { scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), piece: st.armKitPiece }; } }
   if (st.planOff != null) W2B.planOffMax[st.clip] = Math.max(W2B.planOffMax[st.clip] ?? 0, st.planOff);
+  if (st.kiteTiltDeg != null && st.state !== 'none') { const S3 = W2B.slab; S3.steps++; if (st.kiteTiltDeg > 60 && st.furl > 0.5) { S3.flat++; if (!S3.at) S3.at = { scenario: sc.name.slice(0, 44), t: st.t, clip: st.clip, phase: r3(st.phase ?? 0), tilt: +st.kiteTiltDeg.toFixed(1), furl: r3(st.furl) }; } if (st.kiteTiltDeg > 60) S3.maxFurlFlat = Math.max(S3.maxFurlFlat, st.furl); }
+  if (st.cover) { const C2 = W2B.cover; C2.steps++; for (const k of ['bow', 'lance', 'quiver']) if (st.cover[k] != null) C2[k] = Math.max(C2[k], st.cover[k]); }
 }
 // the take: the right palm's distance to the roll's socket on the mount on the step the hand closes (before the roll is
 // placed from it), per scenario that opens from the mount
@@ -369,7 +408,7 @@ for (const sc of S) for (const st of sc.steps) {
   }
   if (Number.isFinite(st.headClear) && st.headClear < P.headClear) { P.headClear = st.headClear; P.headAt = { scenario: sc.name, t: st.t, phase: r3(st.phase), furl: r3(st.furl), head: st.headChar, kite: st.kitePos }; }
   if (Number.isFinite(st.trunkClear) && st.trunkClear < P.trunkClear) { P.trunkClear = st.trunkClear; P.trunkAt = { scenario: sc.name, t: st.t, phase: r3(st.phase), furl: r3(st.furl) }; }
-  if (st.kit != null && st.kit < (P.kit ?? Infinity)) { P.kit = st.kit; P.kitAt = { scenario: sc.name, t: st.t, phase: r3(st.phase) }; }
+  if (st.kit != null && st.kit < (P.kit ?? Infinity)) { P.kit = st.kit; P.kitAt = { scenario: sc.name, t: st.t, phase: r3(st.phase), piece: st.kitPiece, u: st.kitU }; }
   if (isBad || isBadF) { const k = `${sc.name} | ${clip}`; const e = byWhere[k] || (byWhere[k] = { headFrame: 0, facing: 0, minUnderHead_m: Infinity }); if (isBad) e.headFrame++; if (isBadF) e.facing++; e.minUnderHead_m = r3(Math.min(e.minUnderHead_m, st.L.belowHead, st.R.belowHead)); }
   if (isBad) { bad++; if (badSteps.length < 12) badSteps.push({ scenario: sc.name, t: st.t, clip, phase: r3(st.phase), L: st.L, R: st.R }); }
   if (isBadF) { badFacing++; if (badFacingSteps.length < 12) badFacingSteps.push({ scenario: sc.name, t: st.t, clip, phase: r3(st.phase), L: r3(st.L.frontFacing), R: r3(st.R.frontFacing) }); }
@@ -381,6 +420,13 @@ for (const c of CLIPS) { const P = per[c]; if (Number.isFinite(P.headClear)) kit
 const w2b = {
   binding: { ...W2B.binding, pass: W2B.binding.bad === 0 && W2B.binding.steps > 0, note: "Kevin's bar as the M1.3f sweep reads it (behind 0, plane 0), no wrist over the head bone, no elbow over its shoulder, no wrist behind a head plane within 0.30 m of its height; every step of every scenario, the after-layer included" },
   strictBehind: { ...W2B.strictBehind, minUnderHeadM: r3(W2B.strictBehind.minUnderHeadM), passOffBackReach: W2B.strictBehind.offBackReach === 0, note: 'wrist-steps behind the head frontal plane or the facing plane at any height (wave 1 read): onBackReach = 0.30 m or more under the head bone (her hand round her hip and at the small of her back, by design); offBackReach = within 0.30 m of its height, and must be 0' },
+  r10: { behindAPlane: W2B.r10.behind, atOrAboveShoulder: W2B.r10.atOrAboveShoulder, minUnderShoulderM: r3(W2B.r10.minUnderShoulderM), wristOverPelvisM: W2B.r10.overPelvisM.map(r3), first: W2B.r10.first,
+    pass: W2B.binding.steps > 0 && W2B.binding.bad === 0 && W2B.r10.atOrAboveShoulder === 0,
+    note: "R10: KF1's head-plane clause read above her shoulders: 0 wrist-steps behind either head plane at or above the lower shoulder joint's height; under it a hand behind her body (the reach to the back mount, at hip height) is allowed; never an arm or hand behind or above her head (the binding read above: the M1.3f sweep, no wrist over the head bone, no elbow over its shoulder)" },
+  slab: { steps: W2B.slab.steps, flatOpenSteps: W2B.slab.flat, maxFurlWhileFlat: r3(W2B.slab.maxFurlFlat), first: W2B.slab.at, pass: W2B.slab.steps > 0 && W2B.slab.flat === 0,
+    note: 'wave 3 (the review of 2b: "the kite tips forward into a flat slab at the end of the open and the start of the fold"): steps with the kite tilted more than 60 deg from her up AND more than half open (furl > 0.5); must be 0' },
+  bowCover: { steps: W2B.cover.steps, bowMax: r3(W2B.cover.bow), lanceMax: r3(W2B.cover.lance), quiverMax: r3(W2B.cover.quiver), bar: 0.05, pass: W2B.cover.steps > 0 && W2B.cover.bow <= 0.05,
+    note: 'wave 3: the share of the stowed bow (and beside it the lance and the quiver) hidden by the furled roll on its mount, seen from straight behind her; the bar (the lane\'s, no brief number): 5 % or less of the bow' },
   palmOnSocket: { n: W2B.socket.n, max_m: r3(W2B.socket.max), over010: W2B.socket.over010, at: W2B.socket.at, byHold: Object.fromEntries(Object.entries(W2B.socket.byHold).map(([k, v]) => [k, { n: v.n, max_m: r3(v.max) }])), bar_m: 0.010, pass: W2B.socket.over010 === 0 && W2B.socket.n > 0 },
   rollWithoutHand: { stepsMoved: W2B.noHand.steps, maxMoveM: r3(W2B.noHand.maxMoveM), maxRotDeg: +W2B.noHand.maxRotDeg.toFixed(2), at: W2B.noHand.at, pass: W2B.noHand.steps === 0 },
   face: { steps: W2B.face.steps, verts: W2B.face.verts, minGapM: r3(W2B.face.minGapM), first: W2B.face.at, byClip: W2B.face.byClip, pass: W2B.face.steps === 0 },

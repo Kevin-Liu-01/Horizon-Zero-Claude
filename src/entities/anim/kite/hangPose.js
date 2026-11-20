@@ -23,8 +23,11 @@ import { X_AXIS, Y_AXIS, Z_AXIS, clamp } from '../playerCommon.js';
 import { kiteClipPose, createKitePose, READY_L, READY_R, POLE_READY_L, POLE_READY_R, AFTER_VIA_R, viaWay, CLIP_S, KITE_BEATS } from './kiteClips.js';
 
 const HANG = {
-  /** the bar between the sternum (0) and the chin (1): low in the band, so the bent elbows stay under the shoulders */
-  barK: 0.25,
+  /** the bar between the sternum (0) and the chin (1): low in the band, so the bent elbows stay under the shoulders.
+   *  (wave 3, the review of 2b: "her head bows over a bar at chin height": the "chin" here is the head bone's height less
+   *  0.02 m, which is the mouth on this rig, so 0.25 held the bar 0.10 m under the head bone, at her real chin; 0.25 ->
+   *  0.08 holds it at her collar, with her head up over it) */
+  barK: 0.08,
   /** in front of spine_05 (char z). BIBLE §12 wants the bar 0.30-0.40 m in front of the CHEST: at the bar's height
    *  Brea's clothed chest (the Pan I outfit's front) stands 0.156 m ahead of spine_05 and the torso capsule's surface
    *  0.101 m (tools/gates/kite/hang-bench.mjs reads both off the posed meshes), so 0.48 puts the bar 0.32 m in front of
@@ -35,12 +38,19 @@ const HANG = {
   /** the shoulders brought forward to reach the bar (rad about char y at each clavicle; 0.45 moves each shoulder
    *  joint 0.05 m forward, and the elbows bend 0.05 m under the shoulders at the bar's reach) */
   protract: 0.45,
-  /** the hip and knee bends of a hang (rad): thighs a little forward, shins back under them */
-  hip: 0.28, knee: 0.42,
+  /** the hip and knee bends of a hang (rad): thighs a little forward, shins back under them. WAVE 3 (the review of 2b
+   *  on the page: "her legs stand as if on the ground"): her weight in the hip sling, the legs HANG: the thighs nearly
+   *  under her (was 0.28 both), the knees bent more and unevenly (was 0.42 both), the feet pointed, toes down (was the
+   *  standing foot), as a body hangs with nothing under it. [left, right] */
+  hip: [0.10, 0.02], knee: [0.50, 0.34], foot: [0.62, 0.50],
+  /** WAVE 3 (the review: "her head bows over a chin-high bar"): the head held up, her eyes ahead and a little down to the
+   *  ground she flies over (deg of the head bone's bind forward under the horizontal; her idle stands at about 11; the
+   *  glide's body layers bowed it to 51-54), the share taken by the neck */
+  headPitchDeg: 8, neckShare: 0.5,
 };
 const _bar = new THREE.Vector3(), _g = new THREE.Vector3();
 const _s5 = new THREE.Vector3(), _nk = new THREE.Vector3(), _hd = new THREE.Vector3();
-const _shL = new THREE.Vector3(), _shR = new THREE.Vector3();
+const _shL = new THREE.Vector3(), _shR = new THREE.Vector3(), _hq = new THREE.Quaternion(), _hf = new THREE.Vector3();
 /** the chest's square-up, shared down the upper spine (spine_03, _04, _05) */
 const SQUARE = [['spine3', 0.3], ['spine4', 0.3], ['spine5', 0.4]];
 /** the bones the hang takes from the pose under it to their bind pose before its own bend (pelvis first) */
@@ -201,10 +211,12 @@ export class HangPose {
       //  pelvis and both legs are taken to their bind pose by the body weight first, so no knee stays raised in the jump
       //  pose and the hips are square under the chest, then the hang's even bend is added)
       for (const k of LEGS) if (b[k] && b[k].bindQ) b[k].bone.quaternion.slerp(b[k].bindQ, wb);
-      if (b.thighL) this._rot(b.thighL, X_AXIS, -HANG.hip * wb);
-      if (b.thighR) this._rot(b.thighR, X_AXIS, -HANG.hip * wb);
-      if (b.calfL) this._rot(b.calfL, X_AXIS, HANG.knee * wb);
-      if (b.calfR) this._rot(b.calfR, X_AXIS, HANG.knee * wb);
+      if (b.thighL) this._rot(b.thighL, X_AXIS, -HANG.hip[0] * wb);
+      if (b.thighR) this._rot(b.thighR, X_AXIS, -HANG.hip[1] * wb);
+      if (b.calfL) this._rot(b.calfL, X_AXIS, HANG.knee[0] * wb);
+      if (b.calfR) this._rot(b.calfR, X_AXIS, HANG.knee[1] * wb);
+      if (b.footL) this._rot(b.footL, X_AXIS, HANG.foot[0] * wb);
+      if (b.footR) this._rot(b.footR, X_AXIS, HANG.foot[1] * wb);
       this.model.updateMatrixWorld(true);
       // the chest squared to the bar: the body layers under it leave the shoulders yawed (about 18 deg, the left
       // shoulder forward, at the idle) and rolled; hanging from a bar held in both hands the shoulder line lies along it
@@ -219,6 +231,16 @@ export class HangPose {
         this.space.rotChar(b.clavR, Y_AXIS, HANG.protract * wb, false);
       }
       this.model.updateMatrixWorld(true);
+      // (wave 3) the head held up: the head bone's bind forward brought to HANG.headPitchDeg under the horizontal, the
+      // neck taking its share (the aim rig's own read and turn, aimRig.js), before the bar is solved from her chin
+      if (b.head && b.neck1) {
+        this._liveW(b.head.bone, _hq); _hq.multiply(b.head.invW);
+        _hf.set(0, 0, 1).applyQuaternion(_hq);
+        const eH = (HANG.headPitchDeg * Math.PI / 180 - Math.atan2(-_hf.y, _hf.z)) * wb;
+        this._rotL(b.neck1, X_AXIS, eH * HANG.neckShare);
+        this._rotL(b.head, X_AXIS, eH * (1 - HANG.neckShare));
+        this.model.updateMatrixWorld(true);
+      }
     }
     this._charOf(b.spine5.bone, _s5);
     this._charOf((b.neck1 || b.spine5).bone, _nk);
