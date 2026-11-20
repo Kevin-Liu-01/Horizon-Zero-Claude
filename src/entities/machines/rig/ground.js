@@ -45,6 +45,214 @@ const _vw = new THREE.Vector3();
 const _hullC = new THREE.Vector3();
 
 /**
+ * C5 (engine lane, the smallest change here: the first hour's hitches). THE SAME SKINNING, DONE ONCE.
+ *
+ * A Peg's death settled its wreck in the frame it fell (`settleCorpseNow`, 37-50 ms at 52b0f59, first-hour leg 1):
+ * 18 measurements, each skinning ~16 k samples through three's `SkinnedMesh.applyBoneTransform`, which forms
+ * `bone.matrixWorld x boneInverse` again for every influence of every sample, re-reads the vertex's weights and indices
+ * and re-applies the bind matrix every time. Here:
+ *   - a bone's product is formed once, and again only when its matrixWorld or inverse changed (each sampling loop opens
+ *     a PASS with `skinPass()`; the skeleton's bones are compared then, 32 numbers a bone);
+ *   - on a wreck (`skinVertexPlanned`) a vertex's bind-space position and its influences are read once (its PLAN), and
+ *     its skinned position is kept until a bone moves: the posed bounds, the corpse shape and the posed floor sample
+ *     the same pose in one measurement, and the hull's vertices were skinned three times in it.
+ * Everything else is three's arithmetic, term for term and in its order (the bind matrix as a Vector4 product, each
+ * influence a Vector4 product scaled into the sum, the inverse bind matrix with its w divide), so each sample is the
+ * double three returns, bit for bit (tools/perf/skin-exact.test.mjs), and every wreck settles where it did.
+ */
+let _skinPassId = 1;
+let _genSeq = 1;                    // pose and placement generations, unique across every skeleton and mesh
+let _planO = null, _planL = null;   // the last mesh asked for (a sampling loop asks for one mesh many times)
+const _skel = new WeakMap();   // skeleton -> its bones' products this pass
+const _plans = new WeakMap();  // skinned mesh (a wreck's) -> its vertices' plan and their skinned positions
+const _skinM = new THREE.Matrix4();
+/**
+ * The check (tools/perf/corpse-settle-probe-page.mjs): while `on`, every sample is also skinned by three's own
+ * `applyBoneTransform` and compared as doubles; `n` samples compared, `diff` that were not the same. While `three`,
+ * every sample is three's alone (the cost before this change, for the probe's A/B).
+ */
+export const skinCheck = { on: false, three: false, n: 0, diff: 0 };
+const _vc = new THREE.Vector3();
+function checkSample(o, i, v, world, x, y, z) {
+  if (x === undefined) _vc.fromBufferAttribute(o.geometry.attributes.position, i); else _vc.set(x, y, z);
+  o.applyBoneTransform(i, _vc);
+  if (world) _vc.applyMatrix4(o.matrixWorld);
+  skinCheck.n++;
+  if (!Object.is(_vc.x, v.x) || !Object.is(_vc.y, v.y) || !Object.is(_vc.z, v.z)) skinCheck.diff++;
+  return v;
+}
+/** Open a sampling pass: a bone that moved since the last one is seen at its first use in this one. */
+export function skinPass() { _skinPassId = ((_skinPassId + 1) | 0) || 1; skinRelease(); }
+/** End a sampling loop: the last mesh asked for is let go (a wreck is never held here past its own measurement). */
+export function skinRelease() { _planO = null; _planL = null; }
+
+function skelState(sk) {
+  const bones = sk.bones, inv = sk.boneInverses, nb = bones.length;
+  let S = _skel.get(sk);
+  if (!S || S.nb !== nb) {
+    S = { nb, chk: 0, gen: ++_genSeq, mw: new Float64Array(nb * 16).fill(NaN), iv: new Float64Array(nb * 16).fill(NaN), m: new Float64Array(nb * 16) };
+    _skel.set(sk, S);
+  }
+  if (S.chk === _skinPassId) return S;
+  S.chk = _skinPassId;
+  const MW = S.mw, IV = S.iv, M = S.m;
+  let moved = false;
+  for (let b = 0; b < nb; b++) {
+    const a = bones[b].matrixWorld.elements, c = inv[b].elements, k = b * 16;
+    let same = true;
+    for (let j = 0; j < 16; j++) if (MW[k + j] !== a[j] || IV[k + j] !== c[j]) { same = false; break; }
+    if (same) continue;
+    for (let j = 0; j < 16; j++) { MW[k + j] = a[j]; IV[k + j] = c[j]; }
+    _skinM.multiplyMatrices(bones[b].matrixWorld, inv[b]);
+    const e = _skinM.elements;
+    for (let j = 0; j < 16; j++) M[k + j] = e[j];
+    moved = true;
+  }
+  if (moved) S.gen = ++_genSeq;
+  return S;
+}
+
+/** The skin's sum and the inverse bind matrix for a bind-space vertex (three's terms, in three's order). */
+function skinSum(M, bx, by, bz, bw, k, w, acc) {
+  acc[0] += (M[k] * bx + M[k + 4] * by + M[k + 8] * bz + M[k + 12] * bw) * w;
+  acc[1] += (M[k + 1] * bx + M[k + 5] * by + M[k + 9] * bz + M[k + 13] * bw) * w;
+  acc[2] += (M[k + 2] * bx + M[k + 6] * by + M[k + 10] * bz + M[k + 14] * bw) * w;
+}
+const _acc = new Float64Array(3);
+function unbind(ie, v) {
+  const tx = _acc[0], ty = _acc[1], tz = _acc[2];
+  const iw = 1 / (ie[3] * tx + ie[7] * ty + ie[11] * tz + ie[15]);
+  v.x = (ie[0] * tx + ie[4] * ty + ie[8] * tz + ie[12]) * iw;
+  v.y = (ie[1] * tx + ie[5] * ty + ie[9] * tz + ie[13]) * iw;
+  v.z = (ie[2] * tx + ie[6] * ty + ie[10] * tz + ie[14]) * iw;
+  return v;
+}
+const _wq = [0, 0, 0, 0], _iq = [0, 0, 0, 0];
+function readInfluences(SI, SW, i) {
+  _wq[0] = SW.getX(i); _wq[1] = SW.getY(i); _wq[2] = SW.getZ(i); _wq[3] = SW.getW(i);
+  _iq[0] = SI.getX(i); _iq[1] = SI.getY(i); _iq[2] = SI.getZ(i); _iq[3] = SI.getW(i);
+}
+
+/**
+ * `o.applyBoneTransform(i, v)` for a Vector3 `v` (the vertex in, the skinned vertex out), bit for bit, with the bone
+ * products of the current pass. Falls back to three's own on anything it does not mirror.
+ */
+export function skinVertex(o, i, v) {
+  const sk = o.skeleton, A = o.geometry?.attributes;
+  const SI = A?.skinIndex, SW = A?.skinWeight;
+  if (!sk || !SI || !SW || skinCheck.three) return o.applyBoneTransform(i, v);
+  const S = skelState(sk), M = S.m, nb = S.nb;
+  const be = o.bindMatrix.elements;
+  const x = v.x, y = v.y, z = v.z;
+  // _baseVector.set(x, y, z, 1).applyMatrix4(bindMatrix)  (Vector4)
+  const bx = be[0] * x + be[4] * y + be[8] * z + be[12] * 1;
+  const by = be[1] * x + be[5] * y + be[9] * z + be[13] * 1;
+  const bz = be[2] * x + be[6] * y + be[10] * z + be[14] * 1;
+  const bw = be[3] * x + be[7] * y + be[11] * z + be[15] * 1;
+  readInfluences(SI, SW, i);
+  _acc[0] = 0; _acc[1] = 0; _acc[2] = 0;
+  for (let c = 0; c < 4; c++) {
+    const w = _wq[c];
+    if (w === 0) continue;
+    const b = _iq[c];
+    if (!(b >= 0 && b < nb)) return o.applyBoneTransform(i, v);
+    // target.addScaledVector(_vector4.copy(_baseVector).applyMatrix4(boneMatrix), weight)
+    skinSum(M, bx, by, bz, bw, b * 16, w, _acc);
+  }
+  unbind(o.bindMatrixInverse.elements, v);
+  return skinCheck.on ? checkSample(o, i, v, false, x, y, z) : v;
+}
+
+function planOf(o) {
+  if (skinCheck.three) return null;
+  if (o === _planO && _planL.chk === _skinPassId) return _planL;
+  const L0 = planCheck(o);
+  if (L0) { _planO = o; _planL = L0; }
+  return L0;
+}
+function planCheck(o) {
+  const geo = o.geometry, sk = o.skeleton, A = geo?.attributes;
+  const P = A?.position, SI = A?.skinIndex, SW = A?.skinWeight;
+  if (!sk || !P || !SI || !SW) return null;
+  let L = _plans.get(o);
+  if (L && L.chk === _skinPassId) return L;
+  const be = o.bindMatrix.elements, ie = o.bindMatrixInverse.elements;
+  let ok = !!L && L.geo === geo && L.sk === sk && L.count === P.count && L.P === P && L.SI === SI && L.SW === SW
+    && L.pv === P.version && L.siv === SI.version && L.swv === SW.version;
+  if (ok) for (let j = 0; j < 16; j++) if (L.be[j] !== be[j] || L.ie[j] !== ie[j]) { ok = false; break; }
+  if (!ok) {
+    const n = P.count;
+    if (!L || L.count !== n) {
+      L = { count: n, has: new Uint8Array(n), base: new Float64Array(n * 4), inf: new Int32Array(n * 4), wt: new Float64Array(n * 4),
+        ni: new Uint8Array(n), out: new Float64Array(n * 3), tag: new Int32Array(n), be: new Float64Array(16), ie: new Float64Array(16),
+        wout: new Float64Array(n * 3), wtag: new Int32Array(n), wmt: new Int32Array(n), mw: new Float64Array(16).fill(NaN), mwGen: 0 };
+      _plans.set(o, L);
+    } else { L.has.fill(0); L.tag.fill(0); L.wtag.fill(0); }
+    Object.assign(L, { geo, sk, P, SI, SW, pv: P.version, siv: SI.version, swv: SW.version });
+    for (let j = 0; j < 16; j++) { L.be[j] = be[j]; L.ie[j] = ie[j]; }
+  }
+  // the mesh's own world matrix: the world positions are kept while it and the bones stand still
+  const mw = o.matrixWorld.elements, MW = L.mw;
+  for (let j = 0; j < 16; j++) if (MW[j] !== mw[j]) { for (let q = 0; q < 16; q++) MW[q] = mw[q]; L.mwGen = ++_genSeq; break; }
+  L.chk = _skinPassId;
+  L.S = skelState(sk);
+  return L;
+}
+
+/**
+ * `skinVertex` for a wreck's sampling: the vertex `i` of `o`'s own position attribute (`v` is written, not read), its
+ * plan made on first use and its skinned position kept until a bone moves. Bit for bit three's.
+ */
+export function skinVertexPlanned(o, i, v) {
+  const L = planOf(o);
+  if (!L) { v.fromBufferAttribute(o.geometry.attributes.position, i); return o.isSkinnedMesh ? skinVertex(o, i, v) : v; }
+  const S = L.S, gen = S.gen, out = L.out, i3 = i * 3;
+  if (L.tag[i] === gen) { v.x = out[i3]; v.y = out[i3 + 1]; v.z = out[i3 + 2]; return skinCheck.on ? checkSample(o, i, v, false) : v; }
+  const i4 = i * 4, base = L.base, inf = L.inf, wt = L.wt;
+  if (!L.has[i]) {
+    const be = L.be, x = L.P.getX(i), y = L.P.getY(i), z = L.P.getZ(i);
+    base[i4] = be[0] * x + be[4] * y + be[8] * z + be[12] * 1;
+    base[i4 + 1] = be[1] * x + be[5] * y + be[9] * z + be[13] * 1;
+    base[i4 + 2] = be[2] * x + be[6] * y + be[10] * z + be[14] * 1;
+    base[i4 + 3] = be[3] * x + be[7] * y + be[11] * z + be[15] * 1;
+    readInfluences(L.SI, L.SW, i);
+    let c = 0;
+    for (let q = 0; q < 4; q++) {
+      if (_wq[q] === 0) continue;
+      const b = _iq[q];
+      if (!(b >= 0 && b < S.nb)) { c = 255; break; }
+      inf[i4 + c] = b * 16; wt[i4 + c] = _wq[q]; c++;
+    }
+    L.ni[i] = c;
+    L.has[i] = 1;
+  }
+  const ni = L.ni[i];
+  if (ni === 255) { v.fromBufferAttribute(L.P, i); return o.applyBoneTransform(i, v); }
+  const M = S.m, bx = base[i4], by = base[i4 + 1], bz = base[i4 + 2], bw = base[i4 + 3];
+  _acc[0] = 0; _acc[1] = 0; _acc[2] = 0;
+  for (let c = 0; c < ni; c++) skinSum(M, bx, by, bz, bw, inf[i4 + c], wt[i4 + c], _acc);
+  unbind(L.ie, v);
+  out[i3] = v.x; out[i3 + 1] = v.y; out[i3 + 2] = v.z;
+  L.tag[i] = gen;
+  return skinCheck.on ? checkSample(o, i, v, false) : v;
+}
+
+/**
+ * `skinVertexPlanned(o, i, v).applyMatrix4(o.matrixWorld)`: the vertex in the world, kept while the bones and the mesh
+ * stand still (the posed floor, the corpse shape and the box's floor read the same vertices in one measurement).
+ */
+export function skinWorldPlanned(o, i, v) {
+  const L = planOf(o);
+  if (!L) return skinVertexPlanned(o, i, v).applyMatrix4(o.matrixWorld);
+  const g = L.S.gen, mg = L.mwGen, wo = L.wout, i3 = i * 3;
+  if (L.wtag[i] === g && L.wmt[i] === mg) { v.x = wo[i3]; v.y = wo[i3 + 1]; v.z = wo[i3 + 2]; return skinCheck.on ? checkSample(o, i, v, true) : v; }
+  skinVertexPlanned(o, i, v).applyMatrix4(o.matrixWorld);
+  wo[i3] = v.x; wo[i3 + 1] = v.y; wo[i3 + 2] = v.z;
+  L.wtag[i] = g; L.wmt[i] = mg;
+  return skinCheck.on ? checkSample(o, i, v, true) : v;
+}
+
+/**
  * Acceptance windows, in metres above the terrain, for the two corpse tests:
  * gate `A47`'s bind-pose box and the audit's posed-vertex test. Both budgets
  * are "penetration <= 0.10, float <= 0.40"; these sit inside them with margin
@@ -226,6 +434,7 @@ export function posedLowest(machine, budget = 1200) {
     if (!o.userData.noHull) total += o.geometry.attributes.position.count;
   });
   if (!meshes.length || !total) return null;
+  skinPass();
   let y = Infinity, n = 0;
   let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
   for (const o of meshes) {
@@ -251,15 +460,14 @@ export function posedLowest(machine, budget = 1200) {
     const want = Math.max(Math.min(P.count, PER_MESH_MIN), Math.round(budget * (P.count / total)));
     const step = Math.max(1, Math.floor(P.count / want));
     for (let i = 0; i < P.count; i += step) {
-      _v.fromBufferAttribute(P, i);
-      if (o.isSkinnedMesh) o.applyBoneTransform(i, _v);
-      _v.applyMatrix4(o.matrixWorld);
+      if (o.isSkinnedMesh) skinWorldPlanned(o, i, _v); else _v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
       if (_v.y < y) y = _v.y;
       if (_v.x < mnx) mnx = _v.x; if (_v.x > mxx) mxx = _v.x;
       if (_v.z < mnz) mnz = _v.z; if (_v.z > mxz) mxz = _v.z;
       n++;
     }
   }
+  skinRelease();
   if (!n || !Number.isFinite(y)) return null;
   return { y, cx: (mnx + mxx) / 2, cz: (mnz + mxz) / 2, samples: n };
 }
@@ -291,6 +499,7 @@ export function posedStats(machine, budget = 900, out = _heights) {
     total += o.geometry.attributes.position.count;
   });
   if (!meshes.length) return null;
+  skinPass();
   out.length = 0;
   let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
   for (const o of meshes) {
@@ -298,14 +507,13 @@ export function posedStats(machine, budget = 900, out = _heights) {
     const want = Math.max(48, Math.round(budget * (P.count / total)));
     const step = Math.max(1, Math.floor(P.count / want));
     for (let i = 0; i < P.count; i += step) {
-      _v.fromBufferAttribute(P, i);
-      if (o.isSkinnedMesh) o.applyBoneTransform(i, _v);
-      _v.applyMatrix4(o.matrixWorld);
+      if (o.isSkinnedMesh) skinWorldPlanned(o, i, _v); else _v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld);
       out.push(_v.y);
       if (_v.x < mnx) mnx = _v.x; if (_v.x > mxx) mxx = _v.x;
       if (_v.z < mnz) mnz = _v.z; if (_v.z > mxz) mxz = _v.z;
     }
   }
+  skinRelease();
   if (!out.length) return null;
   const gy = machine.ctx.terrain.getHeight((mnx + mxx) / 2, (mnz + mxz) / 2);
   out.sort((a, b) => a - b);
@@ -388,6 +596,7 @@ export function refreshPosedBounds(machine, budget = 3000, opts = {}) {
   if (!root) return 0;
   const live = !!opts.live;
   let n = 0;
+  skinPass();
   root.traverse((o) => {
     if (!o.isMesh || !o.visible || !o.isSkinnedMesh) return;
     let geo = o.geometry;
@@ -410,13 +619,13 @@ export function refreshPosedBounds(machine, budget = 3000, opts = {}) {
     let mxx = -Infinity, mxy = -Infinity, mxz = -Infinity;
     let wmin = Infinity;                 // TRUE world floor of the posed mesh
     for (let i = 0; i < P.count; i += step) {
-      _v.fromBufferAttribute(P, i);
-      o.applyBoneTransform(i, _v);
+      // a wreck's samples are planned and kept for the pose (see `skinVertexPlanned`); a living machine's are not kept
+      if (live) { _v.fromBufferAttribute(P, i); skinVertex(o, i, _v); } else skinVertexPlanned(o, i, _v);
       if (_v.x < mnx) mnx = _v.x; if (_v.x > mxx) mxx = _v.x;
       if (_v.y < mny) mny = _v.y; if (_v.y > mxy) mxy = _v.y;
       if (_v.z < mnz) mnz = _v.z; if (_v.z > mxz) mxz = _v.z;
       if (!live) {
-        _vw.copy(_v).applyMatrix4(o.matrixWorld);
+        skinWorldPlanned(o, i, _vw);
         if (_vw.y < wmin) wmin = _vw.y;
       }
     }
@@ -518,6 +727,7 @@ export function refreshPosedBounds(machine, budget = 3000, opts = {}) {
     }
     n++;
   });
+  skinRelease();
   machine._posedBoundsN = n;
   return n;
 }
@@ -872,21 +1082,22 @@ export class CorpseShape {
   skin() {
     const m = this.m;
     m.root.updateMatrixWorld(true);
+    skinPass();
     const P3 = this.pos;
     let cLow = Infinity, aLow = Infinity;
     let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
     for (let s = 0; s < this.n; s++) {
       const o = this.meshes[this.sMesh[s]];
       if (!o.visible || !o.parent) { P3[s * 3 + 1] = Infinity; continue; }
-      _vS1.fromBufferAttribute(o.geometry.attributes.position, this.sVert[s]);
-      if (o.isSkinnedMesh) o.applyBoneTransform(this.sVert[s], _vS1);
-      _vS1.applyMatrix4(o.matrixWorld);
+      if (o.isSkinnedMesh) skinWorldPlanned(o, this.sVert[s], _vS1);
+      else _vS1.fromBufferAttribute(o.geometry.attributes.position, this.sVert[s]).applyMatrix4(o.matrixWorld);
       P3[s * 3] = _vS1.x; P3[s * 3 + 1] = _vS1.y; P3[s * 3 + 2] = _vS1.z;
       if (_vS1.x < mnx) mnx = _vS1.x; if (_vS1.x > mxx) mxx = _vS1.x;
       if (_vS1.z < mnz) mnz = _vS1.z; if (_vS1.z > mxz) mxz = _vS1.z;
       if (_vS1.y < aLow) aLow = _vS1.y;
       if (!this.sChain[s] && _vS1.y < cLow) cLow = _vS1.y;
     }
+    skinRelease();
     this.cx = (mnx + mxx) / 2;
     this.cz = (mnz + mxz) / 2;
     this.chassisLow = cLow;
