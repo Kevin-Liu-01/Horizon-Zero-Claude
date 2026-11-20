@@ -17,7 +17,8 @@
  *                         fringed tip
  *   belt, straps, pouch   dark leather: stitched edges, burnished cuts, holes by the buckle
  *   iron                  buckles, rivets, the hammer's head, the tongs, the pocket's tools: dark, rust in the low places
- *   trousers, boots       dark wool with a patched left knee, ash risen from the ground; dark leather boots scuffed pale
+ *   trousers, boots       dark wool with a patched left knee (a darker wool: at 2944784 its pale #6E675C read as a pale
+ *                         shin beside the other in F37), ash risen from the ground; dark leather boots scuffed pale
  *                         at the toe and dusted grey
  */
 import { noise3 } from '../../lib/human/face.mjs';
@@ -33,7 +34,7 @@ const C = {
   vest: dyeRGB(HOLDS.lapilli, 1.7), apron: dyeRGB(HOLDS.leather, 1.08), apronDark: dyeRGB(HOLDS.leatherDark, 1.0),
   strap: dyeRGB(HOLDS.leatherDark, 1.15), pocket: dyeRGB('#6A4A33', 1.0), carmine: dyeRGB('#6C1F2B', 1.0),
   carmineDeep: dyeRGB(HOLDS.carmineStain, 1.0), iron: hexRGB('#3A383C'), wood: dyeRGB(HOLDS.wood, 1.0), ash: [136, 132, 124],
-  gold: hexRGB('#B8914A'), goldDeep: hexRGB('#8A5D1E'), thread: [164, 146, 112], patch: dyeRGB('#6E675C', 1.0),
+  gold: hexRGB('#B8914A'), goldDeep: hexRGB('#8A5D1E'), thread: [164, 146, 112], patch: dyeRGB('#2C2926', 1.0),
   soot: [28, 24, 22], sweat: [120, 104, 80],
 };
 
