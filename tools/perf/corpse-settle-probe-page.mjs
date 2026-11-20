@@ -88,6 +88,7 @@ export async function probe(frame) {
     return () => { proto[name] = f; };
   };
   const runs = [];
+  out.corpseWarmBefore = G.corpseWarm ? { ...G.corpseWarm } : null;   // the idle warm of the solve's code (rig/ground.js)
   const un = [wrap(G.CorpseShape.prototype, 'skin', 'shape.skin'), wrap(G.CorpseShape.prototype, 'bendChains', 'shape.bendChains'),
     wrap(G.CorpseShape.prototype, 'build', 'shape.build'), wrap(G.CorpseGrounder.prototype, '_measureShape', 'grounder._measureShape'),
     wrap(G.CorpseGrounder.prototype, 'update', 'grounder.update'), wrap(Gt.GaitController?.prototype, 'deathPose', 'gait.deathPose')];
