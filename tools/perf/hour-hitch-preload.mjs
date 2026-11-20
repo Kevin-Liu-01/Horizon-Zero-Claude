@@ -73,7 +73,7 @@ const recorder = (over) => {
     if (!R.playing || R.late.length >= 200) return;
     const b = R.built.get(glp) || R.nameDraw?.() || null;
     R.latePending.push([R.late.length, glp]);
-    R.late.push({ kind, t: Math.round(performance.now()), ms: Math.round(ms * 10) / 10, who: b?.who ?? null, mat: b?.mat ?? null, key: b?.key ?? null,
+    R.late.push({ kind, t: Math.round(performance.now()), ms: Math.round(ms * 10) / 10, who: b?.who ?? null, mat: b?.mat ?? null, key: b?.key ?? null, detail: b?.detail ?? null,
       at: (() => { const p = window.__CTX__?.player?.position; return p ? { x: Math.round(p.x), z: Math.round(p.z) } : null; })(),
       hour: window.__CTX__?.environment?.time != null ? +window.__CTX__.environment.time.toFixed(2) : null });
   };
@@ -105,8 +105,16 @@ const recorder = (over) => {
     if (!m) return;
     const own = (o, k) => { let p = Object.getPrototypeOf(o); while (p && !Object.prototype.hasOwnProperty.call(p, k)) p = Object.getPrototypeOf(p); return p; };
     const nm = (o) => (o ? (o.name || o.type) : '');
+    // C5: what the drawn thing is, when its names say nothing (a nameless Mesh in the scene): its geometry, its
+    // material's colour and flags, its place and size
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    const detail = (obj, mat) => { try { return { geo: obj?.geometry ? `${obj.geometry.type}${obj.geometry.parameters ? JSON.stringify(obj.geometry.parameters).slice(0, 120) : ''}` : null,
+      color: mat?.color?.getHexString?.() ?? null, opacity: mat?.opacity, side: mat?.side, transparent: mat?.transparent, blending: mat?.blending, depthWrite: mat?.depthWrite,
+      fog: mat?.fog, map: !!mat?.map, renderOrder: obj?.renderOrder, at: obj?.matrixWorld ? [r3(obj.matrixWorld.elements[12]), r3(obj.matrixWorld.elements[13]), r3(obj.matrixWorld.elements[14])] : null,
+      scale: obj?.scale ? [r3(obj.scale.x), r3(obj.scale.y), r3(obj.scale.z)] : null, ud: obj?.userData ? Object.keys(obj.userData).slice(0, 8) : null, matUd: mat?.userData ? Object.keys(mat.userData).slice(0, 8) : null,
+      kids: obj?.children?.length ?? 0, sibs: obj?.parent ? obj.parent.children.length : null }; } catch { return null; } };
     const name = (obj, mat, depth) => ({ who: obj ? `${nm(obj.parent?.parent)}/${nm(obj.parent)}/${nm(obj)}` : null,
-      mat: mat ? `${depth ? 'shadow:' : ''}${mat.type}${mat.name ? ':' + mat.name : ''}` : null });
+      mat: mat ? `${depth ? 'shadow:' : ''}${mat.type}${mat.name ? ':' + mat.name : ''}` : null, detail: detail(obj, mat) });
     const Mp = own(m, 'onBeforeRender'), Op = own(C.scene, 'onBeforeShadow') || own(C.scene, 'onBeforeRender');
     if (Mp) { const f = Mp.onBeforeRender; Mp.onBeforeRender = function (renderer, scene, camera, geometry, object, group) { R.drawObj = object; R.drawMat = this; R.drawDepth = false; return f.call(this, renderer, scene, camera, geometry, object, group); }; }
     if (Op) {

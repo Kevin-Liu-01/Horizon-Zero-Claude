@@ -76,18 +76,33 @@ export async function probe(frame) {
     return rec;
   };
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // where a fast death's ms go (inclusive, by method): the shape's skin, bend and pose, the measurement, the death pose
+  const Gt = await import('/src/entities/machines/gait.js');
+  const parts = {};
+  const wrap = (proto, name, key) => {
+    const f = proto?.[name]; if (typeof f !== 'function') return () => {};
+    const P = (parts[key] = { ms: 0, n: 0 });
+    proto[name] = function (...a) { const t = performance.now(); try { return f.apply(this, a); } finally { P.ms += performance.now() - t; P.n++; } };
+    return () => { proto[name] = f; };
+  };
   const runs = [];
   try {
     E.requestTimeScale('studio', 0);
     for (const [name, spot] of Object.entries(spots)) {
       if (!spot) { runs.push({ spot: name, error: 'no spot' }); continue; }
       placeBrea(spot.x + 30, spot.z + 30);
-      // warm: one death in each mode first (the module, the program, the wreck's first clone are not the settle's)
-      for (const mode of ['three', 'fast']) await one(spot, 99, mode);
+      // warm: one death in each mode first (the module, the program, the wreck's first clone are not the settle's);
+      // the page's FIRST death (fast, on the first spot) is recorded apart: in play it is the first Peg at the cross
+      for (const mode of ['fast', 'three']) { const w = await one(spot, 99, mode); (out.warm ||= []).push({ spot: name, mode, ms: w.ms }); }
       for (let k = 0; k < 4; k++) {
         const seed = 1000 + k;
         const a = await one(spot, seed, 'three'); await raf();
+        const un = [wrap(G.CorpseShape.prototype, 'skin', 'shape.skin'), wrap(G.CorpseShape.prototype, 'bendChains', 'shape.bendChains'),
+          wrap(G.CorpseShape.prototype, 'applyPose', 'shape.applyPose'), wrap(G.CorpseShape.prototype, 'build', 'shape.build'),
+          wrap(G.CorpseGrounder.prototype, '_measureShape', 'grounder._measureShape'), wrap(G.CorpseGrounder.prototype, 'update', 'grounder.update'),
+          wrap(Gt.GaitController?.prototype, 'deathPose', 'gait.deathPose')];
         const b = await one(spot, seed, 'fast'); await raf();
+        for (const u of un) u();
         const c = await one(spot, seed, 'check'); await raf();
         runs.push({ spot: name, seed, threeMs: a.ms, fastMs: b.ms, checkMs: c.ms, dead: a.dead && b.dead && c.dead,
           checked: c.checked, differ: c.differ, restsSame: same(a.wreck, b.wreck) && same(a.wreck, c.wreck),
@@ -107,6 +122,7 @@ export async function probe(frame) {
   const ok = runs.filter((r) => !r.error);
   const med = (k) => { const v = ok.map((r) => r[k]).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : null; };
   out.runs = runs;
+  out.fastParts = Object.fromEntries(Object.entries(parts).map(([k, v]) => [k, { msPerDeath: ok.length ? Math.round(v.ms / ok.length * 100) / 100 : null, callsPerDeath: ok.length ? v.n / ok.length : null }]));
   out.summary = { deaths: ok.length, threeMsMedian: med('threeMs'), fastMsMedian: med('fastMs'), threeMsMax: Math.max(...ok.map((r) => r.threeMs)),
     fastMsMax: Math.max(...ok.map((r) => r.fastMs)), samplesChecked: ok.reduce((s, r) => s + r.checked, 0), samplesDiffer: ok.reduce((s, r) => s + r.differ, 0),
     restsSame: ok.filter((r) => r.restsSame).length };

@@ -60,6 +60,7 @@ class FrameClock {
  *   engine.compileFor(root, target, camera) C5: compile with a given target bound (null = the screen)
  *   engine.resolvePrograms()                C5: each linked program's first use, behind the sheet
  *   engine.compileOffFrame(root)            C5: link a late load's programs on later frames (KHR_parallel_shader_compile)
+ *   engine.textureFeed                      C5: textures made after the boot uploaded a few a frame before first drawn
  *
  * ROUND 5 (engine-gpu W0a) — render-target measurement hooks, gate A-rt-ledger,
  * docs/ROUND5-ENGINE.md. On demand only: nothing here runs per frame.
@@ -255,6 +256,18 @@ export const ROUND4_HIGH = Object.freeze({
 
 /** C5: the most one frame weighs in dynamic resolution's running average, ms (two 60 Hz frames). */
 const DRS_SPIKE_MS = 33.4;
+/**
+ * C5: the texture feed (`Engine._feedTextures`): how often the visible scene is walked for textures that have not had
+ * their first upload, how long a frame may spend uploading them (at least one a frame), and the material slots read.
+ */
+const TEXTURE_FEED = Object.freeze({
+  scanMs: 1000,
+  budgetMs: 2.5,
+  slots: Object.freeze(['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap',
+    'displacementMap', 'lightMap', 'envMap', 'specularMap', 'specularColorMap', 'specularIntensityMap', 'clearcoatMap',
+    'clearcoatNormalMap', 'clearcoatRoughnessMap', 'sheenColorMap', 'sheenRoughnessMap', 'transmissionMap', 'thicknessMap',
+    'iridescenceMap', 'iridescenceThicknessMap', 'anisotropyMap', 'gradientMap', 'matcap']),
+});
 /** C5: a frame this long (ms) is a load; dynamic resolution then waits DRS_SETTLE_FRAMES frames before it reads again. */
 const DRS_SETTLE_AFTER_MS = 250;
 const DRS_SETTLE_FRAMES = 120;
@@ -2928,6 +2941,70 @@ export class Engine {
     return n;
   }
 
+  /**
+   * C5 (the first hour's hitches: the fade at Benchmark 1). THE TEXTURES MADE AFTER THE BOOT, UPLOADED BEFORE THEY ARE
+   * DRAWN, A FEW A FRAME. `warmUpTextures` uploads what the scene holds behind the loading sheet; whatever joins the
+   * scene later (the Holds' people, placed on region-enter) is uploaded by three in the first frame that draws it. At
+   * 52b0f59 the fade at Benchmark 1 drew four of the Holds' people for the first time in one frame (first-hour leg 3,
+   * exit run 4: 30 textures made, 40 texSubImage2D in 26-33 ms, a 33.0-41.9 ms frame). Here, after each frame's
+   * render: every TEXTURE_FEED.scanMs a walk of the visible scene queues the textures (and skeletons' bone textures)
+   * that have not had their first upload, and each frame uploads from that queue (`renderer.initTexture`, which is what
+   * the first draw would do) until TEXTURE_FEED.budgetMs is spent, at least one. Same textures, same pixels; only the
+   * frame they are uploaded in moves. `engine.textureFeed` counts { scans, scanMs, uploaded, ms, maxMs }.
+   */
+  _feedTextures() {
+    const r = this.renderer;
+    if (!r?.initTexture || !r.properties || this.contextLost || !this.scene) return;
+    const F = this.textureFeed || (this.textureFeed = { scans: 0, scanMs: 0, uploaded: 0, ms: 0, maxMs: 0, _q: [], _next: 0 });
+    const now = performance.now();
+    if (!F._q.length && now >= F._next) {
+      F._next = now + TEXTURE_FEED.scanMs;
+      this._scanTextureFeed(F);
+      F.scans++; F.scanMs = Math.round((F.scanMs + performance.now() - now) * 10) / 10;
+    }
+    if (!F._q.length) return;
+    const t0 = performance.now();
+    while (F._q.length) {
+      const t = F._q.shift();
+      if (this._needsFirstUpload(t)) { try { r.initTexture(t); F.uploaded++; } catch (err) { /* an exotic format: its first draw uploads it */ } }
+      if (performance.now() - t0 >= TEXTURE_FEED.budgetMs) break;
+    }
+    const ms = performance.now() - t0;
+    F.ms = Math.round((F.ms + ms) * 10) / 10;
+    if (ms > F.maxMs) F.maxMs = Math.round(ms * 10) / 10;
+  }
+
+  _needsFirstUpload(t) {
+    if (!t?.isTexture || t.isRenderTargetTexture || t.isVideoTexture || !(t.version > 0)) return false;
+    const pr = this.renderer.properties.get(t);
+    return pr.__webglInit === undefined;
+  }
+
+  _scanTextureFeed(F) {
+    const seen = new Set(), q = F._q;
+    const put = (t) => { if (t && !seen.has(t)) { seen.add(t); if (this._needsFirstUpload(t)) q.push(t); } };
+    this.scene.traverseVisible((o) => {
+      const m = o.material;
+      if (m) {
+        const ms = Array.isArray(m) ? m : [m];
+        for (let i = 0; i < ms.length; i++) {
+          const mat = ms[i];
+          if (!mat || seen.has(mat)) continue;
+          seen.add(mat);
+          for (let k = 0; k < TEXTURE_FEED.slots.length; k++) { const t = mat[TEXTURE_FEED.slots[k]]; if (t?.isTexture) put(t); }
+          const U = mat.uniforms;
+          if (U) for (const key in U) { const v = U[key]?.value; if (v?.isTexture) put(v); }
+        }
+      }
+      // a skeleton's bone texture is made and uploaded at its first draw too (Skeleton.computeBoneTexture)
+      const sk = o.isSkinnedMesh ? o.skeleton : null;
+      if (sk && !seen.has(sk)) {
+        seen.add(sk);
+        try { if (!sk.boneTexture) sk.computeBoneTexture(); put(sk.boneTexture); } catch (err) { /* a skin with no bones */ }
+      }
+    });
+  }
+
   // ----------------------------------------------------------------- size
 
   resize() {
@@ -3586,6 +3663,7 @@ export class Engine {
       try { this.onAfterRender[i](this); } catch (err) { this._hookThrew('engine.onAfterRender[' + i + ']', err); }
     }
     if (attrib) { this._attribSwitch(null); this._attribPoll(); }
+    this._feedTextures();
     if (this._hold) { this._holdFrames++; this._holdW = this.renderer.domElement.width; this._holdH = this.renderer.domElement.height; }
     // after the hooks: they run inside the frame and cost real milliseconds
     // (the perf scenarios' pin closure is one of them).
