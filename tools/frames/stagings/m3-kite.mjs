@@ -62,8 +62,9 @@ const hangUnderKite = {
     const u0 = p.update, hold = { x: g.x, y: g.y, z: g.z }, grounded0 = p.grounded;
     const K = buildGreyKite();
     const root = an.space?.root || p.model;
-    let heroMesh = null; p.model.traverse((o) => { if (!heroMesh && o.isMesh) heroMesh = o; });
-    if (heroMesh) K.mesh.layers.mask = heroMesh.layers.mask;
+    // (the hero's meshes set no layers: the kite stays on the default layer; and it is never frustum-culled: at
+    //  c0f55e7 and 1c26781 F51 showed no kite with its bar on screen at ndc (-0.06, 0.02), F52 showed it)
+    K.mesh.frustumCulled = false;
     root.add(K.group);
     // the kite's program built and linked before the frame (at f1f8364 F51, the first frame it was ever in, was filmed
     // with no kite at all: its program was still linking; F52, the second, drew it)
@@ -105,10 +106,18 @@ const hangUnderKite = {
     K.mesh.geometry.computeBoundingSphere();
     const sph = K.mesh.geometry.boundingSphere.clone().applyMatrix4(K.mesh.matrixWorld);
     const M4 = cam.projectionMatrix.constructor, pm = new M4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-    let inFrustum = null; try { const THREE = await import('three'); inFrustum = new THREE.Frustum().setFromProjectionMatrix(pm).intersectsSphere(sph); } catch (e) { inFrustum = `? ${e.message}`; }
+    const pl = pm.elements;
+    // the sphere against the six clip planes (rows of the view-projection matrix), no THREE import needed
+    const row = (r) => [pl[r], pl[4 + r], pl[8 + r], pl[12 + r]];
+    const r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
+    const P = [[0, 1, 2, 3].map((k) => r3[k] + r0[k]), [0, 1, 2, 3].map((k) => r3[k] - r0[k]), [0, 1, 2, 3].map((k) => r3[k] + r1[k]), [0, 1, 2, 3].map((k) => r3[k] - r1[k]), [0, 1, 2, 3].map((k) => r3[k] + r2[k]), [0, 1, 2, 3].map((k) => r3[k] - r2[k])];
+    const inFrustum = P.every((q) => { const n = Math.hypot(q[0], q[1], q[2]); return (q[0] * sph.center.x + q[1] * sph.center.y + q[2] * sph.center.z + q[3]) / n > -sph.radius; });
     const vis = []; for (let o = K.mesh; o; o = o.parent) vis.push(o.visible ? 1 : 0);
+    // drawn at all? the main view's triangles with the kite shown and hidden (two frames each)
+    const tri = async () => { await api.frames(3); return C.engine.lastFrame?.triangles ?? null; };
+    const triOn = await tri(); K.mesh.visible = false; const triOff = await tri(); K.mesh.visible = true; await api.frames(2);
     window.__kiteStage.read = { L: side('L'), R: side('R'), bar: an.hangPoseInfo?.() || null, kiteTris: K.triangles, hang: !!an._hangOn, kiteWorld: kc.toArray().map((v) => +v.toFixed(2)),
-      drawable: { inScene, visibleChain: vis.join(''), layersOk: cam.layers.test(K.mesh.layers), inFrustum, ndc: ndc.toArray().map((v) => +v.toFixed(3)), sphereR: +sph.radius.toFixed(2), cam: cam.position.toArray().map((v) => +v.toFixed(2)), rootScale: root.getWorldScale(new V()).toArray().map((v) => +v.toFixed(3)), programs: C.engine.renderer?.info?.programs?.length ?? null } };
+      drawable: { inScene, visibleChain: vis.join(''), layersOk: cam.layers.test(K.mesh.layers), inFrustum, trianglesWithKiteMinusWithout: triOn != null && triOff != null ? triOn - triOff : null, mvZ: +kc.clone().applyMatrix4(cam.matrixWorldInverse).z.toFixed(2), near: cam.near, far: cam.far, ndc: ndc.toArray().map((v) => +v.toFixed(3)), sphereR: +sph.radius.toFixed(2), cam: cam.position.toArray().map((v) => +v.toFixed(2)), rootScale: root.getWorldScale(new V()).toArray().map((v) => +v.toFixed(3)), programs: C.engine.renderer?.info?.programs?.length ?? null } };
     // (the run's JSON keeps only the stand-in list: the page's read goes on it, marked as a read)
     api.standIn(`read (not a stand-in): ${JSON.stringify(window.__kiteStage)}`);
   },
