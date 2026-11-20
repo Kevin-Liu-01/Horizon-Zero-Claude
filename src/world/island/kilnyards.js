@@ -56,13 +56,15 @@ function towerStub({ r0, r1, h }, seed) {
     pts.push(new THREE.Vector2(r, y));
   }
   const geo = new THREE.LatheGeometry(pts, 28);
-  // the broken rim: the top rows pulled down by a ragged amount round the ring
+  // the broken rim: the top rows pulled down by a ragged amount round the ring. Fix round 1 (F57 at 3283f5b): bites of up
+  // to 32 % of the height on three lobes left one narrow peak per lobe, and from the apron the stub read as a dark spire;
+  // the rim now breaks within the top 10 % on many small teeth, so the stub keeps its broad, flat-topped shell
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const y = p.getY(i);
-    if (y < h * 0.7) continue;
+    if (y < h * 0.85) continue;
     const a = Math.atan2(p.getZ(i), p.getX(i));
-    const bite = (Math.sin(a * 3 + seed) * 0.5 + 0.5) * 0.22 + (Math.sin(a * 7.3 + seed * 2.1) * 0.5 + 0.5) * 0.10;
+    const bite = (Math.sin(a * 5 + seed) * 0.5 + 0.5) * 0.06 + (Math.sin(a * 13.7 + seed * 2.1) * 0.5 + 0.5) * 0.04;
     p.setY(i, Math.min(y, h * (1 - bite)));
   }
   geo.computeVertexNormals();
@@ -121,7 +123,7 @@ export function buildKilnYards({ x, z, ground = () => 0 }) {
   });
   const ruinGeo = mergeGeometries(parts);
   ruinGeo.computeBoundingSphere();
-  const ruinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0.0 });
+  const ruinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.94, metalness: 0.0, side: THREE.DoubleSide });   // the stubs' and stacks' open shells show their inside past the broken rim
   ruinMat.name = 'kiln-yards';
   const ruin = new THREE.Mesh(ruinGeo, ruinMat);
   ruin.name = 'kiln-yards-ruin';
