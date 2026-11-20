@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { skinVertex, skinVertexPlanned, skinWorldPlanned, skinPass, posedLowest, refreshPosedBounds } from '../../src/entities/machines/rig/ground.js';
+import { skinVertex, skinVertexPlanned, skinWorldPlanned, skinBatch, skinPass, skinCheck, posedLowest, posedStats, refreshPosedBounds, CorpseShape } from '../../src/entities/machines/rig/ground.js';
 
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
@@ -132,6 +132,44 @@ test('refreshPosedBounds (a wreck) reads the minima three gives', () => {
     for (let i = 0; i < P.count; i += step) { skinVertexPlanned(o, i, b); if (b.y < mny2) mny2 = b.y; skinWorldPlanned(o, i, b); if (b.y < wmin2) wmin2 = b.y; }
     assert.ok(Object.is(mny, mny2) && Object.is(wmin, wmin2), `round ${r}: ${mny} ${mny2} ${wmin} ${wmin2}`);
   }
+});
+
+test('skinBatch (strided and by index, local and world) is three, bit for bit, new pose and kept', () => {
+  const o = makeMesh(31, 3000, 25, true), P = o.geometry.attributes.position, a = new THREE.Vector3();
+  const idx = Uint32Array.from({ length: 900 }, (_, k) => (k * 7) % P.count);
+  for (let r = 0; r < 4; r++) {
+    if (r % 2 === 0) { o.skeleton.bones[4].rotation.z += 0.21; o.parent.position.x += 0.1; o.parent.updateMatrixWorld(true); }
+    skinPass();
+    for (const [ix, start, step, cnt] of [[null, 0, 3, Math.ceil(P.count / 3)], [idx, 100, 1, 700]]) {
+      const Lc = new Float64Array(cnt * 3), Wc = new Float64Array(cnt * 3);
+      assert.ok(skinBatch(o, ix, start, step, cnt, Lc, Wc));
+      let diff = 0;
+      for (let k = 0; k < cnt; k++) {
+        const i = ix ? ix[start + k] : start + k * step;
+        a.fromBufferAttribute(P, i); o.applyBoneTransform(i, a);
+        if (!Object.is(a.x, Lc[k * 3]) || !Object.is(a.y, Lc[k * 3 + 1]) || !Object.is(a.z, Lc[k * 3 + 2])) diff++;
+        a.applyMatrix4(o.matrixWorld);
+        if (!Object.is(a.x, Wc[k * 3]) || !Object.is(a.y, Wc[k * 3 + 1]) || !Object.is(a.z, Wc[k * 3 + 2])) diff++;
+      }
+      assert.equal(diff, 0, `round ${r} ${ix ? 'idx' : 'strided'}: ${diff} differ`);
+    }
+  }
+});
+
+test('the corpse loops under skinCheck: every sample three\'s', () => {
+  const o = makeMesh(41, 4000, 18, false);
+  const m = { root: o.parent, ctx: { terrain: { getHeight: () => 0 } } };
+  const sh = new CorpseShape(m, (b) => o.skeleton.bones.indexOf(b) < 3);
+  sh.build();
+  skinCheck.on = true; skinCheck.n = 0; skinCheck.diff = 0;
+  try {
+    for (let r = 0; r < 3; r++) {
+      o.skeleton.bones[5].rotation.x += 0.3; o.parent.updateMatrixWorld(true);
+      refreshPosedBounds(m, 1500); sh.skin(); posedLowest(m, 4000); posedStats(m, 900);
+    }
+  } finally { skinCheck.on = false; }
+  assert.ok(skinCheck.n > 20000, `checked ${skinCheck.n}`);
+  assert.equal(skinCheck.diff, 0);
 });
 
 test('a stale pass is not used after skinPass()', () => {
