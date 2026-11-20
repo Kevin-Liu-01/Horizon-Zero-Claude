@@ -1223,6 +1223,11 @@ async function runLeg(leg, startRec = null) {
       const bt0 = T();
       const played = {};
       await page.evaluate(() => { if (window.__hp) window.__hp.beatMin = Infinity; });
+      // (M3 fix wave, HR8) a drink before a beat under 60 hp, as a player tops up between fights (SH.drink: Q held, at once
+      // null on a dry gourd). At e068546 chained run 1 she came to the Screed at 27 hp from the walk to Oro (a Tiller's
+      // trample and hopper burst) and started leg 3 at 27: the Pegs at Benchmark 1 took her to 11, 1135 frames under 25
+      // (not inside the fight: seal-1 and seal-2 start in the Screed's stall, where driveScreed drinks under 50 itself)
+      if (driveOn && (leg === 2 || leg === 3) && st.id !== 'seal-1' && st.id !== 'seal-2' && (await page.evaluate(where)).hp < 60) played.topUp = await SH.drink(page, K, 98, 4000).catch((e) => ({ error: String(e).slice(0, 120) }));
       if (!driveOn) played.notDriven = 'a beat before it did not pass';
       else if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
