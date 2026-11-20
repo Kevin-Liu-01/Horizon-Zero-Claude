@@ -273,6 +273,8 @@ export class Nav {
   get rebuilding() { return this._dst !== this.cost; }
 
   update() {
+    // C5: a walk grid's landmarks, a slice a tick, once a long search has wanted them (WalkGrid.landmarkStep)
+    if (this._walk) for (let i = 0; i < this._walk.length; i++) this._walk[i].landmarkStep();
     if (this._phase !== 'done') { this._buildSlice(this._budgetRows); return; }
     if (this._dirty) this.rebuild();
   }
@@ -688,6 +690,21 @@ export const WALK = Object.freeze({ cell: 0.5, radius: 0.32, under: 0.25, over: 
 const WDX = [1, -1, 0, 0, 1, 1, -1, -1];
 const WDZ = [0, 0, 1, -1, 1, -1, 1, -1];
 const WDC = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
+/**
+ * C5 (the first hour's hitches): LANDMARKS for the long walk-grid searches. A search that expands more than WALK_EXACT_EXP
+ * cells is searched again with the landmark bound (ALT: for each landmark L, the cheapest way from L to the goal less the
+ * cheapest way from L to the cell is a lower bound on the cell's way to the goal, by the triangle inequality on this
+ * directed grid), which keeps the path the cheapest and expands a fraction of the cells. At 865e8c6 the Holds youths'
+ * re-routes to a mark behind the herd, across the village's walls, held one frame for 20-27 ms about once a second on the
+ * walk into the Holds (first-hour leg 2, run hh-c5-865e8c6; up to 91,000 cells in Node). Every search of WALK_EXACT_EXP
+ * cells or fewer is the search it was, cell for cell (every Saltrow route the routines' Node row draws: 24,092 at most).
+ * A grid's landmarks are only made once one of its searches has needed them, a few cells' worth at a time in
+ * `Nav.update()` (WALK_LM_SLICE_MS a call), and again after each build; until they stand, the long search runs to its end
+ * as before. tools/perf/walk-path-bench.mjs measures both.
+ */
+const WALK_EXACT_EXP = 32000;
+const WALK_LANDMARKS = 6;
+const WALK_LM_SLICE_MS = 1.0;
 
 /** Squared 2D distance from point (px, pz) to the triangle a b c (0 inside). */
 function triDist2(px, pz, ax, az, bx, bz, cx, cz) {
@@ -807,6 +824,8 @@ export class WalkGrid {
     this._compStale = true;
     this._components();
     this.stats.buildMs = +((typeof performance !== 'undefined' ? performance : Date).now() - t0).toFixed(1);
+    // landmarks measured on the grid before are not this grid's: made again (when wanted) from the next tick
+    this._lm = null;
     return this;
   }
 
@@ -930,13 +949,229 @@ export class WalkGrid {
   }
 
   /**
+   * A* from `start` to `goal` over the open cells, expanding at most `maxExp` cells. Leaves the way back in `_from` and
+   * the cells expanded in `_exp`; returns whether the goal was reached.
+   * C5 (the first hour's hitches): the same search as before, cell for cell (the same keys, rounded to the same float32
+   * heap, popped in the same order), with the heap's push and pop and the heuristic written into the loop and every
+   * array held in a local. At 865e8c6 the Holds youths' re-routes to a mark behind the herd (across the village's walls)
+   * took 20-27 ms in one frame about once a second on the walk into the Holds (first-hour leg 2, run hh-c5-865e8c6), up to
+   * 91,000 cells in Node; tools/perf/walk-path-bench.mjs replays those routes and checks every path is unchanged.
+   */
+  _search(start, goal, maxExp) {
+    const nx = this.nx, nz = this.nz, open = this.open;
+    if (this._alt) return this._searchAlt(start, goal, maxExp);
+    const visit = ++this._visit, g = this._g, fr = this._from, seen = this._seen, closed = this._closed;
+    const H = this._heap, hs = H.score, hn = H.node, cap = H.cap;
+    const gx = goal % nx, gz = (goal / nx) | 0;
+    const R2 = 0.41421356;
+    let n = 0;
+    // push(score, node), sift up (Heap.push)
+    let dx0 = Math.abs((start % nx) - gx), dz0 = Math.abs(((start / nx) | 0) - gz);
+    seen[start] = visit; g[start] = 0; fr[start] = -1;
+    hs[0] = dx0 > dz0 ? dx0 + R2 * dz0 : dz0 + R2 * dx0; hn[0] = start; n = 1;
+    let exp = 0, found = false;
+    while (n > 0) {
+      // pop (Heap.pop)
+      const cur = hn[0];
+      n--;
+      if (n > 0) {
+        hs[0] = hs[n]; hn[0] = hn[n];
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1, r = l + 1;
+          let m = i;
+          if (l < n && hs[l] < hs[m]) m = l;
+          if (r < n && hs[r] < hs[m]) m = r;
+          if (m === i) break;
+          const ts = hs[m], tn = hn[m];
+          hs[m] = hs[i]; hn[m] = hn[i];
+          hs[i] = ts; hn[i] = tn;
+          i = m;
+        }
+      }
+      if (cur === goal) { found = true; break; }
+      if (closed[cur] === visit) continue;
+      closed[cur] = visit;
+      if (++exp > maxExp) break;
+      const cx = cur % nx, cz = (cur / nx) | 0, gc = g[cur];
+      for (let d = 0; d < 8; d++) {
+        const ax = cx + WDX[d], az = cz + WDZ[d];
+        if (ax < 0 || az < 0 || ax >= nx || az >= nz) continue;
+        const ni = az * nx + ax, oc = open[ni];
+        if (!oc) continue;
+        if (d >= 4 && (!open[cz * nx + ax] || !open[az * nx + cx])) continue;
+        const ng = gc + WDC[d] * oc;
+        if (seen[ni] === visit && ng >= g[ni]) continue;
+        seen[ni] = visit; g[ni] = ng; fr[ni] = cur;
+        const hx = Math.abs(ax - gx), hz = Math.abs(az - gz);
+        const key = ng + (hx > hz ? hx + R2 * hz : hz + R2 * hx) * 1.02;
+        if (n >= cap) continue;
+        let i = n++;
+        hs[i] = key; hn[i] = ni;
+        while (i > 0) {
+          const q = (i - 1) >> 1;
+          if (hs[q] <= hs[i]) break;
+          const ts = hs[q], tn = hn[q];
+          hs[q] = hs[i]; hn[q] = hn[i];
+          hs[i] = ts; hn[i] = tn;
+          i = q;
+        }
+      }
+    }
+    H.n = n;
+    this._exp = exp;
+    return found;
+  }
+
+  /** `_search` with the landmark bound (C5): the key is g + max(octile, max over L of dL[goal] - dL[cell]). */
+  _searchAlt(start, goal, maxExp) {
+    const nx = this.nx, nz = this.nz, open = this.open, lm = this._alt, D = lm.d, K = D.length;
+    const visit = ++this._visit, g = this._g, fr = this._from, seen = this._seen, closed = this._closed;
+    const H = this._heap, hs = H.score, hn = H.node, cap = H.cap;
+    const gx = goal % nx, gz = (goal / nx) | 0;
+    const dg = new Float64Array(K);
+    for (let k = 0; k < K; k++) dg[k] = D[k][goal];
+    const R2 = 0.41421356;
+    const hOf = (i, ix, iz) => {
+      const hx = Math.abs(ix - gx), hz = Math.abs(iz - gz);
+      let h = hx > hz ? hx + R2 * hz : hz + R2 * hx;
+      for (let k = 0; k < K; k++) { const b = dg[k] - D[k][i]; if (b > h) h = b; }
+      return h;
+    };
+    seen[start] = visit; g[start] = 0; fr[start] = -1;
+    hs[0] = hOf(start, start % nx, (start / nx) | 0); hn[0] = start;
+    let n = 1, exp = 0, found = false;
+    while (n > 0) {
+      const cur = hn[0];
+      n--;
+      if (n > 0) {
+        hs[0] = hs[n]; hn[0] = hn[n];
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1, r = l + 1;
+          let m = i;
+          if (l < n && hs[l] < hs[m]) m = l;
+          if (r < n && hs[r] < hs[m]) m = r;
+          if (m === i) break;
+          const ts = hs[m], tn = hn[m];
+          hs[m] = hs[i]; hn[m] = hn[i];
+          hs[i] = ts; hn[i] = tn;
+          i = m;
+        }
+      }
+      if (cur === goal) { found = true; break; }
+      if (closed[cur] === visit) continue;
+      closed[cur] = visit;
+      if (++exp > maxExp) break;
+      const cx = cur % nx, cz = (cur / nx) | 0, gc = g[cur];
+      for (let d = 0; d < 8; d++) {
+        const ax = cx + WDX[d], az = cz + WDZ[d];
+        if (ax < 0 || az < 0 || ax >= nx || az >= nz) continue;
+        const ni = az * nx + ax, oc = open[ni];
+        if (!oc) continue;
+        if (d >= 4 && (!open[cz * nx + ax] || !open[az * nx + cx])) continue;
+        const ng = gc + WDC[d] * oc;
+        if (seen[ni] === visit && ng >= g[ni]) continue;
+        seen[ni] = visit; g[ni] = ng; fr[ni] = cur;
+        if (n >= cap) continue;
+        let i = n++;
+        hs[i] = ng + hOf(ni, ax, az); hn[i] = ni;
+        while (i > 0) {
+          const q = (i - 1) >> 1;
+          if (hs[q] <= hs[i]) break;
+          const ts = hs[q], tn = hn[q];
+          hs[q] = hs[i]; hn[q] = hn[i];
+          hs[i] = ts; hn[i] = tn;
+          i = q;
+        }
+      }
+    }
+    H.n = n;
+    this._exp = exp;
+    return found;
+  }
+
+  /**
+   * Make this grid's landmarks (C5), at most `ms` of work a call (Infinity: all of them now, for a bench). Each is the
+   * cheapest way FROM it to every open cell (Dijkstra over the same steps and costs the search takes); the first stands
+   * on the open cell nearest the box's south-west corner, each next on the cell farthest (by the nearest landmark's way)
+   * from those before. Does nothing until a search has wanted them, or while the grid is dirty.
+   * Returns true when they stand.
+   */
+  landmarkStep(ms = WALK_LM_SLICE_MS) {
+    if (this.dirty || !this._lmWanted) return false;
+    const now = () => (typeof performance !== 'undefined' ? performance : Date).now();
+    const t0 = now(), n = this.open.length, nx = this.nx, nz = this.nz, open = this.open;
+    let L = this._lm;
+    if (L && L.ready) return true;
+    if (!L) {
+      L = this._lm = { ready: false, ids: [], d: [], cur: null, near: new Float32Array(n).fill(Infinity), ms: 0, t0: t0 };
+    }
+    for (;;) {
+      if (!L.cur) {
+        if (L.d.length >= WALK_LANDMARKS) {
+          L.ready = true; L.near = null; L.heap = null; L.ms += now() - t0;
+          this.stats.landmarks = { k: L.d.length, ms: +L.ms.toFixed(1), ids: L.ids.slice() };
+          return true;
+        }
+        // the next landmark
+        let at = -1;
+        if (!L.d.length) {
+          // in the grid's largest connected part (the village and the slopes; a landmark in a pocket bounds nothing)
+          const comp = this._components(), size = new Int32Array(this.stats.parts || 1);
+          for (let i = 0; i < n; i++) if (comp[i] >= 0) size[comp[i]]++;
+          let big = 0; for (let c = 1; c < size.length; c++) if (size[c] > size[big]) big = c;
+          let bd = Infinity;
+          for (let i = 0; i < n; i++) { if (comp[i] !== big) continue; const ix = i % nx, iz = (i / nx) | 0, d = ix * ix + iz * iz; if (d < bd) { bd = d; at = i; } }
+        } else {
+          let bd = -1;
+          for (let i = 0; i < n; i++) { const v = L.near[i]; if (v !== Infinity && v > bd) { bd = v; at = i; } }
+        }
+        if (at < 0) { L.ready = true; L.near = null; L.heap = null; L.ms += now() - t0; this.stats.landmarks = { k: L.d.length, ms: +L.ms.toFixed(1), ids: L.ids.slice() }; return true; }
+        const dist = new Float32Array(n).fill(Infinity);
+        const heap = L.heap || (L.heap = new Heap(n * 2));
+        heap.clear();
+        dist[at] = 0; heap.push(0, at);
+        L.cur = { at, dist, heap, done: new Uint8Array(n) };
+        L.ids.push(at);
+      }
+      const C = L.cur, dist = C.dist, heap = C.heap, done = C.done;
+      let k = 0;
+      while (heap.n > 0) {
+        const cur = heap.pop();
+        if (done[cur]) continue;
+        done[cur] = 1;
+        const cx = cur % nx, cz = (cur / nx) | 0, dc = dist[cur];
+        for (let d = 0; d < 8; d++) {
+          const ax = cx + WDX[d], az = cz + WDZ[d];
+          if (ax < 0 || az < 0 || ax >= nx || az >= nz) continue;
+          const ni = az * nx + ax, oc = open[ni];
+          if (!oc) continue;
+          if (d >= 4 && (!open[cz * nx + ax] || !open[az * nx + cx])) continue;
+          const nd = dc + WDC[d] * oc;
+          if (nd < dist[ni]) { dist[ni] = nd; heap.push(nd, ni); }
+        }
+        if ((++k & 1023) === 0 && now() - t0 > ms) { L.ms += now() - t0; return false; }
+      }
+      // this landmark is done
+      const near = L.near;
+      for (let i = 0; i < n; i++) if (dist[i] < near[i]) near[i] = dist[i];
+      L.d.push(dist);
+      L.cur = null;
+      if (now() - t0 > ms) { L.ms += now() - t0; return false; }
+    }
+  }
+
+  /** Every landmark now (benches and Node rows). */
+  landmarksNow() { this._lmWanted = true; if (this.dirty) this.build(); this._lmWanted = true; return this.landmarkStep(Infinity); }
+
+  /**
    * A path of { x, z } points (the first is `from`'s cell or `from` itself, the last `to` when it is open, else the open
    * cell nearest it), or null when there is none. A fresh array of fresh points: the caller keeps it.
    */
   path(from, to, opts = null) {
     if (this.dirty) this.build();
     const maxExp = (opts && opts.maxExpansions) || 120000;
-    const nx = this.nx;
     const start = this.nearestOpen(from.x, from.z), goal = this.nearestOpen(to.x, to.z, 12);
     this.stats.paths++;
     if (start < 0 || goal < 0) { this.stats.misses++; return null; }
@@ -946,32 +1181,19 @@ export class WalkGrid {
     const goalPt = this.index(to.x, to.z) === goal || this.lineOpen(this.wx(goal), this.wz(goal), to.x, to.z) ? { x: to.x, z: to.z } : { x: this.wx(goal), z: this.wz(goal) };
     if (this.lineOpen(P0.x, P0.z, goalPt.x, goalPt.z)) { out.push(P0, goalPt); return out; }
     { const comp = this._components(); if (comp[start] !== comp[goal]) { this.stats.misses++; this.stats.partMisses = (this.stats.partMisses || 0) + 1; return null; } }
-    const visit = ++this._visit, g = this._g, fr = this._from, seen = this._seen, closed = this._closed, heap = this._heap;
-    heap.clear();
-    const gx = goal % nx, gz = (goal / nx) | 0;
-    const hf = (i) => { const dx = Math.abs((i % nx) - gx), dz = Math.abs(((i / nx) | 0) - gz); return dx > dz ? dx + 0.41421356 * dz : dz + 0.41421356 * dx; };
-    seen[start] = visit; g[start] = 0; fr[start] = -1; heap.push(hf(start), start);
-    let found = false, exp = 0;
-    while (heap.n > 0) {
-      const cur = heap.pop();
-      if (cur === goal) { found = true; break; }
-      if (closed[cur] === visit) continue;
-      closed[cur] = visit;
-      if (++exp > maxExp) break;
-      const cx = cur % nx, cz = (cur / nx) | 0;
-      for (let d = 0; d < 8; d++) {
-        const ax = cx + WDX[d], az = cz + WDZ[d];
-        if (ax < 0 || az < 0 || ax >= nx || az >= this.nz) continue;
-        const ni = az * nx + ax, oc = this.open[ni];
-        if (!oc) continue;
-        if (d >= 4 && (!this.open[cz * nx + ax] || !this.open[az * nx + cx])) continue;
-        const ng = g[cur] + WDC[d] * oc;
-        if (seen[ni] === visit && ng >= g[ni]) continue;
-        seen[ni] = visit; g[ni] = ng; fr[ni] = cur;
-        heap.push(ng + hf(ni) * 1.02, ni);
-      }
+    const exact = Math.min(maxExp, WALK_EXACT_EXP);
+    let found = this._search(start, goal, exact), exp = this._exp;
+    if (!found && exp > exact && exact < maxExp) {
+      // a long way: with the landmarks when they stand (the cheapest path, a fraction of the cells), else the search runs on
+      // to its end as it did. Either way the grid wants landmarks from now on.
+      this._lmWanted = true;
+      const lm = this._lm && this._lm.ready ? this._lm : null;
+      if (lm) { this._alt = lm; try { found = this._search(start, goal, maxExp); } finally { this._alt = null; } exp += this._exp; this.stats.alt = (this.stats.alt || 0) + 1; }
+      else { found = this._search(start, goal, maxExp); exp += this._exp; this.stats.long = (this.stats.long || 0) + 1; }
     }
+    this.stats.lastExp = exp;
     if (!found) { this.stats.misses++; return null; }
+    const fr = this._from;
     const raw = this._raw; raw.length = 0;
     for (let i = goal; i !== -1; i = fr[i]) raw.push(i);
     raw.reverse();

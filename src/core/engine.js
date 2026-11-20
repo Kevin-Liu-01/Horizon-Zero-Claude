@@ -249,6 +249,37 @@ export const ROUND4_HIGH = Object.freeze({
   shadowCullDistance: 120, shadowCasterBudget: 150, shadowType: SOFT_SHADOWS, drs: true, drsFloor: 0.7,
 });
 
+/** C5: the most one frame weighs in dynamic resolution's running average, ms (two 60 Hz frames). */
+const DRS_SPIKE_MS = 33.4;
+
+/**
+ * C5 (the first hour's hitches): A SKINNED MESH'S CULLING SPHERE IS ITS GEOMETRY'S, AS THE RIGS WERE WRITTEN FOR.
+ * three r151+ (M0.7 moved to r187) gives SkinnedMesh its own computeBoundingSphere: every vertex through its four bones on
+ * the CPU, the first time the mesh is culled. The machines' rigs pad the GEOMETRY's sphere to cover every pose they reach
+ * (src/entities/machines/rig/lod.js skinnedBounds, 2.2x) on three's older rule, so that padding went unused and the
+ * per-vertex pass ran instead: 22.9 ms in the main view's and the shadow maps' culls of the one frame the Scar's herd
+ * stood up on the walk into the Holds (first-hour leg 2 at 865e8c6, run hh-c5-865e8c6: the 92 ms frame). Here the
+ * geometry's sphere is taken (computed once per geometry); a geometry the rig did not pad also takes in where each bone
+ * stands now, in the mesh's own frame, and SKIN_SPHERE_PAD_M more. People set their own sphere and never come here.
+ */
+const SKIN_SPHERE_PAD_M = 0.25;
+const _skinBone = new THREE.Vector3();
+THREE.SkinnedMesh.prototype.computeBoundingSphere = function computeBoundingSphereFromGeometry() {
+  const geo = this.geometry;
+  if (!geo.boundingSphere) geo.computeBoundingSphere();
+  const s = this.boundingSphere || (this.boundingSphere = new THREE.Sphere());
+  s.copy(geo.boundingSphere);
+  if (geo.userData?.boundsPadded) return;
+  const bones = this.skeleton?.bones;
+  if (bones) {
+    for (let i = 0; i < bones.length; i++) {
+      _skinBone.setFromMatrixPosition(bones[i].matrixWorld).applyMatrix4(this.bindMatrixInverse);
+      s.expandByPoint(_skinBone);
+    }
+  }
+  s.radius += SKIN_SPHERE_PAD_M;
+};
+
 /** Highest wins. Anything not listed sorts just above `legacy`. */
 const TS_PRIORITY = ['studio', 'wheel', 'hitstop', 'concentration', 'legacy'];
 
@@ -3144,7 +3175,12 @@ export class Engine {
     if (!this.drsEnabled) return;
     // M1.6m: a lost context's frames and the restore's recompile are not the scene's cost
     if (this.contextLost || this._drsSkip > 0) { if (!this.contextLost) this._drsSkip--; return; }
-    this._drsAcc = this._drsAcc * 0.9 + frameMs * 0.1;
+    // C5: one long frame is not a resolution problem. Each frame weighs in at most DRS_SPIKE_MS, so a lone hitch (a
+    // spawn, an upload, a GC) no longer pushes the average past 20.5 and buys a render-target reallocation on top of
+    // itself: at 865e8c6 the resize after a hitch on the walk into the Holds held its own frame 24 ms (WebGLRenderer.setSize,
+    // run hh-c5-865e8c6; 22-27 ms of frame tail at d174a23), and one 75 ms frame alone took the average to 22.4. Sustained
+    // load (three 33 ms frames in a row, or any steady 21+ ms) still steps down.
+    this._drsAcc = this._drsAcc * 0.9 + Math.min(frameMs, DRS_SPIKE_MS) * 0.1;
     // Each change reallocates the render targets, so rate-limit hard: at most
     // one step every 0.6 s, and never inside the 14.5-20.5 ms dead band.
     this._drsCooldown = (this._drsCooldown ?? 0) - frameMs / 1000;
