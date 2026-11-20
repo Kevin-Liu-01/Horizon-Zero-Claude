@@ -90,7 +90,7 @@ async function main() {
       const o = {};
       o.ext = { parallel: !!gl.getExtension('KHR_parallel_shader_compile'), threeHas: r.extensions.has('KHR_parallel_shader_compile'), checkShaderErrors: r.debug.checkShaderErrors,
         renderer: (() => { const d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : null; })() };
-      o.engine = { warmUpMs: E.warmUpMs, warmUpPrograms: E.warmUpPrograms, bootRungWarm: E.bootRungWarm ? { ms: E.bootRungWarm.ms, programs: E.bootRungWarm.programs } : null };
+      o.engine = { warmUpMs: E.warmUpMs, warmUpPrograms: E.warmUpPrograms, casterProxyKinds: E.casterProxyKinds ?? null, programResolve: E.programResolve ?? null, bootRungWarm: E.bootRungWarm ? { ms: E.bootRungWarm.ms, programs: E.bootRungWarm.programs } : null };
       const nm = (x) => (x ? (x.name || x.type) : '');
       const owners = (q, k = 3) => {
         const who = [], P = r.properties;

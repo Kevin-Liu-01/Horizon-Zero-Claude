@@ -1350,7 +1350,12 @@ export class Player {
     this.hero = installHero(this);
     // C5 (engine lane, the smallest change here): her fade clones made before a warm-up compiles the scene, so their
     // programs link under the sheet (at ddc31c1 her belt pots' clones linked in the first second of play: 41.9 ms)
-    ctx.engine?.addWarmPass?.(() => { if (this.model) this._collectMaterials(); });
+    // and registered with the world now (fog, cascades: another program), as its material scan would some frames later
+    ctx.engine?.addWarmPass?.(() => {
+      if (!this.model) return;
+      this._collectMaterials();
+      for (const e of this._mats) ctx.environment?.registerMaterial?.(e.mat);
+    });
     this.animator = new PlayerAnimator(ctx, this.model);
 
     ctx.input.onDown('Space', () => this.jump());

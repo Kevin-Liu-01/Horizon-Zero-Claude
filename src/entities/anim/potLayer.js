@@ -13,7 +13,7 @@
  */
 import * as THREE from 'three';
 import { ease } from './handling.js';
-import { POT_CAST, POTS, POT_ORDER } from '../../combat/pots.js';
+import { POT_CAST, POTS, POT_ORDER, PotView } from '../../combat/pots.js';
 
 const Y_UP = new THREE.Vector3(0, 1, 0);
 /** Off her pelvis (char, +x her left, +z forward): the belt's three pots, the take, the back swing's low point. */
@@ -81,7 +81,13 @@ export class PotLayer {
   _potLayer(dt) {
     const S = this._potState(), K = this.ctx.combat?.pots, b = this.b;
     S.simT += dt;
-    if (!K?.owned || !b.handL || !b.upArmL || !b.pelvis) { S.w = 0; return 0; }
+    if (!K?.owned || !b.handL || !b.upArmL || !b.pelvis) {
+      // C5 (engine lane, the smallest change here): the belt made, hidden, before she owns a pot, so a warm-up links its
+      // programs (her fade clone of the pots' material, before and after the world registers it): made when the first pot
+      // came, at Oro, it linked two programs in play at 3bb6c9e (15.5 and 14.9 ms first uses, first-hour leg 2)
+      if (K && !S.belt && b.pelvis && this.ctx.scene) { if (!K.view) K.view = new PotView(this.ctx); this._potBelt(K); }
+      S.w = 0; return 0;
+    }
     K.step(dt);
     this._potBelt(K);
     const c = K.casting;

@@ -2664,9 +2664,14 @@ export class Engine {
         (m.alphaMap && m.alphaTest > 0) ? 'am' : '', (m.displacementMap && m.displacementScale !== 0) ? 'dm' : '', m.alphaToCoverage ? 'a2c' : '',
         o.customDepthMaterial ? o.customDepthMaterial.uuid : ''].join('|');
     };
+    // today's casters, and the meshes that may cast later with a program of their own: every skinned mesh, and every
+    // mesh whose material needs a depth clone (an Instrument's hull casts by its distance: the Plumb's uv1 alpha-mapped
+    // hull linked a depth program in the leg 2 fight at 3bb6c9e, 24.8 ms)
+    const clone = (m) => !!m && ((m.map && m.alphaTest > 0) || (m.alphaMap && m.alphaTest > 0) || (m.displacementMap && m.displacementScale !== 0) || m.alphaToCoverage === true);
     scene.traverse((o) => {
       if (!o.isMesh || o.isBatchedMesh || o.userData?.__sightOverlay) return;
-      if (!(o.castShadow || o.userData?.__shadowCulled === true)) return;
+      const m0 = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!(o.castShadow || o.userData?.__shadowCulled === true || o.isSkinnedMesh || clone(m0))) return;
       const k = sig(o);
       if (k && !reps.has(k)) reps.set(k, o);
     });
