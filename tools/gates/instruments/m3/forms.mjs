@@ -25,7 +25,7 @@ export const WAVE2_NOTES = Object.freeze({
   kiln: 'its lamp moves from beside the stack, high (3.86 m), to low at the front right by the firebox door (1.25 m); the stack grows broad out of the dome like a bottle kiln\'s, with two hoops',
   spindle: 'its ring now lies level round the hub (the bible\'s word) instead of standing upright over the legs, so no disc faces you; the staff is the spindle itself, upright in the hull\'s axis through the hub (no holster truss at its side); the body is a spool widening into the hub, on legs 1.24 m apart on a cross-beam; the lamp sits on the beam\'s right, nowhere under the ring',
   davit: 'its raised arm is a straight lattice derrick with no elbow, a backstay and an A-frame: one triangle, the shape of a crane, not a neck and head; the sheave sits inside the boom\'s tip',
-  sonde: 'the cap disc at the nose is gone and both ends come to a point; the two fans turn upright on outriggers off the gondola, so none faces you; the lamp moves off the centre line',
+  sonde: 'the cap disc at the nose is gone and both ends come to a point; the two fans turn upright on outriggers off the gondola, so none faces you; the lamp moves off the centre line, an upright lantern at the port bow lit all round (wave 2b: the flat lamp disc read edge-on from the ground under it)',
 });
 
 export const TORUS_SEGS = 28;

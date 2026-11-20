@@ -47,16 +47,18 @@ export const SONDE_PARTS = Object.freeze([
   // the gondola and its four struts
   ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([sx, sz], i) => strut(`sling${i + 1}`, [sx * 0.36, 0.57, sz * 0.45], [sx * 0.48, 0.92, sz * 0.62], 0.025, { tone: 'joint' })),
   box('gondola', [0, 0.42, 0.10], [0.80, 0.30, 1.10]),
-  // the lamp at the gondola's port bow (off the centre line)
+  // the lamp at the gondola's port bow (off the centre line). Wave 2b: an upright lantern lit all round, standing proud
+  // of its drum's face (it was a 0.03 m disc on the face: from the ground under the moored hull, its own view, it read
+  // edge-on, 6.53 dE2000 off its token at 9d1acc3); the same 0.26 m across, the drum unchanged
   cyl('lampDrum', [-0.24, 0.42, 0.73], 0.15, 0.16, 'z', { tone: 'joint' }),
-  cyl('lamp', [-0.24, 0.42, 0.825], 0.13, 0.03, 'z', { lamp: true, hit: 'lamp' }),
+  cyl('lamp', [-0.24, 0.42, 0.92], 0.13, 0.20, 'y', { lamp: true, hit: 'lamp' }),
   cyl('keelRing', [0, 0.25, 0.30], 0.06, 0.04, 'y', { tone: 'brass' }),
   // the sounding weight on its line
   strut('weightLine', [0, 0.27, -0.10], [0, 0.20, -0.10], 0.01, { tone: 'joint' }),
   cyl('weight', [0, 0.10, -0.10], 0.08, 0.20, 'y', { tone: 'brass' }),
 ]);
 
-export const SONDE_LAMP = Object.freeze({ at: [-0.24, 0.42, 0.84], r: 0.13 });
+export const SONDE_LAMP = Object.freeze({ at: [-0.24, 0.42, 0.92], r: 0.13 });
 
 /** Where the tether meets the hull (body frame): the gondola's keel ring. */
 export const SONDE_KEEL = Object.freeze([0, 0.23, 0.30]);
