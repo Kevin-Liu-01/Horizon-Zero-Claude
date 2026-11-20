@@ -58,6 +58,8 @@ if (PORT === 5173) throw new Error('5173 is never used');
 const LEGS = (flag('--legs', '1,2,3') || '').split(',').map((s) => Number(s.trim())).filter((n) => [1, 2, 3].includes(n));
 const LABEL = flag('--label', 'systems-first-hour');
 const LEG_BUDGET_S = Number(flag('--leg-budget', 720));
+// (M3 fix wave) --slot-wait <s>: how long each leg waits for slot1 (default 1800; leg 1's slice run is passed the same)
+const SLOT_WAIT_S = Number(flag('--slot-wait', 1800));
 // (wave 4) --chain: each leg after the first starts from the record the leg before it left in its store (leg 1's is the
 // slice run's newest record, which slice-hour.mjs writes into its report), CONTINUE pressed on it: the save carried
 // across the hour, a launch a leg. Without it a leg run alone starts from its fixture.
@@ -1179,7 +1181,7 @@ async function runLeg(leg, startRec = null) {
     // the leg before's Vite (its own, or slice-hour's) takes a few seconds to let the port go after its SIGTERM
     for (let i = 0; i < 60 && (await portOpen(PORT)); i++) await sleep(500);
     if (await portOpen(PORT)) throw new Error(`port ${PORT} already in use`);
-    const slot = await takeMachineSlot({ who: `systems first-hour leg ${leg} ${PORT}`, waitS: 1800, log });
+    const slot = await takeMachineSlot({ who: `systems first-hour leg ${leg} ${PORT}`, waitS: SLOT_WAIT_S, log });
     if (!slot.ok) throw new Error(slot.why);
     slotTaken = true;
     L.slotTakenAt = new Date().toISOString();
@@ -1307,7 +1309,7 @@ const beatsOf = (leg) => (leg === 2 ? SCAR_STAGES : TRUE_GROUND_STAGES);
 function runLeg1() {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const child = spawn(process.execPath, [path.join(REPO, 'tools/gates/systems/slice-hour.mjs'), '--port', String(PORT), '--run-only', '--label', `${LABEL}-leg1`], { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [path.join(REPO, 'tools/gates/systems/slice-hour.mjs'), '--port', String(PORT), '--run-only', '--label', `${LABEL}-leg1`, '--slot-wait', String(SLOT_WAIT_S)], { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     child.stdout.on('data', (d) => { out += d; process.stdout.write(d); });
     child.stderr.on('data', (d) => { out += d; process.stderr.write(d); });
@@ -1336,6 +1338,9 @@ mkdirSync(runDir, { recursive: true });
 try {
   let carry = null;
   for (const leg of LEGS) {
+    // (M3 fix wave) a chain whose leg before left no record stops here: at 88c5c4c leg 1 timed out waiting for slot1 and
+    // leg 2 would have started from its fixture, a run that only looks chained
+    if (CHAIN && leg !== LEGS[0] && !carry) { log(`leg ${leg}: not run (the leg before left no record)`); report.legs.push({ leg, notRun: 'the leg before left no record', beats: [], passed: `0/${leg === 2 ? SCAR_STAGES.length : TRUE_GROUND_STAGES.length}` }); continue; }
     log(`leg ${leg}${CHAIN && carry ? ' (from the record the leg before left)' : ''}`);
     const L = leg === 1 ? await runLeg1() : await runLeg(leg, CHAIN ? carry : null);
     carry = L.endRecord ?? null;
