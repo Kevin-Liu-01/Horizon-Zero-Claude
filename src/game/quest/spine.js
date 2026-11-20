@@ -244,8 +244,10 @@ export class QuestSpine {
       if (s.type === 'read') { if (type === 'sighted' && e.card === s.card) this._complete(s); continue; }
       if (s.type === 'talk' && type === 'scene-done' && e.scene === s.scene && e.exit !== false) this._complete(s);
       else if (s.type === 'gather') {
+        // (M2 fix wave 2) 'ammo-held' {ammo, n}: arrows of that ammo already in the quiver when the stage runs
+        // (src/game/hour.js sends it for "The Scar"'s 'barbed')
         const hit = (s.source && type === 'gathered' && e.source === s.source)
-          || (s.ammo && type === 'ammo-crafted' && e.ammo === s.ammo);
+          || (s.ammo && (type === 'ammo-crafted' || (type === 'ammo-held' && (e.n | 0) >= (s.count ?? 1))) && e.ammo === s.ammo);
         if (!hit) continue;
         rec.n = Math.min(s.count, rec.n + Math.max(1, e.n | 0 || 1));
         if (s.ammo || rec.n >= s.count) this._complete(s);

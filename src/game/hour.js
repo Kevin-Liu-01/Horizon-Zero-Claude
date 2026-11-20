@@ -493,6 +493,10 @@ export class FirstHour {
       for (const sp of this.spines) { const what = this._standsFor(sp.current()); if (what) this._spawn(what, true); }
     }
     const cur = this.scar.current()?.id;
+    // (M2 fix wave 2) 'barbed' closes on Barbed arrows she already carries. The slice's pry makes them from the only
+    // makings she has (obsidian, which nothing sells or drops before the Ninewalls counter opens at the Scar's end): at
+    // d674c92 the chained hour reached 'barbed' with 14 Barbed arrows and 0 obsidian, NEED 2 OBSIDIAN, and stopped there
+    if (cur === 'barbed') { const n = ctx.combat?.ammo?.hardpoint ?? 0; if (n >= 1) this.scar.notify('ammo-held', { ammo: 'hardpoint', n }); }
     // the Oro prompt is live while the hand-over waits; he stays standing after
     if (this.oroEntry) this.oroEntry.disabled = cur !== 'oro';
     if (cur === 'herd') this._lee(dt);

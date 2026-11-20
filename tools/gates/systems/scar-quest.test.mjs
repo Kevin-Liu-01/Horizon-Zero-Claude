@@ -112,6 +112,18 @@ test('a stage advances only on its own event: out-of-order events do nothing', (
   assert.equal(spine.current().id, 'seal-1', 'stalled once is the stage; a second stall is not a seal');
 });
 
+test('(M2 fix wave 2) "The Scar"\'s Barbed arrows: made, or already in the quiver when the stage runs; none held does nothing', () => {
+  const { spine } = rig(SCAR_ID);
+  spine.start();
+  for (const [ev, e] of [['region-enter', { region: 'holds' }], ['herd-lee', { inShadow: true }], ['plumb-topple', { kind: 'plumb' }]]) step(spine, ev, e);
+  assert.equal(spine.current().id, 'barbed');
+  step(spine, 'ammo-held', { ammo: 'hardpoint', n: 0 });
+  step(spine, 'ammo-held', { ammo: 'hunter', n: 14 });
+  assert.equal(spine.current().id, 'barbed', 'no Barbed arrow held, or Reed arrows held, do not count');
+  step(spine, 'ammo-held', { ammo: 'hardpoint', n: 14 });
+  assert.equal(spine.current().id, 'oro', 'fourteen Barbed arrows in the quiver close it');
+});
+
 test('the fail-soft branch: the third wall cut while the fight runs goes on to the second seal, and the quest ends', () => {
   const { out, spine } = rig(SCAR_ID);
   spine.start();
