@@ -566,7 +566,7 @@ export class SystemsGame {
 export function installGame(ctx) {
   installReeds(ctx);   // M1.6e: reed cover, the gust clock, the rule (src/game/reeds); ctx.terrain.cutCover
   // Milestone 2: the regions (engine's seam, src/core/regions.js) built behind the loading sheet; ticked in update()
-  ctx.regions = ctx.engine?.attachRegions?.({ assets: ctx.assets, events: ctx.events }) ?? null;
+  ctx.regions = ctx.engine?.attachRegions?.({ assets: ctx.assets, events: ctx.events, environment: ctx.environment }) ?? null;   // (M3 wave 2: the loader registers a region's materials with the sky before it compiles them)
   // M3: a region's approach is per mode (the Malpais at 60 m walking, 150 m flying): the tracker reads the flight seam
   if (ctx.regions?.tracker) ctx.regions.tracker.modeOf = () => modeOfFlight(ctx.player?.flight);
   saveFieldsOf(ctx);   // the save seam (src/game/save/fields.js): areas register their { get, set } pairs on it

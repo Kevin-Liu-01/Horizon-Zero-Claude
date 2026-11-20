@@ -109,7 +109,7 @@ test('the loader: approach fetches, a failure retries on its backoff and never t
   });
   tr.update(-150, 0);                 // in the Pans, 150 m from the Holds
   assert.ok(!tr.near.has('holds'));
-  tr.update(-80, 0);                  // within 90 m: approach
+  tr.update(-50, 0);                  // within the Holds' 60 m on foot (M3 wave 2, area F: their own approach): approach
   assert.ok(tr.near.has('holds'));
   await new Promise((r) => setImmediate(r));
   assert.equal(ld.status().holds.state, 'failed');
@@ -118,7 +118,7 @@ test('the loader: approach fetches, a failure retries on its backoff and never t
   assert.equal(calls, 2); assert.equal(ld.status().holds.state, 'failed');
   t = 3000; ld.tick(); await new Promise((r) => setImmediate(r));
   assert.equal(calls, 3); assert.equal(ld.status().holds.state, 'resident');
-  tr.update(-190, 0);                  // past the approach plus the band: depart
+  tr.update(-190, 0);                  // past the approach plus the band (80 m): depart
   assert.ok(!tr.near.has('holds'));
   assert.equal(unloaded, 1);
   // a region with no rows is resident at once and never calls load

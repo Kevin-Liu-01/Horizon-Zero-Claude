@@ -16,14 +16,15 @@ const L = await residentLedger({ root: REPO, assets });
 
 test('the always set and the regions\' files add up to the texture ledger (stand-ins apart)', async () => {
   const T = await runTextureLedger({ root: REPO, assets });
-  const files = L.alwaysMb + Object.values(L.regions).reduce((s, r) => s + (r.standIn ? 0 : r.mb), 0);
+  const files = L.alwaysMb + Object.values(L.regions).reduce((s, r) => s + (r.standIn ? 0 : r.mb), 0) + Object.values(L.regions).reduce((s, r) => s + (r.standIn ? r.onDiskMb : 0), 0);
   assert.ok(Math.abs(files - T.details.totalMb) < 0.05, `${files} vs ${T.details.totalMb}`);
 });
 
 test('the Holds carry their cast (HOLDS_CAST less the boot archetypes); the Malpais its stand-in line until it has files', () => {
   assert.equal(L.regions.holds.cast, 5);
   assert.ok(L.regions.holds.mb > 0);
-  if (L.regions.malpais.files === 1) assert.equal(L.regions.malpais.standIn, 16);
+  // (M3 wave 2) held at the larger of its files and its line while it is not built
+  assert.ok(L.regions.malpais.mb >= 16);
   assert.deepEqual(L.regions.malpais.approach, { walk: 60, flight: 150 });
 });
 
@@ -36,8 +37,15 @@ test('four places, each with its region and both sums; the Yards are in the Malp
   assert.equal(by['flight-pans'].region, 'pans');
   assert.equal(by['flight-pans'].mode, 'flight');
   for (const p of L.places) {
-    assert.ok(p.byRegion > 0 && p.today >= p.byRegion && p.withPlan >= p.today);
+    assert.ok(p.byRegion > 0 && p.noUnload >= p.today && p.withPlan >= p.today);
     assert.equal(p.top5.length, 5);
     console.log(`  ${p.id}: by region ${p.byRegion}, today ${p.today}, with the plan lines ${p.withPlan} (cap ${CAP_MB})`);
   }
+});
+
+test('EF2 with the plan lines (M3 wave 2): the game holds <= 175 MB at all four places, the Yards read at their worst point', () => {
+  for (const p of L.places) assert.ok(p.pass.withPlan, `${p.id}: ${p.withPlan} MB held with the plan lines (${p.regionsHeld.join('+')})`);
+  const y = L.places.find((p) => p.id === 'kiln-yards');
+  assert.ok(!y.regionsHeld.includes('holds'), 'the Holds\' cast is out of memory at every Yards point');
+  console.log(`  the Yards: ${y.withPlan} MB with the plan lines (${y.regionsHeld.join('+')}, worst at ${y.worstPoint ?? 'the site'}); nothing unloaded it would be ${y.noUnloadWithPlan}`);
 });

@@ -13,10 +13,9 @@ import { CROSSINGS, sweep } from './region-hitch-paths.mjs';
 const map = new RegionMap().build();
 const mal = REGIONS.find((r) => r.id === 'malpais');
 
-test('the Malpais as data: approached at 60 m walking and 150 m flying; the other regions keep the seam\'s', () => {
-  assert.equal(approachOf(mal, 'walk'), 60);
-  assert.equal(approachOf(mal, 'flight'), 150);
-  for (const r of REGIONS.filter((x) => x.id !== 'malpais')) { assert.equal(approachOf(r, 'walk'), APPROACH_M); assert.equal(approachOf(r, 'flight'), FLIGHT_APPROACH_M); }
+test('the Malpais and (M3 wave 2) the Holds as data: approached at 60 m walking and 150 m flying; the other regions keep the seam\'s', () => {
+  for (const id of ['malpais', 'holds']) { assert.equal(approachOf(regionById(id), 'walk'), 60, id); assert.equal(approachOf(regionById(id), 'flight'), 150, id); }
+  for (const r of REGIONS.filter((x) => x.id !== 'malpais' && x.id !== 'holds')) { assert.equal(approachOf(r, 'walk'), APPROACH_M); assert.equal(approachOf(r, 'flight'), FLIGHT_APPROACH_M); }
   assert.equal(mal.built, false);
   assert.deepEqual({ ...mal.standIn }, { residentMb: 16, shippedMb: 14 });
 });

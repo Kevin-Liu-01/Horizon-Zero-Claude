@@ -500,6 +500,12 @@ export class HoldsPeople {
       .finally(() => { if (this.state === 'loading') this._t = 0.25; });
   }
 
+  /** (M3 wave 2) The regions seam has departed the Holds (its tracker has started and no longer holds them near). */
+  _regionGone() {
+    const T = this.ctx.regions?.tracker;
+    return !!(T && T.started && T.near && !T.near.has('holds'));
+  }
+
   _despawnAll() {
     for (const [, p] of this.persons) { this.routines.remove(p); this.sys.despawn(p); this.stats.despawns++; }
     this.persons.clear();
@@ -517,8 +523,12 @@ export class HoldsPeople {
     const pl = this.ctx.player?.position;
     if (pl) {
       const d = Math.hypot(pl.x - CENTRE.x, pl.z - CENTRE.z);
-      if (this.state === 'out' && d < SPAWN_R) { this.state = 'loading'; this._queue = [...HOLDS_CAST]; this._t = 0; }
-      else if ((this.state === 'in' || this.state === 'loading') && d > DESPAWN_R) { this.state = 'leaving'; this._queue = []; this._despawnAll(); }
+      // (M3 wave 2, area F, the smallest change here: EF2, NW11) the cast follows the regions seam's residency: it leaves
+      // memory when the tracker departs the Holds (80 m outside their edge on foot, 170 m in the air: src/core/regions.js),
+      // which the Kiln Yards are (their four wellheads 97.7-113.3 m out), and stands again only once they are approached
+      const gone = this._regionGone();
+      if (this.state === 'out' && d < SPAWN_R && !gone) { this.state = 'loading'; this._queue = [...HOLDS_CAST]; this._t = 0; }
+      else if ((this.state === 'in' || this.state === 'loading') && (d > DESPAWN_R || gone)) { this.state = 'leaving'; this._queue = []; this._despawnAll(); }
     }
     if (this.state === 'loading' && (this._t -= dt) <= 0) { this._t = Infinity; this._spawnNext(); }
     // the quest's Oro and ours both asked for at once (their spawn resolving after ours): keep theirs, the one it holds

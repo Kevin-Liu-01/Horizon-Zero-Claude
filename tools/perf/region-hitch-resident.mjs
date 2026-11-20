@@ -10,14 +10,19 @@
  * A texture belongs to a region when its file is under one of the region's `files` prefixes (public/...) or is one of
  * its `cast` GLBs (the game's own list, e.g. the Holds' HOLDS_CAST less the archetypes staged at boot); everything else
  * is ALWAYS resident (the boot set: the Pans, Brea, the Instruments, the ground layers, the people staged at boot). A
- * region not built yet and with no files on disk is held at its `standIn.residentMb` (the Malpais: 16 MB).
+ * region not built yet is held at its `standIn.residentMb` (the Malpais: 16 MB), or its files on disk if they are more.
  *
  * The four places of the M3 exit (<= 175 MB at each): Saltrow, Ninewalls, the Kiln Yards (on foot) and 60 m over the
  * Pans (in the air, at the Sounding Ring). At each, two sums:
  *   byRegion   the always set + every region she is in or approaching there (the seam's approach for the mode): what is
  *              resident once a region's files leave on `depart` (the loader's unload; not wired in the game yet)
- *   today      the always set + every region approached on the hour's path so far (Saltrow, Ninewalls, the Yards, then
- *              the flight home): the game unloads nothing (RegionLoader has no unload in the engine), so this is today's
+ *   today      (M3 wave 2) what the GAME holds there: the always set + every region approached on the hour's path so far
+ *              (Saltrow, Ninewalls, the Yards, then the flight home) that the seam has NOT departed, read at the worst of
+ *              the hysteresis (a region leaves only HYSTERESIS_M past its approach: depth < -(approach + 20 m)). The engine's
+ *              loader unloads a region's rows on depart and the Holds' cast follows the tracker (holds.js), so a departed
+ *              region's files are out. A place may carry `points` (the Yards: the four wellheads, B5, the tube's Brazier):
+ *              the worst of them is the place's
+ *   noUnload   the same path with nothing ever unloaded (wave 1's 'today', kept to show what the depart buys)
  * and, apart, the M3 plan's lines for things not on disk yet (M3-BRIEFS §12, resident at the Yards: the kite 2, four
  * kinds 13, weapons 4, fauna 3, one rung 5): `withPlan` adds them to `today`.
  * Megabytes are MiB (resident memory), as the texture ledger's.
@@ -28,7 +33,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readAssets } from '../tier0/budgets.mjs';
 import { residentBytes } from '../tier0/lib/glb.mjs';
 import { MB } from '../tier0/lib/files.mjs';
-import { REGIONS, RegionMap, approachOf } from '../../src/core/regions.js';
+import { REGIONS, RegionMap, approachOf, HYSTERESIS_M } from '../../src/core/regions.js';
+import { WELLHEADS, BENCH_B5 } from '../../src/world/sites/kilnyards-layout.js';
+import { TUBE_SHELTER } from '../../src/world/sites/malpais-layout.js';
 import { siteById } from '../../src/world/island/sites.js';
 import { GUILD_STUD } from '../../src/world/settlements/saltrow-layout.js';
 
@@ -51,7 +58,8 @@ export function places() {
   return [
     { id: 'saltrow', label: 'Saltrow (the guild-house stud)', x: GUILD_STUD.x, z: GUILD_STUD.z, mode: 'walk' },
     { id: 'ninewalls', label: 'Ninewalls', x: nw.x, z: nw.z, mode: 'walk' },
-    { id: 'kiln-yards', label: 'the Kiln Yards', x: yards.x, z: yards.z, mode: 'walk' },
+    { id: 'kiln-yards', label: 'the Kiln Yards', x: yards.x, z: yards.z, mode: 'walk',
+      points: [...WELLHEADS.map((w) => ({ id: w.id, x: w.x, z: w.z })), { id: 'B5', x: BENCH_B5.x, z: BENCH_B5.z }, { id: 'tube-brazier', x: TUBE_SHELTER.brazier.x, z: TUBE_SHELTER.brazier.z }] },
     { id: 'flight-pans', label: '60 m over the Pans (the Sounding Ring)', x: ring.x, z: ring.z, mode: 'flight', altitude: 60 },
   ];
 }
@@ -103,28 +111,37 @@ export async function residentLedger({ root = REPO, assets = null, map = null, r
   }
   for (const r of regions) {
     const I = regionInfo[r.id];
-    if (!I.bytes && r.standIn) { I.standIn = r.standIn.residentMb; I.bytes = r.standIn.residentMb * MB; I.files.set(`(stand-in: the plan's line for ${r.id})`, I.bytes); }
+    // (M3 wave 2) a region with a plan line is held at the larger of its files and the line until it is built: its first
+    // files (area A's ground layers) are not the whole region
+    I.disk = I.bytes;
+    if (r.standIn && I.bytes < r.standIn.residentMb * MB) { I.standIn = r.standIn.residentMb; const rest = r.standIn.residentMb * MB - I.bytes; I.bytes += rest; I.files.set(`(stand-in: the plan's line for ${r.id}, less its files on disk)`, rest); }
   }
   const nearAt = (p) => regions.filter((r) => M.regionAt(p.x, p.z) === r.id || M.depth(r.id, p.x, p.z) >= -approachOf(r, p.mode)).map((r) => r.id);
+  // the worst of the hysteresis: a region approached before is still held until it is HYSTERESIS_M past its approach
+  const heldAt = (p, ids) => ids.filter((id) => { const r = regions.find((q) => q.id === id); return M.regionAt(p.x, p.z) === id || M.depth(id, p.x, p.z) >= -(approachOf(r, p.mode) + HYSTERESIS_M); });
   const planMb = PLAN_LINES.reduce((s, l) => s + l.mb, 0);
   const out = [];
   const sofar = new Set();
+  const sum = (ids) => always + ids.reduce((s, id) => s + regionInfo[id].bytes, 0);
   for (const p of places()) {
     const near = nearAt(p);
     for (const id of near) sofar.add(id);
-    const sum = (ids) => always + ids.reduce((s, id) => s + regionInfo[id].bytes, 0);
-    const lines = [...alwaysFiles.entries(), ...[...sofar].flatMap((id) => [...regionInfo[id].files.entries()].map(([f, b]) => [`${f} [${id}]`, b]))]
+    // the game's set at the place: the worst point of it (the Yards: its wellheads, B5, the tube's Brazier)
+    let held = heldAt(p, [...sofar]), worstAt = null;
+    for (const q of p.points || []) { const h = heldAt({ ...q, mode: p.mode }, [...sofar]); if (sum(h) > sum(held)) { held = h; worstAt = q.id; } }
+    const lines = [...alwaysFiles.entries(), ...held.flatMap((id) => [...regionInfo[id].files.entries()].map(([f, b]) => [`${f} [${id}]`, b]))]
       .sort((a, b) => b[1] - a[1]).slice(0, 5).map(([f, b]) => ({ file: f, mb: mb(b) }));
-    const byRegion = mb(sum(near)), today = mb(sum([...sofar]));
-    out.push({ id: p.id, label: p.label, mode: p.mode, region: M.regionAt(p.x, p.z), regions: near, regionsSoFar: [...sofar],
-      byRegion, today, withPlan: Math.round((today + planMb) * 100) / 100, byRegionWithPlan: Math.round((byRegion + planMb) * 100) / 100,
+    const byRegion = mb(sum(near)), today = mb(sum(held)), noUnload = mb(sum([...sofar]));
+    out.push({ id: p.id, label: p.label, mode: p.mode, region: M.regionAt(p.x, p.z), regions: near, regionsSoFar: [...sofar], regionsHeld: held, worstPoint: worstAt,
+      byRegion, today, noUnload, withPlan: Math.round((today + planMb) * 100) / 100, byRegionWithPlan: Math.round((byRegion + planMb) * 100) / 100,
+      noUnloadWithPlan: Math.round((noUnload + planMb) * 100) / 100,
       overMb: Math.max(0, Math.round((today + planMb - CAP_MB) * 100) / 100), top5: lines,
       pass: { byRegion: byRegion <= CAP_MB, today: today <= CAP_MB, withPlan: today + planMb <= CAP_MB, byRegionWithPlan: byRegion + planMb <= CAP_MB } });
   }
   return {
     capMb: CAP_MB, alwaysMb: mb(always), planMb,
     regions: Object.fromEntries(regions.map((r) => [r.id, { mb: mb(regionInfo[r.id].bytes), standIn: regionInfo[r.id].standIn, built: r.built,
-      files: regionInfo[r.id].files.size, cast: regionInfo[r.id].cast.length, approach: { walk: approachOf(r, 'walk'), flight: approachOf(r, 'flight') } }])),
+      onDiskMb: mb(regionInfo[r.id].disk), files: regionInfo[r.id].files.size, cast: regionInfo[r.id].cast.length, approach: { walk: approachOf(r, 'walk'), flight: approachOf(r, 'flight') } }])),
     places: out,
   };
 }
@@ -136,7 +153,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   console.log(`resident textures per place (MiB, cap ${L.capMb}); always resident ${L.alwaysMb}; M3 plan lines not on disk ${L.planMb}`);
   for (const [id, r] of Object.entries(L.regions)) console.log(`  region ${id.padEnd(9)} ${String(r.mb).padStart(7)} MB${r.standIn ? ' (stand-in)' : ''}  ${r.files} files, cast ${r.cast}; approach ${r.approach.walk} m walk / ${r.approach.flight} m flight`);
   for (const p of L.places) {
-    console.log(`${p.label} [${p.region}, ${p.mode}]: by region ${p.byRegion} (${p.regions.join('+')}), today ${p.today} (${p.regionsSoFar.join('+')}), with the plan lines ${p.withPlan}: ${p.pass.withPlan ? 'PASS' : `FAIL (over by ${p.overMb})`}; by region with the plan lines ${p.byRegionWithPlan} (a region's files leaving on its depart): ${p.pass.byRegionWithPlan ? 'PASS' : 'FAIL'}`);
+    console.log(`${p.label} [${p.region}, ${p.mode}]: the game holds ${p.today} (${p.regionsHeld.join('+')}${p.worstPoint ? `, worst at ${p.worstPoint}` : ''}), with the plan lines ${p.withPlan}: ${p.pass.withPlan ? 'PASS' : `FAIL (over by ${p.overMb})`}; by region ${p.byRegion} (${p.regions.join('+')}); nothing unloaded ${p.noUnload} (${p.regionsSoFar.join('+')}), with the plan lines ${p.noUnloadWithPlan}`);
     for (const l of p.top5) console.log(`    ${String(l.mb).padStart(6)}  ${l.file}`);
   }
   if (j >= 0) writeFileSync(args[j + 1], JSON.stringify(L, null, 1));

@@ -21,8 +21,9 @@
  *   tr.on('enter' | 'leave' | 'approach' | 'depart', fn({ region, x, z, depth }))
  *   tr.current                  -> id | null    the region she is in (null only between a leave and the next enter)
  *   tr.resident()               -> id[]         the region she is in plus every region she is approaching
- *   const ld = new RegionLoader(tr, { load(region, rows) -> Promise, unload?(region), assetsOf?(region), now?() })
- *   ld.status()                 -> { id: { state, tries, ms, error } }
+ *   const ld = new RegionLoader(tr, { load(region, rows) -> Promise<held>, upload?, register?, compile?, add?,
+ *     unload?(region, held), onStep?, assetsOf?(region), now?() })   (M3: load, upload, register, compile, add, in order)
+ *   ld.status()                 -> { id: { state, tries, ms, error, steps } }   (M3: the ordered load, LOAD_STEPS)
  *
  * CALLERS (each only calls): world (ground arrays, far tiles), people (atlases), instruments (kind sets), audio
  * (zones), systems (the site clock per region). A caller that needs something resident in a region adds an asset row
@@ -88,6 +89,11 @@ export const REGIONS = Object.freeze([
   { id: 'holds', name: 'The Crescent Holds', biome: 'holds', built: true, people: 'holds',
     sites: ['ninewalls', 'jameo'],
     assets: {}, files: ['models/holds/', 'textures/holds/'],
+    // (M3 wave 2, area F: EF2) approached at the M3 seam's 60 m on foot and 150 m in the air, as the Malpais. Its cast
+    // leaves on `depart` (src/world/npc/people/holds.js reads the tracker), which is 80 m outside its edge on foot: the four
+    // wellheads stand 97.7-113.3 m outside it, so at every one of them the Holds' cast is out of memory. At the seam's 90 m
+    // the depart came at 110 m and three of the four wellheads (97.7, 103.3, 108.3 m) kept it resident
+    approach: { walk: 60, flight: 150 },
     cast: { module: 'src/world/npc/people/holds.js', export: 'HOLDS_CAST', file: 'models/npc/{}.glb',
       except: [{ module: 'src/world/npc/people/ids.js', export: 'ARCHETYPE_IDS' }, { module: 'src/world/npc/people/ids.js', export: 'SLICE_CAST' }] } },
   // Milestone 3: the Malpais is next. Approached at 60 m on foot and 150 m in the air (the M3 seam's starting values);
@@ -297,27 +303,49 @@ export class RegionTracker {
 
 /**
  * Fetches a region's assets when it is approached and keeps them while it is near; a failure retries with backoff and
- * never blocks play (EN1). `load(region, rows)` returns a promise (the engine's is `ctx.assets.loadExtra(rows)`);
- * `unload(region)` is optional (residency is not trimmed in Milestone 2: 61 MB of 175 at f2ad55f).
+ * never blocks play (EN1).
+ *
+ * (Milestone 3 wave 2, area F: the hitch stand-in's order is the seam's.) A load runs as ordered steps, each hook
+ * optional, and nothing is drawn before the last:
+ *   load(region, rows)     -> Promise<held>   fetch and parse (the engine's: `ctx.assets.loadExtra(rows)`, and what landed)
+ *   upload(region, held)   -> Promise?        the textures to the GPU, spread over frames
+ *   register(region, held)                    what the world does to a new material (environment.registerMaterial: fog
+ *                                             and the cascades change its program), BEFORE it is compiled
+ *   compile(region, held)  -> Promise?        its programs issued off the frame and WAITED for (engine.compileOffFrame)
+ *   add(region, held)                         into the scene, only now
+ *   unload(region, held)                      on `depart`: out of the scene and disposed
+ * A region departed while it is still loading is never added: its load runs out, then `unload` takes what landed. The
+ * steps and their times are kept per region (`status()[id].steps`) and told to `onStep(region, step, ms)`, so a row reads
+ * the order it ran in.
  */
 export const RETRY_S = Object.freeze([1, 2, 4, 8, 15]);
+/** The steps of a region's load, in the only order they run. */
+export const LOAD_STEPS = Object.freeze(['load', 'upload', 'register', 'compile', 'add']);
 
 export class RegionLoader {
-  constructor(tracker, { load, unload = null, assetsOf = (r) => r.assets, now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) } = {}) {
+  constructor(tracker, { load, upload = null, register = null, compile = null, add = null, unload = null, onStep = null,
+    assetsOf = (r) => r.assets, now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) } = {}) {
     this.tracker = tracker;
     this.load = load;
+    this.upload = upload;
+    this.register = register;
+    this.compile = compile;
+    this.add = add;
     this.assetsOf = assetsOf;
     this.unload = unload;
+    this.onStep = onStep;
     this.now = now;
-    /** @type {Record<string, {state: 'idle'|'loading'|'resident'|'failed', tries: number, ms: number, error: string|null, retryAt: number}>} */
+    /** @type {Record<string, {state: 'idle'|'loading'|'resident'|'failed', tries: number, ms: number, error: string|null, retryAt: number, steps: {step: string, ms: number}[]}>} */
     this.st = {};
+    /** region id -> what its load handed back, while it is resident (or landing after a depart, until unloaded) */
+    this.held = {};
     this._off = [
       tracker.on('approach', (e) => this._want(e.region)),
       tracker.on('depart', (e) => this._drop(e.region)),
     ];
   }
 
-  _row(id) { return (this.st[id] ||= { state: 'idle', tries: 0, ms: 0, error: null, retryAt: 0 }); }
+  _row(id) { return (this.st[id] ||= { state: 'idle', tries: 0, ms: 0, error: null, retryAt: 0, steps: [], gen: 0 }); }
 
   _want(id) {
     const s = this._row(id);
@@ -325,20 +353,46 @@ export class RegionLoader {
     const region = regionById(id);
     const rows = region ? this.assetsOf(region) || {} : {};
     if (!Object.keys(rows).length) { s.state = 'resident'; return; }   // nothing to fetch
-    s.state = 'loading'; s.tries++;
+    s.state = 'loading'; s.tries++; s.steps = [];
+    const gen = ++s.gen;
     const t0 = this.now();
+    const step = (name) => { const ms = Math.round(this.now() - t0); s.steps.push({ step: name, ms }); try { this.onStep?.(region, name, ms); } catch { /* a listener never blocks */ } };
+    const live = () => s.gen === gen && s.state === 'loading';
+    const run = async () => {
+      const held = await this.load(region, rows);
+      step('load');
+      if (!live()) return { held, cancelled: true };
+      if (this.upload) { await this.upload(region, held); step('upload'); if (!live()) return { held, cancelled: true }; }
+      if (this.register) { this.register(region, held); step('register'); }
+      if (this.compile) { await this.compile(region, held); step('compile'); if (!live()) return { held, cancelled: true }; }
+      if (this.add) { this.add(region, held); step('add'); }
+      return { held, cancelled: false };
+    };
     let p;
-    try { p = Promise.resolve(this.load(region, rows)); } catch (err) { p = Promise.reject(err); }
-    p.then(() => { s.state = 'resident'; s.ms = Math.round(this.now() - t0); s.error = null; },
-      (err) => {
-        s.state = 'failed'; s.error = String(err?.message || err);
-        s.retryAt = this.now() + RETRY_S[Math.min(RETRY_S.length - 1, s.tries - 1)] * 1000;
-      });
+    try { p = run(); } catch (err) { p = Promise.reject(err); }
+    p.then(({ held, cancelled }) => {
+      if (cancelled) { this._release(region, held); step('unload'); return; }
+      this.held[id] = held;
+      s.state = 'resident'; s.ms = Math.round(this.now() - t0); s.error = null;
+    }, (err) => {
+      if (s.gen !== gen) return;
+      s.state = 'failed'; s.error = String(err?.message || err);
+      s.retryAt = this.now() + RETRY_S[Math.min(RETRY_S.length - 1, s.tries - 1)] * 1000;
+    });
   }
+
+  _release(region, held) { if (this.unload) { try { this.unload(region, held); } catch { /* never blocks */ } } }
 
   _drop(id) {
     const s = this._row(id);
-    if (s.state === 'resident' && this.unload) { try { this.unload(regionById(id)); } catch { /* never blocks */ } s.state = 'idle'; }
+    if (s.state === 'loading') { s.gen++; s.state = 'idle'; return; }   // the load runs out and is released, never added
+    if (s.state === 'resident' && this.unload) {   // with no unload (M2's engine) a region stays resident once loaded
+      const held = this.held[id];
+      delete this.held[id];
+      this._release(regionById(id), held);
+      s.state = 'idle';
+      s.steps.push({ step: 'unload', ms: -1 });
+    } else if (s.state === 'failed') s.state = 'idle';
   }
 
   /** Per frame (cheap): a failed fetch of a region still near is retried when its backoff is up. */

@@ -5,20 +5,20 @@
  * bar 0 frames over 50 ms and at most 1 over 33 ms per crossing; every frame over 33 ms named by its cause.
  *
  *   tools/perf/clean-measure.sh <commit> 5284 node tools/perf/region-hitch.mjs --port 5284 --built [--skip-build] [--only <ids>]
- *        [--upload spread|at-load] [--out <dir outside the repo>]
+ *        [--out <dir outside the repo>]
  *
  * THE CROSSINGS are tools/perf/region-hitch-paths.mjs (the Node twin sweeps the same lines: region-hitch.test.mjs).
- * Wave 1 has no kite and no Malpais ground, so both are stood in, and the report says so:
+ * There is no kite and no Malpais art yet, so both are stood in, and the report says so:
  *   - her movement is CARRIED, not driven by input: each frame the row sets her on the line at the crossing's speed
  *     (on the ground at a jog, snapped to it as a teleport is; or 60 m over it at 10 m/s with the regions seam told she
- *     is flying, `tracker.modeOf`), the lens turned along the line;
+ *     is flying, through the game's own binding of player.flight), the lens turned along the line;
  *   - the Malpais' files are stood in at their plan lines (regions.js `standIn`: 14 MB shipped, 16 MB resident): shipped
- *     GLBs fetched again under a `?standin=` query (a fresh fetch, parse, KTX2 transcode and upload, nothing cached) by
- *     the regions seam's own loader (`RegionLoader`, its `assetsOf` and `load` given the stand-in rows) when the Malpais
- *     is approached, and dropped (`unload`, disposed) when it is departed, so each crossing loads them anew. Their
- *     textures go to the GPU one per frame after the load (`--upload spread`, the default: the loader the world area
- *     will need) or all in the frame the load lands (`--upload at-load`), then the models stand on the line inside the
- *     Malpais, drawn.
+ *     GLBs fetched again under a `?standin=` query (a fresh fetch, parse, KTX2 transcode and upload, nothing cached).
+ *     WAVE 2: they are loaded by the GAME's region loader (src/core/engine.js attachRegions on src/core/regions.js
+ *     RegionLoader): fetched, their textures uploaded one a frame, their materials registered with the sky, their programs
+ *     compiled off the frame and waited for, and only then added (on a 14 m ring round the crossing's end); unloaded and
+ *     disposed on depart. The row hands the loader only the rows (`assetsOf`), and passes a Malpais crossing only if the
+ *     loader's steps ran in that order. (Wave 1 drove the same order from this file: cc1e850-29a32d6.)
  * One Chrome launch (slot1), vsync-locked headless: the intervals are presented-frame intervals (rAF), as TECH 9.1's
  * hitch lines are read. Per frame over 33 ms: the GL calls since the frame before (compiles, links, uploads: count and
  * ms), the long-animation-frame scripts, the region events and the stand-in loader's steps that fell in it, and a
@@ -47,8 +47,6 @@ const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[
 const PORT = guardPort(flag('--port'));
 if (PORT === 5173) throw new Error('5173 is never used');
 const BUILT = args.includes('--built');
-const UPLOAD = flag('--upload', 'spread');
-const WARM = !args.includes('--no-warm');
 const ONLY = (flag('--only', '') || '').split(',').map((s) => s.trim()).filter(Boolean);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[region-hitch ${new Date().toISOString().slice(11, 19)}]`, ...a);
@@ -69,7 +67,7 @@ const STANDIN_FILES = ['models/npc/guild-matron.glb', 'models/npc/boat-caulker-2
   'models/npc/salt-raker-2.glb', 'models/npc/tube-smith.glb', 'models/npc/atlas-pan.glb', 'models/settlements/saltrow-kit.glb', 'models/landmarks/sea-stacks.glb'];
 
 const report = {
-  row: 'A-region-hitch', wave: 1, commit, clean: !!process.env.CLEAN_COMMIT, built: BUILT, port: PORT, upload: UPLOAD, warm: WARM, startedAt: new Date().toISOString(),
+  row: 'A-region-hitch', wave: 2, loader: 'the game\'s own (engine.attachRegions: load, upload a texture a frame, register, compile and wait, add; unload on depart)', commit, clean: !!process.env.CLEAN_COMMIT, built: BUILT, port: PORT, startedAt: new Date().toISOString(),
   bar: { over50: 0, over33: 1 }, standIn: { malpais: MAL.standIn, files: STANDIN_FILES }, standInNote: 'her movement is carried (no kite, no input drive); the Malpais\' files are stood in by shipped GLBs fetched again', crossings: [], console: [],
 };
 const save = () => writeFileSync(path.join(OUT, 'region-hitch.json'), JSON.stringify(report, null, 1));
@@ -134,71 +132,34 @@ const recorder = () => {
   requestAnimationFrame(tick);
 };
 
-/** In the page after Continue: the stand-in loader on the regions seam's own loader. */
-const installStandIn = (rows, upload, place, warm) => {
-  const C = window.__CTX__, E = C.engine, R = E.regions, A = C.assets, S = window.__rh;
+/**
+ * In the page after Continue: the Malpais' stand-in rows handed to the regions seam's OWN loader (wave 2: engine.attachRegions'
+ * load, upload one texture a frame, register with the sky, compile off the frame and wait, add; unload on depart). Only
+ * `assetsOf` is the row's: each approach gets the rows under fresh names and a fresh `?standin=` query (nothing cached),
+ * each standing at a point on a 14 m ring round `place`. The loader's steps come back as `region-load-step` events.
+ */
+const installStandIn = (rows, place) => {
+  const C = window.__CTX__, E = C.engine, R = E.regions, S = window.__rh;
   const mark = (tag, extra = {}) => S.marks.push({ t: Math.round(performance.now()), tag, ...extra });
-  const held = (window.__standIn = { names: [], roots: [], queue: [], loads: 0 });
-  R.loader.assetsOf = (r) => (r.id === 'malpais' ? rows : r.assets);
-  R.loader.load = async (region, rs) => {
-    mark('load-start', { region: region.id });
-    const t0 = performance.now();
+  const held = (window.__standIn = { loads: 0 });
+  const H = (x, z) => C.terrain?.getHeight?.(x, z) ?? 0;
+  R.loader.assetsOf = (r) => {
+    if (r.id !== 'malpais') return r.assets;
     held.loads++;
-    const tag = `s${held.loads}`;
-    const named = Object.fromEntries(Object.entries(rs).map(([n, s]) => [`${n}-${tag}`, { ...s, url: `${s.url}?standin=${tag}` }]));
-    await A.loadExtra(named);
-    mark('load-done', { region: region.id, ms: Math.round(performance.now() - t0) });
-    const H = (x, z) => C.terrain?.getHeight?.(x, z) ?? 0;
-    let i = 0;
-    for (const n of Object.keys(named)) {
-      const e = A.models[n]; if (!e?.root) continue;
-      held.names.push(n);
-      const a = (i++ / Object.keys(named).length) * Math.PI * 2;
-      const x = place.x + Math.cos(a) * 14, z = place.z + Math.sin(a) * 14;
-      e.root.position.set(x, H(x, z), z);
-      held.roots.push(e.root);
-      const tex = [];
-      e.root.traverse((o) => { const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []; for (const m of ms) for (const k in m) if (m[k]?.isTexture) tex.push(m[k]); });
-      held.queue.push(...new Set(tex));
-    }
-    if (upload === 'at-load') { for (const t of held.queue.splice(0)) { try { E.renderer.initTexture(t); } catch { /* */ } } mark('uploaded-all'); }
-    else {
-      await new Promise((res) => { const step = () => { const t = held.queue.shift(); if (t) { try { E.renderer.initTexture(t); } catch { /* */ } requestAnimationFrame(step); } else res(); }; requestAnimationFrame(step); });
-      mark('uploaded-spread');
-    }
-    // the programs: issued off the frame and awaited (KHR_parallel_shader_compile) before the models are drawn, as the
-    // engine's warm-up does (engine.compileAsDrawn + _awaitProgramsReady); --no-warm adds them to the scene cold.
-    // Their materials are REGISTERED with the environment first (fog uniforms and the cascades: registerMaterial changes
-    // the program): at cc1e850 the warm-up compiled the unregistered variant, and the environment's material scan (every
-    // 2.5 s) registered them 359 ms (jog) and 494 ms (flight) after they were drawn, so the next frame linked 6 programs
-    // again, 93.4 and 80.3 ms in getProgramInfoLog (frames of 106.9 and 91.7 ms). A region's loader registers, then
-    // compiles, then awaits, then adds: that order is the seam's (BACKLOG: engine.attachRegions' own load)
-    if (warm && C.environment?.registerMaterial) {
-      let n = 0;
-      for (const r of held.roots) r.traverse((o) => { if (o.isMesh || o.isPoints || o.isLine || o.isSprite) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m) { C.environment.registerMaterial(m); n++; } } });
-      mark('registered', { materials: n });
-    }
-    if (warm && E.compileAsDrawn && E._awaitProgramsReady) {
-      const g = new (E.scene.constructor)();
-      for (const r of held.roots) g.add(r);
-      try { E.compileAsDrawn(g, E.camera, E.scene); } catch (err) { mark('compile-threw', { err: String(err).slice(0, 120) }); }
-      mark('programs-issued');
-      await E._awaitProgramsReady(20000);
-      mark('programs-ready');
-      g.clear();
-    }
-    for (const r of held.roots) E.scene.add(r);
-    mark('added');
+    const tag = `s${held.loads}`, names = Object.keys(rows);
+    return Object.fromEntries(names.map((n, i) => {
+      const a = (i / names.length) * Math.PI * 2, x = place.x + Math.cos(a) * 14, z = place.z + Math.sin(a) * 14;
+      return [`${n}-${tag}`, { ...rows[n], url: `${rows[n].url}?standin=${tag}`, at: { x, y: H(x, z), z } }];
+    }));
   };
-  R.loader.unload = (region) => {
-    if (region?.id !== 'malpais') return;   // the loader calls unload on every depart (pans, caldera): only the Malpais is stood in
-    for (const n of held.names.splice(0)) { try { A.unload(n); } catch { /* */ } }
-    held.roots.length = 0;
-    mark('unloaded');
-  };
-  if (!window.__standInEv) { window.__standInEv = true; for (const k of ['enter', 'leave', 'approach', 'depart']) C.events.on(`region-${k}`, (e) => window.__rh.marks.push({ t: Math.round(performance.now()), tag: `region-${k}`, region: e.region, depth: e.depth })); }
+  if (!window.__standInEv) {
+    window.__standInEv = true;
+    for (const k of ['enter', 'leave', 'approach', 'depart']) C.events.on(`region-${k}`, (e) => window.__rh.marks.push({ t: Math.round(performance.now()), tag: `region-${k}`, region: e.region, depth: e.depth }));
+    // the loader's own steps (load, upload, register, compile, add, unload), as the stand-in's marks were
+    C.events.on('region-load-step', (e) => { const tag = { load: 'load-done', upload: 'uploaded-spread', register: 'registered', compile: 'programs-ready', add: 'added', unload: 'unloaded' }[e.step] || e.step; mark(tag, { region: e.region, ms: e.ms }); });
+  }
   S.where = () => { const p = C.player.position; return { x: Math.round(p.x), z: Math.round(p.z), region: R.tracker.current }; };
-  return true;
+  return !!R.loader.compile && !!R.loader.register && !!R.loader.add;
 };
 
 /** In the page: carry her from a to b at speed (m/s), agl metres over the ground (0 = on it, snapped), in mode. */
@@ -310,7 +271,7 @@ try {
     const C = { id: c.id, mode: c.mode, speed: c.speed, agl: c.agl, a: c.a, b: c.b, standIn: c.to === 'malpais' || c.from === 'malpais' ? 'carried; Malpais files stood in' : 'carried; the Holds\' own files (nothing stood in)' };
     try {
       const inside = { x: c.b.x, z: c.b.z };
-      await page.evaluate(installStandIn, rows, UPLOAD, inside, WARM);
+      C.gameLoader = await page.evaluate(installStandIn, rows, inside);
       // to the start (a teleport: not counted), settle 4 s
       await page.evaluate((cc) => { const C = window.__CTX__, p = C.player; p.flight = cc.mode === 'flight' ? 'gliding' : 'none'; p.position.x = cc.a.x; p.position.z = cc.a.z; p._snapToGround?.(p.position.y + 200); }, c);
       await page.evaluate(hold, c.a, c.agl, 4000);
@@ -324,18 +285,22 @@ try {
       await page.screenshot({ path: shotOut, type: 'jpeg', quality: 80 }).catch(() => null);
       await page.evaluate(() => { window.__rh.last = 0; window.__rh.on = true; });
       await page.evaluate(hold, c.b, c.agl, 500);
-      C.mid = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), standIn: { names: window.__standIn.names.length, queue: window.__standIn.queue.length, loads: window.__standIn.loads } }));
+      C.mid = await page.evaluate(() => { const C = window.__CTX__, g = C.engine._regionRoots?.malpais; return { status: C.engine.regionStatus(), standIn: { added: g ? g.children.length : 0, loads: window.__standIn.loads },
+        holdsCast: { state: C.people?.holds?.state ?? null, persons: C.people?.holds?.persons?.size ?? null, archetypes: C.people?.bank ? [...C.people.bank.entries.keys()] : null } }; });
       C.back = await page.evaluate(carry, c, c.b, c.a, c.agl);
       await page.evaluate(hold, c.a, c.agl, 3000);
       const R = await page.evaluate(() => { const S = window.__rh; S.on = false; return { frames: S.frames, over33: S.over33, over50: S.over50, maxMs: +S.max.toFixed(1), long: S.long, marks: S.marks, res: S.res, loaf: S.loaf }; });
-      C.after = await page.evaluate(() => ({ status: window.__CTX__.engine.regionStatus(), standInHeld: window.__standIn.names.length, hp: Math.round(window.__CTX__.player.health ?? 0), dead: !!document.querySelector('.mn-death.show') }));
+      C.after = await page.evaluate(() => { const C = window.__CTX__, g = C.engine._regionRoots?.malpais; return { status: C.engine.regionStatus(), standInHeld: g ? g.children.length : 0, hp: Math.round(C.player.health ?? 0), dead: !!document.querySelector('.mn-death.show') }; });
       // down to the ground again before the next crossing (a teleport: not counted)
       await page.evaluate(() => { const p = window.__CTX__.player; p._snapToGround?.(p.position.y + 2); window.__CTX__.player.flight = 'none'; });
       C.frames = R.frames; C.over33 = R.over33; C.over50 = R.over50; C.maxMs = R.maxMs;
       C.long = R.long.map((f) => ({ ...f, ...causeOf(f, R.marks, R.res, R.loaf) }));
       C.marks = R.marks; C.fetched = R.res.map((r) => ({ url: r.url, ms: Math.round(r.end - r.start), bytes: r.bytes }));
       C.fetchedBytes = R.res.reduce((s, r) => s + (r.bytes || 0), 0);
-      C.pass = !C.after.dead && C.modeBound && (c.to !== 'malpais' || C.fetchedBytes > 0) && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
+      const order = C.marks.filter((m) => ['load-done', 'uploaded-spread', 'registered', 'programs-ready', 'added'].includes(m.tag)).map((m) => m.tag);
+      C.loaderOrder = order;
+      C.loaderOrderOk = c.to !== 'malpais' || order.join(',').startsWith('load-done,uploaded-spread,registered,programs-ready,added');
+      C.pass = !C.after.dead && C.modeBound && C.gameLoader && C.loaderOrderOk && (c.to !== 'malpais' || C.fetchedBytes > 0) && C.over50 <= report.bar.over50 && C.over33 <= report.bar.over33 && C.long.every((f) => f.cause !== 'unattributed');
       C.shot = path.basename(shotOut);
       log(`${c.id}: ${C.frames} frames, ${C.over33} over 33 ms, ${C.over50} over 50 ms (max ${C.maxMs}); stand-in ${(C.fetchedBytes / 1e6).toFixed(2)} MB fetched; ${C.pass ? 'PASS' : 'FAIL'}`);
       // back at the start in the Holds the Malpais must have departed (its stand-ins disposed) before the next crossing

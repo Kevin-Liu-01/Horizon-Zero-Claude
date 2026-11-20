@@ -2404,19 +2404,60 @@ export class Engine {
    * retried on the loader's backoff: never awaited by the frame, never a boot row (the first load carries no Holds
    * file, EN2). `regionStatus()` is what the rows read.
    */
-  attachRegions({ assets = null, events = null } = {}) {
+  attachRegions({ assets = null, events = null, environment = null } = {}) {
     if (this.regions) return this.regions;
     const t0 = performance.now();
     const map = new RegionMap().build();
     const tracker = new RegionTracker(map);
+    /* (M3 wave 2, area F: the hitch stand-in's order is the seam's) a region's rows load in LOAD_STEPS' order: fetched and
+     * parsed (`loadExtra`), their textures uploaded one a frame, their materials REGISTERED with the sky (fog and the
+     * cascades change the program: at cc1e850 the scan registered them 359-494 ms after they were drawn and the next frame
+     * relinked 6 programs, 80-93 ms), compiled off the frame and waited for (compileOffFrame), and only then ADDED, under
+     * the region's own group; on `depart` they leave the scene and are disposed (`assets.unload`). A row may carry
+     * `at: { x, y, z }` (engine) for where its root stands. */
+    const mats = (o) => (Array.isArray(o.material) ? o.material : o.material ? [o.material] : []);
+    const drawn = (o) => o.isMesh || o.isPoints || o.isLine || o.isSprite;
     const loader = new RegionLoader(tracker, {
-      load: (region, rows) => (assets?.loadExtra ? assets.loadExtra(rows) : Promise.resolve()),
+      load: async (region, rows) => {
+        if (!assets?.loadExtra) return [];
+        await assets.loadExtra(rows);
+        return Object.entries(rows).map(([name, spec]) => ({ name, spec, root: assets.models?.[name]?.root ?? null })).filter((e) => e.root);
+      },
+      upload: (region, held) => this._uploadSpread(held.map((e) => e.root)),
+      register: (region, held) => {
+        const env = this.regions?.environment;
+        if (!env?.registerMaterial) return;
+        for (const e of held) e.root.traverse((o) => { if (drawn(o)) for (const m of mats(o)) env.registerMaterial(m); });
+      },
+      compile: async (region, held) => {
+        if (!held.length) return;
+        const g = new THREE.Group();
+        for (const e of held) g.add(e.root);
+        try { await this.compileOffFrame(g, { timeoutMs: 20000 }); } finally { g.clear(); }
+      },
+      add: (region, held) => {
+        let grp = this._regionRoots?.[region.id];
+        if (!grp) { (this._regionRoots ||= {})[region.id] = grp = new THREE.Group(); grp.name = `region:${region.id}`; this.scene.add(grp); }
+        for (const e of held) { const at = e.spec?.at; if (at) e.root.position.set(at.x, at.y ?? 0, at.z); grp.add(e.root); }
+      },
+      unload: (region, held) => {
+        for (const e of held || []) { e.root.removeFromParent(); try { assets?.unload?.(e.name); } catch { /* never blocks */ } }
+      },
+      onStep: (region, step, ms) => { try { events?.emit?.('region-load-step', { region: region.id, step, ms }); } catch { /* */ } },
     });
     for (const type of ['enter', 'leave', 'approach', 'depart']) {
       tracker.on(type, (e) => { try { events?.emit?.(`region-${type}`, e); } catch (err) { console.warn('[CAL] regions: a listener threw:', err?.message || err); } });
     }
-    this.regions = { map, tracker, loader, buildMs: Math.round(performance.now() - t0) };
+    this.regions = { map, tracker, loader, environment, buildMs: Math.round(performance.now() - t0) };
     return this.regions;
+  }
+
+  /** (M3 wave 2) Every texture under `roots` to the GPU, one a frame (a region's load: no frame takes them all). */
+  _uploadSpread(roots) {
+    const q = [...new Set(roots.flatMap((r) => { const t = []; r.traverse((o) => { for (const m of (Array.isArray(o.material) ? o.material : o.material ? [o.material] : [])) for (const k in m) if (m[k]?.isTexture) t.push(m[k]); }); return t; }))];
+    if (!q.length || !this.renderer?.initTexture) return Promise.resolve(0);
+    const n = q.length;
+    return new Promise((res) => { const step = () => { const t = q.shift(); if (!t) { res(n); return; } try { this.renderer.initTexture(t); } catch { /* */ } requestAnimationFrame(step); }; requestAnimationFrame(step); });
   }
 
   regionTick(x, z) {
