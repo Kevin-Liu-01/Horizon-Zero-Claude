@@ -132,7 +132,10 @@ export const MALPAIS_TERM = /* glsl */ `
         c = mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 0.55) * 0.6;
         // the patchwork: darker and lighter fans and streaks a few metres across (B 2.3 m cells, A 1.1 m), and the slow
         // field's 10-30 m shade
-        c *= (0.72 + 0.5 * sp.b) * (0.88 + 0.24 * sp.a) * (0.85 + 0.3 * nz.a);
+        // (wave 3, after the top-down at 55126d7: with the patchwork's fine cells gone the scree's square read 0.384, the
+        // cone's large forms left in its high-passed luma) the grit back, from the term's own 23 m read (nz: 0.36 and 0.73 m
+        // cells), no new fetch
+        c *= (0.72 + 0.5 * sp.b) * (0.88 + 0.24 * sp.a) * (0.85 + 0.3 * nz.a) * (0.8 + 0.4 * nz.b);
         mc += c * wSc; mp += vec3(mix(t, t2, b).x, 0.0, mix(t, t2, b).y) * wSc; mr += mix(n.z, n2.z, b) * wSc; mo += mix(n.a, n2.a, b) * wSc; ws += wSc;
       }
       mc /= max(ws, 1e-4); mp /= max(ws, 1e-4); mr /= max(ws, 1e-4); mo /= max(ws, 1e-4);
