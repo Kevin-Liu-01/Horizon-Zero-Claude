@@ -23,6 +23,13 @@
  *                         is filmed only when --only names it
  *            --state-probe  each sim-time staging hashes her animator, player and melee fields at the slate's end and
  *                         after the idle (run.json frames[].sim.state), to name what one staging carried into the next
+ *            --shoot-unstaged  (M3 rule 17) film a frame whose subject check fails anyway (a diagnosis: run.json still marks
+ *                         it notStaged, and it is not judged); --no-subjects skips the check
+ *
+ * THE SUBJECT CHECK (M3 rule 17, area F's EF4): a frame that declares subjects (its own `subjects`, or
+ * tools/frames/subjects.mjs) is checked on the frozen frame before the shutter (tools/frames/subject-page.mjs). A subject
+ * under its pixel floor, outside the lens's safe area or hidden is a refusal: no picture, run.json `notStaged: true` and
+ * `error: "not staged: <frame>: subject '<name>' <why>"`, with every member's numbers in `subjectCheck`.
  *
  * The run, in order:
  *   1. the machine guard: memory free >= 50 % (memory_pressure -Q) and pressure level 1, then the
@@ -44,6 +51,7 @@ import { fileURLToPath } from 'node:url';
 import { filmOrder, loadFrameSet, validate } from './frameset.mjs';
 import { stageFrame, unstageFrame } from './page.mjs';
 import { loadLanes, mergeFrames, installStagings } from './stagings/index.mjs';
+import { subjectsFor } from './subjects.mjs';
 import { RUNS, SLOTS, assertOutsideRepo } from './paths.mjs';
 import { buildReview } from './review.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../chrome-profile.mjs';
@@ -79,6 +87,8 @@ const CLIP_PHASES = flag('--clip-phases') ? flag('--clip-phases').split(',').map
 // stagings that differ say which field carried over
 const REPEAT_ONLY = flag('--repeat-only') ? new Set(flag('--repeat-only').split(',').map((s) => s.trim())) : null;
 const STATE_PROBE = args.includes('--state-probe');
+const SHOOT_UNSTAGED = args.includes('--shoot-unstaged');
+const NO_SUBJECTS = args.includes('--no-subjects');
 // --wear <armour id> (M1b systems, M1.6l): after boot she wears this armory variant through her loadout (a deferred row
 // loads), and the rung it belongs to is hers (the Character page shows it worn); every frame of the run is filmed in it
 const WEAR = flag('--wear');
@@ -230,6 +240,21 @@ try {
       const rep = f._repeat || 1;
       const clipPhase = CLIP_PHASES ? CLIP_PHASES[(rep - 1) % CLIP_PHASES.length] : undefined;
       const staged = await page.evaluate(stageFrame, f, { settleMs: SETTLE_MS, wallClock: WALL_CLOCK, ...(STATE_PROBE ? { stateProbe: true } : {}), ...(clipPhase != null ? { clipPhase } : {}) });
+      // (M3 rule 17) the subject check, on the frozen frame, before the shutter
+      const subs = NO_SUBJECTS ? null : subjectsFor(f);
+      if (subs) {
+        staged.subjectCheck = await page.evaluate(async (fid, ss) => (await import('/tools/frames/subject-page.mjs')).checkSubjects(fid, ss), f.id, subs)
+          .catch((e) => ({ pass: false, refusal: `not staged: ${f.id}: the subject check threw: ${String(e?.message || e).slice(0, 200)}`, subjects: [] }));
+        const sc = staged.subjectCheck;
+        log(`${f.id} subjects: ${sc.pass ? 'PASS' : 'FAIL'} in ${sc.ms ?? '?'} ms (${(sc.subjects || []).map((x) => `${x.name}: ${x.pass ? 'ok' : 'FAIL'}`).join('; ')})`);
+        if (!sc.pass && !SHOOT_UNSTAGED) {
+          const un = await page.evaluate(unstageFrame);
+          run.frames.push({ id: f.id, ...(REPEAT > 1 ? { repeat: rep } : {}), ok: false, notStaged: true, error: sc.refusal, seconds: Math.round((Date.now() - fs0) / 100) / 10, ...staged, unstageErrors: un.errors });
+          log(`${f.id} NOT STAGED (refused): ${String(sc.refusal).slice(0, 240)}`);
+          continue;
+        }
+        if (!sc.pass) staged.notStaged = true;
+      }
       const shot = await page.screenshot({ type: 'png' });
       const img = sharp(shot).resize(vp.width, vp.height, { fit: 'fill' });
       const file = rep === 1 ? `${f.id}.png` : `${f.id}-r${rep}.png`;
