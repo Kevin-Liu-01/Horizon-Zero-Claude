@@ -697,14 +697,17 @@ const WDC = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
  * directed grid), which keeps the path the cheapest and expands a fraction of the cells. At 865e8c6 the Holds youths'
  * re-routes to a mark behind the herd, across the village's walls, held one frame for 20-27 ms about once a second on the
  * walk into the Holds (first-hour leg 2, run hh-c5-865e8c6; up to 91,000 cells in Node). Every search of WALK_EXACT_EXP
- * cells or fewer is the search it was, cell for cell (every Saltrow route the routines' Node row draws: 24,092 at most).
+ * cells or fewer is the search it was, cell for cell (most routes: the Node rows' median Saltrow route expands 768 cells,
+ * Ninewalls' 1,208); a longer one may take another path of the same cost. At 7b555a6 (run hh-c5-7b555a6-prof) a 32,000-cell
+ * budget still held a frame 31 ms for the youths' two re-routes. No ?shot film runs the routines (routines.js live()),
+ * so no frame's people move.
  * A grid's landmarks are made a few cells' worth at a time in `Nav.update()` (WALK_LM_SLICE_MS a call) from its build on
  * when it has WALK_LM_MIN_CELLS cells or more, else once one of its searches has needed them, and again after each build;
  * until they stand, the long search runs on to its end exactly as before. tools/perf/walk-path-bench.mjs measures both.
  */
-const WALK_EXACT_EXP = 32000;
+const WALK_EXACT_EXP = 6000;
 const WALK_LANDMARKS = 6;
-const WALK_LM_SLICE_MS = 1.0;
+const WALK_LM_SLICE_MS = 0.5;
 /** A grid this large wants its landmarks from its build on (Ninewalls' 135,529 cells; Saltrow's 91,089 waits for a long search). */
 const WALK_LM_MIN_CELLS = 120000;
 
