@@ -3,9 +3,11 @@
  * a twin imports the game's module, never a copy of its law). The rows (./rows.test.mjs) grade these; ./report.mjs
  * prints them. Sim time at 60 Hz unless a row says otherwise. Every function returns { ok, ...numbers, why }.
  */
-import { M3_FORMS, M3_KINDS, boundsOf, expandParts, lampsOf } from './forms.mjs';
-import { KilnBrain, KilnSpawner, KILN_RULES, chooseWellhead, planVolley, rng, bodyToWorld } from '../../../../src/instruments/kinds/kiln/rules.js';
+import { M3_FORMS, M3_KINDS, boundsOf, lampsOf } from './forms.mjs';
+import { KilnBrain, KilnSpawner, KILN_RULES, chooseWellhead, planVolley, rng, bodyToWorld, kilnDamage, shellWarning } from '../../../../src/instruments/kinds/kiln/rules.js';
 import { KILN_DOOR } from '../../../../src/instruments/kinds/kiln/form.js';
+import * as THREE from 'three';
+import { Machine } from '../../../../src/entities/machines/machine.js';
 import { SpindleRing, SpindleThrust, SpindleEscort, SPINDLE_RULES } from '../../../../src/instruments/kinds/spindle/rules.js';
 import { DavitBrain, DAVIT_RULES } from '../../../../src/instruments/kinds/davit/rules.js';
 import { SondeBrain, SONDE_RULES, downwind, bearingOf, sondeSightM } from '../../../../src/instruments/kinds/sonde/rules.js';
@@ -15,31 +17,55 @@ import { PotField, POTS } from '../../../../src/combat/pots.js';
 import { CLASS_CAPS } from '../../../../src/instruments/lib/sizeclass.js';
 import { WELLHEADS, wellheads, wellheadState, plugIn, unplug, setQuenched, resetWellheads } from '../../../../src/world/sites/kilnyards-layout.js';
 
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { MANIFEST } from '../../../../src/audio/manifest.js';
+import { KILN_CUES } from '../../../../src/instruments/kinds/kiln/cues.js';
+import { SPINDLE_CUES } from '../../../../src/instruments/kinds/spindle/cues.js';
+import { DAVIT_CUES } from '../../../../src/instruments/kinds/davit/cues.js';
+import { SONDE_CUES } from '../../../../src/instruments/kinds/sonde/cues.js';
+
 const DT = 1 / 60;
 const r3 = (v) => +v.toFixed(3);
 
 /** Brea on the line-up: her body 1.72 m (src/hero/rows.js; the GLB's r5Hero.bodyHeight). */
 export const BREA_BODY_M = 1.72;
 
-/** Triangles of a form as the line-up page and the grey recipe build it: a box 12; a cylinder or strut of N sides 4N. */
-export const SIDES = Object.freeze({ cyl: 16, strut: 10 });
-export function trianglesOf(parts) {
-  let n = 0;
-  for (const p of expandParts(parts)) n += p.type === 'box' ? 12 : p.type === 'cyl' ? 4 * SIDES.cyl : 4 * SIDES.strut;
-  return n;
+/**
+ * The triangles of each grey hull AS THE RECIPE WRITES IT (tools/build/instruments/gen-m3-blockout.mjs, run into a
+ * scratch directory outside the repo): read back from each GLB file's own index accessors (judge, d695cc9: the row
+ * counted its own simplified shapes, 1860 / 1900 / 2000 / 1060, against the recipe's 2916 / 2380 / 3536 / 1156).
+ */
+export async function recipeTriangles() {
+  const { build } = await import('../../../build/instruments/gen-m3-blockout.mjs');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'm3c-grey-'));
+  try {
+    const rows = await build({ out: dir });
+    const out = {};
+    for (const r of rows) {
+      const buf = readFileSync(r.file), jsonLen = buf.readUInt32LE(12), J = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'));
+      let tris = 0;
+      for (const m of J.meshes || []) for (const pr of m.primitives) tris += (pr.indices != null ? J.accessors[pr.indices].count : J.accessors[pr.attributes.POSITION].count) / 3;
+      out[r.kind] = { tris, recipeSays: r.tris, bytes: r.bytes };
+    }
+    return out;
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 /* ------------------------------------------------------------------------------------------------ IK1 + the never list */
-export function ik1() {
+export async function ik1() {
   const rows = {};
   let ok = true;
+  const glb = await recipeTriangles();
   for (const k of M3_KINDS) {
     const F = M3_FORMS[k], b = boundsOf(F.parts), R = F.roster;
     const H = b.max[1], W = b.size[0], L = b.size[2];
-    const tris = trianglesOf(F.parts), cap = CLASS_CAPS[R.cls].triangles;
+    const tris = glb[k].tris, cap = CLASS_CAPS[R.cls].triangles;
     const row = { cls: R.cls, H: r3(H), W: r3(W), L: r3(L), roster: { H: R.H, W: R.W, L: R.L }, dH: r3(H - R.H), dW: r3(W - R.W), dL: r3(L - R.L),
-      xBrea: r3(H / BREA_BODY_M), tris, triCap: cap, groundMin: r3(b.min[1]) };
-    row.ok = Math.abs(row.dH) <= 0.1 && Math.abs(row.dW) <= 0.1 && Math.abs(row.dL) <= 0.1 && tris <= cap && R.cls === ({ kiln: 'large', spindle: 'medium', davit: 'medium', sonde: 'small' })[k] && b.min[1] >= -1e-6;
+      xBrea: r3(H / BREA_BODY_M), tris, trisFrom: 'the recipe GLB', glbBytes: glb[k].bytes, triCap: cap, groundMin: r3(b.min[1]) };
+    row.ok = Math.abs(row.dH) <= 0.1 && Math.abs(row.dW) <= 0.1 && Math.abs(row.dL) <= 0.1 && tris <= cap && tris === glb[k].recipeSays && R.cls === ({ kiln: 'large', spindle: 'medium', davit: 'medium', sonde: 'small' })[k] && b.min[1] >= -1e-6;
     ok = ok && row.ok;
     rows[k] = row;
   }
@@ -87,6 +113,40 @@ function staggerOut(k) {
 /** A Brine field centred at a body-frame point of the Kiln. */
 function mistAt(k, bx, bz) { const w = bodyToWorld(k.x, k.y, k.z, k.heading, [bx, 0, bz]); return new PotField('brine', { x: w.x, y: k.y, z: w.z }); }
 
+/**
+ * A Kiln as the game's damage path sees it: Machine#takeDamage on a record with the hull's armour, its hit parts (the
+ * door a part, never weak: bible §8.3) and the brain beside it. The door's part answers hits within its half sizes.
+ */
+function damageKiln(brain) {
+  const door = { name: 'fireboxDoor', attached: true, weak: false, weakMult: 1, tearable: false };
+  const m = {
+    alive: true, armor: 0.15, weakPoints: [], parts: [door], brittleT: 0, health: 1e6, elemental: {}, elemThreshold: 100,
+    _visible: true, state: 'alert', ctx: { player: null }, lastKnown: new THREE.Vector3(), suspicion: 1, _unseenT: 0,
+    manager: {}, ai: { perception: { unseenHit() {} }, reactions: { onDamage() {} } }, emit() {}, setState() {}, _die() {},
+    resolveHitVolume(p) { const d = brain.doorWorld(); return Math.hypot(p.x - d.x, p.y - d.y, p.z - d.z) <= 0.45 ? { name: 'fireboxDoor', part: 'fireboxDoor' } : null; },
+    takeDamage: Machine.prototype.takeDamage,
+  };
+  return m;
+}
+/** The same 10 hits (door and dome, 20-40 impact) on a hot Kiln out of the window and in it, through the game's path. */
+function damageInWindow(seed) {
+  const { k, R } = hotKiln(seed);
+  const m = damageKiln(k);
+  const hits = [];
+  for (let i = 0; i < 10; i++) {
+    const onDoor = i % 2 === 0, bp = onDoor ? [(R() - 0.5) * 0.6, KILN_DOOR.c[1] + (R() - 0.5) * 0.6, KILN_DOOR.c[2]] : [(R() - 0.5) * 1.2, 3.0 + R() * 0.4, 0.4];
+    const w = bodyToWorld(k.x, k.y, k.z, k.heading, bp);
+    hits.push({ impact: 20 + R() * 20, tear: 0, element: 'none', point: new THREE.Vector3(w.x, w.y, w.z), seen: true, onDoor });
+  }
+  const out = hits.map((h) => kilnDamage(m, k, h).damage);
+  const r = k.brine({ kind: 'pot', field: mistAt(k, 0, KILN_DOOR.c[2] + 1.0) });
+  const inWin = [];
+  for (const h of hits) { if (!k.staggered) break; inWin.push(kilnDamage(m, k, h).damage); k.step(0.15, { wellheads: [] }); }
+  const ratios = inWin.map((d, i) => d / out[i]);
+  const doorVsBody = out.filter((_, i) => hits[i].onDoor).map((d, j) => d / hits[2 * j].impact).concat(out.filter((_, i) => !hits[i].onDoor).map((d, j) => d / hits[2 * j + 1].impact));
+  return { sprung: r.stagger, hitsInWindow: inWin.length, ratios, perImpact: doorVsBody };
+}
+
 export function ik2() {
   const hotPot = [], hotArrow = [], cold = [], elsewhere = [], durations = [], ks = [];
   for (let i = 0; i < 10; i++) {
@@ -114,8 +174,15 @@ export function ik2() {
   }
   const n = (a) => a.filter(Boolean).length;
   const dMin = Math.min(...durations), dMax = Math.max(...durations), kMin = Math.min(...ks), kMax = Math.max(...ks);
-  const ok = n(hotPot) === 10 && n(hotArrow) === 10 && n(cold) === 0 && n(elsewhere) === 0 && dMin >= 1.8 && dMax <= 2.2 && kMin === 1 && kMax === 1;
-  return { ok, hotPot: `${n(hotPot)}/10`, hotArrow: `${n(hotArrow)}/10`, coldDoor: `${n(cold)}/10`, elsewhere: `${n(elsewhere)}/10`, staggerS: [r3(dMin), r3(dMax)], damageK: [kMin, kMax], brineRadius: POTS.brine.radius };
+  // the damage path: the same hits in the window and out of it, through Machine#takeDamage (judge, d695cc9: the row read
+  // the constant): the ratio in the window, and the door's damage per impact against the dome's (no door multiplier)
+  const dp = [damageInWindow(500), damageInWindow(501)];
+  const ratios = dp.flatMap((d) => d.ratios), per = dp.flatMap((d) => d.perImpact);
+  const pathK = { hitsInWindow: dp.reduce((a, d) => a + d.hitsInWindow, 0), min: Math.min(...ratios), max: Math.max(...ratios), perImpact: [r3(Math.min(...per)), r3(Math.max(...per))] };
+  const ok = n(hotPot) === 10 && n(hotArrow) === 10 && n(cold) === 0 && n(elsewhere) === 0 && dMin >= 1.8 && dMax <= 2.2 && kMin === 1 && kMax === 1
+    && dp.every((d) => d.sprung) && pathK.hitsInWindow >= 20 && pathK.min === 1 && pathK.max === 1 && Math.min(...per) === Math.max(...per);
+  return { ok, hotPot: `${n(hotPot)}/10`, hotArrow: `${n(hotArrow)}/10`, coldDoor: `${n(cold)}/10`, elsewhere: `${n(elsewhere)}/10`, staggerS: [r3(dMin), r3(dMax)], damageK: [kMin, kMax],
+    damagePath: { via: 'Machine#takeDamage (src/entities/machines/machine.js)', hitsInWindow: pathK.hitsInWindow, inWindowOverOut: [pathK.min, pathK.max], damagePerImpactDoorAndDome: pathK.perImpact }, brineRadius: POTS.brine.radius };
 }
 
 /* ------------------------------------------------------------------------------------------------ IK3: plugged in */
@@ -147,10 +214,19 @@ export function ik3() {
   const standS = pluggedAt === null ? 0 : 600 - pluggedAt;
   const before = k.well?.id ?? null, seamSays = before ? wellheadState(before).plugged : null;
   const standErr = before ? Math.hypot(k.x - WELLS.find((w) => w.id === before).kilnStand.x, k.z - WELLS.find((w) => w.id === before).kilnStand.z) : null;
+  // the hose on the well (F59): the coupling's face to the wellhead's centre, level (the seam's run is 3.2 m)
+  const hoseTo = (id) => { const w = WELLS.find((q) => q.id === id), c = k.couplingWorld(); return Math.hypot(c.x - w.x, c.z - w.z); };
+  const hose1 = before ? hoseTo(before) : Infinity;
   // its wellhead quenched under it (the seam unplugs it): it leaves and takes another hot one
   if (before) setQuenched(before);
   for (let i = 0; i < 60 * 120; i++) k.step(DT, seamWorld);
   const after = k.plugged ? k.well?.id : null;
+  const hose2 = after ? hoseTo(after) : Infinity;
+  // without a seam stand (a wellhead elsewhere): it stands standM off the head with its coupling's flank to it
+  const lone = { id: 'lone', x: 40, z: -12, state: 'hot', plugged: null };
+  const K2 = new KilnBrain({ x: 10, z: 20, heading: 2.0 });
+  for (let t = 0; t < 120 && !K2.plugged; t += DT) K2.step(DT, { wellheads: [lone] });
+  const cl = K2.couplingWorld(), hose3 = K2.plugged ? Math.hypot(cl.x - lone.x, cl.z - lone.z) : Infinity;
   // four quenched: 0 Kilns spawn over 24 site-clock hours; one hot: some
   const S0 = new KilnSpawner(), S1 = new KilnSpawner();
   let spawned0 = 0, spawned1 = 0, live1 = 0;
@@ -161,15 +237,17 @@ export function ik3() {
   }
   resetWellheads();
   const ok = quenchedChosen === 0 && standS >= KILN_RULES.plugMinS && maxTurn === 0 && seamSays === 'kiln' && standErr !== null && standErr <= 0.1
-    && !!after && after !== before && spawned0 === 0 && spawned1 > 0;
+    && !!after && after !== before && spawned0 === 0 && spawned1 > 0 && Math.max(hose1, hose2, hose3) <= KILN_RULES.hoseM;
   return { ok, quenchedChosen: `${quenchedChosen}/${choices}`, nearestQuenched: near.id, firstWell: before, seamPlugged: seamSays, standErrM: standErr === null ? null : r3(standErr),
+    couplingToWellheadM: { first: r3(hose1), afterQuench: r3(hose2), noSeamStand: r3(hose3), bar: KILN_RULES.hoseM },
     pluggedAtS: r3(pluggedAt ?? -1), standS: r3(standS), maxTurnWhilePlugged: maxTurn, afterQuench: after, spawns24hAllQuenched: spawned0, spawns24hOneHot: spawned1 };
 }
 
 /* ------------------------------------------------------------------------------------------------ IK4: the mortar */
 export function ik4() {
   const R = rng(11);
-  let volleys = 0, outOfBandFired = 0, shells = 0, inRing = 0, onPerson = 0, minLead = Infinity, inRingTargetFired = 0, full = 0;
+  let volleys = 0, outOfBandFired = 0, shells = 0, inRing = 0, onPerson = 0, minLead = Infinity, inRingTargetFired = 0, full = 0, held = 0, reaimed = 0;
+  let minShadowLead = Infinity, minWhistleLead = Infinity, warnGaps = 0;
   for (let i = 0; i < 400; i++) {
     const from = { x: 0, z: 0 }, a = R() * Math.PI * 2, d = 10 + R() * 65;
     const target = { x: Math.cos(a) * d, z: Math.sin(a) * d };
@@ -178,7 +256,9 @@ export function ik4() {
     const places = { dwellings: ringAt ? [ringAt] : [], people };
     const v = planVolley(from, target, places, R);
     const herIn = ringAt && Math.hypot(target.x - ringAt.x, target.z - ringAt.z) < ringAt.r;
+    if (v.held) held++;
     if (!v.ok) continue;
+    reaimed += v.reaimed || 0;
     volleys++;
     if (d < 25 || d > 60) outOfBandFired++;
     if (herIn) inRingTargetFired++;
@@ -188,12 +268,29 @@ export function ik4() {
       if (ringAt && Math.hypot(s.x - ringAt.x, s.z - ringAt.z) < ringAt.r) inRing++;
       if (people.some((p) => Math.hypot(s.x - p.x, s.z - p.z) < KILN_RULES.mortar.personR)) onPerson++;
       minLead = Math.min(minLead, s.impactT - s.warnT);
+      // the shadow and the whistle as the game will read them (shellWarning), sampled at 60 Hz on the volley's clock
+      let sh = null, wh = null, gap = false, seen = false;
+      for (let t = 0; t <= s.impactT + DT; t += DT) {
+        const w = shellWarning(s, t);
+        if (w.shadow && sh === null) sh = t;
+        if (w.whistle && wh === null) wh = t;
+        if (t >= s.impactT - 1e-9) continue;
+        if (seen && !w.shadow) gap = true;
+        if (w.shadow) seen = true;
+      }
+      minShadowLead = Math.min(minShadowLead, sh === null ? -1 : s.impactT - sh);
+      minWhistleLead = Math.min(minWhistleLead, wh === null ? -1 : s.impactT - wh);
+      if (gap) warnGaps++;
     }
   }
   const plugged = planVolley({ x: 0, z: 0 }, { x: 40, z: 0 }, {}, R, { plugged: true }).ok;
   const clear = planVolley({ x: 0, z: 0 }, { x: 40, z: 0 }, {}, rng(3));
-  const ok = outOfBandFired === 0 && inRing === 0 && onPerson === 0 && minLead >= KILN_RULES.mortar.warnS && inRingTargetFired === 0 && !plugged && clear.shells.length === 3;
-  return { ok, volleys, shells, threeShellVolleys: full, outOfBandFired, inDwellingRing: inRing, onPerson, minWarnLeadS: r3(minLead), firedAtHerInRing: inRingTargetFired, pluggedFires: plugged, clearVolley: clear.shells.length };
+  const W = KILN_RULES.mortar.warnS;
+  const ok = outOfBandFired === 0 && inRing === 0 && onPerson === 0 && minLead >= W && inRingTargetFired === 0 && !plugged && clear.shells.length === 3
+    && full === volleys && minShadowLead >= W - DT && minWhistleLead >= W - DT && warnGaps === 0;
+  return { ok, volleys, shells, threeShellVolleys: full, heldFire: held, reaimedShells: reaimed, outOfBandFired, inDwellingRing: inRing, onPerson,
+    minWarnLeadS: r3(minLead), minShadowLeadS: r3(minShadowLead), minWhistleLeadS: r3(minWhistleLead), warnGaps, firedAtHerInRing: inRingTargetFired, pluggedFires: plugged, clearVolley: clear.shells.length,
+    note: 'shadow and whistle measured in Node (shellWarning, 60 Hz); drawn and heard on the page: UNMEASURED (behaviour wave)' };
 }
 
 /* ------------------------------------------------------------------------------------------------ IK5: the Spindle */
@@ -331,9 +428,11 @@ export function ik7() {
   // F61's staging: the trade (from 045, 5 m/s), 4 s after the cut: how far SW of the post
   const F61 = new SondeBrain();
   for (let t = 0; t < 40; t += DT) F61.step(DT, { wind: { speed: 5, fromDeg: 45 }, groundY: flat });
+  const tradeRun = F61.tetherDist(), tradeAlt = F61.keelY() - F61.shackle().y;
   F61.cutTether();
   for (let t = 0; t < 4; t += DT) F61.step(DT, { wind: { speed: 5, fromDeg: 45 }, groundY: flat });
-  const f61 = { distM: r3(Math.hypot(F61.x, F61.z)), bearing: r3(bearingOf(F61.x, F61.z)), altM: r3(F61.keelY() - F61.shackle().y), sinking: F61.keelY() - F61.shackle().y < SONDE_RULES.hoverAltM };
+  const f61 = { distM: r3(Math.hypot(F61.x, F61.z)), bearing: r3(bearingOf(F61.x, F61.z)), altM: r3(F61.keelY() - F61.shackle().y), sinking: F61.keelY() - F61.shackle().y < tradeAlt - 0.5 };
+  const taut = { tradeRunM: r3(tradeRun), tradeKeelOverShackleM: r3(tradeAlt), slackM: r3(SONDE_RULES.tetherM - tradeRun) };
   // calima: it drops to 6 m
   const K = new SondeBrain();
   for (let t = 0; t < 30; t += DT) K.step(DT, { wind: { speed: 3, fromDeg: 45 }, calima: true, groundY: flat });
@@ -342,9 +441,85 @@ export function ik7() {
   const sight = { none: sondeSightM('none'), opening: sondeSightM('opening'), gliding: sondeSightM('gliding'), folding: sondeSightM('folding'), landing: sondeSightM('landing') };
   const ok = maxTether <= SONDE_RULES.tetherM + 1e-6 && twoUp && P.state === 'down' && C.state === 'down' && Math.abs(sinkS - SONDE_RULES.fanSinkS) <= 0.3
     && maxErr <= 10 && maxCrash <= SONDE_RULES.crashMaxS && Math.abs(K.keelY() - K.shackle().y - SONDE_RULES.calimaAltM) <= 0.1 && night?.flagS === 8 && day === null
-    && sight.gliding === 2 * sight.none && sight.opening === sight.none && sight.folding === sight.none && sight.landing === sight.none && f61.distM >= 10 && Math.abs(f61.bearing - 225) <= 10;
+    && sight.gliding === 2 * sight.none && sight.opening === sight.none && sight.folding === sight.none && sight.landing === sight.none && f61.distM >= 10 && Math.abs(f61.bearing - 225) <= 10 && f61.sinking && taut.slackM <= 0.1;
   return { ok, maxTetherM: r3(maxTether), aloftAfterTwoPunctures: twoUp, threePuncturesDown: P.state === 'down', cinderDown: C.state === 'down', fanSinkS: r3(sinkS),
-    cutDriftErrDeg: r3(maxErr), cutCrashMaxS: r3(maxCrash), f61, calimaAltM: r3(K.keelY() - K.shackle().y), nightFlareFlagS: night?.flagS ?? null, dayFlare: day, sightM: sight, downwindOf045: downwind({ fromDeg: 45 }) };
+    cutDriftErrDeg: r3(maxErr), cutCrashMaxS: r3(maxCrash), f61, taut, calimaAltM: r3(K.keelY() - K.shackle().y), nightFlareFlagS: night?.flagS ?? null, dayFlare: day, sightM: sight, downwindOf045: downwind({ fromDeg: 45 }) };
+}
+
+/* ------------------------------------------------------------------------------------------------ IK8: the cue ids */
+const CUE_ID = /^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A direct file play in a kind's own source: a sound file named, or a player built (the director plays cue ids). */
+const DIRECT_PLAY = /\.(ogg|mp3|wav|m4a|flac|opus)\b|new\s+Audio\s*\(|decodeAudioData|createBufferSource|AudioBufferSourceNode|['"`]\/audio\//;
+const KIND_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../src/instruments/kinds');
+
+/** Drive each kind's rules through every state it has, and collect what they emit. */
+function cueScenarios() {
+  const out = {};
+  { // the Kiln: walk, couple, plug, the door sprung and shut, quenched under it, the next well, woken
+    const W = [{ id: 'a', x: 30, z: 0, state: 'hot', plugged: null }, { id: 'b', x: -30, z: 0, state: 'hot', plugged: null }];
+    const k = new KilnBrain({ x: 20, z: 12 });
+    const run = (s) => { for (let t = 0; t < s; t += DT) k.step(DT, { wellheads: W }); };
+    run(60);
+    k.brine({ kind: 'pot', field: mistAt(k, 0, KILN_DOOR.c[2] + 1.0) }); run(3);
+    W.find((w) => w.id === k.well?.id).state = 'quenched'; run(150);
+    k.wake(); run(3);
+    const v = planVolley({ x: 0, z: 0 }, { x: 40, z: 0 }, {}, rng(2)), hold = planVolley({ x: 0, z: 0 }, { x: 40, z: 0 }, {}, rng(2), { plugged: true });
+    const whistle = shellWarning(v.shells[0], v.shells[0].warnT + 0.01);
+    out.kiln = { events: [...k.events, { type: 'volley', cue: v.cue }, { type: 'held-fire', cue: hold.cue }, { type: 'whistle', cue: whistle.cue }], states: Object.keys(KILN_CUES.state), cues: KILN_CUES };
+  }
+  { // the Spindle: Brine, Dust, a thrust that strikes
+    const ring = new SpindleRing(), T = new SpindleThrust();
+    ring.onStatus(ST.lock, 2); for (let t = 0; t < 3; t += DT) ring.step(DT);
+    ring.onStatus(ST.blind, 6); for (let t = 0; t < 3; t += DT) ring.step(DT);
+    T.start(0, 0, 0); while (T.busy) { T.step(DT); T.struck(0, 8, 0.3); }
+    out.spindle = { events: [...ring.events, ...T.events], states: Object.keys(SPINDLE_CUES.state), cues: SPINDLE_CUES, initial: ['spinning', 'rest'] };
+  }
+  { // the Davit: idle, following a large kind, three repairs, spent; a plate shot, the winch Pried
+    const d = new DavitBrain({ x: 0, z: -30 });
+    d.step(DT, { instruments: [] });
+    const big = inst('big', 0, 0, {}, { large: true });
+    for (let t = 0; t < 20; t += DT) d.step(DT, { instruments: [big] });
+    big.parts = { p1: { state: 'off' }, p2: { state: 'off' } };
+    for (let t = 0; t < 60; t += DT) d.step(DT, { instruments: [big] });
+    d.shootPlate(); for (let t = 0; t < 2; t += DT) d.step(DT, { instruments: [big] });
+    const d2 = new DavitBrain(); d2.pryWinch(); d2.step(DT, { instruments: [big] });
+    out.davit = { events: [...d.events, ...d2.events], states: Object.keys(DAVIT_CUES.state), cues: DAVIT_CUES, initial: ['idle'] };
+  }
+  { // the Sonde: moored, a night flare, cut and adrift to the ground; three punctures; fouled fans
+    const env = { wind: { speed: 5, fromDeg: 45 }, groundY: flat };
+    const a = new SondeBrain(); for (let t = 0; t < 10; t += DT) a.step(DT, env); a.flare({ night: true }); a.cutTether(); for (let t = 0; t < 70 && a.flying; t += DT) a.step(DT, env);
+    const b = new SondeBrain(); b.puncture(); b.puncture(); b.puncture(); for (let t = 0; t < 20 && b.flying; t += DT) b.step(DT, env);
+    const c = new SondeBrain(); for (let t = 0; t < 5; t += DT) c.step(DT, env); c.foulFans(0); for (let t = 0; t < 10 && c.flying; t += DT) c.step(DT, env);
+    out.sonde = { events: [...a.events, ...b.events, ...c.events], states: Object.keys(SONDE_CUES.state), cues: SONDE_CUES, initial: ['moored'] };
+  }
+  return out;
+}
+
+export function ik8Cues() {
+  const known = new Set(MANIFEST.map((m) => m.set));
+  const rows = {};
+  let ok = true;
+  for (const [kind, S] of Object.entries(cueScenarios())) {
+    const changes = S.events.filter((e) => e.type === 'state');
+    const reached = new Set([...(S.initial || []), ...changes.map((e) => e.to)]);
+    const uncued = S.events.filter((e) => typeof e.cue !== 'string' || !CUE_ID.test(e.cue)).map((e) => e.type);
+    const declared = [...Object.values(S.cues.state), ...Object.values(S.cues.event), ...Object.values(S.cues.lamp)];
+    const badIds = declared.filter((id) => typeof id !== 'string' || !CUE_ID.test(id));
+    const ids = [...new Set(declared)];
+    // 0 direct file plays in the kind's own files (form, rules, cues)
+    const files = readdirSync(path.join(KIND_DIR, kind)).filter((f) => f.endsWith('.js'));
+    const plays = files.flatMap((f) => readFileSync(path.join(KIND_DIR, kind, f), 'utf8').split('\n').map((l, i) => (DIRECT_PLAY.test(l) ? `${f}:${i + 1}` : null)).filter(Boolean));
+    const row = {
+      stateChanges: changes.length, firedWithCue: `${changes.filter((e) => CUE_ID.test(e.cue || '')).length}/${changes.length}`,
+      statesReached: `${S.states.filter((s) => reached.has(s)).length}/${S.states.length}`, notReached: S.states.filter((s) => !reached.has(s)),
+      events: S.events.length, eventsWithoutCue: uncued, badIds, directFilePlays: plays.length, playsAt: plays, files,
+      inManifest: ids.filter((id) => known.has(id)), pendingAreaH: ids.filter((id) => !known.has(id)),
+    };
+    row.ok = changes.length > 0 && !uncued.length && !badIds.length && !row.notReached.length && plays.length === 0;
+    ok = ok && row.ok;
+    rows[kind] = row;
+  }
+  return { ok, rows, note: 'ids only (the Cues seam): every state change and event carries its id; the pending ids are new and wait for area H (src/audio/manifest.js); 0 direct file plays in kinds/<kind>/*.js' };
 }
 
 /** Clouded, the typed seam (src/combat/status.js): the generic half and a kind's own answer. */
@@ -361,4 +536,4 @@ export function clouded() {
   return { ok, lampDarkT: m.lampDarkT, suspicion: m.suspicion, unseenT: m._unseenT, onStatusCalls: calls, word: S.word, breaksLock: S.breaksLock, resetsAlert: S.resetsAlert };
 }
 
-export const ROWS = Object.freeze({ IK1: ik1, 'IK1-never': neverList, IK2: ik2, IK3: ik3, IK4: ik4, IK5: ik5, IK6: ik6, IK7: ik7, CLOUDED: clouded });
+export const ROWS = Object.freeze({ IK1: ik1, 'IK1-never': neverList, IK2: ik2, IK3: ik3, IK4: ik4, IK5: ik5, IK6: ik6, IK7: ik7, 'IK8-cues': ik8Cues, CLOUDED: clouded });

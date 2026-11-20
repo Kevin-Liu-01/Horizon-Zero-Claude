@@ -9,7 +9,7 @@ const only = i > 0 ? new Set(process.argv[i + 1].split(',')) : null;
 let fail = 0;
 for (const [id, fn] of Object.entries(ROWS)) {
   if (only && !only.has(id)) continue;
-  const r = fn();
+  const r = await fn();
   if (!r.ok) fail++;
   console.log(`${r.ok ? 'PASS' : 'FAIL'} ${id} ${JSON.stringify(r)}`);
 }

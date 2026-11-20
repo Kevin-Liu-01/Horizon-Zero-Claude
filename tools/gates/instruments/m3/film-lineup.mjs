@@ -86,6 +86,10 @@ try {
   await page.setViewport({ width: 1600, height: 900, deviceScaleFactor: 1 });
   page.on('console', (m) => { if (m.type() === 'error') run.console.push(m.text().slice(0, 300)); });
   page.on('pageerror', (e) => run.console.push('pageerror: ' + String(e).slice(0, 300)));
+  // every failed fetch by its URL (the console's "Failed to load resource" line names none)
+  run.failed = [];
+  page.on('response', (r) => { if (r.status() >= 400) run.failed.push(`${r.status()} ${r.url().replace(`http://127.0.0.1:${PORT}`, '')}`); });
+  page.on('requestfailed', (r) => run.failed.push(`failed ${r.url().replace(`http://127.0.0.1:${PORT}`, '')} ${r.failure()?.errorText || ''}`));
   for (const v of VIEWS) {
     if ((Date.now() - t0) / 1000 > BUDGET_S) { run.stopped = `budget ${BUDGET_S} s`; break; }
     const [view, sil] = v.split('-');

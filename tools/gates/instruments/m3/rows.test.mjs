@@ -14,12 +14,13 @@ const TITLES = {
   IK5: 'IK5 the Spindle: 10/10 frontal arrows deflected, 0/10 from behind; Brine half speed; Dust stops it and exposes the bearing 2.0 s +-0.2; thrust reaches 9 m; escort 6-9 m',
   IK6: 'IK6 the Davit: re-seats an off part in 4.0 s +-0.3; three plates, one fewer per repair or plate shot; a Pried winch, 0 repairs; about 20 m behind a large kind',
   IK7: 'IK7 the Sonde: within 18 m of its post; 3 punctures or Cinder bring it down; fouled fans sink it in 6 s; a cut tether drifts within 10 deg downwind, crash < 60 s; calima 6 m; a night flare Flags; range x2 while she glides',
+  'IK8-cues': 'IK8 voices: each kind fires a cue id (the Cues seam) on every state change and event, every state reached; 0 direct file plays',
   CLOUDED: 'Clouded (src/combat/status.js, typed): lamps dark 6 s, the lock broken, the alert reset, the kind answers through onStatus',
 };
 
 for (const [id, fn] of Object.entries(ROWS)) {
-  test(TITLES[id] || id, () => {
-    const r = fn();
+  test(TITLES[id] || id, async () => {
+    const r = await fn();
     assert.ok(r.ok, `${id}: ${JSON.stringify(r)}`);
   });
 }

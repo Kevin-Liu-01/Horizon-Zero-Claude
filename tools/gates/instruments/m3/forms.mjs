@@ -57,7 +57,11 @@ export function boundsOf(parts) {
       const e = [0, 1, 2].map((k) => (a[k] ? hh : r));
       grow(p.c[0] - e[0], p.c[1] - e[1], p.c[2] - e[2]); grow(p.c[0] + e[0], p.c[1] + e[1], p.c[2] + e[2]);
     } else if (p.type === 'strut') {
-      for (const q of [p.a, p.b]) { grow(q[0] - p.r, q[1] - p.r, q[2] - p.r); grow(q[0] + p.r, q[1] + p.r, q[2] + p.r); }
+      // a round bar's end disc reaches r * sqrt(1 - d_k^2) along axis k (d the bar's unit direction): exact for the
+      // round bar, and within r(1 - cos(pi / sides)) of the builders' polygons (rule 21: the page and Node agree)
+      const d = [p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]], L = Math.hypot(...d) || 1;
+      const e = d.map((v) => p.r * Math.sqrt(Math.max(0, 1 - (v / L) ** 2)));
+      for (const q of [p.a, p.b]) { grow(q[0] - e[0], q[1] - e[1], q[2] - e[2]); grow(q[0] + e[0], q[1] + e[1], q[2] + e[2]); }
     } else if (p.type === 'torus') {
       const o = p.R + p.tube, a = AX[p.axis || 'y'];
       const e = [0, 1, 2].map((k) => (a[k] ? p.tube : o));

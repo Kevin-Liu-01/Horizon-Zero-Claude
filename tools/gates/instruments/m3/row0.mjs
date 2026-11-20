@@ -4,7 +4,15 @@
  * cannot answer yet).
  *
  *   node tools/gates/instruments/m3/row0.mjs
+ *
+ * `at` is the commit the numbers were taken at and whether the tree was clean (the measurement rule: a number names its
+ * commit; a dirty tree's numbers are not a commit's).
  */
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { KilnBrain } from '../../../../src/instruments/kinds/kiln/rules.js';
+import { lensCheck, arrowCheck, mooringPost } from './sonde-mooring.mjs';
 import { WELLHEADS, APRON, YARDS } from '../../../../src/world/sites/kilnyards-layout.js';
 import { KILN_ROSTER } from '../../../../src/instruments/kinds/kiln/form.js';
 import { KILN_RULES, planVolley, rng } from '../../../../src/instruments/kinds/kiln/rules.js';
@@ -14,7 +22,10 @@ import { WindwallState, WINDWALL } from '../../../../src/combat/windwall.js';
 import { encounterVerdict } from '../../../../src/instruments/lib/sizeclass.js';
 
 const r2 = (v) => +v.toFixed(2);
-const out = { row: 'IK0', at: null };
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return null; } };
+const dirtyPaths = (git('status', '--porcelain', '--untracked-files=no') || '').split('\n').filter(Boolean);
+const out = { row: 'IK0', at: { commit: git('rev-parse', '--short', 'HEAD'), dirty: dirtyPaths.length > 0, dirtyPaths: dirtyPaths.slice(0, 12), tree: REPO, utc: new Date().toISOString() } };
 
 /* 1. the Kiln at a wellhead, and two on one apron (area A's seam: src/world/sites/kilnyards-layout.js) */
 const footR = Math.hypot(KILN_ROSTER.L / 2, KILN_ROSTER.W / 2);
@@ -28,8 +39,17 @@ const W = WELLHEADS;
   out.kilnAtWellhead = {
     apron: { lenM: APRON.halfLen * 2, widM: APRON.halfWid * 2, h: APRON.h }, wellsApartM: W.slice(1).map((w, i) => r2(Math.hypot(w.x - W[i].x, w.z - W[i].z))),
     standToWellM: toWell, seamHoseM: W[0].kilnStand.hose, gapBetweenNeighbourKilnsM: gaps, twoOnOneApron: gaps.every((g) => g >= 1),
-    hoseSide: 'the seam stands the Kiln with its length along the bench and the wellhead off its downhill FLANK (hose 3.2 m from the body); the grey hull carries its hose reel at the STERN: one of the two moves (BACKLOG)',
   };
+  // the hose on the well: a Kiln walked to each stand by its own rules, its coupling (low on its right flank since the
+  // fix round) to the wellhead's centre, level, against the seam's 3.2 m run
+  out.kilnAtWellhead.couplingToWellheadM = W.map((w) => {
+    const k = new KilnBrain({ x: w.kilnStand.x + 12, z: w.kilnStand.z + 9, heading: 1 });
+    const one = [{ ...w, state: 'hot', plugged: null }];
+    for (let t = 0; t < 90 && !k.plugged; t += 1 / 60) k.step(1 / 60, { wellheads: one });
+    const c = k.couplingWorld();
+    return { id: w.id, plugged: k.plugged, m: r2(Math.hypot(c.x - w.x, c.z - w.z)) };
+  });
+  out.kilnAtWellhead.hoseBarM = W[0].kilnStand.hose;
 }
 
 /* 2. the mortar's 25-60 m against the Yards */
@@ -80,11 +100,16 @@ const R = rng(1);
   const S = new SondeBrain({ post: { x: 0, y: 0, z: 0 } });
   for (let t = 0; t < 60; t += 1 / 60) S.step(1 / 60, { wind: { speed: 5, fromDeg: 45 }, groundY: () => 0 });
   out.sondeAtRing = {
-    tetherM: SONDE_RULES.tetherM, mooredInTradeKeelOverShackleM: r2(S.keelY() - S.shackle().y), tetherRunM: r2(S.tetherDist()), leanM: r2(Math.hypot(S.x, S.z)), ringAcrossM: 34, riseM: '5-6',
+    tetherM: SONDE_RULES.tetherM, mooredInTradeKeelOverShackleM: r2(S.keelY() - S.shackle().y), tetherRunM: r2(S.tetherDist()), leanM: r2(Math.hypot(S.keel().x - S.post.x, S.keel().z - S.post.z)), ringAcrossM: 34, riseM: '5-6',
     cutPoint: 'the shackle on the post, 1.3 m over the rise: cut by hand at the post, or the tether shot through anywhere below the gondola',
-    arrowFromRise: 'plan arithmetic: from the rise\'s foot 15-20 m off, the tether 5-14 m up stands 15-40 deg above level: inside the bow\'s ordinary arc; not measured with arrows.predict',
-    postInAcceptedLens: 'UNMEASURED: tools/world/skyline-masks.mjs (area A) masks regions from a film\'s probed lenses; the Sonde at the Ring is not one of its MASK_REGION rows yet (rule 19 names it). The Sonde moves, so it is masked by its swept volume (an 18 m half-sphere over the post) or kept out of every lens',
   };
+  // the post (SONDE_MOORING) against every probed lens, and the bow from the rise (ArrowPool.predict): ./sonde-mooring.mjs
+  const L = lensCheck(), B = await arrowCheck();
+  out.sondeAtRing.post = mooringPost();
+  out.sondeAtRing.postInAcceptedLens = { sweptVolume: `half-sphere r ${L.sweptR} m round the shackle (tether 18 + hull 2.8) and the post`, lensesChecked: L.lensesChecked,
+    acceptedLensesSeeingIt: L.acceptedSeeing, seenBy: L.seenBy, clearOf: L.clearOf, unmeasuredNoProbe: L.unmeasuredNoProbe,
+    verdict: L.acceptedSeeing.length ? `IN ${L.acceptedSeeing.length} accepted lenses (${L.acceptedSeeing.join(', ')}): the Ring itself is in them, so no post at the Ring keeps it out by placement; it is masked by its swept volume (area A's skyline-masks row: centre the shackle, r ${L.sweptR} m)` : 'in no probed accepted lens' };
+  out.sondeAtRing.arrowFromRise = { via: 'ArrowPool.predict (src/combat/arrows.js) over the island bake, bow 1.45 m over the ground, arrow 62 m/s', shots: B.shots, reached: B.reached, worstMissM: B.worstMissM, notReached: B.notReached, note: B.note };
 }
 
 /* 5. the encounter at the Yards (Q4's default: two Kilns, one awake; one Spindle; a Davit from the third wellhead) */
@@ -93,8 +118,20 @@ const R = rng(1);
   const members = [{ kind: 'kiln', x: W[0].kilnStand.x, z: W[0].kilnStand.z }, { kind: 'kiln', x: W[3].kilnStand.x, z: W[3].kilnStand.z }, { kind: 'spindle', x: W[0].x + 7, z: W[0].z }, { kind: 'davit', x: W[0].x - 20, z: W[0].z }];
   const v = encounterVerdict(members, (k) => cls[k]);
   const far = Math.hypot(W[0].kilnStand.x - W[3].kilnStand.x, W[0].kilnStand.z - W[3].kilnStand.z);
+  // the three ways out, measured (the ruling is the orchestrator's): (a) a plugged, still Kiln is not counted; (b) the
+  // second Kiln stands > 60 m off; (c) one Kiln at the Yards
+  const stands = W.map((w) => w.kilnStand);
+  let maxApart = 0; for (const a of stands) for (const b of stands) maxApart = Math.max(maxApart, Math.hypot(a.x - b.x, a.z - b.z));
+  const vA = encounterVerdict(members.filter((m, i) => i !== 1), (k) => cls[k]);
+  const vC = encounterVerdict(members.filter((m, i) => i !== 1), (k) => cls[k]);
   out.encounterQ4 = { ok: v.ok, why: v.anchors.flatMap((a) => a.why), kilnsApartM: r2(far), radiusM: 60,
-    finding: 'two Kilns on one apron are 2 large within 60 m: the encounter rule (src/instruments/lib/sizeclass.js) fails Q4\'s default unless a plugged, still Kiln is not counted, or the second Kiln stands > 60 m off (the apron is 48 m long: its two furthest stands are the distance above)' };
+    options: {
+      a_pluggedStillNotCounted: { ok: vA.ok, why: vA.anchors.flatMap((q) => q.why), needs: 'a rule change in src/instruments/lib/sizeclass.js (instruments-core) to skip a plugged, still Kiln' },
+      b_secondKilnOver60m: { possibleAtTheWellheads: maxApart > 60, farthestTwoStandsM: r2(maxApart), needs: 'the second Kiln off the apron (not plugged in), which Q4\'s default does not describe' },
+      c_oneKilnAtTheYards: { ok: vC.ok, why: vC.anchors.flatMap((q) => q.why), needs: 'KILN_RULES.cap 2 -> 1' },
+    },
+    finding: 'two Kilns on one apron are 2 large within 60 m: the encounter rule fails Q4\'s default. NEEDS AN ORCHESTRATOR RULING (a or c pass; b is impossible at the wellheads) before F59 or IK10 can be staged' };
 }
 
 console.log(JSON.stringify(out, null, 1));
+process.exit(0);

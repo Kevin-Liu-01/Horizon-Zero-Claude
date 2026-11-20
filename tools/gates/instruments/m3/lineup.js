@@ -6,7 +6,8 @@
  *
  *   /tools/gates/instruments/m3/lineup.html?view=front|side|quarter|sonde[&sil=1]
  *     front    every hull facing the lens            side     every hull turned 90 deg (its length across the frame)
- *     quarter  every hull turned 35 deg                sonde    the Sonde on its full 18 m tether over its post, Brea at the post
+ *     quarter  every hull turned 35 deg                sonde    the Sonde on its taut 18 m tether over its post, Brea at
+ *                                                               the post, the lens 12 m back (F23-sonde's staging)
  *     sil=1    flat dark silhouettes on a pale ground (the read Q3 asks for)
  *
  * `window.__LINEUP__` = { ready, error, view, measured: { brea: { H }, kiln: { H, W, L }, ... } } (world bounding boxes:
@@ -19,7 +20,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { configureKTX2, ktx2Loader } from '../../../../src/core/ktx2.js';
 import { M3_FORMS, expandParts } from './forms.mjs';
 import { SONDE_KEEL, SONDE_POST, SONDE_TETHER } from '../../../../src/instruments/kinds/sonde/form.js';
-import { SondeBrain } from '../../../../src/instruments/kinds/sonde/rules.js';
+import { SondeBrain, downwind } from '../../../../src/instruments/kinds/sonde/rules.js';
 
 const q = new URLSearchParams(location.search);
 const VIEW = q.get('view') || 'front';
@@ -207,22 +208,34 @@ async function main() {
   const note = document.getElementById('note');
 
   if (VIEW === 'sonde') {
-    // the Sonde moored in the trade on its full tether (its rules settle it), Brea at the post, the lens 12 m back
+    // the Sonde moored in the trade by its own rules (rule 21: the page draws the brain's hull, heading, shackle and keel
+    // ring, never its own copy of them), Brea at the post, the lens 12 m back (F23-sonde's staging)
     for (const k of ['kiln', 'spindle', 'davit']) hulls[k].visible = false;
     const S = new SondeBrain({ post: { x: 0, y: 0, z: 0 } });
     for (let t = 0; t < 60; t += 1 / 60) S.step(1 / 60, { wind: { speed: 5, fromDeg: 45 }, groundY: () => 0 });
-    // the post at x 1.2; the wind blows to the SW: in this page's frame the Sonde leans to +x, away from the lens' left
-    const px = 1.2, lean = Math.hypot(S.x, S.z);
-    const sonde = hulls.sonde; sonde.position.set(px + lean, S.y, 0); sonde.rotation.y = -Math.PI / 2;
-    scene.add(post(px, 0));
-    sonde.updateMatrixWorld(true);
-    const keel = new THREE.Vector3(...SONDE_KEEL).applyMatrix4(sonde.matrixWorld);
-    scene.add(tether([px, SONDE_POST.h, 0], keel.toArray()));
-    LU.measured.sondeTether = { altM: +(S.keelY() - S.shackle().y).toFixed(2), leanM: +lean.toFixed(2), tetherM: +Math.hypot(keel.x - px, keel.y - SONDE_POST.h, keel.z).toFixed(2) };
-    camera.fov = 50; camera.position.set(6, 3.0, 26); camera.lookAt(6, 8.0, 0);
-    tag('Sonde', `3.0 m, on its 18 m tether (keel ${LU.measured.sondeTether.altM} m over the shackle, ${LU.measured.sondeTether.leanM} m downwind, tether ${LU.measured.sondeTether.tetherM} m)`, [px + lean, S.y + 3.4, 0]);
+    // the mooring as one rigid group at the post (x 1.2), turned so the wind's downwind runs to +x across the frame
+    const px = 1.2, dw = downwind({ fromDeg: 45 });
+    const moor = new THREE.Group(); moor.position.set(px, 0, 0); moor.rotation.y = Math.atan2(dw.z, dw.x);
+    scene.add(moor);
+    const sonde = hulls.sonde; scene.remove(sonde); moor.add(sonde);
+    sonde.position.set(S.x - S.post.x, S.y - S.post.y, S.z - S.post.z); sonde.rotation.y = S.heading;
+    moor.add(post(0, 0));
+    const sh = S.shackle(), kl = S.keel();
+    moor.add(tether([sh.x - S.post.x, sh.y - S.post.y, sh.z - S.post.z], [kl.x - S.post.x, kl.y - S.post.y, kl.z - S.post.z]));
+    moor.updateMatrixWorld(true);
+    // measured on the page: the drawn tether's two ends in the world (the group's transform applied)
+    const A = new THREE.Vector3(sh.x - S.post.x, sh.y - S.post.y, sh.z - S.post.z).applyMatrix4(moor.matrixWorld);
+    const B = new THREE.Vector3(...SONDE_KEEL).applyMatrix4(sonde.matrixWorld);
+    LU.measured.sondeTether = { altM: +(B.y - A.y).toFixed(3), leanM: +Math.hypot(B.x - A.x, B.z - A.z).toFixed(3), tetherM: +A.distanceTo(B).toFixed(3),
+      node: { tetherM: +S.tetherDist().toFixed(3), altM: +(kl.y - sh.y).toFixed(3) } };
+    const top = new THREE.Box3().setFromObject(sonde, true);
+    // the lens 12 m back from the post, at her eye height, wide enough for her feet and the envelope's top
+    camera.fov = 74; camera.position.set(px + 4.6, 1.6, 12); camera.lookAt(px + 4.6, 1.6 + 12 * Math.tan(25 * Math.PI / 180), 0);
+    const T = LU.measured.sondeTether;
+    tag('Sonde', `3.0 m, on its 18 m tether, taut (keel ${T.altM.toFixed(1)} m over the shackle, ${T.leanM.toFixed(1)} m downwind, tether ${T.tetherM.toFixed(2)} m)`, [(top.min.x + top.max.x) / 2, top.max.y + 0.6, (top.min.z + top.max.z) / 2]);
     tag('Brea', 'scale figure · 1.72 m, at the post', [-0.6, 2.2, 0]);
-    note.textContent = 'M3 wave 1 grey hulls (area C): the Sonde moored in the trade (5 m/s from 045) by its own rules, 18 m banded tether, lens about 26 m back. Proportion and silhouette only.';
+    LU.measured.sondeLens = { backM: 12, fov: camera.fov, eyeM: 1.6 };
+    note.textContent = 'M3 wave 1 grey hulls (area C): the Sonde moored in the trade (5 m/s from 045) by its own rules, its 18 m banded tether taut, lens 12 m back at eye height. Proportion and silhouette only.';
   } else {
     // the Sonde moored low for scale beside the rest: its post and a short banded tether
     const sonde = hulls.sonde; sonde.position.y = 1.4;
