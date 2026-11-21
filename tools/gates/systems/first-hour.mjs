@@ -1167,12 +1167,15 @@ async function driveRest(page, K) {
  * gourds, BIBLE 17) and drinks to full. At d25575a chained run 3 the slice ended at 11 hp with a dry gourd, she set out
  * for the Holds like that and the terrace Plumb's Sightline killed her on the way to Oro.
  */
-async function restIfLow(page, K) {
+// (M2 exit, area E) `gourdBelow`: she also rests when the drink leaves less than that in the gourd. At 96daf23 chained
+// run 5 leg 2 began at 46 hp with 47 in the gourd: the drink took her to 93 and emptied it, and she went up to the
+// terrace topple with a dry gourd (the Sightline and the herd took 112 hp; dead at 'plumb-2'). Leg 2 asks for 30
+async function restIfLow(page, K, { gourdBelow = 0 } = {}) {
   const s0 = await page.evaluate(SH.probe);
-  if (s0.hp == null || s0.hp >= 60) return null;
+  if (s0.hp == null || (s0.hp >= 60 && (s0.gourd ?? 0) >= gourdBelow)) return null;
   const out = { hp0: s0.hp, gourd0: s0.gourd ?? null, hour0: await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3)) };
-  out.drink0 = await SH.drink(page, K, 98);
-  if ((await page.evaluate(SH.probe)).hp >= 60) return out;
+  if (s0.hp < 98) out.drink0 = await SH.drink(page, K, 98);
+  { const s1 = await page.evaluate(SH.probe); if (s1.hp >= 60 && (s1.gourd ?? 0) >= gourdBelow) return out; }
   const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('cistern'); return b ? { x: b.obj.position.x, z: b.obj.position.z } : null; });
   if (!A) return { ...out, why: 'no cistern Brazier' };
   const w = await walkSure(page, A, 1.3, 60, null);
@@ -1299,7 +1302,7 @@ async function runLeg(leg, startRec = null) {
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), fixtureAt: rec.position, shot: await shot(page, `l${leg}-00-continued`) };
     L.rows.continued = { pass: Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z) < 0.5 && Math.abs(L.start.hour - rec.hour) < 0.05,
       dxz: +Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z).toFixed(3), hour: +L.start.hour.toFixed(3) };
-    if (leg === 2 && !(FROM && !startRec)) L.prep = await restIfLow(page, K);
+    if (leg === 2 && !(FROM && !startRec)) L.prep = await restIfLow(page, K, { gourdBelow: 30 });
     const stages = beatsOf(leg);
     const qid = leg === 2 ? SCAR_ID : TRUE_GROUND_ID;
     let k = 0, driveOn = true;
