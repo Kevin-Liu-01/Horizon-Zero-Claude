@@ -3194,3 +3194,64 @@ died):
 8. **The owner's word** on the frames (F08, F11, F13 under ruling 1, the M2 frames, F02 now closer), on rulings 2 and
    4-6, and on the new lance path.
 9. **The frame bar's literal p95 interval** still needs a headed browser on the display.
+
+## The X1 fix and its verify run (Nov 21 2026)
+
+Exit run 5 (c9f130e) failed on one line, X1. Two fixes followed. Area E committed both on `r5/int`. No commit was pushed.
+
+- **The game (460d262).** The terrace Plumb toppled at `plumb-2` used to stand up 4 s later still in its fight. Its
+  `plumb-2` reaction handed it back to `attack`, and nothing ended that fight. It then followed her toward Oro at
+  9-14 m, using its Sightline. This happened in all four chains of exit run 5, and in chain 3 it killed her. Now the
+  Plumb is held in the lying part of its topple while she is within 80 m of it or it is in her view (the site clock's
+  view test). After that it rises out of sight and goes home calm on a 20 + 40 m leash to its terrace
+  (`src/game/terrace-down.js`, `hour.js` `_downStep`, `report().terraceDown`). This changes only the hour's own
+  terrace Plumb; the slice's Plumbs and the kept rows' Plumbs are untouched. Node: `terrace-down.test.mjs` has 9
+  rows, including a replay of chain 3.
+- **The hour's runner (6266bd6, replacing 468ce7e).** In leg 3, if she is under 60 hp with a dry gourd before the walk
+  to Benchmark 1 or before its survey, she first rests at her cistern's Brazier (`restIfLow`, `walkS` 150 s), as she
+  does in leg 2. The first try (468ce7e) went to medicinal plants instead. It found none within 90 m, because no plant
+  grows above 26 m and the Holds stand at 95, so that version was dropped.
+
+**The verify run** measured `r5/int` at **6266bd6** (its head) in one clean detached worktree (0 tracked files
+changed), on port 5270, one Chrome at a time through the slot queue. The run made no commit.
+
+**Verdict: X1 passes, and with it every exit line that exit run 5 measured.** The owner's frame acceptance (line 2)
+and the provisional rulings still wait for the owner, as they did after exit run 5.
+
+| # | exit condition | result at 6266bd6 |
+|---|---|---|
+| 1 / X1 | `A-first-hour` plays its 28 beats in order, input-driven, no death, three runs | **PASS**: 28/28 in all three chained runs, with no death |
+| HR8 | lowest hp over the whole run, 0 frames under 25 | **PASS**: 80, 51 and 55. Leg 3's lowest was 80, 84 and 87; leg 3 began at 80, 90 and 98 hp |
+| C5 | hitches, measured whole: 0 over 50 ms, at most 3 over 33 ms per 10 minutes | **PASS**: 1, 2 and 1 over 33 ms (0.92, 1.86 and 0.88 per 10 min); 0 over 50; worst 41.4 ms (a Peg's death at the cross) |
+| slice | the slice, 14 beats | **PASS**: 14/14, lowest hp 93, 0 frames under 25. C2: 2 over 33 ms (34.3 and 33.4, both at the cross), 0 over 50. Site clock PASS |
+| Tier 0 | the Node checks (`--no-boot`) | **PASS** 8 of 8 run: build 4.34 MB of code, 0 name-lint hits, 306 files against 34 licence rows, 54 GLBs with 0 over a cap, 137.33 MB of textures of 175, a first load of 55.91 MB of 60, 243 modules with 0 broken imports, 307 Node tests pass in 63 files. The boot was not run |
+| build | `npx vite build` | PASS (exit 0) |
+| C1 | the kept rows the fix touches | **PASS** 6 of 6: A1-boot-clean, A20-frame-loop-survives, A20b-no-system-errors, A65-save-restore, A68-no-softlock, A78-cast-states |
+
+**The first hour** (`first-hour.mjs --legs 1,2,3 --chain`, the hitch preload on every leg):
+
+| leg | chain 1 | chain 2 | chain 3 |
+|---|---|---|---|
+| 1 | 14/14, 220.4 s, 1 over 33 (41.4) | 14/14, 226.1 s, 1 (33.5) | 14/14, 239.6 s, 1 (34.5) |
+| 2 | 8/8, 291.7 s, 0 (max 26.3) | 8/8, 281.5 s, 1 (35.0, at `oro`) | 8/8, 304.8 s, 0 (max 25.1) |
+| 3 | 6/6, 137.1 s, 0 (max 18.3) | 6/6, 136.5 s, 0 (max 18.4) | 6/6, 135.9 s, 0 (max 25.4) |
+| all | **28/28**, 10.82 min, C5 PASS | **28/28**, 10.74 min, C5 PASS | **28/28**, 11.34 min, C5 PASS |
+
+- **The terrace Plumb stayed down.** In all three chains it was held from the topple until she was 80 m off and it was
+  out of her view; then it rose (held to rising: 22.1 s, 21.3 s and 23.9 s). Her hp did not fall between `plumb-2` and
+  `oro` in any chain: 80 to 80, 90 to 90, and 98 to 98 (chain 3 drank to 98 at `barbed` after the topple left her at
+  55).
+- **`plumb-2`** toppled with 2, 2 and 4 arrows.
+- **A-late-programs:** PASS in every launch (0 linked in play, 0 first uses over 5 ms).
+- **HR8's leg 3 rest** never fired in these runs, because leg 3 always began at 80 hp or more. It was proven on its own
+  at 6266bd6 from a clean worktree: leg 3 started at 40 hp with a dry gourd, she walked to the cistern in 42.6 s and
+  rested to 100, the survey took her to 77, and her lowest hp was 40 (6/6).
+
+**Not re-run at 6266bd6.** Since c9f130e, the only changes are the two fixes above and the docs. These results from exit
+run 5 still stand:
+- the film and the 16 accepted frames, and the F42 pair;
+- the frame bar (F39 GPU 11.3 ms), and the load times;
+- the headless boot (Tier 0 boot 4.3 s, 0 errors);
+- the other 74 kept rows (exit run 5: 80 of 80, A90b 3 of 3);
+- the hero clips;
+- the Node benches.
