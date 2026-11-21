@@ -19,6 +19,13 @@
  *   hats    the hat copies drawn (PIECE bits 32 head, 64 and 128 back): bar 1. In the page, the bits the DRAWN program
  *           hides (none when its program was linked without the piece stage: src/core/engine.js keepPrograms' keepers
  *           before the cloth lane's fix linked the Scout's program with the prototype's empty onBeforeCompile).
+ *   flap    (the flap, round 2: the panels against HER BODY, not the grid) in the trade wind held at 5.5 m/s from the
+ *           world's own bearing (the brief's C6 speed), standing 3 s and 1.5 s after a 2 s run's stop, each read the worst
+ *           of 1 s of frames: every panel column's chord (its pin to its hem particle) within FLAP_COL deg (27: C6's 25 deg
+ *           cap on a panel's lift at 5.5 m/s over C2's calm 2 deg; a column that lies on her body is exempt, as C2's "where
+ *           it hangs free"; a stowed prop is not her body), and the drawn panel vertices within FLAP_REACH m of her pelvis
+ *           axis (0.45: a 0.58 m panel hung from the belt's 0.20 m at C6's 25 deg). The flap filmed in the first hour: the
+ *           back panel caught OUTSIDE the stow kit's 0.11 m lance capsule, and a panel's edge column out of her lee.
  *   --diag  (page) every drawn PIECE-mask mesh in the scene, its program, and who else holds the Scout's program.
  *   --grid  (page) each panel's chord in her frame (plumb, colOff: a column's hem off its belt point), still air, a reset.
  *   --wide  (page) every vertex she draws farther than 0.40 m from her pelvis axis, by mesh, bone and ancestry.
@@ -27,7 +34,8 @@
  *                              fitted over it and the Starter put back (the warm-up), then the Scout (the reward); each
  *                              read standing, at a walk, a jog and the stop after it.
  *   --page --port <p>          the game from the real title: fixture(2) (the slice's end, the Scout worn) written as a
- *                              save on disk, CONTINUE, the sheet closed; read standing, then after a 2 s run and a stop.
+ *                              save on disk, CONTINUE, the sheet closed; read standing, then after a 2 s run and a stop;
+ *                              then the flap reads (the world's wind held at 5.5 m/s on its own bearing for them).
  *                              Vite is served from CLEAN_TREE (tools/perf/clean-measure.sh) or this tree.
  * Output: one JSON line per read, and `A-cloth-fitted-set PASS|FAIL` with the worst numbers. --json <file> writes all.
  */
@@ -40,6 +48,48 @@ const REPO = path.resolve(HERE, '../../..');
 const args = process.argv.slice(2);
 const flag = (k, d = null) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const BAR_OUT = 0.20;
+/** The flap clause's bars (see the header): a panel column's chord off plumb (deg) and the drawn panels' reach from her
+ *  pelvis axis (m), in the trade wind at 5.5 m/s, standing and after a run's stop. */
+const FLAP_COL = 27, FLAP_REACH = 0.45;
+const BODY_COLS = /^(torso\d|hips|thigh[LR]|shin[LR]|upArm[LR]|foreArm[LR]|handR|head|neck)$/;
+
+/** The panels against her body now: per panel its worst FREE column's chord off plumb (deg; a column with a particle within
+ *  its stand-off + 5 mm of a body collider lies on her and is not graded), its centroid chord (belt row to hem row), and
+ *  the drawn panel vertices' reach from her pelvis axis (readFitted). Self-contained: sent to the page as source. */
+export function readFlap(M, rig, reach) {
+  const out = { reach: +reach.toFixed(3), panels: {} };
+  if (!rig) return out;
+  const S = rig.sys, cols = S.colliders, body = cols.map((K) => /^(torso\d|hips|thigh[LR]|shin[LR]|upArm[LR]|foreArm[LR]|handR|head|neck)$/.test(K.name));
+  for (const P of rig.pieces) {
+    if (P.kind !== 'panel') continue;
+    const x = P.x, C = P.C, R = P.R;
+    const onBody = (i) => {
+      const px = x[i * 3], py = x[i * 3 + 1], pz = x[i * 3 + 2];
+      for (let c = 0; c < cols.length; c++) {
+        const K = cols[c]; if (!body[c] || !K.on || !(P.mask & K.bit)) continue;
+        const ax = K.a[0], ay = K.a[1], az = K.a[2], ex = K.b[0] - ax, ey = K.b[1] - ay, ez = K.b[2] - az, l2 = ex * ex + ey * ey + ez * ez;
+        let t = l2 > 1e-12 ? ((px - ax) * ex + (py - ay) * ey + (pz - az) * ez) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const d = Math.hypot(px - ax - ex * t, py - ay - ey * t, pz - az - ez * t) - (K.r0 + (K.r1 - K.r0) * t) - (P.offC ? P.offC[c] : P.off);
+        if (d < 0.005) return true;
+      }
+      return false;
+    };
+    let worst = 0, worstC = -1, onB = 0;
+    for (let c = 0; c < C; c++) {
+      let lies = false; for (let r = 1; r < R && !lies; r++) lies = onBody(c + r * C);
+      if (lies) { onB++; continue; }
+      const a = c * 3, b = (c + (R - 1) * C) * 3, dx = x[b] - x[a], dy = x[b + 1] - x[a + 1], dz = x[b + 2] - x[a + 2], l = Math.hypot(dx, dy, dz);
+      const d = Math.acos(Math.max(-1, Math.min(1, -dy / l))) * 57.2958;
+      if (d > worst) { worst = d; worstC = c; }
+    }
+    const cen = (r) => { const o = [0, 0, 0]; for (let c = 0; c < C; c++) for (let k = 0; k < 3; k++) o[k] += x[(c + r * C) * 3 + k] / C; return o; };
+    const A = cen(0), B = cen(R - 1), L = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]);
+    out.panels[P.name] = { col: +worst.toFixed(1), at: worstC, onBody: onB, chord: +(Math.acos(Math.max(-1, Math.min(1, (A[1] - B[1]) / L))) * 57.2958).toFixed(1) };
+  }
+  return out;
+}
+const flapMax = (a, b) => { if (!a) return b; const o = { reach: Math.max(a.reach, b.reach), panels: {} }; for (const k of Object.keys(b.panels)) { const p = a.panels[k], q = b.panels[k]; o.panels[k] = !p || q.col >= p.col ? { ...q, chord: Math.max(q.chord, p?.chord ?? 0) } : { ...p, chord: Math.max(q.chord, p.chord) }; } return o; };
+const flapPass = (f) => f.reach <= FLAP_REACH && Object.values(f.panels).every((p) => p.col <= FLAP_COL);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ------------------------------------------------------------------ the read (runs in Node or in the page) */
@@ -112,8 +162,11 @@ const verdict = (reads) => {
   const hats = Math.max(...reads.map((r) => r.hats ? r.hats.shown : 1));
   // (no grid rig: the old chains were the cloth, before 4d11034; the row reads the grid cloth only)
   const noRig = reads.some((r) => r.rig === false);
-  const pass = !noRig && loose === 0 && outN === 0 && hats <= 1;
-  return { pass, noRig, loose, out: outN, worst: +worst.toFixed(3), reach: Math.max(...reads.map((r) => r.reach)), hatsShown: hats };
+  // (the flap clause: every flap read passes FLAP_COL and FLAP_REACH)
+  const flaps = reads.filter((r) => r.flap);
+  const flap = flaps.length ? { pass: flaps.every((r) => flapPass(r.flap)), col: Math.max(...flaps.flatMap((r) => Object.values(r.flap.panels).map((p) => p.col))), reach: Math.max(...flaps.map((r) => r.flap.reach)) } : null;
+  const pass = !noRig && loose === 0 && outN === 0 && hats <= 1 && !!flap && flap.pass;
+  return { pass, noRig, loose, out: outN, worst: +worst.toFixed(3), reach: Math.max(...reads.filter((r) => !r.flap).map((r) => r.reach)), hatsShown: hats, flap };
 };
 
 /* ------------------------------------------------------------------ Node */
@@ -143,6 +196,18 @@ async function runNode() {
   // the reward
   await R.hero.loadout.equipArmor('pan-2');
   legs('scout');
+  // the flap: the trade wind at 5.5 m/s from the bench's NE (the world's bearing), the Scout worn: standing 3 s, then
+  // 1.5 s after a 2 s run's stop, each the worst of its last second
+  R.an.setWind(45 * Math.PI / 180, 5.5);
+  const flapRead = (label, speed, n) => {
+    let f = null;
+    for (let i = 0; i < n; i++) { R.player.velocity.set(0, 0, speed); R.player.moveSpeed = speed; B.step(R); if (i >= n - 60) { const rig = peekClothRig(R.an); f = flapMax(f, readFlap(R.model, rig, readFitted(R.model, rig, R.hero.loadout._pieceBits, uOf, BAR_OUT).reach)); } }
+    const r = { label, row: R.hero.outfit.row, rig: true, loose: 0, out: 0, worst: 0, reach: f.reach, hats: null, flap: f }; reads.push(r);
+    console.log(JSON.stringify({ label, flap: f, pass: flapPass(f) }));
+  };
+  flapRead('flap: standing in the trade wind', 0, 180);
+  go(5, 120);
+  flapRead('flap: 1.5 s after a run', 0, 150);
   return reads;
 }
 
@@ -252,6 +317,36 @@ async function runPage() {
     await read('after run');
     await sleep(1500);
     await read('stopped');
+    // the flap: the world's wind held at 5.5 m/s on its own bearing (environment.windAt, put back after), standing 3 s,
+    // then 1.5 s after a 2 s run's stop; each the worst of 1 s of frames
+    await page.evaluate(`window.__readFlap = ${readFlap.toString()}; window.__flapMax = ${flapMax.toString()};`);
+    const flapRead = async (label) => {
+      const f = await page.evaluate(async (BAR) => {
+        const C = window.__CTX__, P = C.player, an = P.animator;
+        const rig = (await import('/src/entities/anim/cloth/rig.js')).peekClothRig(an);
+        let f = null;
+        for (let k = 0; k < 60; k++) {
+          await new Promise((r) => requestAnimationFrame(r));
+          const reach = window.__readFitted(P.model, rig, P.hero?.loadout?._pieceBits ?? null, () => null, BAR).reach;
+          f = window.__flapMax(f, window.__readFlap(P.model, rig, reach));
+        }
+        return f;
+      }, BAR_OUT);
+      const r = { label, row: null, rig: true, loose: 0, out: 0, worst: 0, reach: f.reach, hats: null, flap: f }; reads.push(r);
+      await page.screenshot({ path: path.join(runDir, `${label.replace(/\W+/g, '-')}.jpg`), type: 'jpeg', quality: 85 });
+      console.log(JSON.stringify({ label, flap: f, pass: flapPass(f) }));
+    };
+    await page.evaluate(() => {
+      const E = window.__CTX__.environment; if (!E || E.__flapWind) return;
+      const own = E.windAt; E.__flapWind = own;
+      E.windAt = function (x, z, out) { const w = this.wind, l = Math.hypot(w.x, w.z) || 1; if (out) { out.x = w.x / l * 5.5; out.z = w.z / l * 5.5; if ('y' in out) out.y = 0; } return 5.5; };
+    });
+    await sleep(2000);
+    await flapRead('flap standing in the trade wind');
+    await page.keyboard.down('KeyW'); await sleep(2000); await page.keyboard.up('KeyW');
+    await sleep(1500);
+    await flapRead('flap 1.5 s after a run');
+    await page.evaluate(() => { const E = window.__CTX__.environment; if (E?.__flapWind) { E.windAt = E.__flapWind; delete E.__flapWind; } });
     // --diag: every drawn mesh that carries a PIECE mask, in the whole scene: its owner, the program it is drawn with,
     // whether that program binds uHidePiece, and the value it binds
     // --grid: each panel's chord (belt row to hem row centroids) in her frame, the wind, the colliders; then the same with
@@ -271,8 +366,13 @@ async function runPage() {
           return { n: Q.name, plumb: +(Math.acos(Math.max(-1, Math.min(1, -d[1] / L))) * 57.3).toFixed(1), fwd: +(d[0] * f[0] + d[2] * f[2]).toFixed(3), lat: +(d[0] * rt[0] + d[2] * rt[2]).toFixed(3), len: +L.toFixed(3), hemW: +wid(Q.R - 1).toFixed(3), beltW: +wid(0).toFixed(3), colOff: +wmax.toFixed(3), asleep: Q.asleep };
         });
         const out = { wind: { ...an.wind }, info: rig.info(), stand: chord(), scale: rig.rootP?.s, rest: rig.pieces.map((Q) => Q.restScale) };
+        // (round 2: the world's wind is written into an.wind every frame (playerAnimator, environment.windAt), so the still
+        //  air is held at the source: at round 1 this read was the trade wind still)
+        const E = C.environment, own = E?.windAt;
+        if (E) E.windAt = (x, z, o) => { if (o) { o.x = 0; o.z = 0; } return 0; };
         const w0 = { ...an.wind }; an.wind.x = 0; an.wind.z = 0; an.wind.gust = 0;
         await sleepP(2000); out.still = chord();
+        if (E) E.windAt = own;
         Object.assign(an.wind, w0);
         an.clothReset?.(C.engine?.simTime ?? 0); await sleepP(300); out.reset = chord();
         out.info = { sub: out.info.sub, colliders: out.info.colliders.filter((c) => c.on === false || c.r0 > 0.2).map((c) => c.name), pieces: out.info.pieces };
