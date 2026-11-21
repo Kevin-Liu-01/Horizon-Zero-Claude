@@ -55,6 +55,7 @@ import { DRIVE4 } from '../kite/glass-line-drive.mjs';   // (M3 wave 3, area B: 
 import { WELLHEADS, apronPoint } from '../../../src/world/sites/kilnyards-layout.js';
 import { walkRoute, footprint } from '../../../src/game/hour2/walk-route.js';
 import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, LEG_CAP_S, beatsOfLeg } from '../../../src/game/hour2/plan.js';
+import { SCAR_LAUNCH } from '../../../src/game/kite/roads.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -237,8 +238,8 @@ async function planLine(page, target, pad = ROUTE.pad) {
   const tR = Date.now();
   const pts = walkRoute(hAt, p, target, { cell: ROUTE.cell, box: bx, blocked: F.blocked });
   const routeMs = Date.now() - tR;
-  // (M3 wave 3c) no line inside the box: once more over a wider one (the tube shelter to T3 goes round by the Yards'
-  // shelf, 120 m outside the straight line's box; Node, recipe ground: none at a 60 or 90 m pad, 490 m at 120)
+  // (M3 wave 3c) no line inside the box: once more over a wider one (Node, recipe ground: the tube shelter to T3 on Rust
+  // Cone goes round by the Yards' shelf, none at a 60 or 90 m pad, 490 m at 120)
   if (!pts && pad < ROUTE.widePad) return planLine(page, target, ROUTE.widePad);
   const sig = await page.evaluate(fixedSig, bx);
   return { from: p, pts, colliders: F.n, inBox: G.all, bigMesh: G.bigMesh, total: G.total, bx, sig, routeMs, pad };
@@ -440,30 +441,28 @@ Object.assign(DRIVE, DRIVE4);
 
 /**
  * (M3 wave 3c) 'scar-flight' starts where 'tube-rest' left her, in the tube shelter on the hornito field (11.5 m), and the
- * Scar road launches off T3 on Rust Cone (145 m; roads.js ROAD_LAUNCH.scar, R4). Area B's driver walks to T3's steps by
- * the nav grid (SH.walkPath): at bbe5fce (run 20261121T072017Z-bbe5fce-e-w3c-leg6-tail) it timed out 11.7 m short on
- * the cone's side at 88.8 m. The walk up is drawn first here, on walk-route.js's line round the shelf's faces (in Node on
- * the recipe's ground: 490 m and 133 m of rise, about 141 s at a sprint under the game's grade law), with its own
- * allowance (WALK_TO_T3_S, said in its numbers: over the beat's 70 s budget); then area B's driver from the steps' foot.
+ * Scar road launches on foot off the Yards shelf's east edge (roads.js SCAR_LAUNCH (228, 16), 142.8 m; area B, ca864c5:
+ * T3 on Rust Cone cannot be reached on foot). Area B's driver walks to 5 m behind the launch by the nav grid inside 40 %
+ * of the beat's drive (56 s): at bbe5fce (run 20261121T072017Z-bbe5fce-e-w3c-leg6-tail, toward T3 then) it timed out on
+ * Rust Cone's side. The walk up is drawn first here on walk-route.js's line round the shelf's faces (Node, recipe ground:
+ * 490 m and 131 m of rise from the tube's Brazier, about 138 s at a sprint under the game's grade law), with its own
+ * allowance (WALK_UP_S, said in its numbers: over the beat's 70 s budget); then area B's driver from there.
  */
-const WALK_TO_T3_S = 200;
+const WALK_UP_S = 200;
 if (DRIVE['scar-flight']) {
   const flyB = DRIVE['scar-flight'];
+  const rr = SCAR_LAUNCH.bearing * Math.PI / 180, back = { x: SCAR_LAUNCH.x - Math.sin(rr) * 5, z: SCAR_LAUNCH.z + Math.cos(rr) * 5 };
   DRIVE['scar-flight'] = async (page, K, b, maxS) => {
-    const P = await page.evaluate(() => { const p = (window.__CTX__.props?.survey?.pillars || []).find((q) => q.id === 'T3'); return p ? { x: p.x, z: p.z, d: p.stepsDir } : null; });
-    let toT3 = null;
-    if (P?.d) {
-      const foot = { x: P.x + P.d.x * 6.4, z: P.z + P.d.z * 6.4 };
-      const far = await page.evaluate((x, z) => { const q = window.__CTX__.player.position; return Math.hypot(q.x - x, q.z - z); }, foot.x, foot.z);
-      if (far > 12) {
-        const sim0 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null);
-        toT3 = await walkLong(page, K, foot, 1.5, WALK_TO_T3_S);
-        const sim1 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null);
-        toT3 = { ok: toT3.ok, at: toT3.at, s: toT3.s, simS: sim0 != null && sim1 != null ? +(sim1 - sim0).toFixed(1) : null, metres: toT3.metres, plans: toT3.plans, stalls: toT3.stalls, allowanceS: WALK_TO_T3_S };
-      }
+    let walkUp = null;
+    const far = await page.evaluate((x, z) => { const q = window.__CTX__.player.position; return Math.hypot(q.x - x, q.z - z); }, back.x, back.z);
+    if (far > 30) {
+      const sim0 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null);
+      const w = await walkLong(page, K, back, 2.0, WALK_UP_S);
+      const sim1 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null);
+      walkUp = { ok: w.ok, to: back, at: w.at, s: w.s, simS: sim0 != null && sim1 != null ? +(sim1 - sim0).toFixed(1) : null, metres: w.metres, plans: w.plans, stalls: w.stalls, allowanceS: WALK_UP_S };
     }
     const r = await flyB(page, K, b, maxS);
-    return { ...r, toT3 };
+    return { ...r, walkUp };
   };
 }
 
