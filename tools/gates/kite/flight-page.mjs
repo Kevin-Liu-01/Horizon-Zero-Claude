@@ -19,7 +19,11 @@
 // for any wrist behind a plane), the law's state, height, lift and bank, and the frame time. Shots are taken frozen
 // (the studio time scale at 0) at the clips' moments from close lenses, so hands read; the lens is the shot's own, put
 // back after. Writes <review>/runs/<utc>-<commit>-<label>/ (run.json and PNGs), never inside the repo.
-//   node tools/gates/kite/flight-page.mjs --port 5282 [--label kite-flight] [--only t1,fold,caldera]
+//   3. (wave 3c) the Scar road (R4) by leg 6's own steps (scar-flight-drive.mjs): on foot to T3's steps, up them, the run
+//      off the deck, the seven posts by the pilot's hand, down on the Scar foot's field; the posts shot from the ground.
+//   4. (wave 3c) leg 4's own 'launch' and 'fly' drivers off T1 (glass-line-drive.mjs), for the open's bearing.
+//   The caldera's home (wave 3c): the ride with the face on her right for 16 s, then home to roads.js CALDERA_FIELD.
+//   node tools/gates/kite/flight-page.mjs --port 5282 [--label kite-flight] [--only t1,fold,caldera,scar,t1drive]
 import puppeteer from 'puppeteer';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -29,6 +33,9 @@ import { fileURLToPath } from 'node:url';
 import { takeMachineSlot, releaseMachineSlot } from '../../chrome-slot.mjs';
 import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
+import * as SH from '../systems/slice-hour.mjs';
+import { DRIVE4, BARS_INSTALL, barsNow } from './glass-line-drive.mjs';
+import { pillarLaunch, FLY_ROAD, SCAR_ROAD, SCAR_BEARING } from './scar-flight-drive.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -39,10 +46,10 @@ const log = (...a) => console.log(`[kite-flight ${new Date().toISOString().slice
 const PORT = guardPort(flag('--port'));
 if (PORT === 5173) throw new Error('port 5173 is the owner preview: never');
 const LABEL = flag('--label', 'kite-flight');
-const ONLY = (flag('--only', 't1,fold,caldera') || '').split(',');
+const ONLY = (flag('--only', 't1,fold,caldera,scar,t1drive') || '').split(',');
 const commit = (() => { try { return execFileSync('git', ['-C', REPO, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { return '?'; } })();
 const dirty = (() => { try { return execFileSync('git', ['-C', REPO, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim().length > 0; } catch { return true; } })();
-const BUDGET_S = 780;
+const BUDGET_S = 840;
 
 /* ------------------------------------------------------------------ in the page */
 
@@ -161,10 +168,12 @@ const BANK = async ({ code, s }) => {
 };
 
 /** Steer by A and D (bang-bang, 8 deg dead band) toward a target until the flight is no longer gliding (or `stopIf`). */
-const STEER = async ({ mode, target = null, until = 'landed', capS = 60, home = null }) => {
+const STEER = async ({ mode, target = null, until = 'landed', capS = 60, home = null, side = 270, field = null }) => {
   const C = window.__CTX__, p = C.player, K = window.__KF, E = C.engine;
   const f = p.kite, t0 = E.simTime;
   const L = mode === 'face' ? await import('/src/world/island/lift.js') : null, fc = { h: 0, slopeDeg: 0, aspect: { x: 0, z: 0 }, sea: false };
+  const PL = mode === 'field' ? await import('/src/game/kite/pilot.js') : null, phases = { track: 0, orbit: 0, final: 0 };
+  let lastT = E.simTime;
   let maxY = p.position.y, y0 = p.position.y, minY = p.position.y, rise = 0, lifted = 0, kL = false, kR = false, liftSum = 0;
   const press = (l, r) => { if (l !== kL) { K.key('KeyA', l); kL = l; } if (r !== kR) { K.key('KeyD', r); kR = r; } };
   while (E.simTime - t0 < capS) {
@@ -176,7 +185,10 @@ const STEER = async ({ mode, target = null, until = 'landed', capS = 60, home = 
       // the face under her (the pilot reads the slope): down it is its aspect; across it with the face on her left
       L.faceAt(p.position.x, p.position.z, fc);
       const asp = (Math.atan2(fc.aspect.x, -fc.aspect.z) * 180 / Math.PI + 360) % 360;
-      want = home != null && E.simTime - t0 > home ? asp : f.agl < 10 ? asp : f.agl > 24 ? (asp + 180) % 360 : (asp + 270) % 360;
+      want = home != null && E.simTime - t0 > home ? asp : f.agl < 10 ? asp : f.agl > 24 ? (asp + 180) % 360 : (asp + side) % 360;
+    } else if (mode === 'field') {
+      // wave 3c: home onto a landing field by the pilot's hand (src/game/kite/pilot.js toField, the Node rows' own)
+      const h = PL.toField(f, field); phases[h.phase] += E.simTime - lastT; want = h.want;
     } else { // ridge: along the wall (135), off it when low (045), back onto it when high (225); home after `home` s
       want = home != null && E.simTime - t0 > home ? 225 : f.agl < 14 ? 45 : f.agl > 26 ? 225 : 135;
     }
@@ -187,10 +199,11 @@ const STEER = async ({ mode, target = null, until = 'landed', capS = 60, home = 
     if (p.position.y < minY) minY = p.position.y;
     rise = Math.max(rise, p.position.y - minY);
     if (f.lift > 0) { lifted++; liftSum += f.lift; }
+    lastT = E.simTime;
     await K.frames(1);
   }
   press(false, false);
-  return { state: p.flight, s: +(E.simTime - t0).toFixed(2), y0: +y0.toFixed(2), climbM: +(maxY - y0).toFixed(2), riseM: +rise.toFixed(2), maxY: +maxY.toFixed(2), liftFrames: lifted, meanLift: lifted ? +(liftSum / lifted).toFixed(3) : 0, at: { x: +p.position.x.toFixed(1), y: +p.position.y.toFixed(1), z: +p.position.z.toFixed(1) }, agl: +f.agl.toFixed(2), lift: f.lift };
+  return { phases: mode === 'field' ? Object.fromEntries(Object.entries(phases).map(([a, b]) => [a, +b.toFixed(1)])) : undefined, state: p.flight, s: +(E.simTime - t0).toFixed(2), y0: +y0.toFixed(2), climbM: +(maxY - y0).toFixed(2), riseM: +rise.toFixed(2), maxY: +maxY.toFixed(2), liftFrames: lifted, meanLift: lifted ? +(liftSum / lifted).toFixed(3) : 0, at: { x: +p.position.x.toFixed(1), y: +p.position.y.toFixed(1), z: +p.position.z.toFixed(1) }, agl: +f.agl.toFixed(2), lift: f.lift };
 };
 
 /** Freeze the sim and put a lens on her (orbit about her chest: yawRel from her facing, dist, height over her feet). */
@@ -210,6 +223,18 @@ const LENS = async ({ yawRel, dist, height, up = 1.2, fov = 50 }) => {
   if ((p._fadeCur ?? 1) < 0.999 || (p.fade ?? 1) < 0.999) { p.fade = 1; p._fadeCur = 1; p._fadeApplied = -1; try { p._applyFade(1 / 60, performance.now() / 1000); } catch (e) { /* */ } }
   await K.frames(4);
   return { state: p.flight, t: +p.kite.t.toFixed(3), bars: K.readBars(), kite: p.animator.hangPoseInfo?.()?.kite ? { clip: p.animator.hangPoseInfo().kite.clip, phase: +p.animator.hangPoseInfo().kite.phase.toFixed(2), furl: +p.animator.hangPoseInfo().kite.furl.toFixed(2) } : null };
+};
+/** Freeze the sim and look from a world point at a world point (a post from the ground). */
+const LOOKAT = async ({ from, at, fov = 45 }) => {
+  const C = window.__CTX__, p = C.player, E = C.engine, K = window.__KF, cam = C.camera;
+  E.requestTimeScale('studio', 0);
+  await K.frames(2);
+  const fov0 = cam.fov, upd0 = p._updateCamera;
+  p._updateCamera = function () { cam.position.set(from.x, from.y, from.z); cam.lookAt(at.x, at.y, at.z); if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); } cam.updateMatrixWorld(); };
+  p._updateCamera();
+  K.unlens = () => { p._updateCamera = upd0; cam.fov = fov0; cam.updateProjectionMatrix(); E.requestTimeScale('studio', null); };
+  await K.frames(4);
+  return { posts: C.world?.linePosts?.scar?.length ?? 0 };
 };
 const UNLENS = async () => { const K = window.__KF; K.unlens?.(); K.unlens = null; await K.frames(1); return true; };
 
@@ -287,7 +312,14 @@ try {
   out.bootSeconds = Math.round((Date.now() - t0) / 1000);
   log(`booted in ${out.bootSeconds} s`);
   out.install = await page.evaluate(INSTALL);
-  const S = await page.evaluate(async () => { const s = await import('/src/world/island/sites.js'); const r = await import('/src/game/kite/roads.js'); const T = s.TRIG.find((t) => t.id === 'T1'); return { T1: { x: T.x, z: T.z, top: s.TRIG_TOP }, field: r.TEST_FLIGHT.field, bearing: r.TEST_FLIGHT.bearing, caldera: { ...r.CALDERA_LAUNCH } }; });
+  const S = await page.evaluate(async () => { const s = await import('/src/world/island/sites.js'); const r = await import('/src/game/kite/roads.js'); const T = s.TRIG.find((t) => t.id === 'T1'); const pil = (id) => { const q = (window.__CTX__.props?.survey?.pillars || []).find((x) => x.id === id); return q ? { x: q.x, z: q.z, deck: q.deck, d: q.stepsDir } : null; };
+    return { T1: { x: T.x, z: T.z, top: s.TRIG_TOP }, field: r.TEST_FLIGHT.field, bearing: r.TEST_FLIGHT.bearing, caldera: { ...r.CALDERA_LAUNCH }, calderaField: { ...r.CALDERA_FIELD }, P1: pil('T1'), P3: pil('T3'),
+      posts: (window.__CTX__.world?.linePosts?.scar || []).map((q) => ({ id: q.id, x: q.x, y: +q.y.toFixed(2), z: q.z, recipe: null })) }; });
+  out.posts = S.posts;
+  out.postsCheck = await page.evaluate(async () => { const R = await import('/src/world/island/recipe.js'); const C = window.__CTX__, P = C.player.kitePilot?.posts?.scar;
+    return { n: C.world?.linePosts?.scar?.length ?? 0, streaming: P?.streaming ?? null, draws: P ? 2 : 0, tris: P ? (P.mesh.geometry.attributes.position.count / 3 + P.cloth.geometry.index.count / 3) : null,
+      vsRecipe: (C.world?.linePosts?.scar || []).map((q) => +(q.y - R.heightAt(q.x, q.z)).toFixed(2)), inScene: !!P?.group?.parent }; });
+  log(`posts ${JSON.stringify(out.postsCheck)}`);
 
   if (ONLY.includes('t1')) {
     const F = (out.flights.t1 = {});
@@ -352,14 +384,17 @@ try {
     log(`caldera launch ${JSON.stringify(F.launch)}`);
     if (F.launch.flight !== 'none') {
       await page.evaluate(AT, { state: 'gliding', t: 0.2 });
-      F.ridge1 = await page.evaluate(STEER, { mode: 'face', capS: 10 });
+      // wave 3c: the ride with the face on her RIGHT (south-east, toward the Yards) for 16 s, then home to the field (the
+      // Node row's flight: caldera-launch.test.mjs); at 7d5d0dd the ride with the face on her left ended 150 m from any
+      // ground she could land on and the home ran out over the flank (128 m up after 40 s)
+      F.ridge1 = await page.evaluate(STEER, { mode: 'face', capS: 8, side: 90 });
       await shot('caldera-lift-climb-wide', L.wide);
       await shot('caldera-lift-climb-front', L.front);
-      F.ridge2 = await page.evaluate(STEER, { mode: 'face', capS: 10 });
+      F.ridge2 = await page.evaluate(STEER, { mode: 'face', capS: 8, side: 90 });
       await shot('caldera-lift-high-wide', L.wide);
       log(`caldera ridge ${JSON.stringify(F.ridge1)} ${JSON.stringify(F.ridge2)}`);
-      // home: down the face to land (her feet down, the law's landing)
-      F.home = await page.evaluate(STEER, { mode: 'face', capS: 40, home: 0 });
+      F.home = await page.evaluate(STEER, { mode: 'field', field: S.calderaField, capS: 60 });
+      if ((await page.evaluate(() => window.__CTX__.player.flight)) === 'landing') { await shot('caldera-land-front', L.front); await shot('caldera-land-side', L.side); }
       log(`caldera home ${JSON.stringify(F.home)}`);
       await page.evaluate(AT, { state: 'none', t: 0, cap: 6000 });
       await page.evaluate(() => window.__KF.waitSim(1.0));
@@ -372,6 +407,56 @@ try {
     F.riseM = +rise.toFixed(2);
     F.liftSeconds = +(tr.filter((r) => r[7] > 0).length * 6 / 60).toFixed(1);
     log(`caldera: climb ${F.climbM} m over the open (y ${oy}); rise ${F.riseM} m; lift ${F.liftSeconds} s; land ${JSON.stringify(F.summary.last.land)}; hp ${F.summary.hp}; bars ${JSON.stringify(F.summary.bars.worst)} bad ${F.summary.bars.bad}`);
+  }
+  if (ONLY.includes('scar') && (Date.now() - t0) / 1000 < BUDGET_S - 240) {
+    // wave 3c: the Scar road by input (R4), leg 6's driver's own steps: on foot to T3's steps from 8 m out, up them, the
+    // run off the deck toward the first post, the seven posts, down on the Scar foot's field
+    const F = (out.flights.scar = {});
+    const KK = SH.keys(page);
+    await page.evaluate(BARS_INSTALL);
+    await page.evaluate(() => { window.__ROAD = null; });
+    const P = S.P3, foot = { x: P.x + P.d.x * 14, z: P.z + P.d.z * 14 };
+    F.start = await page.evaluate(START, { x: foot.x, z: foot.z, bearing: (Math.atan2(-P.d.x, P.d.z) * 180 / Math.PI + 360) % 360, hour: 17.6 });
+    F.launch = await pillarLaunch(page, KK, 'T3', SCAR_BEARING, 45);
+    log(`scar launch ${JSON.stringify(F.launch).slice(0, 900)}`);
+    if (F.launch.ok) {
+      await page.evaluate(AT, { state: 'gliding', t: 0.3 });
+      F.leg1 = await page.evaluate(FLY_ROAD, { ...SCAR_ROAD, stopAt: 2, capS: 60 });
+      await shot('scar-post2-wide', L.wide);
+      await shot('scar-post2-down', { yawRel: 180, dist: 9, height: 4, up: -12, fov: 60 });
+      F.leg2 = await page.evaluate(FLY_ROAD, { ...SCAR_ROAD, i0: F.leg1.i, stopAt: 5, capS: 60 });
+      await shot('scar-post5-down', { yawRel: 180, dist: 9, height: 4, up: -12, fov: 60 });
+      F.leg3 = await page.evaluate(FLY_ROAD, { ...SCAR_ROAD, i0: F.leg2.i, capS: 120 });
+      log(`scar fly ${JSON.stringify(F.leg3).slice(0, 900)}`);
+      if ((await page.evaluate(() => window.__CTX__.player.flight)) === 'landing') { await shot('scar-land-front', L.front); await shot('scar-land-side', L.side); }
+      await page.evaluate(AT, { state: 'none', t: 0, cap: 6000 });
+      await page.evaluate(() => window.__KF.waitSim(1.2));
+    }
+    F.summary = await page.evaluate(SUMMARY);
+    F.bars4 = await barsNow(page);
+    // the posts from the ground: the seventh from 7 m, the fourth from 9 m (the cloths in the trade)
+    for (const [i, dist] of [[6, 7], [3, 9]]) {
+      const q = S.posts[i]; if (!q) continue;
+      const from = { x: q.x + 0.6 * dist, y: q.y + 1.7, z: q.z + 0.8 * dist }, at = { x: q.x, y: q.y + 2.2, z: q.z };
+      const r = await page.evaluate(LOOKAT, { from, at });
+      await sleep(150);
+      writeFileSync(path.join(runDir, `scar-${q.id}-ground.png`), await page.screenshot({ type: 'png' }));
+      await page.evaluate(UNLENS);
+      out.shots.push({ name: `scar-${q.id}-ground`, file: `scar-${q.id}-ground.png`, lens: { from, at }, read: r });
+    }
+    log(`scar: passes ${F.leg3?.passes?.length ?? 0}/7 land ${JSON.stringify(F.summary.last.land)} hp ${F.summary.hp} bars ${JSON.stringify(F.summary.bars.worst)} bad ${F.summary.bars.bad} frames ${JSON.stringify(F.summary.frames)}`);
+  }
+  if (ONLY.includes('t1drive') && (Date.now() - t0) / 1000 < BUDGET_S - 90) {
+    // wave 3c: leg 4's own 'launch' and 'fly' drivers (glass-line-drive.mjs DRIVE4) from 14 m off T1's steps
+    const F = (out.flights.t1drive = {});
+    const KK = SH.keys(page);
+    const P = S.P1, foot = { x: P.x + P.d.x * 14, z: P.z + P.d.z * 14 };
+    F.start = await page.evaluate(START, { x: foot.x, z: foot.z, bearing: (Math.atan2(-P.d.x, P.d.z) * 180 / Math.PI + 360) % 360, hour: 17.75 });
+    F.launch = await DRIVE4.launch(page, KK, null, 40);
+    log(`t1drive launch ${JSON.stringify(F.launch).slice(0, 900)}`);
+    if (F.launch.ok) F.fly = await DRIVE4.fly(page, KK, null, 40);
+    F.summary = await page.evaluate(SUMMARY);
+    log(`t1drive: open ${JSON.stringify(F.summary.last.open)} land ${JSON.stringify(F.summary.last.land)} bad ${F.summary.bars.bad}`);
   }
 } catch (e) { out.errors.push(String(e?.stack || e).slice(0, 600)); log('error', String(e?.message || e)); }
 out.chromeSeconds = Math.round((Date.now() - t0) / 1000);

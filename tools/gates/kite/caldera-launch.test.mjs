@@ -54,3 +54,20 @@ test('KF3 on the caldera road: from CALDERA_LAUNCH she climbs in lift, +10 m ins
   assert.ok(b.climbM >= KITE.liftCapM - 0.5 && b.climbM <= KITE.liftCapM + 0.01, `25 s: ${b.climbM.toFixed(2)} m (cap ${KITE.liftCapM})`);
   assert.ok(b.liftS >= 20, `in lift ${b.liftS.toFixed(1)} s`);
 });
+
+test('wave 3c, the caldera flight lands: the ride with the face on her right for 16 s, then home to CALDERA_FIELD at <= the safe sink, 0 damage, 10 of 10 trial winds', async () => {
+  const { flyCalderaHome } = await import('./glides.mjs');
+  const { CALDERA_FIELD, landedNear } = await import('../../../src/game/kite/roads.js');
+  const o = launch(CALDERA_LAUNCH, 6.8);
+  const at = { x: o.x, y: o.y, z: o.z, headingDeg: CALDERA_LAUNCH.bearing };
+  const rr = [...Array(10).keys()].map((k) => flyCalderaHome(at, k));
+  for (const r of rr) {
+    assert.equal(r.state, 'landing', `trial ${r.k}: ${JSON.stringify(r)}`);
+    assert.equal(r.near, 'caldera', `trial ${r.k}: ${r.fromCentreM} m from the field's centre`);
+    assert.ok(r.landVs <= KITE.safeLandVs && r.landDamage === 0, `trial ${r.k}: ${r.landVs} m/s, ${r.landDamage} hp`);
+    assert.ok(r.slopeDeg < 26, `trial ${r.k}: she lands on ${r.slopeDeg} deg`);
+    assert.ok(r.liftS >= 5 && r.climbM >= 8, `trial ${r.k}: lift ${r.liftS} s, climb ${r.climbM} m`);
+  }
+  assert.equal(landedNear(CALDERA_FIELD.x, CALDERA_FIELD.z), 'caldera');
+  console.log(`[caldera-home] 10/10 down at ${Math.min(...rr.map((r) => r.t))}-${Math.max(...rr.map((r) => r.t))} s, ${Math.max(...rr.map((r) => r.fromCentreM))} m from the centre at most, slope <= ${Math.max(...rr.map((r) => r.slopeDeg))} deg, climb ${Math.min(...rr.map((r) => r.climbM))}-${Math.max(...rr.map((r) => r.climbM))} m`);
+});

@@ -177,6 +177,20 @@ export function canOpen({ airborneS, clearM, weather = 'trade', state = 'none', 
   return { ok: true, why: '' };
 }
 
+/**
+ * The bearing the kite opens on (wave 3c). Her INPUT's direction (the move keys or stick against the look: the player's
+ * _wishDir) while one is held, else the way her body faces; never her velocity. At 7d5d0dd the T1 open read the jump's
+ * velocity and opened on 320.8 against the test flight's 283 track (she was checked at the drum's centring plate, so what
+ * little she moved was sideways). Engine directions (x = E, z = -N); `heading` is the player's yaw (model.rotation.y), which
+ * faces (sin h, cos h).
+ * @param {{ wishX: number, wishZ: number, heading: number }} o
+ */
+export function openBearingDeg({ wishX, wishZ, heading }) {
+  const held = Math.hypot(wishX, wishZ) > 1e-3;
+  const dx = held ? wishX : Math.sin(heading), dz = held ? wishZ : Math.cos(heading);
+  return ((Math.atan2(dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;
+}
+
 /** @param {number} deg */
 export const bearingDir = (deg) => { const r = deg * Math.PI / 180; return { x: Math.sin(r), z: -Math.cos(r) }; };
 /** deg clockwise from north of an engine direction */

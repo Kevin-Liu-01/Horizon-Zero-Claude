@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { groundedDownTime, KITE, createFlightBody, openAt, stepFlight } from '../../../src/game/kite/flight.js';
 import { flatWorld, steadyWind, gameWind, islandLift, faceAt, fly, WORLD_LIFT } from './world.mjs';
-import { flyTestFlight, flyRoad } from './glides.mjs';
+import { flyTestFlight, flyRoad, flyScarHome } from './glides.mjs';
 import { TEST_FLIGHT, ROAD_LAUNCH } from '../../../src/game/kite/roads.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url)), REPO = path.resolve(HERE, '../../..');
@@ -152,6 +152,18 @@ for (const road of ['organ-shelf', 'scar']) {
 }
 for (const x of T(/^KF7 the caldera/)) line('KF7', x.name.replace(/^KF7 /, ''), x.ok ? 'PASS' : 'FAIL', 'stream on lift');
 line('KF7', 'the first two roads flown end to end by the PAGE driver, 10 of 10', 'UNMEASURED', 'wave 3 (the page driver); Node flies them by the law: the R4 lines above');
+{
+  // wave 3c: the Scar road to its end and the caldera's home, landed (Node, scar-road.test.mjs and caldera-launch.test.mjs)
+  const s = spawnSync(process.execPath, ['--test', '--test-reporter=tap', path.join(HERE, 'scar-road.test.mjs'), path.join(HERE, 'caldera-launch.test.mjs')], { encoding: 'utf8' });
+  const res = [...s.stdout.matchAll(/^(not ok|ok) \d+ - (.*)$/gm)].map((m) => ({ ok: m[1] === 'ok', name: m[2] }));
+  const one = (re) => res.find((x) => re.test(x.name));
+  const sc = flyScarHome(0), msg = (re) => (s.stdout.match(re)?.[1] ?? '');
+  line('KF7', '(R4, wave 3c) scar: from T3 along the seven posts to the last, then down on the Scar foot\'s field (roads.js SCAR_FIELD) at <= 3 m/s, 0 damage, 10 of 10', one(/^R4, the Scar road/)?.ok ? 'PASS' : 'FAIL',
+    `${msg(/\[scar-road\] 10\/10: (.*)/)}; trial 0 ${sc.t} s, ${sc.landVs} m/s`);
+  line('KF7', '(wave 3c) the Scar\'s seven posts in data on dry ground, posts 2-7 under 30 deg', one(/^the Scar road: 7 posts/)?.ok ? 'PASS' : 'FAIL', msg(/\[scar-road\] posts: (.*)/));
+  line('KF3', '(wave 3c) the caldera flight lands: the ride 16 s with the face on her right, then home to roads.js CALDERA_FIELD at <= 3 m/s, 0 damage, 10 of 10', one(/^wave 3c, the caldera flight lands/)?.ok ? 'PASS' : 'FAIL', msg(/\[caldera-home\] (.*)/));
+  line('KF4', '(wave 3c) the open bearing is her input\'s, else her facing, never her velocity (flight.js openBearingDeg)', one(/^the open bearing/)?.ok ? 'PASS' : 'FAIL', 'Node fixture; the page reads it off T1 (flight-page.mjs)');
+}
 {
   const tt = [...Array(10).keys()].map((k) => flyTestFlight(k)), ok = T(/^T1 \(R3\)/)[0];
   line('T1', `(R3) the test flight: open at T1, glide, land on the marked field (r ${TEST_FLIGHT.field.r} m at ${TEST_FLIGHT.field.e}, ${TEST_FLIGHT.field.n})`, ok && ok.ok ? 'PASS' : 'FAIL',

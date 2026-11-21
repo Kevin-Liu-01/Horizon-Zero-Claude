@@ -42,12 +42,12 @@ const posts = (road, en) => en.map(([e, n], i) => Object.freeze({ id: `${road}-$
 
 /** The Scar's line (sites.js SCAR, bible (251, -43) -> (-91, -384)), its north-west lip 15 m off the centre line. */
 const SCAR_A = [251, -43], SCAR_B = [-91, -384], SCAR_LIP_M = 15;
-const scarLip = (/** @type {number} */ k) => {
+const scarLip = (/** @type {number} */ k, off = SCAR_LIP_M) => {
   const de = SCAR_B[0] - SCAR_A[0], dn = SCAR_B[1] - SCAR_A[1], L = Math.hypot(de, dn);
   // the north-west side: the normal (-dn, de)/L points to the line's right going SW, i.e. north-west
   const ne = -dn / L, nn = de / L;
   const side = ne < 0 && nn > 0 ? 1 : -1;
-  return /** @type {[number, number]} */ ([+(SCAR_A[0] + de * k + side * ne * SCAR_LIP_M).toFixed(1), +(SCAR_A[1] + dn * k + side * nn * SCAR_LIP_M).toFixed(1)]);
+  return /** @type {[number, number]} */ ([+(SCAR_A[0] + de * k + side * ne * off).toFixed(1), +(SCAR_A[1] + dn * k + side * nn * off).toFixed(1)]);
 };
 
 /** @type {Readonly<Record<RoadId, readonly LinePost[]>>} */
@@ -56,8 +56,15 @@ export const WIND_ROADS = Object.freeze({
   // (wave 1: [[-156, -316], [-172, -316], [-184, -328], [-196, -340], [-208, -344]], the north rim; R4 moved them)
   // from T1 west-north-west down the test flight's line to the field's near edge, 4 m to the line's south
   'organ-shelf': Object.freeze(posts('organ-shelf', [[-199.6, -358.2], [-214.2, -354.8], [-228.8, -351.4], [-242.5, -348.3], [-256.1, -345.2]])),
-  // from the Kiln Yards' end down toward Saltrow (downwind)
-  scar: Object.freeze(posts('scar', [0.10, 0.233, 0.367, 0.5, 0.633, 0.767, 0.9].map(scarLip))),
+  // from the Kiln Yards' end down toward Saltrow (downwind). Wave 3c, built on the page (src/entities/anim/kite/linePosts.js):
+  // each post moved along and across the north-west lip (k within 0.03 of its place, 13-30 m off the centre line) to the
+  // least steep ground there, the slope read at its foot and 1.5 m round it (area A's faceAt). Post 1 stays on the 47 deg
+  // face the Scar's head falls down from the Yards' shelf (no ground under 40 deg on the lip between k 0.07 and 0.13; the
+  // shelf above is the Yards' apron); posts 2-7 stand on 10-26 deg. Post 5 is kept 13 m off and back to k 0.6, the lip's
+  // furthest point from Ninewalls' centre there (54 m; the Scar runs inside the nine walls' 67.65 m radius from k 0.55 to
+  // 0.72). (wave 1-3b: k 0.10, 0.233, 0.367, 0.5, 0.633, 0.767,
+  // 0.9, all 15 m off: 50, 25, 37, 15, 27, 31 and 10 deg)
+  scar: Object.freeze(posts('scar', [[0.105, 15], [0.223, 15], [0.382, 30], [0.515, 15], [0.6, 13], [0.797, 15], [0.9, 14]].map(([k, off]) => scarLip(k, off)))),
   // the caldera's outer north-east flank, north-west to south-east
   caldera: Object.freeze(posts('caldera', [[80, 202], [96, 194], [104, 194], [120, 194], [136, 194], [152, 186]])),
 });
@@ -91,6 +98,30 @@ export const TEST_FLIGHT = Object.freeze({
  * A sprint, the jump and Space at 0.42 s airborne: 4.1 m clear (3.6 m at a jog); the face lifts her from the open.
  */
 export const CALDERA_LAUNCH = Object.freeze({ x: 150, z: -178, bearing: 60 });
+
+/**
+ * WAVE 3c, THE LANDING FIELDS a road's flight comes down on (the pilot's hand, ./pilot.js toField: the track on the centre,
+ * an orbit over it while there is height to lose, the final to her feet; the law lands her at its own sink). Each was found
+ * in Node on the island's height and area A's lift field: dry ground (no point of it within 1.2 m of the water), no lift
+ * at 2 m over any point of it, and flown 10 of 10 on the trial winds (tools/gates/kite/scar-road.test.mjs,
+ * caldera-launch.test.mjs). `near` is the name 'kite:land' carries when she lands inside it (the quest beats wait on it).
+ *   scar-foot     the Scar road's end (R4): the flat at 9.4 m 43 m north-west of the Scar's foot (SCAR.b, (-91, 384)), the
+ *                 nearest ground to it 12 m round within 0.6 m of level (the foot itself falls 6 m to the beach). From T3 the
+ *                 seventh post is passed 67-71 m over its ground, so about 40 s of the flight is the orbit over the field
+ *   caldera       the caldera lift road's home: the Malpais shelf's gentle ground at 155 m, 10-15 deg, east of the tube
+ *                 shelter. No ground within 400 m of the road's posts is level: the outer flank falls to the sea at 20 deg
+ *                 and more, with lift on its windward faces, and a ride along the face with the face on her LEFT (north-
+ *                 west) ends 150 m from any ground she can stand on. The ride is flown with the face on her RIGHT (south-
+ *                 east, toward the Yards) for at most 20 s, then home
+ */
+export const SCAR_FIELD = Object.freeze({ near: 'scar-foot', x: -128, z: 372, r: 12, g: 9.4 });
+export const CALDERA_FIELD = Object.freeze({ near: 'caldera', x: 196, z: -28, r: 12, g: 154.7 });
+export const LANDING_FIELDS = Object.freeze([
+  Object.freeze({ near: 'test-field', x: TEST_FLIGHT.field.x, z: TEST_FLIGHT.field.z, r: TEST_FLIGHT.field.r, g: 0.6 }),
+  SCAR_FIELD, CALDERA_FIELD,
+]);
+/** The field a landing at (x, z) is inside, by its `near` name, or null. */
+export const landedNear = (/** @type {number} */ x, /** @type {number} */ z) => LANDING_FIELDS.find((F) => Math.hypot(x - F.x, z - F.z) <= F.r)?.near ?? null;
 
 /** The counts the bible gives. */
 export const ROAD_COUNTS = Object.freeze({ 'organ-shelf': 5, scar: 7, caldera: 6 });

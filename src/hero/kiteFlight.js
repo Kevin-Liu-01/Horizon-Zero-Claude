@@ -21,13 +21,18 @@
  * airborneS } and 'kite:land' { x, z, vs, damage, field, refusedWater, from, seconds } (the quest's beats wait on them),
  * 'kite:refused' { why, note } (a field note in the bible's words when the weather grounds it).
  *
+ * Wave 3c: the open's bearing is her input's (the move keys against the look), else her facing, never the jump's velocity
+ * (flight.js openBearingDeg); 'kite:land' carries `near`, the landing field she came down in (roads.js LANDING_FIELDS);
+ * the Scar road's seven line-posts stand on the page from the first frame (ctx.world.linePosts.scar).
+ *
  * Kevin's bars hold through the clips (Node: tools/gates/kite/clip-bench.mjs; page: tools/gates/kite/flight-page.mjs).
  * KF8: while `flight` is not 'none' no aim is held and no roll or crouch answers (weaponVerbsAllowed is false).
  */
 import * as THREE from 'three';
-import { KITE, canOpen, openAt, stepFlight, createFlightBody, weaponVerbsAllowed } from '../game/kite/flight.js';
+import { KITE, canOpen, openAt, stepFlight, createFlightBody, weaponVerbsAllowed, openBearingDeg } from '../game/kite/flight.js';
 import { setLiftSource, liftAt as seamLiftAt } from '../game/kite/lift.js';
-import { TEST_FLIGHT } from '../game/kite/roads.js';
+import { TEST_FLIGHT, landedNear } from '../game/kite/roads.js';
+import { LinePosts } from '../entities/anim/kite/linePosts.js';
 import { liftAt as islandLiftAt } from '../world/island/lift.js';
 import { SEA_LEVEL, GLASS_LEVEL } from '../world/island/recipe.js';
 import { TRIG } from '../world/island/sites.js';
@@ -72,6 +77,8 @@ export function installKiteFlight(player) {
     pose: createKitePose(),
     /** "A Line Over the Glass" (src/game/hour2/glass-line.js), once installed */
     quest: null,
+    /** the wind roads' line-posts on the page (wave 3c: the Scar's seven, src/entities/anim/kite/linePosts.js) */
+    posts: null,
     give() { this.owned = true; return true; },
 
     /** the mesh, built on first need (0 bytes shipped: built from code) */
@@ -97,17 +104,21 @@ export function installKiteFlight(player) {
         if (q.why === 'weather') { ctx.events?.emit?.('kite:refused', { why: q.why, note: q.note }); ctx.progression?.toast?.(q.note); return true; }
         return false;   // too soon or too low: the press does nothing (a buffered jump never fires in the air)
       }
-      // her bearing: where she is going if she is moving, else where she faces (flight.js: dir = (sin b, -cos b))
+      // her bearing (wave 3c): where her input points (the move keys against the look), else where she faces; never the
+      // jump's velocity (flight.js openBearingDeg). The velocity's bearing is kept in the record beside it
+      const wish = typeof player._wishDir === 'function' ? player._wishDir() : null;
+      const bearing = openBearingDeg({ wishX: wish?.x ?? 0, wishZ: wish?.z ?? 0, heading: player.heading });
       const vx = player.velocity.x, vz = player.velocity.z, sp = Math.hypot(vx, vz);
-      const dx = sp > 1 ? vx / sp : Math.sin(player.heading), dz = sp > 1 ? vz / sp : Math.cos(player.heading);
-      const bearing = ((Math.atan2(dx, -dz) * 180 / Math.PI) % 360 + 360) % 360;
+      const velBearing = sp > 0.05 ? +(((Math.atan2(vx, -vz) * 180 / Math.PI) % 360 + 360) % 360).toFixed(1) : null;
       const f = this.f, p = player.position;
+      // what she stands over (a pillar's deck, a roof), beside the bare ground the open rule reads
+      const floorY = player._sampleGround ? player._sampleGround(p.x, p.z, p.y) : gy;
       player.flight = openAt(f, { x: p.x, y: p.y, z: p.z, headingDeg: bearing, groundY: gy });
       this.active = true;
       let from = null;
       for (const T of TRIG) if (Math.hypot(T.x - p.x, T.z - p.z) <= FROM_TRIG_M) from = T.id;
       this.from = from; this.t0 = ctx.engine?.simTime ?? 0; this.bank = 0; this.foldAsked = false;
-      this.last.open = { from, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), clearM: +(p.y - gy).toFixed(2), airborneS: +player.airTime.toFixed(3), bearing: +bearing.toFixed(1) };
+      this.last.open = { from, x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), clearM: +(p.y - gy).toFixed(2), overFloorM: +(p.y - floorY).toFixed(2), airborneS: +player.airTime.toFixed(3), bearing: +bearing.toFixed(1), velBearing, speed: +sp.toFixed(2) };
       this.last.land = null;
       this._kite().group.visible = true;
       // KF8: nothing of a weapon answers in the air
@@ -136,7 +147,8 @@ export function installKiteFlight(player) {
       if (!weaponVerbsAllowed(next)) { player.aiming = false; player.sprinting = false; player.dodging = false; player._dodgeQueued = -1; if (player.crouching) player.setCrouch(false); }
       if (prev !== 'landing' && next === 'landing') {
         const field = Math.hypot(f.x - TEST_FLIGHT.field.x, f.z - TEST_FLIGHT.field.z) <= TEST_FLIGHT.field.r;
-        this.last.land = { x: +f.x.toFixed(2), z: +f.z.toFixed(2), vs: +f.landVs.toFixed(2), damage: +f.landDamage.toFixed(1), field, refusedWater: f.refusedWater, from: this.from,
+        // near: the landing field she came down in, by name (roads.js LANDING_FIELDS; 'scar-foot' is leg 6's scar-flight)
+        this.last.land = { x: +f.x.toFixed(2), z: +f.z.toFixed(2), vs: +f.landVs.toFixed(2), damage: +f.landDamage.toFixed(1), field, near: landedNear(f.x, f.z), refusedWater: f.refusedWater, from: this.from,
           seconds: +(((ctx.engine?.simTime ?? 0) - this.t0)).toFixed(2), hpBefore: Math.round(player.health) };
         if (f.landDamage > 0) player.takeDamage(f.landDamage, 'fall');
         ctx.events?.emit?.('player-land', { fall: 0, vy: -f.landVs, hard: f.landDamage > 0 });
@@ -163,6 +175,10 @@ export function installKiteFlight(player) {
 
     /** after every animator update (flying or not): the kite placed from the hang's solve, or furled on its mount */
     _afterAnim() {
+      // the Scar road's seven line-posts (wave 3c), built the first frame the scene and the ground stand; their cloths
+      // follow the wind every frame (ctx.world.linePosts.scar is the runner's 'site:scar-posts')
+      if (!this.posts && ctx.scene && ctx.terrain) { try { this.posts = { scar: new LinePosts(ctx, 'scar') }; } catch (e) { this.posts = { error: String(e?.message || e) }; console.error('[kite] line-posts', e); } }
+      if (this.posts?.scar) this.posts.scar.update(ctx.engine?.simTime ?? 0);
       // "A Line Over the Glass" registers itself beside the hour-two hub the first frame the hub stands (./index.js says
       // the kite quest registers its own part)
       if (!this.quest && ctx.hour2) { try { this.quest = installGlassLine(ctx); } catch (e) { this.quest = { error: String(e?.message || e) }; console.error('[kite] glass-line', e); } }
