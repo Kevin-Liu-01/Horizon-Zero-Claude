@@ -26,7 +26,20 @@
  *           it hangs free"; a stowed prop is not her body), and the drawn panel vertices within FLAP_REACH m of her pelvis
  *           axis (0.45: a 0.58 m panel hung from the belt's 0.20 m at C6's 25 deg). The flap filmed in the first hour: the
  *           back panel caught OUTSIDE the stow kit's 0.11 m lance capsule, and a panel's edge column out of her lee.
+ *   sheet   (page; the drawn sheets, round 3) WHAT THE GPU DRAWS, not what the CPU reads: each mesh she draws (and every
+ *           skinned or unculled mesh within 3 m of her) is rendered ALONE with its own material and program (camera and
+ *           mesh on a spare layer, the scene's lights with them, the scene background off) and read back; its drawn pixels
+ *           outside the screen box of its VISIBLE vertices as the CPU skins them (getVertexPosition; a vertex whose `_piece`
+ *           bit the drawn program hides is not visible), that box grown by SHEET_PAD px, are the sheet. Bar SHEET_PX in
+ *           total over her meshes, at every read: standing, after a run, and through a bow aim, draw, loose, the lance out
+ *           and a swing. (The flap filmed in the first hour and at a bow aim: the piece masks (clothShader.js uHidePiece,
+ *           stowkit.js uKitHide) put a hidden vertex at the bind-space origin BEFORE skinning; each such vertex is then
+ *           moved by its own bones, so in any pose away from the bind the hidden hat copies, the stowed bow or lance
+ *           opened into flat sheets a metre across, drawn where no CPU read puts a vertex.)
  *   --diag  (page) every drawn PIECE-mask mesh in the scene, its program, and who else holds the Scout's program.
+ *   --list  (page) every mesh near her at each read: visible chain, skinned, parents, material and skeleton uuids, the
+ *           skeleton's bone count and bone texture, bones[0]'s world matrix, frustumCulled, an onBeforeRender, and its
+ *           drawn / outside pixels.
  *   --grid  (page) each panel's chord in her frame (plumb, colOff: a column's hem off its belt point), still air, a reset.
  *   --wide  (page) every vertex she draws farther than 0.40 m from her pelvis axis, by mesh, bone and ancestry.
  *
@@ -51,6 +64,9 @@ const BAR_OUT = 0.20;
 /** The flap clause's bars (see the header): a panel column's chord off plumb (deg) and the drawn panels' reach from her
  *  pelvis axis (m), in the trade wind at 5.5 m/s, standing and after a run's stop. */
 const FLAP_COL = 27, FLAP_REACH = 0.45;
+/** The sheet clause (see the header): drawn pixels of her meshes outside their CPU-skinned visible box (+ SHEET_PAD px),
+ *  in total per read, at 1600 x 900. */
+const SHEET_PX = 200, SHEET_PAD = 6;
 const BODY_COLS = /^(torso\d|hips|thigh[LR]|shin[LR]|upArm[LR]|foreArm[LR]|handR|head|neck)$/;
 
 /** The panels against her body now: per panel its worst FREE column's chord off plumb (deg; a column with a particle within
@@ -157,6 +173,78 @@ export function readFitted(M, rig, bits, uOf, BAR) {
   return out;
 }
 
+/** (page) The drawn-pixel pick: every candidate mesh rendered alone with its own material (see the header's `sheet`).
+ *  Self-contained: sent to the page as source. Returns { total, meshes: [...] } (total over her meshes). */
+export async function pickDrawn(PAD, list) {
+  const C = window.__CTX__, R = C.renderer, S = C.scene, cam = C.camera, P = C.player, M = P.model, gl = R.getContext();
+  await new Promise((r) => requestAnimationFrame(r));
+  S.updateMatrixWorld(true);
+  const T = M.position.constructor, v = new T();
+  let pel = null; M.traverse((o) => { if (!pel && o.isBone && o.name === 'pelvis') pel = o; });
+  const pp = new T().setFromMatrixPosition(pel.matrixWorld);
+  const inHer = (o) => { let q = o; while (q) { if (q === M) return true; q = q.parent; } return false; };
+  const shown = (o) => { let q = o; while (q) { if (!q.visible) return false; q = q.parent; } return true; };
+  const cands = [];
+  S.traverse((o) => {
+    if (!o.isMesh || !o.geometry?.attributes?.position || !shown(o)) return;
+    const her = inHer(o);
+    if (!her) { if (!(o.isSkinnedMesh || o.frustumCulled === false)) return; v.setFromMatrixPosition(o.matrixWorld); if (v.distanceTo(pp) > 3) return; }
+    cands.push({ o, her });
+  });
+  const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, buf = new Uint8Array(W * H * 4);
+  const LAYER = 31, camMask = cam.layers.mask, bg = S.background, sAuto = R.shadowMap.autoUpdate, lights = [];
+  S.traverse((o) => { if (o.isLight) lights.push([o, o.layers.mask]); });
+  let Col = null; M.traverse((o) => { if (!Col && o.material?.color?.isColor) Col = o.material.color.constructor; });
+  const cc = new Col(); const ca = R.getClearAlpha(); R.getClearColor(cc);
+  const out = { total: 0, meshes: [] };
+  try {
+    S.background = null; R.shadowMap.autoUpdate = false; cam.layers.set(LAYER);
+    for (const [L] of lights) L.layers.enable(LAYER);
+    R.setRenderTarget(null);
+    for (const { o, her } of cands) {
+      const m0 = o.layers.mask; o.layers.enable(LAYER);
+      try { R.setClearColor(0xff00ff, 1); R.clear(); R.render(S, cam); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf); } finally { o.layers.mask = m0; }
+      // the key: a pixel no mesh drew (the clear colour as the drawing buffer holds it)
+      const k0 = buf[0], k1 = buf[1], k2 = buf[2];
+      // the CPU's box of its visible vertices, in drawing-buffer pixels (origin bottom left, as readPixels)
+      const g = o.geometry, pos = g.attributes.position, pc = g.getAttribute('_piece') || g.getAttribute('_PIECE');
+      const mats = [].concat(o.material || []);
+      let bits = 0; for (const mm of mats) { const q = R.properties.get(mm)?.uniforms; bits |= (q?.uHidePiece?.value ?? q?.uKitHide?.value ?? 0) | 0; }
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, nv = 0;
+      for (let i = 0; i < pos.count; i++) {
+        if (pc && bits && (Math.round(pc.getX(i)) & bits)) continue;
+        if (o.isSkinnedMesh) o.getVertexPosition(i, v); else v.fromBufferAttribute(pos, i);
+        o.localToWorld(v); v.project(cam);
+        if (v.z > 1) continue;
+        const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; nv++;
+        if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
+      }
+      x0 -= PAD; y0 -= PAD; x1 += PAD; y1 += PAD;
+      let n = 0, outN = 0, bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const j = (y * W + x) * 4;
+        if (buf[j] === k0 && buf[j + 1] === k1 && buf[j + 2] === k2) continue;
+        n++; if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+        if (x < x0 || x > x1 || y < y0 || y > y1) outN++;
+      }
+      if (her) out.total += outN;
+      if (!list && !outN) continue;
+      let anc = [], q = o.parent; while (q && anc.length < 5) { anc.push(q.name || q.type); q = q.parent; }
+      const sk = o.skeleton, b0 = sk?.bones?.[0]?.matrixWorld?.elements;
+      out.meshes.push({ name: o.name || o.type, part: o.userData?.heroPart || null, her, skinned: !!o.isSkinnedMesh, anc: anc.join('<'),
+        mat: mats.map((mm) => `${mm.name || mm.type}:${mm.uuid.slice(0, 8)}${mm.userData?.fadeU ? ':fade' : ''}`).join(','), bits, verts: pos.count, visVerts: nv,
+        skel: sk ? { id: sk.uuid.slice(0, 8), bones: sk.bones.length, tex: sk.boneTexture ? sk.boneTexture.image.width : null, mats: sk.boneMatrices ? sk.boneMatrices.length / 16 : null, b0: b0 ? [b0[12], b0[13], b0[14]].map((u) => +u.toFixed(3)) : null } : null,
+        culled: o.frustumCulled, obr: o.onBeforeRender && String(o.onBeforeRender).length > 40 ? String(o.onBeforeRender).slice(0, 60) : null,
+        drawn: n, outside: outN, drawnBox: n ? [bx0, by0, bx1, by1] : null, cpuBox: nv ? [x0, y0, x1, y1].map((u) => Math.round(u)) : null });
+    }
+  } finally {
+    S.background = bg; R.shadowMap.autoUpdate = sAuto; cam.layers.mask = camMask;
+    for (const [L, mk] of lights) L.layers.mask = mk;
+    R.setClearColor(cc, ca);
+  }
+  return out;
+}
+
 const verdict = (reads) => {
   const loose = Math.max(...reads.map((r) => r.loose)), outN = Math.max(...reads.map((r) => r.out)), worst = Math.max(...reads.map((r) => r.worst));
   const hats = Math.max(...reads.map((r) => r.hats ? r.hats.shown : 1));
@@ -165,8 +253,11 @@ const verdict = (reads) => {
   // (the flap clause: every flap read passes FLAP_COL and FLAP_REACH)
   const flaps = reads.filter((r) => r.flap);
   const flap = flaps.length ? { pass: flaps.every((r) => flapPass(r.flap)), col: Math.max(...flaps.flatMap((r) => Object.values(r.flap.panels).map((p) => p.col))), reach: Math.max(...flaps.map((r) => r.flap.reach)) } : null;
-  const pass = !noRig && loose === 0 && outN === 0 && hats <= 1 && !!flap && flap.pass;
-  return { pass, noRig, loose, out: outN, worst: +worst.toFixed(3), reach: Math.max(...reads.filter((r) => !r.flap).map((r) => r.reach)), hatsShown: hats, flap };
+  // (the sheet clause, page only: the drawn pixels of her meshes outside their CPU-skinned visible box, worst read)
+  const sh = reads.filter((r) => r.sheet != null);
+  const sheet = sh.length ? { px: Math.max(...sh.map((r) => r.sheet)), at: sh.reduce((a, r) => (r.sheet > a.sheet ? r : a), sh[0]).label, reads: sh.length, pass: sh.every((r) => r.sheet <= SHEET_PX) } : null;
+  const pass = !noRig && loose === 0 && outN === 0 && hats <= 1 && !!flap && flap.pass && (!sheet || sheet.pass);
+  return { pass, noRig, loose, out: outN, worst: +worst.toFixed(3), reach: Math.max(...reads.filter((r) => !r.flap).map((r) => r.reach)), hatsShown: hats, flap, sheet };
 };
 
 /* ------------------------------------------------------------------ Node */
@@ -269,7 +360,7 @@ async function runPage() {
     if (cont) throw new Error(cont);
     await page.waitForFunction(() => window.__CTX__?.state === 'playing' && document.getElementById('loading')?.classList.contains('hidden') !== false, { timeout: 120000, polling: 100 });
     await sleep(3000);
-    await page.evaluate(`window.__readFitted = ${readFitted.toString()};`);
+    await page.evaluate(`window.__readFitted = ${readFitted.toString()}; window.__pickDrawn = ${pickDrawn.toString()};`);
     const read = async (label) => {
       const r = await page.evaluate(async (BAR) => {
         const C = window.__CTX__, P = C.player, an = P.animator, R = C.renderer;
@@ -283,6 +374,10 @@ async function runPage() {
         return out;
       }, BAR_OUT);
       r.label = label; reads.push(r);
+      // the sheet: what the GPU draws against where the CPU skins it
+      const pk = await page.evaluate(async (PAD, list) => window.__pickDrawn(PAD, list), SHEET_PAD, args.includes('--list'));
+      r.sheet = pk.total;
+      console.log('SHEET', label, JSON.stringify({ total: pk.total, meshes: pk.meshes }));
       // --wide: every vertex she draws (any mesh on her, the caster out) farther than 0.40 m from her pelvis axis, by mesh
       // and its dominant bone
       if (args.includes('--wide')) {
@@ -317,6 +412,22 @@ async function runPage() {
     await read('after run');
     await sleep(1500);
     await read('stopped');
+    // (the drawn sheets: a bow aim, the draw, the loose, the lance out and a swing; the sheet clause reads each)
+    await page.mouse.move(800, 450);
+    await page.keyboard.press('Digit1'); await sleep(400);
+    await page.mouse.down({ button: 'right' }); await sleep(1200);
+    await read('aim');
+    await page.keyboard.down('ShiftLeft');
+    await page.mouse.down({ button: 'left' }); await sleep(1000);
+    await read('draw');
+    await page.mouse.up({ button: 'left' }); await sleep(500);
+    await read('loosed');
+    await page.keyboard.up('ShiftLeft'); await page.mouse.up({ button: 'right' }); await sleep(800);
+    await page.keyboard.press('Digit2'); await sleep(1200);
+    await read('lance out');
+    await page.mouse.down({ button: 'left' }); await sleep(120); await page.mouse.up({ button: 'left' }); await sleep(350);
+    await read('lance swing');
+    await sleep(900);
     // the flap: the world's wind held at 5.5 m/s on its own bearing (environment.windAt, put back after), standing 3 s,
     // then 1.5 s after a 2 s run's stop; each the worst of 1 s of frames
     await page.evaluate(`window.__readFlap = ${readFlap.toString()}; window.__flapMax = ${flapMax.toString()};`);
