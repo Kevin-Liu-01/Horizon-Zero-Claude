@@ -14,6 +14,9 @@
  *   --chain    each leg after the first from the record the leg before left in its store (the handoff save)
  *   --handoff  each leg from the record the leg before it left in an earlier run (that run's report.json carries every
  *              leg's `endRecord`): the handoff start without replaying the leg before
+ *   --resume   (M3 wave 3c) each leg from the record the SAME leg left in an earlier run: its tail played again without its
+ *              head (a beat the record has already reached is not driven again; it passes by its stage as before). Not
+ *              one of rule 13's two starts: a tail run, said so in the report (`from`)
  * Each leg is one Chrome launch with nothing else in it (the machine-wide slot1), its own Vite on --port from THIS tree.
  *
  * A BEAT PASSES only when its stage is reached: `ctx.quests[quest].report().reached` holds the beat's id (the world
@@ -63,6 +66,7 @@ const LABEL = flag('--label', 'hour-two');
 const LEG_BUDGET_S = Number(flag('--leg-budget', LEG_CAP_S));
 const CHAIN = args.includes('--chain');
 const HANDOFF = flag('--handoff');
+const RESUME = flag('--resume');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(`[hour-two ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch { return '?'; } };
@@ -81,8 +85,16 @@ const handoffs = (() => {
   return Object.fromEntries((r.legs || []).filter((l) => l.endRecordFull).map((l) => [l.leg, l.endRecordFull]));
 })();
 
+/** --resume: the end record of each leg of an earlier run, by leg (the same leg's tail) */
+const resumes = (() => {
+  if (!RESUME) return {};
+  if (!existsSync(RESUME)) throw new Error(`--resume ${RESUME}: no such report`);
+  const r = JSON.parse(readFileSync(RESUME, 'utf8'));
+  return Object.fromEntries((r.legs || []).filter((l) => l.endRecordFull).map((l) => [l.leg, l.endRecordFull]));
+})();
+
 const report = {
-  row: 'A-hour-two', wave: 3, chain: CHAIN, handoff: HANDOFF, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(),
+  row: 'A-hour-two', wave: 3, chain: CHAIN, handoff: HANDOFF, resume: RESUME, commit, dirty, tree: REPO, port: PORT, startedAt: new Date().toISOString(),
   legs: [], beats: null, places: PLACES,
 };
 
@@ -381,6 +393,9 @@ const DRIVE = {
     const s2 = await bzNow();
     out.after = { hour: s2.hour, hp: s2.hp, lastRest: s2.lastRest };
     await K.tap('KeyW'); await sleep(300);
+    // the look onto the bowl, so the beat's picture holds the Brazier she rested at
+    await page.evaluate(SH.face, A.x, A.z);
+    await sleep(600);
     return out;
   },
   // (M3 wave 3c) back to Oro once the Scar is flown: TALK, the scene played through; the card says rung 7 is held
@@ -526,17 +541,23 @@ async function runLeg(leg, startRec, startName) {
       if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: b.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const needs = b.needs.map((id) => [id, NEEDS[id].probe]);
       let driven = null;
-      if (DRIVE[b.id]) {
+      // (M3 wave 3c) a beat the start record has already reached is not driven again (a --resume start)
+      const already = DRIVE[b.id] && (await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs)).ok;
+      if (DRIVE[b.id] && !already) {
         // R8's shorter budget stands on a piece (B2's WALK THE LINE node); while that piece is missing the beat is driven
         // on its wave-1 route and budget (wave1S), and its numbers say so
         const pre = b.wave1S ? await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs) : null;
         const onWave1 = !!(pre && pre.missing.some((id) => /^travel:|^bm:/.test(id)));
         const maxS = Math.max(60, (onWave1 ? b.wave1S : b.budgetS) * 2);
         const tD = Date.now();
+        const sim0 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null).catch(() => null);
         try { driven = await DRIVE[b.id](page, K, b, maxS); } catch (e) { driven = { error: String(e?.message || e).slice(0, 300) }; }
         driven.s = +((Date.now() - tD) / 1000).toFixed(1);
+        // (M3 wave 3c) the beat's budget is GAME time: the sim seconds the drive took beside its wall seconds
+        const sim1 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null).catch(() => null);
+        if (sim0 != null && sim1 != null) driven.simS = +(sim1 - sim0).toFixed(1);
         if (onWave1) driven.budget = { wave1S: b.wave1S, maxS, why: `R8's route needs ${pre.missing.filter((id) => /^travel:|^bm:/.test(id)).join(', ')}` };
-        log(`leg ${leg} ${b.id}: driven in ${driven.s} s ${JSON.stringify(driven).slice(0, 300)}`);
+        log(`leg ${leg} ${b.id}: driven in ${driven.s} s (sim ${driven.simS ?? '?'} s, budget ${b.budgetS}) ${JSON.stringify(driven).slice(0, 300)}`);
       }
       const pr = await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs);
       // wave 1: no beat has a driver. A beat whose needs are all there and that is not reached fails "no driver" (rule 14)
@@ -579,7 +600,8 @@ try {
   let carry = null;
   for (const leg of LEGS) {
     let start = null, name = null;
-    if (CHAIN && carry) { start = carry; name = `the record leg ${leg - 1} left in this run (${carry.kind} '${carry.reason}', hour ${carry.hour})`; }
+    if (RESUME && resumes[leg]) { start = resumes[leg]; name = `the record leg ${leg} left in ${RESUME} (a tail run: --resume)`; }
+    else if (CHAIN && carry) { start = carry; name = `the record leg ${leg - 1} left in this run (${carry.kind} '${carry.reason}', hour ${carry.hour})`; }
     else if (HANDOFF && handoffs[leg - 1]) { start = handoffs[leg - 1]; name = `the record leg ${leg - 1} left in ${HANDOFF}`; }
     else if (HANDOFF && leg > 4) { report.legs.push({ leg, from: 'handoff', error: `no end record of leg ${leg - 1} in ${HANDOFF}`, beats: beatsOfLeg(leg).map((b) => ({ leg, beat: b.id, ok: false, why: 'not run: no handoff save' })), passed: `0/${beatsOfLeg(leg).length}` }); continue; }
     else { start = fixture(leg); name = `fixture(${leg})`; }
