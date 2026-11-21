@@ -35,6 +35,10 @@ const D2R = Math.PI / 180;
 export function footprint(colliders, pad = 0.8, { minH = 0.7, bucket = 8 } = {}) {
   const items = [];
   for (const raw of colliders || []) {
+    // (M3 wave 3c) a collider that does not block (the tube shelter's crust: over her head, the camera's only) is walked
+    // under: in collision.register's shape the flag is on the record, not the shape, and was dropped, so in Node the
+    // crust closed the tube's floor and no line left the tube shelter
+    if (raw?.blocking === false) continue;
     const s = raw?.shape ?? raw;
     if (!s || !s.type) continue;
     let it = null;
