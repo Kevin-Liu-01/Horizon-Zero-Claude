@@ -3440,3 +3440,44 @@ No accepted frame regressed.
   The same run passes in the default context and as the first hour's `--run-only` leg.
 - **minor | C6 (fixer's report)**: under its lower band in 19 cells after 4c9783c (was 7); panels in her lee lift less
   than 10 deg at 5.5 m/s. This is the same cause as A-sweep-wind.
+
+## The cloth flap, round 3 (verify at 7bb4ec8)
+
+Head of r5/int at the verify: 7bb4ec8 (efaf2ca the piece masks after skinning; 2696a1e the rebuild's bind-pose reads
+kept; 03849eb, f3274b9, 7bb4ec8 the sheet clause of A-cloth-fitted-set). Every number below is from a clean detached
+worktree (tools/perf/clean-measure.sh) at the commit named beside it.
+
+**Tier 0 at 7bb4ec8 (Node checks): 8 of 8 PASS, boot not run** (build, name lint 0, licences, asset budgets, texture
+ledger 137.33 of 175 MB, shipped ledger first load 55.91 of 60 MB, import graph 0 broken, node --test 307 of 307).
+Not a merge result: the headless boot was not run.
+
+**A-cloth-fitted-set --node:** 7bb4ec8 PASS (loose 0, out 0, worst 0.046 m, hats 1, flap 24.9 deg / 0.432 m);
+8f7ecb6 (main's source, the row's tool from 7bb4ec8) FAIL (loose 843, worst 0.194 m, flap 52.1 deg / 0.697 m).
+
+**The drawn sheets (named, not yet proven in the page).** The hat mask (clothShader.js uHidePiece) and the stow kit's
+mask (stowkit.js uKitHide) set a hidden vertex to the origin BEFORE skinning (at begin_vertex). three's skinning then
+takes bindMatrix * origin through each vertex's OWN bone blend, so the hidden vertices do not meet at one point: in any
+pose away from the bind they spread over her bones and the hidden hat copies, the stowed bow or lance draw as flat
+sheets up to a metre across, where no CPU read (getVertexPosition with the piece bit hidden) puts a vertex. efaf2ca
+collapses them after skinning_vertex (all at the mesh origin: zero-area triangles), as the machines' component slots
+already do. The reasoning is sound by reading the shader chunks; the page proof is owed: the sheet clause has not yet
+been seen to FAIL at main and PASS at the head in one run, and leg 2's beat pictures have not been filmed at the head.
+
+**The reward's frame (2696a1e):** the put-on's rig rebuild keeps the bind-pose reads of the skin and the clothes
+(_buildColliders 42-51 ms to 1.1-1.6 ms in Node; cloth-bench --mode 2 identical in every non-timing value). The page's
+frame at the slice's reward is not measured; the Scout's own program link at the reward is not addressed.
+
+**A-sweep-wind (kept): still FAILS at the head.** The front-left panel's drag and the wider lee (4c9783c) hold it under
+the 0.05 m move bar and off downwind; nothing since 55bde2a touches the wind path (the diff 55bde2a..7bb4ec8 in src is
+the two mask hooks and the rebuild's memo). Restoring the old lee and drag passes the sweep but breaks the flap clause:
+the two rows pull against each other and a joint fix is owed.
+
+**Page rows at 7bb4ec8: PENDING.** A90b (kept stack) twice gave up waiting for Chrome after 300 s; the memory guard held
+both slots from about 11:21Z to after 12:15Z with 36-39 % memory free (the bar is 50 %). `A-sweep-wind` is not
+registered in tools/gates.mjs (`--only A-sweep-wind` finds no gate, with or without `--kept-stack`): it lives in
+tools/gates/hero-sweep.mjs and runs through that file or sash-probe.mjs --wind. Its "kept" label should be checked
+against docs/GATES.md.
+
+**Verdict: REFUTED for a fast-forward of main.** A kept row fails at the head and passes at main; the first hour, the
+slice, the kept rows the change touches and the accepted Frame Set frames were not run at the head (Chrome not
+available under the memory guard).
