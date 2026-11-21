@@ -78,7 +78,9 @@ export class SondeLive extends Base {
     const B = this.rules, T = this.ctx.terrain;
     const wind = this._windAt();
     const wasTethered = B.tethered;
-    B.step(Math.min(dt, 0.1), { wind, groundY: (x, z) => T?.getHeight?.(x, z) ?? B.post.y, calima: this.ctx.environment?.weather === 'calima' });
+    // the ground it comes down on: the land, or the sea's face where it has drifted out over the water
+    const sea = this.ctx.water?.seaLevel;
+    B.step(Math.min(dt, 0.1), { wind, groundY: (x, z) => Math.max(T?.getHeight?.(x, z) ?? B.post.y, Number.isFinite(sea) ? sea : -Infinity), calima: this.ctx.environment?.weather === 'calima' });
     for (const e of B.events.splice(0)) {
       if (e.type === 'tether-cut') { this.stats.cutAt = +B.t.toFixed(2); this.stats.cutPos = { x: B.x, z: B.z }; this.stats.windFromAtCut = +wind.fromDeg.toFixed(1); }
       if (e.type === 'down') { this.stats.downAt = +B.t.toFixed(2); this.stats.downPos = { x: +B.x.toFixed(2), z: +B.z.toFixed(2) }; }

@@ -3,6 +3,7 @@ import { KILN_KIND } from './kind.js';
 import { SPINDLE_KIND } from '../spindle/kind.js';
 import { DAVIT_KIND } from '../davit/kind.js';
 import { DavitBrain } from '../davit/rules.js';
+import { ISLAND_SCALE as SCALE } from '../../../world/island/extent.js';
 
 /**
  * THE YARDS' ENCOUNTER AS LIVE KINDS (Milestone 3 wave 3c, area C; Q4's default and R7; BUILD M3.3/M3.4). "The Kiln
@@ -30,6 +31,10 @@ import { DavitBrain } from '../davit/rules.js';
  *   L.ready / L.report() / L.dispose()
  */
 const BRINE_R = 3.0;          // src/combat/pots.js POTS.brine.radius (its mist: a squat dome, top r x 1.1)
+/** Where the Davit may stand: the apron and the shelf behind it, in the apron's (u, v) metres (the seam's frame; the
+ * patrol shelf is at v 12.5). Off it the ground falls away: at 17ed6fd it followed 20 m behind a Kiln onto the slope at
+ * u 25-34 and stood tilted and half sunk. */
+const DAVIT_UV = Object.freeze({ u: [-21, 21], v: [-7.5, 13.5] });
 
 export class YardsLive {
   constructor(ctx, Y, { seam } = {}) {
@@ -70,8 +75,10 @@ export class YardsLive {
     if (this.davit || !this._ok?.davit || this.stats.davitIn) return;
     if ((this.seam?.quenchedCount?.() ?? 0) < 2 || this.Y.quiet) return;
     const P = this.Y.R?.patrol, e = P ? P[P.length - 1] : { x: this.kilns[0]?.brain.x ?? 0, z: this.kilns[0]?.brain.z ?? 0 };
-    const w = P ? P[0] : e, ux = e.x - w.x, uz = e.z - w.z, L = Math.hypot(ux, uz) || 1;
-    const x = e.x + (ux / L) * 14, z = e.z + (uz / L) * 14;
+    const w = P ? P[0] : e, ux = e.x - w.x, uz = e.z - w.z;
+    // in at the shelf's east end (the apron's edge, past the patrol's end)
+    const at = this._onApron(e.x + ux * 0.1, e.z + uz * 0.1);
+    const x = at.x, z = at.z;
     const brain = new DavitBrain({ x, z, heading: Math.atan2(-ux, -uz) });
     const m = spawnLive(this.ctx, DAVIT_KIND.id, x, z, brain.heading, { brain });
     if (!m) return;
@@ -79,6 +86,17 @@ export class YardsLive {
     this.davit = m;
     this.stats.davitIn = { t: +(this.Y.t ?? 0).toFixed(1), quenched: this.seam.quenchedCount(), at: { x: +x.toFixed(1), z: +z.toFixed(1) } };
     this.stats.spawned.push({ kind: 'davit' });
+  }
+
+  /** (x, z) held on the apron and its shelf (DAVIT_UV), through the seam's apron frame. */
+  _onApron(x, z) {
+    const S = this.seam;
+    if (!S?.apronUV || !S?.apronPoint) return { x, z };
+    const q = S.apronUV(x / SCALE, -z / SCALE);
+    const u = Math.max(DAVIT_UV.u[0], Math.min(DAVIT_UV.u[1], q.u)), v = Math.max(DAVIT_UV.v[0], Math.min(DAVIT_UV.v[1], q.v));
+    if (u === q.u && v === q.v) return { x, z };
+    const p = S.apronPoint(u, v);
+    return { x: p.e * SCALE, z: -p.n * SCALE };
   }
 
   /** The Kilns as the Davit's `world.instruments` (the hit-parts records it reads). */
@@ -128,8 +146,11 @@ export class YardsLive {
     }
     this._davitIn();
     if (this.davit && this.davit.alive !== false) {
-      this.davit.brain.step(dt, { instruments: this._instruments() });
-      this.davit.brain.events.length = 0;
+      const DB = this.davit.brain;
+      DB.step(dt, { instruments: this._instruments() });
+      DB.events.length = 0;
+      const c = this._onApron(DB.x, DB.z);
+      DB.x = c.x; DB.z = c.z;
     }
     const st = this.stats;
     st.frames++;

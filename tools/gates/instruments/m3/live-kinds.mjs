@@ -28,6 +28,12 @@ import { takeMachineSlot, releaseMachineSlot } from '../../../chrome-slot.mjs';
 import { RUNS, assertOutsideRepo } from '../../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../../chrome-profile.mjs';
 import { fixture } from '../../systems/hour-two-fixtures.mjs';
+import { apronPoint, apronUV } from '../../../../src/world/sites/kilnyards-layout.js';
+import { ISLAND_SCALE as SC } from '../../../../src/world/island/extent.js';
+
+/** The apron's (u, v) metres to engine (x, z) and back (the seam's frame: lenses and marks stay on the yard's floor). */
+const AP = (u, v) => { const p = apronPoint(u, v); return { x: p.e * SC, z: -p.n * SC }; };
+const UV = (x, z) => apronUV(x / SC, -z / SC, { u: 0, v: 0 });
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const args = process.argv.slice(2);
@@ -160,23 +166,24 @@ async function yards(page) {
     return { plugged: g(k), awake: g(a), spindle: S ? g(S) : null, door: k.brain.doorWorld(), H: k.height };
   });
   R.poses = K;
-  const P = K.plugged, f = [Math.sin(P.h), Math.cos(P.h)], rt = [Math.cos(P.h), -Math.sin(P.h)];
-  // 1) the plugged Kiln at its wellhead, Brea 7 m off its front-left
-  const b1 = { x: P.x + f[0] * 6.5 - rt[0] * 3.5, z: P.z + f[1] * 6.5 - rt[1] * 3.5 };
+  const P = K.plugged;
+  // 1) the plugged Kiln at its wellhead, Brea 6 m off its front on the apron; the lens from the apron's middle
+  const pu = UV(P.x, P.z);
+  const b1 = AP(pu.u + 6, pu.v + 1.5);
   R.brea1 = await page.evaluate(PLACE, { ...b1, fx: P.x, fz: P.z });
-  await page.evaluate(frames, 20);
-  const m1 = { x: (P.x + b1.x) / 2, z: (P.z + b1.z) / 2 };
-  await shoot(page, 'kiln-plugged-brea', { eye: { x: m1.x + f[0] * 13 - rt[0] * 13, y: P.y + 2.4, z: m1.z + f[1] * 13 - rt[1] * 13 }, at: { x: m1.x, y: P.y + 2.3, z: m1.z }, fov: 42 }, 'the plugged Kiln at its wellhead (lamp calm), its hose on the head, Brea 7 m off its front-left');
-  // 2) the awake Kiln and the Spindle escort, Brea 16 m off them
+  await sleep(5000);   // the Continue toast fades
+  const e1 = AP(pu.u + 12, pu.v - 9), m1 = AP(pu.u + 2.5, pu.v);
+  await shoot(page, 'kiln-plugged-brea', { eye: { x: e1.x, y: P.y + 2.6, z: e1.z }, at: { x: m1.x, y: P.y + 2.2, z: m1.z }, fov: 46 }, 'the plugged Kiln at its wellhead (lamp calm), its hose on the head, Brea 6 m off its front');
+  // 2) the awake Kiln and the Spindle escort on the shelf, Brea 12 m west of them on it; the lens from the apron
   const A = K.awake, S = K.spindle || A;
-  const mid = { x: (A.x + S.x) / 2, z: (A.z + S.z) / 2 };
-  const toS = { x: P.x - mid.x, z: P.z - mid.z }, L2 = Math.hypot(toS.x, toS.z) || 1;
-  const b2 = { x: mid.x - (toS.z / L2) * 15, z: mid.z + (toS.x / L2) * 15 };
-  R.brea2 = await page.evaluate(PLACE, { ...b2, fx: mid.x, fz: mid.z });
+  const au = UV((A.x + S.x) / 2, (A.z + S.z) / 2);
+  const b2 = AP(au.u - 12, Math.min(au.v, 12.5));
+  R.brea2 = await page.evaluate(PLACE, { ...b2, fx: (A.x + S.x) / 2, fz: (A.z + S.z) / 2 });
   await page.evaluate(frames, 10);
-  const m2 = { x: (mid.x + b2.x) / 2, z: (mid.z + b2.z) / 2 }, ux = (b2.x - mid.x) / 15, uz = (b2.z - mid.z) / 15;
-  await shoot(page, 'kiln-awake-spindle-brea', { eye: { x: m2.x - uz * 17 + ux * 4, y: A.y + 3.0, z: m2.z + ux * 17 + uz * 4 }, at: { x: m2.x, y: A.y + 2.2, z: m2.z }, fov: 50 }, 'the awake Kiln on the shelf (lamp wary) and its grey Spindle escort, Brea 15 m off them');
+  const e2 = AP(au.u - 6, au.v - 16), m2 = AP(au.u - 5, au.v);
+  await shoot(page, 'kiln-awake-spindle-brea', { eye: { x: e2.x, y: A.y + 3.0, z: e2.z }, at: { x: m2.x, y: A.y + 2.2, z: m2.z }, fov: 52 }, 'the awake Kiln on the shelf (lamp wary) and its grey Spindle escort, Brea 12 m west of them');
   // 3) Brine on the plugged Kiln's hot door (a pot landing 1.2 m in front of it): the door springs; the fire behind it
+  const f = [Math.sin(P.h), Math.cos(P.h)], rt = [Math.cos(P.h), -Math.sin(P.h)];
   R.brea3 = await page.evaluate(PLACE, { x: b1.x, z: b1.z, fx: P.x, fz: P.z });
   R.brine = await page.evaluate((D, h) => {
     const C = window.__CTX__, at = { x: D.x + Math.sin(h) * 1.2, y: C.terrain.getHeight(D.x, D.z), z: D.z + Math.cos(h) * 1.2 };
@@ -187,7 +194,7 @@ async function yards(page) {
   await sleep(350);
   const D = K.door;
   await shoot(page, 'kiln-door-fire', { eye: { x: D.x + f[0] * 3.0 + rt[0] * 1.1, y: P.y + D.y + 0.25, z: D.z + f[1] * 3.0 + rt[1] * 1.1 }, at: { x: D.x, y: P.y + D.y - 0.05, z: D.z }, fov: 32 }, 'Brine on the hot door: the door sprung on its hinge and the coal bed behind it');
-  await shoot(page, 'kiln-door-fire-brea', { eye: { x: P.x + f[0] * 11 + rt[0] * 6, y: P.y + 2.0, z: P.z + f[1] * 11 + rt[1] * 6 }, at: { x: (P.x + b1.x) / 2, y: P.y + 1.6, z: (P.z + b1.z) / 2 }, fov: 45 }, 'the sprung door and its fire at Brea\'s scale');
+  await shoot(page, 'kiln-door-fire-brea', { eye: { x: e1.x, y: P.y + 2.2, z: e1.z }, at: { x: m1.x, y: P.y + 1.8, z: m1.z }, fov: 40 }, 'the sprung door and its fire at Brea\'s scale');
   await page.waitForFunction(() => window.__ROW__.shut !== null, { timeout: 30000, polling: 100 }).catch(() => {});
   // the quench run at x3: Brea out of the encounter's sight (the yard's west end, 40 m off)
   const W0 = await page.evaluate(() => window.__KY__.wellheads().map((w) => ({ id: w.id, x: w.x, z: w.z })));
@@ -213,12 +220,13 @@ async function yards(page) {
       R.davit = Dv;
       if (Dv) {
         await page.evaluate(() => window.__CTX__.engine.requestTimeScale('m3c', null));
-        const fd = [Math.sin(Dv.h), Math.cos(Dv.h)], rd = [Math.cos(Dv.h), -Math.sin(Dv.h)];
-        const b4 = { x: Dv.x + fd[0] * 5 + rd[0] * 3.5, z: Dv.z + fd[1] * 5 + rd[1] * 3.5 };
+        const du = UV(Dv.x, Dv.z);
+        const b4 = AP(du.u - 6, du.v - 2.5);
         await page.evaluate(PLACE, { ...b4, fx: Dv.x, fz: Dv.z });
         await page.evaluate(frames, 10);
-        const m4 = { x: (Dv.x + b4.x) / 2, z: (Dv.z + b4.z) / 2 };
-        await shoot(page, 'davit-brea', { eye: { x: m4.x + fd[0] * 6 - rd[0] * 9, y: Dv.y + 2.4, z: m4.z + fd[1] * 6 - rd[1] * 9 }, at: { x: m4.x, y: Dv.y + 1.9, z: m4.z }, fov: 44 }, 'the Davit in from the third wellhead (its cab lantern upright on the roof corner), Brea 6 m off its front-right');
+        const e4 = AP(du.u - 6, du.v - 15), m4 = AP(du.u - 3, du.v - 1.2);
+        await shoot(page, 'davit-brea', { eye: { x: e4.x, y: Dv.y + 2.4, z: e4.z }, at: { x: m4.x, y: Dv.y + 1.9, z: m4.z }, fov: 44 }, 'the Davit in from the third wellhead (its cab lantern upright on the roof corner), Brea 6 m off it');
+        const fd = [Math.sin(Dv.h), Math.cos(Dv.h)];
         await shoot(page, 'davit-front', { eye: { x: Dv.x + fd[0] * 9, y: Dv.y + 2.0, z: Dv.z + fd[1] * 9 }, at: { x: Dv.x, y: Dv.y + 2.0, z: Dv.z }, fov: 34 }, 'the Davit nose-on: the cab face plain, the lantern above its right corner');
         await page.evaluate(PLACE, { ...away, fx: W0[0].x, fz: W0[0].z });
         await page.evaluate(() => window.__CTX__.engine.requestTimeScale('m3c', 3));
@@ -281,7 +289,8 @@ async function sonde(page) {
   const H = mid.hull;
   R.brea2 = await page.evaluate(PLACE, { x: post.x + sx * 6, z: post.z + sz * 6, fx: H.x, fz: H.z });
   await page.evaluate(frames, 10);
-  await shoot(page, 'sonde-adrift', { eye: { x: post.x + sx * 10 - (H.x - post.x) * 0.2, y: post.y + 2.0, z: post.z + sz * 10 - (H.z - post.z) * 0.2 }, at: { x: H.x, y: H.y + 1, z: H.z }, fov: 50 }, 'the Sonde adrift downwind after the quest\'s cut, its line\'s tail hanging; Brea by the empty post');
+  { const dx = H.x - post.x, dz = H.z - post.z, L = Math.hypot(dx, dz) || 1;
+    await shoot(page, 'sonde-adrift', { eye: { x: H.x - (dz / L) * 16 - (dx / L) * 6, y: H.y + 2.0, z: H.z + (dx / L) * 16 - (dz / L) * 6 }, at: { x: H.x, y: H.y + 1.2, z: H.z }, fov: 44 }, 'the Sonde adrift downwind after the quest\'s cut, the tail of its cut line hanging'); }
   await page.evaluate(() => window.__CTX__.engine.requestTimeScale('m3c', 3));
   await page.waitForFunction(() => window.__SONDE__.rules.state === 'down', { timeout: 40000, polling: 200 }).catch(() => {});
   await page.evaluate(() => window.__CTX__.engine.requestTimeScale('m3c', null));
