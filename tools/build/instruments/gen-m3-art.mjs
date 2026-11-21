@@ -59,8 +59,8 @@ function lcg(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 10139
 /**
  * THE COAL BED (M3 wave 3c; the wave-3 review: "the fire behind the open door reads as a flat salmon panel"). Not a
  * panel: a heap of faceted coals with relief, banked higher at the back and in the middle, behind the grate's bars, its
- * heart hot (`fire`), its crust of dull coals (`crust`) and a few dead black clinkers (the hull's soot); five low tongues
- * of flame lick up from the crest against the sooty back. Everything stays inside the door's outline and behind its
+ * heart hot (`fire`), its crust of dull coals (`crust`) and a few dead black clinkers (the hull's soot); hot coals banked
+ * up the sooty back (no pointed flames: in the dark opening they read as teeth). Everything stays inside the door's outline and behind its
  * back face (art.test.mjs: the fire is seen only through the sprung door), and in front of the recess's back plate.
  * The game and the page flicker the two glows (kinds/kiln/kind.js `fireFlicker`).
  */
@@ -92,17 +92,14 @@ function coalBed(fire, crust, hull, { cy, zb, D }) {
     else if (deep > 0.55 || k > 0.82) lump(fire, x, y, z, r, 'lamp', FIRE.hex);
     else lump(crust, x, y, z, r, 'lamp', FIRE.crust);
   }
-  // the flames: thin, flattened, leaning tongues from the crest up the sooty back (never a sheet: five apart)
-  for (let k = 0; k < 5; k++) {
-    const x = -hx * 0.62 + k * (hx * 1.24 / 4) + (rnd() - 0.5) * 0.05;
-    const crest = 0.34 * (1 - 0.55 * (x / hx) ** 2);
-    const h = 0.16 + rnd() * 0.14, r = 0.035 + rnd() * 0.02;
-    const g = new THREE.ConeGeometry(r, h, 5, 1);
-    const lean = (rnd() - 0.5) * 0.35;
-    e.set(-0.12, 0, lean); q.setFromEuler(e); sc.set(1, 1, 0.45);
-    p.set(x, Math.min(yFloor + crest + h / 2 - 0.04, cy + hy - h / 2 - 0.02), zb + 0.045);
-    fire.add(g, { surf: 'lamp', tone: FIRE.hex, wear: 0, matrix: new THREE.Matrix4().compose(p, q, sc) });
-    g.dispose();
+  // no tongues of flame (wave 3c, after the first film at 17ed6fd: five pointed cones in the dark opening of the sprung
+  // door read as teeth in a mouth); the hot coals are banked up the sooty back instead, a glowing slope, never a sheet
+  for (let i = 0; i < 46; i++) {
+    const r = 0.02 + rnd() * 0.012;
+    const x = (rnd() * 2 - 1) * (hx - r * 1.6);
+    const y = yFloor + 0.2 + rnd() * 0.24 * (1 - 0.6 * (x / hx) ** 2);
+    const hot = rnd() < 0.7;
+    lump(hot ? fire : crust, x, y, zb + 0.02 + r * 1.4, r, 'lamp', hot ? FIRE.hex : FIRE.crust);
   }
 }
 
