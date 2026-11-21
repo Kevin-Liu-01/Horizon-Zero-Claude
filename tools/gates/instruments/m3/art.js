@@ -26,6 +26,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { configureKTX2, ktx2Loader } from '../../../../src/core/ktx2.js';
 import { LAMP_STATES } from '../../../../src/instruments/lamps.js';
 import { KilnBrain, KILN_RULES, planVolley, shellWarning, kilnDamage, rng } from '../../../../src/instruments/kinds/kiln/rules.js';
+import { fireFlicker, FIRE_GLOW } from '../../../../src/instruments/kinds/kiln/fire.js';
 import { DavitBrain, DAVIT_RULES } from '../../../../src/instruments/kinds/davit/rules.js';
 import { SondeBrain, SONDE_RULES, sondeSightM, downwind } from '../../../../src/instruments/kinds/sonde/rules.js';
 import { SONDE_POST, SONDE_TETHER } from '../../../../src/instruments/kinds/sonde/form.js';
@@ -102,8 +103,10 @@ async function loadKind(kind) {
     (node.parent || model).add(pivot); pivot.add(inner); inner.add(node);
     tools[name] = pivot;
   }
-  let fireMat = null;
-  model.traverse((o) => { if (o.isMesh && /fire/.test(o.material?.name || '')) { fireMat = o.material; fireMat.emissiveIntensity = 0; } });
+  // the coal bed's two glows (wave 3c: the hot heart and the dull crust), dark while the door is shut
+  const fireMats = [];
+  model.traverse((o) => { if (o.isMesh && /fire|crust/.test(o.material?.name || '')) { o.material.emissiveIntensity = 0; fireMats.push(o.material); } });
+  const fireMat = fireMats[0] || null;
   // the lamp: an iris disc on the drum's face, or the Sonde's lantern (lit all round)
   const lampMat = new THREE.MeshBasicMaterial({ color: parseInt(LAMP_STATES[LAMP0].token.slice(1), 16), toneMapped: false });
   let lamp;
@@ -115,7 +118,7 @@ async function loadKind(kind) {
     lamp.position.set(S.lamp[0], S.lamp[1], S.lamp[2] + 0.003);
   }
   lamp.name = 'lamp'; model.add(lamp);
-  return { root, model, ex, S, nodes, tools, lamp, lampMat, fireMat, stats: ex.r5Stats };
+  return { root, model, ex, S, nodes, tools, lamp, lampMat, fireMat, fireMats, stats: ex.r5Stats };
 }
 function setLamp(K, state) { K.lampMat.color.setHex(parseInt(LAMP_STATES[state].token.slice(1), 16)); K.lampState = state; }
 
@@ -327,7 +330,7 @@ async function kilnView() {
     }
     const open = B.door === 'sprung' ? 1 : 0;
     K.tools.door.rotation.y = -THREE.MathUtils.degToRad(108) * open;
-    if (K.fireMat) K.fireMat.emissiveIntensity = open ? 0.9 : 0;
+    { const g = fireFlicker(S.t, open); for (const m of K.fireMats) m.emissiveIntensity = /crust/.test(m.name) ? g * FIRE_GLOW.crustK : g; }
     K.tools.stack.rotation.x = stackTilt.v;
     // the wellhead's hose while it is plugged (or coupling), from its coupling to the head
     if (hose) { scene.remove(hose); hose.geometry.dispose(); hose = null; }

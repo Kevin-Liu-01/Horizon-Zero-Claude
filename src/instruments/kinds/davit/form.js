@@ -4,7 +4,7 @@
  * load it. Part types: ../kiln/form.js.
  *
  * A compact six-legged hull: each leg hangs from an outrigger and bends its knee in the sagittal plane. A cab with the
- * cab lamp (in a drum, off the centre line: never a face), the winch drum behind it (the weak point: Pry it and there
+ * cab lantern (upright on the roof's right-front corner, off the centre line: never a face; wave 3c), the winch drum behind it (the weak point: Pry it and there
  * are no more repairs), a rack of THREE spare enamel plates on its back, standing upright 0.30 m apart so the count
  * reads at 20 m, a counterweight at the stern. Two folding crane arms beside the cab: the working one unfolded and
  * up, the other stowed, folded along the deck (two raised together read as a figure's arms: never at rest).
@@ -89,8 +89,10 @@ const ARMS = [];
 export const DAVIT_PARTS = Object.freeze([
   box('hull', [0, 1.30, -0.10], [1.55, 0.70, 2.60]),
   box('cab', [0, 1.95, 0.85], [1.00, 0.60, 0.70]),
-  cyl('lampDrum', [0.32, 1.98, 1.30], 0.15, 0.22, 'z', { tone: 'joint' }),
-  cyl('lamp', [0.32, 1.98, 1.42], 0.13, 0.03, 'z', { lamp: true, hit: 'lamp' }),
+  // wave 3c: the cab lantern, upright on its foot at the roof's right-front corner and set back 0.25 m from the cab's
+  // face (the round lamp in a drum on the cab's face read as an eye: the wave-3 review)
+  cyl('lampDrum', [0.34, 2.30, 0.95], 0.06, 0.10, 'y', { tone: 'joint' }),
+  cyl('lamp', [0.34, 2.45, 0.95], 0.13, 0.20, 'y', { lamp: true, hit: 'lamp' }),
   cyl('winch', [0, 1.98, 0.08], 0.30, 0.95, 'x', { tone: 'joint', hit: 'winch' }),
   // the plate rack: two rails and three plates standing upright, 0.30 m apart
   box('rackRailR', [0.48, 1.95, -0.85], [0.06, 0.60, 1.00], { tone: 'brass' }),
@@ -103,7 +105,7 @@ export const DAVIT_PARTS = Object.freeze([
   ...LEGS,
 ]);
 
-export const DAVIT_LAMP = Object.freeze({ at: [0.32, 1.98, 1.44], r: 0.13 });
+export const DAVIT_LAMP = Object.freeze({ at: [0.34, 2.45, 0.95], r: 0.13, h: 0.20, shape: 'lantern' });
 
 export const DAVIT_HIT = Object.freeze({
   winch: Object.freeze({ grammar: 'joint', across: 0.60 }),

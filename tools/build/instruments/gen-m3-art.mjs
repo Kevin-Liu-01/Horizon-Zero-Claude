@@ -46,9 +46,65 @@ export const ART_KINDS = Object.freeze(['kiln', 'davit', 'sonde']);
 export const OUTPUTS = ART_KINDS.map((k) => `public/models/instruments/${k}.glb`);
 export const TRI_CAP = Object.freeze({ kiln: 80000, davit: 50000, sonde: 25000 });
 
-/** The fire behind the Kiln's door: a coal bed's orange (linear factor; the page and the game scale it by the door). */
-export const FIRE = Object.freeze({ hex: 0xff5a14 });
+/**
+ * The fire behind the Kiln's door: a coal bed's orange (linear factor; the page and the game scale it by the door) and
+ * the deeper red of its dull coals (wave 3c: two glows, so the bed has a hot heart and a dull crust, not one flat colour).
+ */
+export const FIRE = Object.freeze({ hex: 0xff5a14, crust: 0xb8300a });
 const SOOT = 0x2a2522;
+
+/** A small deterministic generator (the kit's rule: no clocks, no Math.random). */
+function lcg(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+/**
+ * THE COAL BED (M3 wave 3c; the wave-3 review: "the fire behind the open door reads as a flat salmon panel"). Not a
+ * panel: a heap of faceted coals with relief, banked higher at the back and in the middle, behind the grate's bars, its
+ * heart hot (`fire`), its crust of dull coals (`crust`) and a few dead black clinkers (the hull's soot); five low tongues
+ * of flame lick up from the crest against the sooty back. Everything stays inside the door's outline and behind its
+ * back face (art.test.mjs: the fire is seen only through the sprung door), and in front of the recess's back plate.
+ * The game and the page flicker the two glows (kinds/kiln/kind.js `fireFlicker`).
+ */
+function coalBed(fire, crust, hull, { cy, zb, D }) {
+  const rnd = lcg(0x6b11);
+  const hx = D.half[0], hy = D.half[1], doorBack = D.c[2] - D.half[2] - 0.02;   // 2 cm clear of the shut door's back
+  const yFloor = cy - hy;
+  const q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+  const lump = (bucket, x, y, z, r, surf, tone) => {
+    const g = new THREE.IcosahedronGeometry(r, 0);
+    e.set(rnd() * 6.283, rnd() * 6.283, rnd() * 6.283); q.setFromEuler(e);
+    sc.set(1 + rnd() * 0.35, 0.65 + rnd() * 0.3, 1 + rnd() * 0.3);
+    p.set(x, y, z);
+    bucket.add(g, { surf, tone, wear: 0, matrix: new THREE.Matrix4().compose(p, q, sc) });
+    g.dispose();
+  };
+  for (let i = 0; i < 130; i++) {
+    const r = 0.022 + rnd() * 0.0135;                    // the bed is 0.10 m deep: a coal fits it with its tumble
+    const x = (rnd() * 2 - 1) * (hx - r * 1.4);
+    const back = rnd();                                   // 0 at the back plate, 1 at the bed's front
+    const z = zb + 0.02 + r * 1.4 + back * Math.max(0, doorBack - zb - 0.02 - r * 2.8);
+    // the heap: its crest 0.34 m over the floor in the middle at the back, falling to the sides and the front
+    const crest = 0.34 * (1 - 0.55 * (x / hx) ** 2) * (1 - 0.55 * back);
+    const u = Math.sqrt(rnd());
+    const y = yFloor + r * 1.4 + u * Math.max(0.01, crest - r);
+    const deep = (1 - u) * 0.7 + (1 - back) * 0.3;        // low and at the back: the heart
+    const k = rnd();
+    if (k < 0.12) lump(hull, x, y, z, r, 'graphite', 0x141210);          // a dead clinker
+    else if (deep > 0.55 || k > 0.82) lump(fire, x, y, z, r, 'lamp', FIRE.hex);
+    else lump(crust, x, y, z, r, 'lamp', FIRE.crust);
+  }
+  // the flames: thin, flattened, leaning tongues from the crest up the sooty back (never a sheet: five apart)
+  for (let k = 0; k < 5; k++) {
+    const x = -hx * 0.62 + k * (hx * 1.24 / 4) + (rnd() - 0.5) * 0.05;
+    const crest = 0.34 * (1 - 0.55 * (x / hx) ** 2);
+    const h = 0.16 + rnd() * 0.14, r = 0.035 + rnd() * 0.02;
+    const g = new THREE.ConeGeometry(r, h, 5, 1);
+    const lean = (rnd() - 0.5) * 0.35;
+    e.set(-0.12, 0, lean); q.setFromEuler(e); sc.set(1, 1, 0.45);
+    p.set(x, Math.min(yFloor + crest + h / 2 - 0.04, cy + hy - h / 2 - 0.02), zb + 0.045);
+    fire.add(g, { surf: 'lamp', tone: FIRE.hex, wear: 0, matrix: new THREE.Matrix4().compose(p, q, sc) });
+    g.dispose();
+  }
+}
 
 const P = (r, h, surf, tone) => ({ r, h, surf, tone });
 const MAT = { y: null, z: AXIS_Z, x: AXIS_X };
@@ -210,7 +266,7 @@ function byName(parts) { const m = new Map(); for (const p of parts) m.set(p.nam
 /** THE KILN: an enamel beehive with an oxblood firebox, the bottle stack on its trunnion, glass canisters, its hose. */
 function kiln() {
   const F = M3_FORMS.kiln, N = byName(F.parts);
-  const hull = new KBucket('kiln-hull'), glass = new KBucket('kiln-glass'), fire = new KBucket('kiln-fire');
+  const hull = new KBucket('kiln-hull'), glass = new KBucket('kiln-glass'), fire = new KBucket('kiln-fire'), crust = new KBucket('kiln-crust');
   const door = new KBucket('door'), stack = new KBucket('stack'), hose = new KBucket('hose');
   const done = new Set();
   const take = (...names) => names.forEach((n) => done.add(n));
@@ -240,7 +296,7 @@ function kiln() {
   // seen through the sprung door and never inside the body
   const zb = 1.34;
   rbox(hull, V(0, cy, zb - 0.02), [ow + 0.02, oh + 0.02, 0.03], 0.005, { surf: 'graphite', tone: SOOT, wear: 0.1, segs: 1 });
-  rbox(fire, V(0, cy - 0.04, zb + 0.005), [ow - 0.04, oh - 0.12, 0.02], 0.004, { surf: 'lamp', tone: FIRE.hex, wear: 0, segs: 1 });
+  coalBed(fire, crust, hull, { cy, zb, D });
   for (let i = 0; i < 5; i++) strut(hull, V(-ow / 2, cy - oh / 2 + 0.08 + i * 0.07, zb + 0.06), V(ow / 2, cy - oh / 2 + 0.08 + i * 0.07, zb + 0.06), 0.014, 0.014, { surf: 'graphite', tone: C.GUNMETAL, sides: 6, wear: 0.2 });
   take('fireboxSurround');
   // the door (its own node, hinged on the left): a gunmetal iron plate, a brass rim, strap hinges, a latch bar, three
@@ -290,7 +346,7 @@ function kiln() {
   soot(hull, (x, y, z) => (z > 0.6 && Math.abs(x) < 0.75 && y > cy + oh / 2 && y < 3.3 ? 0.55 * (1 - Math.abs(x) / 0.75) * Math.min(1, (3.3 - y) / 0.8) : 0));
   const T = F.parts.find((p) => p.name === 'trunnion');
   return {
-    hull, sensors: [{ bucket: glass, name: 'r5-kiln-canister-glass', emissive: C.ICE }, { bucket: fire, name: 'r5-kiln-fire', emissive: FIRE.hex, baseColor: [0.08, 0.03, 0.01, 1] }],
+    hull, sensors: [{ bucket: glass, name: 'r5-kiln-canister-glass', emissive: C.ICE }, { bucket: fire, name: 'r5-kiln-fire', emissive: FIRE.hex, baseColor: [0.08, 0.03, 0.01, 1] }, { bucket: crust, name: 'r5-kiln-crust', emissive: FIRE.crust, baseColor: [0.05, 0.02, 0.01, 1] }],
     tools: [{ bucket: door, anchor: [hx, D.c[1], D.c[2]] }, { bucket: stack, anchor: T.c }, { bucket: hose, anchor: KILN_COUPLING }],
     lamp: { at: dr.face, r: dr.radius, shape: 'disc', axis: [0, 0, 1] },
     sockets: { door: D.c, doorHinge: [hx, D.c[1], D.c[2]], coupling: KILN_COUPLING, trunnion: T.c, fire: [0, cy - 0.04, zb + 0.02] },
@@ -303,7 +359,7 @@ function davit() {
   const hull = new KBucket('davit-hull'), glass = new KBucket('davit-glass');
   const plates = [1, 2, 3].map((i) => new KBucket(`plate${i}`));
   const done = new Set(), take = (...n) => n.forEach((q) => done.add(q));
-  // the cab plated, its front kept plain round the lamp drum (no slot, no window: never a face)
+  // the cab plated, its front kept plain (no slot, no window, no lamp: never a face)
   { const p = N.get('hull'); platedBox(hull, p.c, p.s, { panelMax: 0.95 }); take('hull'); }
   { const p = N.get('cab'); platedBox(hull, p.c, p.s, { panelMax: 0.6 }); take('cab'); }
   // the winch: a gunmetal drum wound with cable, brass flanges and rivets (its weak point)
@@ -334,9 +390,14 @@ function davit() {
     take(n);
   }
   // the derrick's chords: enamel bars with brass collars (the default dress); laces gunmetal (joint)
-  // the lamp drum on the cab's right front
+  // wave 3c: the cab lantern on its foot at the roof's right-front corner, set back from the cab's face (the round
+  // front lamp in a drum on the cab's face read as an eye): an upright caged lantern lit all round, the Sonde's family
   const LD = N.get('lampDrum'), L = N.get('lamp');
-  const dr = lampDrum(hull, V(LD.c[0], LD.c[1], LD.c[2] - LD.h / 2), V(0, 0, 1), { r: LD.r, depth: L.c[2] + L.h / 2 - (LD.c[2] - LD.h / 2), ticks: 16 });
+  turned(hull, LD.c, LD.r, LD.r * 1.25, LD.h, 'y', 'graphite', C.GUNMETAL, 0.3);
+  rivetRing(hull, vec(LD.c).add(V(0, -LD.h / 2 + 0.01, 0)), V(0, 1, 0), LD.r * 1.1, 6, 0.009);
+  for (const s of [-1, 1]) turned(hull, [L.c[0], L.c[1] + s * (L.h / 2 + 0.015), L.c[2]], L.r * 1.15, L.r * 1.15, 0.03, 'y', 'bronze', C.BRASS, 0.6);
+  for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + Math.PI / 4; strut(hull, V(L.c[0] + Math.cos(a) * L.r * 1.08, L.c[1] - L.h / 2, L.c[2] + Math.sin(a) * L.r * 1.08), V(L.c[0] + Math.cos(a) * L.r * 1.08, L.c[1] + L.h / 2, L.c[2] + Math.sin(a) * L.r * 1.08), 0.009, 0.009, { surf: 'graphite', tone: C.GUNMETAL, sides: 5 }); }
+  strut(hull, V(L.c[0], L.c[1] + L.h / 2 + 0.03, L.c[2]), V(L.c[0], L.c[1] + L.h / 2 + 0.07, L.c[2]), 0.012, 0.004, { surf: 'bronze', tone: C.BRASS, sides: 6 });
   take('lampDrum', 'lamp');
   for (const p of F.parts) if (!done.has(p.name)) dressPart(hull, p);
   // an antenna at the stern's left (the family's spike finial), clear of the derrick
@@ -345,7 +406,7 @@ function davit() {
   return {
     hull, sensors: [{ bucket: glass, name: 'r5-davit-glass', emissive: C.ICE }],
     tools: plates.map((b, i) => ({ bucket: b, anchor: N.get(`plate${i + 1}`).c })),
-    lamp: { at: dr.face, r: dr.radius, shape: 'disc', axis: [0, 0, 1] },
+    lamp: { at: L.c, r: L.r, h: L.h, shape: 'lantern', axis: [0, 1, 0] },
     sockets: { winch: N.get('winch').c, hookR: N.get('hookBlockR').c },
   };
 }

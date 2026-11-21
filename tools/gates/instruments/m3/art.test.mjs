@@ -85,7 +85,7 @@ test('M3 surfaces: IK1 at art, one source, one mounted lamp, the never list', as
       }
     }
     for (const em of emissive) {
-      if (kind === 'kiln' && em.name === 'r5-kiln-fire') {
+      if (kind === 'kiln' && (em.name === 'r5-kiln-fire' || em.name === 'r5-kiln-crust')) {
         const f = boxOf(verts(em.node)), doorB = boxOf(verts(doc.getRoot().listNodes().find((n) => n.getName() === 'door')));
         assert.ok(f.mn[0] >= doorB.mn[0] - 1e-3 && f.mx[0] <= doorB.mx[0] + 1e-3 && f.mn[1] >= doorB.mn[1] - 1e-3 && f.mx[1] <= doorB.mx[1] + 1e-3, `fire ${JSON.stringify(f)} outside the door ${JSON.stringify(doorB)}`);
         assert.ok(f.mx[2] < doorB.mn[2], `fire front ${f.mx[2]} not behind the door's back ${doorB.mn[2]}`);
