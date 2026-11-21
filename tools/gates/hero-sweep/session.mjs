@@ -26,6 +26,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadFrameSet } from '../../frames/frameset.mjs';
 import { stageFrame, unstageFrame } from '../../frames/page.mjs';
 import { RUNS, SLOTS, REVIEW, assertOutsideRepo } from '../../frames/paths.mjs';
+import { slotTurn, leaveSlotQueue } from '../../chrome-slot.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -154,13 +155,15 @@ async function takeSlot(waitS = 1800) {
   const until = Date.now() + waitS * 1000;
   for (let said = 0; Date.now() < until; said++) {
     const m = memory();
-    if (m.ok) {
+    if (m.ok && slotTurn('hero-anim')) {
       try { mkdirSync(SLOT); slotHeld = true; } catch { /* held */ }
-      if (slotHeld) { writeFileSync(path.join(SLOT, 'owner.txt'), `int hero-anim ${process.pid} ${utc()}\n`); log(`slot taken (memory ${m.free} % free, level ${m.level})`); return true; }
+      if (slotHeld) {
+        leaveSlotQueue(); writeFileSync(path.join(SLOT, 'owner.txt'), `int hero-anim ${process.pid} ${utc()}\n`); log(`slot taken (memory ${m.free} % free, level ${m.level})`); return true; }
     }
     if (!(said % 6)) log(`waiting: memory ${m.free} % free, level ${m.level}`);
     await sleep(5000);
   }
+  leaveSlotQueue();
   return false;
 }
 const portOn = (p, host) => new Promise((r) => { const s = net.connect(p, host); s.once('connect', () => { s.destroy(); r(true); }); s.once('error', () => r(false)); });

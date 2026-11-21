@@ -45,6 +45,7 @@ import { filmOrder, loadFrameSet, validate } from './frameset.mjs';
 import { stageFrame, unstageFrame } from './page.mjs';
 import { loadLanes, mergeFrames, installStagings } from './stagings/index.mjs';
 import { RUNS, SLOTS, assertOutsideRepo } from './paths.mjs';
+import { slotTurn, leaveSlotQueue } from '../chrome-slot.mjs';
 import { buildReview } from './review.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../chrome-profile.mjs';
 
@@ -126,9 +127,10 @@ async function takeSlot() {
   const until = Date.now() + WAIT_S * 1000;
   for (let said = 0; Date.now() < until; said++) {
     const m = memory();
-    if (m.ok) {
+    if (m.ok && slotTurn('frames')) {
       try { mkdirSync(SLOT); slotHeld = true; } catch { /* held */ }
       if (slotHeld) {
+        leaveSlotQueue();
         writeFileSync(path.join(SLOT, 'owner.txt'), `int frames ${process.pid} ${utc()}\n`);
         log(`slot taken (memory ${m.free} % free, level ${m.level})`);
         return true;
@@ -141,6 +143,7 @@ async function takeSlot() {
     }
     await sleep(10000);
   }
+  leaveSlotQueue();
   return false;
 }
 
