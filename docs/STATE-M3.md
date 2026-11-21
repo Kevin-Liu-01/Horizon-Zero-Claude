@@ -490,3 +490,178 @@ ruling).
 8. A100, A101 and A103 (D3) fail at 75f62d6 and at its base.
 9. The forward-pitched fold reads as a slab, and the roll covers the stowed bow from behind.
 10. F58's terrain is at 6.3 ms.
+
+## Milestone 3 wave 3: surfaces, flight on the page, the Yards quest (Nov 21 2026)
+
+Wave 3 of Milestone 3 ran on `r5/m3` from 1141fb4 (wave 2b's head with `main` 4da6dbf merged), beside the Milestone 2
+exit run. Milestone 2 has not exited. The defaults of the M3 brief's open questions and the orchestrator's provisional
+rulings R1-R11 still apply. Four lanes worked in the one tree: A (the Malpais and the Kiln Yards), B (the Survey Kite),
+C (the Kiln, the Davit and the Sonde) and E (hour two). Each had one builder turn; there was no judge or fix round.
+Nothing was pushed, and nothing reached `main` or `r5/int`.
+
+The commits: area E 472f4fc, 3f3c32e, 167e56c; area B 011e42c, 0ed2839, f9778c9, 9cb3f18, a562422; area C 9d06e4a,
+ba28cde; area A 55126d7, 8e5c647, a1359f9, 7b06488, 4c14e00.
+
+The review was taken at **4c14e00** in a clean detached worktree on port 5280. The accepted frames were also filmed at
+1141fb4 (the wave's base) in a second clean worktree, and F08, F11, F13 and F14 at seven commits between them, each in a clean worktree. Chrome was shared with the Milestone 2 exit
+run, so the review held the one Chrome slot in eight short sessions and released it between them. Every number
+below names its commit.
+
+**Verdict: NOT CLEAN.** No accepted frame moved, no kept row failed, and the slice is 14 of 14. Two Tier 0 checks now fail (a listed term in a comment; three new models with no size class), both new in this wave. Open: the Yards' stack steam, the steam's cost per plume, the rings on F56's far plain, the kite's caldera lift on the page, and both hour-two quests by input.
+
+### Gates at 4c14e00
+
+- **Tier 0: FAIL on two checks.**
+  - **name-lint: 1 hit.** A listed term in a code comment, `src/world/sites/malpais-region.js:280` (from 8e5c647). The
+    rendered page's name lint is 0.
+  - **asset-budgets: 3 GLBs have no size class.** `public/models/instruments/{kiln,davit,sonde}.glb` are not in
+    `tools/tier0/budgets.json` `instruments.classOf`. With the brief's classes added (kiln large, davit medium, sonde
+    small; tried in the review's worktree and put back) the check passes: 22,546 of 80,000, 19,056 of 50,000 and
+    13,744 of 25,000 triangles.
+  - Passing: the build (4.48 MB of code); licences (311 files, 36 rows); the texture ledger (140 MB of 175); the
+    import graph (0 broken); node --test 455 passing and 0 failing in 82 files.
+  - First load: 56.83 MB of 60 (55.97 MB at 75f62d6). The rise is mostly the three new GLBs (0.77 MB), which the
+    ledger counts in the boot set because no deferred list names them; the game itself does not load them yet. The
+    margin is 3.17 MB.
+  - Boot: ready in 4.5 s with 0 errors. Rendered-page name lint: 0.
+- **`vite build`: green**, 4.48 MB of code.
+- **Kept rows the wave touches: 12 of 12 pass.** A1, A20b, A3 (6.75 m/s), A28 (peak 1.50 m), A44 (worst gap 0 m), A44b
+  (0.081 m of 0.1), A46 (worst 0.032 m of 0.08), A61 (2,720 colliders), A65 (on the runner's retry after a browser
+  relaunch: the known flake), A-climb-1m, A-slide and A-stow-clearance (sprint leg gap 0.100 m). They were chosen for
+  the code the wave touched: `src/entities/player.js` (the kite pilot, Space's first ask, the flight branch), the
+  kite's mount, `src/game/runtime.js` (the hour-two hub), the hour-two save field and the Malpais' tube and props.
+  `A-region-hitch` was not re-run (the Malpais build changed: the tube, the Brazier prop and the steam material).
+- **The slice: 14 of 14**, stopped at the reward, after 287 s of Chrome with 0 console errors and lowest health 95.
+- **Accepted frames:** **no change.**
+  - All 16 were filmed at 4c14e00 and at 1141fb4 (the wave's base) in this review and compared outside the computed
+    masks (a45b567): F08 10 px, F11 1, F13 3, F19 23, F14 16-117 (its own noise), F15 98, F16 1,681; F09, F10, F18 and
+    F24 under their same-session repeats; F02, F03, F05, F20 and F23-plumb differ by cloth, grass and cloud drift only,
+    under their repeat floors.
+  - The review's first film at 4c14e00 showed a shimmer on the stowed lance's binding in F08, F11, F13 and F14
+    (202-4,238 px). Films at 011e42c, 3f3c32e, 0ed2839, f9778c9, 9cb3f18, 167e56c, a1359f9, 7b06488 and ba28cde, and a
+    second film of 4c14e00 in a fresh session, all match the base (at most 10 px). It was that session, not the code.
+  - F19 differs from wave 2b's film (75f62d6) by 3.6 % (a pose phase), and the same at 1141fb4: it came in with the
+    `r5/int` merge before the wave, not from wave 3.
+  - F02, F03 and F05 look as at wave 2b and stay closer to their references than the 2026-11-14 refilm.
+- **Subject checks:** F51, F52, F56, F57 and F58 pass. F45 is refused as before (tower-b 10 % in the safe area). F53,
+  F54 and F55 have no staging yet.
+
+### Area A: the Malpais and the Kiln Yards (4c14e00)
+
+- **MP4, the Yards' stack steam over F57's sky: FAIL.** The steam changes 32,714 sky pixels, darker by 6.3 luma on
+  average (darkest -47.3), all in the top 16 % of the frame. No plume is seen leaving a stack mouth; it reads as a
+  darker cloud at the frame's top edge. At 7b06488 it was 25,329 pixels, +4.5 luma.
+- **MP4, cost per source: FAIL** (bar 0.15 ms each). Area A's probe times each plume alone on the GPU (24 back-to-back
+  draws of the steam only, median of 3 alternated pairs, an upper bound since nothing occludes a puff):
+  - F56: hornito-2 0.28 ms, vent-5 0.23 ms, hornito-4 0.19 ms; the rest 0.02-0.10 ms; all together 0.72 ms.
+  - F57: stack-4 1.62 ms, stack-20 0.18 ms; all together 1.42 ms.
+  - F58: hornito-2 1.28 ms, hornito-1 0.69 ms, hornito-5 0.63 ms, hornito-4 0.59 ms; all together 1.57 ms.
+  - The near, screen-filling plumes carry the cost.
+- **MP2, tile repeat: PASS** (autocorrelation peak, bar 0.35, from the probe's top-down captures in this review's
+  film): aa 0.253 at its true square (280, 230), pahoehoe 0.221, scree 0.325, the old cone-flank square 0.269. The old
+  shared 9.06 m peak was the scree's patchwork read on Rust Cone, where wave 2b's "aa" square lay.
+- **R11, F56 at 09:30:** the sun stands at bearing 126, 36 deg up, 56 deg left of the lens: out of the frame. A pale
+  disc still sits on the horizon in F56 and F58 (most likely the moon, which runs the sun's arc 12.4 h behind; not
+  confirmed).
+- **The yellow rings on F56's far plain: found, not removed.** They are the Holds' pit-cups
+  (`groundShader.js` HOLDS_TERM, the Holds' ground 130-260 m out), not the Malpais' ridge relief.
+- **MP6, the tube shelter:** the tube is one welded grid in aa rock, a low rounded hump with a crust lip over its mouth;
+  the settlements' Brazier stands unlit 4 m inside it. The Peg nest and the salt cache are not built. UNMEASURED as a
+  row.
+- **MP1:** 0 emissive Malpais materials; the only emissive materials in F56-F58 are the wellheads' caps and two
+  far-field lamps. The night frame shows no ground brighter than the sky.
+- **MP10, from this review's film:** F56 92 draws and 0.58 M triangles; F57 97 and 0.79 M; F58 96 and 0.67 M. GPU
+  time was not re-measured.
+- **MP7, looks against the masked crops, anchored on wave 2b's film:**
+  - **F56:** silhouette the same, material the same, light closer (the sunset orange is gone; the sky is still paler
+    than the crop's smoke), finish the same (the rings and the disc).
+  - **F57:** silhouette, material, light and finish the same. No stack steam reads.
+  - **F58:** silhouette closer, material closer, light closer, finish the same (an even, smooth culvert; the Brazier
+    too small to read).
+
+### Area B: the Survey Kite (Node at 4c14e00; page at 4c14e00)
+
+- **The rows (`tools/gates/kite/rows.mjs`):** 35 PASS, 0 FAIL, 9 UNMEASURED, 4 RECORDED, 3 RULED.
+  `flight-law.test.mjs` 29 of 29.
+- **R10, KF1 restated (the old text kept as RULED): PASS.** In Node, 0 wrist-steps behind a head plane at or above the
+  shoulder joints; every one is at least 0.19 m under them, at hip height. The arm-behind-head sweep fails 0 of 2,360.
+- **The look items: PASS in Node.**
+  - The kite is never flat and open at once: 0 of 1,470 steps tilted over 60 deg while more than half open.
+  - The held glide: the head 8 deg under the horizontal (wave 2b: 51-54); the bar 0.133 m under the head bone.
+  - The legs hang: feet pointed 58 and 47 deg (wave 2b: 8 and 8).
+  - From straight behind, the furled roll hides 1.9 % of the bow (wave 2b: 13.6 %). From the page's rear lenses it
+    still lies across the bow's middle.
+  - KF0d: the roll clears the stowed kit by at least 0.002 m on every step of the open, fold and landing.
+- **Flight on the page, by input (`tools/gates/kite/flight-page.mjs`):**
+  - Launch from T1: PASS. Open at 0.465 s airborne, 4.35 m clear.
+  - Glide with a bank each way: PASS (bank +1, then -1).
+  - Land: PASS. On the marked field, 1 m/s down, 0 damage, 9.14 s after the open.
+  - Fold at 3 m: PASS. Folded at 3.03 m over the ground, hp 100.
+  - The owner's bars on every frame: 0 bad of 900 flying frames off T1 and 0 of 199 in the fold. 107 frames have a
+    wrist behind a plane, none at or above the shoulders (lowest margin 0.227 m).
+  - Frame time in the flight: median 16.7 ms, 1 frame over 33 ms (35.4 ms), 0 over 50.
+  - **The caldera's lift: FAIL.** Off the rim the open was refused as too low (0.67 s airborne, 2.3 m clear); no later
+    press opened it; she fell to the wall and lost 24 hp. The climb was not measured.
+- **"A Line Over the Glass" in Node: PASS** (`glass-line.test.mjs` 5 of 5): 10 of 10 plays to the end, the stages in
+  order on their own events, Flagged 10 of 10 while the Sonde is moored, the save round trip.
+- **Playable by input as leg 4:** **FAIL: 6 of 10 beats** by input in the hour-two runner at 4c14e00
+  (from leg 4's fixture, 399 s, 0 console errors, 1 frame over 50 ms at 51 ms).
+  - PASS: weather-clears, walk-the-line, ansel-kite, wreck, cane-cord, rebuild.
+  - FAIL: tether (not built: the Sonde moored at the Ring with a tether to cut); launch and kite-given (not built: the
+    Survey Kite as an item); fly (driven, not reached: the stage stayed at 'tether').
+
+### Area C: the Kiln, the Davit and the Sonde (4c14e00)
+
+- **Surfaces on the accepted forms:** white enamel plates over gunmetal, brass hoops and rivets, pale-ice glass, one
+  lamp each; the Kiln's fire behind its iron door; the shared 256 atlas and an 8 x 4 palette.
+  - Triangles (Tier 0, LOD0): Kiln 22,546 of 80,000; Davit 19,056 of 50,000; Sonde 13,744 of 25,000. The art page's
+    own labels read 27,790, 24,106 and 17,664 (another count; still under the caps).
+  - Lamps: dE 0 to their tokens calm, wary and hostile on every turntable; the Kiln at a wellhead reads 0-2.65.
+  - The never list: nothing emissive but pale-ice glass and the Kiln's fire, which sits 0.125 m behind the shut door;
+    no red lamp. `art.test.mjs`, rows and seams 16 of 16; IK1-IK8 and Clouded pass at 4c14e00.
+  - The look against the Instruments line-up crop (masked): the language is right (enamel, brass, rivets), but it reads
+    clean and chunky, not weathered and slender. The fire behind the open door reads as a flat salmon panel.
+- **Behaviour on the page (`tools/gates/instruments/m3/film-art.mjs`), all PASS:**
+  - The Kiln plugged 128.5 s (bar 120), turned 0 rad while plugged.
+  - It wakes: awake 1.517 s after the wake; the lamp calm, then wary, then hostile.
+  - It shells: 3 shells at 31.1 m; shadow and whistle at least 1.428 s ahead of impact (bar 1.2).
+  - Brine on the hot door: sprung, a stagger of 2.016 s, damage x1 in the window; a cold door and its back do nothing.
+  - The Davit re-seats the Kiln's hose in 3.983 s (bar 4.0 +-0.3) after a 9.7 s walk; plates 3 to 2.
+  - The Sonde sees a gliding Brea at 79.94 m against 39.96 m on foot: x2.001 (bar x2.0 +-0.05).
+- **Not measured:** GPU time and memory for the three kinds (IK10, IK11).
+
+### Area E: hour two (4c14e00)
+
+- **"The Kiln Yards" in Node: PASS** (`kiln-yards.test.mjs` 10 of 10): offered only after "True Ground"; stages advance
+  only on their own events; Brine quenches at 3 m only while a Kiln is plugged into the head or after; Q4 and R7 (never
+  two awake through four quenches); four quenched, 0 Kiln spawns over 24 site-clock hours; rung 7 held at Oro's; 10
+  scripted plays reach `yards-quiet`; the save round trip.
+- **W3: PASS** (`writing-w3.test.mjs` 6 of 6): three quests, 8 Field Books (11-18), three cards; no card over 3 lines,
+  no line over 58 characters; Nesra's first mention once, by Ansel, in the kite quest.
+- **M3.7's ranks: PASS** (`hour-two-ranks.test.mjs` 7 of 7): every hour-two act a counted seam event, 10 kills move 0
+  counters, health rises only through Ballast.
+- **Playable by input as leg 6:** **FAIL: 0 of 11 beats** by input at 4c14e00 (from leg 6's fixture, the leg capped at
+  420 s, 455 s of Chrome, 0 console errors, 0 frames over 33 ms).
+  - oro-yards: not built (Benchmark 2 in the Glass); climb: not built (the Malpais as a region); plugged and quench-1:
+    not built (the four wellheads seam). The other seven were not run inside the cap.
+  - The beat pictures show her walk stopped against Ninewalls' outer wall from 'climb' on, as area E's own runs did.
+    Some of the named needs (the wellheads seam, the Malpais region) exist in the code, so the runner's need checks
+    may read them before the region is built; not confirmed.
+
+### Open
+
+1. Tier 0: the listed term in `src/world/sites/malpais-region.js:280`; the size classes for the Kiln, Davit and Sonde in
+   `tools/tier0/budgets.json` (kiln large, davit medium, sonde small).
+2. The Yards' stack steam does not read over F57's sky.
+3. MP4's cost per plume: up to 1.62 ms (stack-4 in F57) and 1.28 ms (hornito-2 in F58), against 0.15 ms.
+4. The rings on F56's far plain (the Holds' pit-cups) are not removed; a pale disc stands on the horizon in F56 and F58.
+5. MP6: the Peg nest and the salt cache are not built; the tube reads as an even culvert.
+6. The kite's caldera lift on the page: the open was refused off the rim and she fell (24 hp).
+7. Leg 4 by input: the moored Sonde at the Ring and the Survey Kite as an item are missing.
+8. Leg 6 by input: 0 of 11; the walk stops at Ninewalls' outer wall.
+9. The three new models count in the first load (56.83 MB of 60) because no deferred list names them; IK11 wants the
+   Sonde's set fetched when the kite quest is given.
+10. The new kinds read clean and chunky against the line-up crop; the Kiln's fire behind the open door reads as a flat
+    panel; the Davit's round front lamp may read as an eye (for the owner).
+11. Not run: `A-region-hitch` after the Malpais' changes; IK10 and IK11; KF10 and KF11.
+12. F45 still needs a new lens; F53-F55 are not staged.
