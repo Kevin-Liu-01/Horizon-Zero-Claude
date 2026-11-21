@@ -13,6 +13,7 @@ import { TRUE_GROUND_ID } from '../quest/scar-plan.js';
 import { KILN_ROSTER } from '../../instruments/kinds/kiln/form.js';
 import { SPINDLE_ROSTER } from '../../instruments/kinds/spindle/form.js';
 import { buildYardsStandins, STANDIN_COLOURS as STANDIN } from '../../world/sites/yards-standins.js';
+import { YardsLive } from '../../instruments/kinds/kiln/yards.js';
 import { vec3 } from '../../world/settlements/brazier.js';
 
 /**
@@ -160,7 +161,8 @@ export class KilnYardsQuest {
 
   _liveKilns() {
     const B = seam.YARDS_WALK.box;
-    return (this.ctx.machines?.list || []).filter((m) => m && m.kind === 'kiln' && m.alive !== false && !m._disposed && m.position
+    // (the encounter's own Kilns drawn as live kinds, ./../../instruments/kinds/kiln/yards.js, are not other Kilns)
+    return (this.ctx.machines?.list || []).filter((m) => m && m.kind === 'kiln' && !m.yardsBound && m.alive !== false && !m._disposed && m.position
       && m.position.x >= B.x0 - 30 && m.position.x <= B.x1 + 30 && m.position.z >= B.z0 - 30 && m.position.z <= B.z1 + 30);
   }
 
@@ -172,11 +174,29 @@ export class KilnYardsQuest {
     else this.Y.standUp();
     this._buildView();
     this._tankEntry();
+    // M3 wave 3c (area C, the smallest change here): the encounter drawn by the live kinds (two Kilns, the Spindle, the
+    // Davit from the third wellhead); the grey stand-ins stand only until they are loaded
+    if (!this.stats.live && this.ctx.machines && this.ctx.scene) this.live = new YardsLive(this.ctx, this.Y, { seam });
   }
 
   _dropYards() {
     this.Y = null;
     if (this.view) { this.view.dispose(); this.view = null; }
+    if (this.live) { this.live.dispose(); this.live = null; }
+    this._standinsHidden = false;
+  }
+
+  /** The live kinds (area C) take over from the stand-ins once they stand: the stand-ins' Kilns and Spindle are hidden. */
+  _syncLive(dt) {
+    const L = this.live;
+    if (!L) return;
+    L.sync(dt);
+    const V = this.view;
+    if (L.ready && V && !this._standinsHidden) {
+      for (const v of V.kilns || []) v.root.visible = false;
+      if (V.spindle) V.spindle.root.visible = false;
+      this._standinsHidden = true;
+    }
   }
 
   /** The grey stand-ins (src/world/sites/yards-standins.js: src/game builds no meshes itself). */
@@ -293,6 +313,7 @@ export class KilnYardsQuest {
         else ctx.events?.emit?.(`yards:${e.type}`, e);
       }
       this._syncView(dt);
+      this._syncLive(dt);
     }
     const c = catchUp(this.spine.current()?.id, seam, Y);
     if (c) this.spine.notify(...c);
@@ -300,7 +321,7 @@ export class KilnYardsQuest {
   }
 
   report() {
-    return { quest: this.spine.report(), yards: this.Y?.report?.() ?? null, ever: [...this.ever], quenched: seam.quenchedCount(), stats: { ...this.stats, quenches: this.stats.quenches.slice(-8), brineMisses: this.stats.brineMisses.slice(-8), reached: this.stats.reached.slice(-8) } };
+    return { quest: this.spine.report(), yards: this.Y?.report?.() ?? null, live: this.live?.report?.() ?? null, ever: [...this.ever], quenched: seam.quenchedCount(), stats: { ...this.stats, quenches: this.stats.quenches.slice(-8), brineMisses: this.stats.brineMisses.slice(-8), reached: this.stats.reached.slice(-8) } };
   }
 
   dispose() {

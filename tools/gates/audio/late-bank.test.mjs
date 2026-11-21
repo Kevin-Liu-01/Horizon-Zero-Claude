@@ -87,7 +87,11 @@ test('late-ledger: the ledger defers exactly the files the game loads late (the 
   const region = [...D.files.keys()].filter((f) => D.when.get(f) === 'region' && !malpais.includes(f)).sort();
   assert.deepEqual(region, HOLDS_CAST.filter((id) => !ARCHETYPE_IDS.includes(id) && !SLICE_CAST.includes(id)).map((id) => `public/models/npc/${id}.glb`).sort());
   assert.ok(!region.some((f) => /\/(pit-farmer|tiller-follower|cochineal-picker)\.glb$/.test(f)), 'a staged archetype is never deferred');
-  assert.equal(D.files.size, audio.length + region.length + malpais.length, 'nothing else is deferred');
+  // (M3 wave 3c, area C: the smallest change here) and the live Kiln, Davit and Sonde, fetched when a quest stands one
+  const { M3_LIVE_FILES } = await import('../../../src/instruments/kinds/kiln/files.js');
+  const live = M3_LIVE_FILES.map((f) => `public/${f}`);
+  for (const f of live) assert.equal(D.when.get(f), 'control', `${f}: the live M3 kinds are fetched after control`);
+  assert.equal(D.files.size, audio.length + region.length + malpais.length + live.length, 'nothing else is deferred');
   const raw = readFileSync(path.join(ROOT, 'tools/tier0/budgets.mjs'), 'utf8');
   assert.ok(!/audio\/(holds|screed|forge|tiller)\//.test(raw), 'the ledger names no audio file itself');
 });

@@ -9,6 +9,7 @@ import {
   GLASS_LINE_ID, GLASS_LINE_STAGES, GLASS_LINE_REWARD, CARRIED_FROM, CANE_N, CORD_N, MOORING, anchorsOf, offered, flightFlagged, landingEvent,
 } from './glass-line-plan.js';
 import { MooredSonde } from '../../entities/anim/kite/mooredSonde.js';
+import { mooringSonde } from '../../instruments/kinds/sonde/mooring.js';
 
 /**
  * "A LINE OVER THE GLASS", LIVE (Milestone 3 wave 3, area B; BUILD M3.1, HT2). The plan and its rules are
@@ -220,7 +221,12 @@ export class GlassLineQuest {
   /** The moored Sonde stand-in: there while the tether is uncut and no live Sonde stands at the Ring; it rides its line. */
   _standIn(dt) {
     const cutDone = this.spine.done || this.spine.st?.tether?.state === 'done';
-    if (!this.standIn && !cutDone && !this._liveSonde() && this.ctx.scene) {
+    // M3 wave 3c (area C, the smallest change here): the live Sonde kind moored at MOORING (src/instruments/kinds/sonde/
+    // mooring.js); the stand-in only if it cannot stand (and not while its model is still coming)
+    if (!cutDone && this.ctx.scene && this.ctx.machines) this._mooring = this._mooring || mooringSonde(this.ctx, MOORING);
+    const pending = !!(this._mooring && !this._mooring.ready && !this._mooring.failed);
+    if (this.standIn && !this.standIn.free && this._liveSonde()) { this.standIn.dispose(); this.standIn = null; }
+    if (!this.standIn && !cutDone && !pending && !this._liveSonde() && this.ctx.scene) {
       try { this.standIn = new MooredSonde(this.ctx, MOORING); } catch (e) { this.standIn = null; console.error('[glass-line] sonde stand-in', e); }
     }
     const s = this.standIn;
