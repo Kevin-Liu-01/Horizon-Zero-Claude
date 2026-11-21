@@ -107,8 +107,13 @@ export const NEEDS = Object.freeze({
   'kind:kiln': { what: 'the Kiln (instruments, area C)', probe: `!!M?.canSpawn?.('kiln')` },
   'kind:spindle': { what: 'the Spindle (instruments, area C)', probe: `!!M?.canSpawn?.('spindle')` },
   'kind:davit': { what: 'the Davit (instruments, area C)', probe: `!!M?.canSpawn?.('davit')` },
-  'site:wellheads': { what: 'the four wellheads seam (world, src/world/sites/kilnyards-layout.js)', probe: `Array.isArray(C.world?.wellheads) && C.world.wellheads.length === 4` },
-  'region:malpais': { what: 'the Malpais built as a region (regions.js built: true; world\'s ground)', probe: `!!C.engine?.regions?.map?.regions?.find?.((r) => r.id === 'malpais' && r.built)` },
+  // (M3 wave 3b, area E) the two pieces area A built, read where they live: the seam is a module (no ctx field), the
+  // live quest holds it (ctx.hour2.kilnYards.wellheads(), its four records with their state and plug); the Malpais is
+  // built on the region's approach by terrain.malpais (src/world/sites/malpais-region.js MalpaisRegion), not by the
+  // regions table's `built` flag (regions.js still says false: the flag is the regions lane's, read by nothing that
+  // builds). At 4c14e00 both probes read fields nothing publishes (C.world.wellheads, regions.map.regions[].built)
+  'site:wellheads': { what: 'the four wellheads seam (world, src/world/sites/kilnyards-layout.js)', probe: `(C.hour2?.kilnYards?.wellheads?.()?.length ?? 0) === 4` },
+  'region:malpais': { what: 'the Malpais built as a region on its approach (world: terrain.malpais, src/world/sites/malpais-region.js)', probe: `typeof C.terrain?.malpais?.ensure === 'function'` },
   'site:tube-shelter': { what: 'the Malpais tube shelter and its Brazier (world, systems)', probe: `!!C.braziers?.byId?.('tube-shelter')` },
   'site:scar-posts': { what: 'the Scar\'s 7 line-posts (world, area B)', probe: `(C.world?.linePosts?.scar?.length ?? 0) === 7` },
   // M3 wave 3 (area E): W3's held card ('rung-held', src/game/text/cards/hour-two-w3.json) as the live quest reads it

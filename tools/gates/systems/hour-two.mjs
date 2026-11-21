@@ -50,8 +50,7 @@ import { fixture } from './hour-two-fixtures.mjs';
 import * as SH from './slice-hour.mjs';
 import { DRIVE4 } from '../kite/glass-line-drive.mjs';   // (M3 wave 3, area B: leg 4's drivers, the smallest change)
 import { WELLHEADS, apronPoint } from '../../../src/world/sites/kilnyards-layout.js';
-import { walkRoute } from '../../../src/game/hour2/walk-route.js';
-import { heightAt } from '../../../src/world/island/recipe.js';
+import { walkRoute, footprint } from '../../../src/game/hour2/walk-route.js';
 import { BEATS, NEEDS, PLACES, LEGS as ALL_LEGS, LEG_CAP_S, beatsOfLeg } from '../../../src/game/hour2/plan.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -167,47 +166,93 @@ async function castAt(page, K, id) {
 }
 
 /**
- * A long walk along a walkable line over the island's ground (src/game/hour2/walk-route.js on the recipe's heights, no
- * step over 26 deg), one waypoint at a time with W held and the look turned to each; a waypoint she stalls on is tried
- * once more on the game's nav grid. `via` are points walked first (Ninewalls' road). Run 20261120T202939Z-3f3c32e: the
- * nav walk from the fishing hut stopped against Ninewalls' outer wall and the straight climb 104 m short on the shelf.
+ * The ground and the game's colliders over a box, read from the page (wave 3b): the drawn terrain's height at every
+ * node of walk-route.js's grid (`cell` m, nodes on whole multiples of it) and every blocking static collider over 0.7 m
+ * tall that touches the box, in the registered record's flat fields (a mesh as its bounding box when that is under
+ * 900 m2; a larger merged mesh is counted and left out). Read only: nothing in the page changes.
  */
-async function walkLong(page, K, target, radius, maxS, via = []) {
-  const t0 = Date.now(), left = () => maxS - (Date.now() - t0) / 1000, legs = [];
-  const go = async (pts, r) => {
-    for (let i = 0; i < pts.length; i++) {
-      if (left() <= 0) return false;
-      const last = i === pts.length - 1;
-      let w = await SH.walkTo(page, K, pts[i], last ? r : 2.5, { maxS: Math.min(30, left()) });
-      if (!w.ok && !w.interrupted) w = await SH.walkPath(page, K, pts[i], last ? r : 3, { maxS: Math.min(30, left()) });
-      if (!w.ok && !w.interrupted) { legs.push({ at: pts[i], why: w.why ?? null }); if (last) return false; }
-    }
-    return true;
-  };
-  for (const v of via) await go([v], 3);
+const groundAndColliders = (bx, cell) => {
+  const C = window.__CTX__, T = C.terrain, x0 = Math.floor(bx[0] / cell) * cell, z0 = Math.floor(bx[1] / cell) * cell;
+  const nx = Math.ceil((bx[2] - x0) / cell) + 1, nz = Math.ceil((bx[3] - z0) / cell) + 1;
+  const h = new Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) h[j * nx + i] = Math.round(T.getHeight(x0 + i * cell, z0 + j * cell) * 100) / 100;
+  const cols = [];
+  let bigMesh = 0, all = 0;
+  for (const c of C.collision?.colliders || []) {
+    if (!c || c.dead || !c.blocking || c.dynamic || c.maxy - c.miny < 0.7) continue;
+    if (c.maxx < bx[0] || c.minx > bx[2] || c.maxz < bx[1] || c.minz > bx[3]) continue;
+    all++;
+    if (c.type === 'box') cols.push({ type: 'box', cx: c.cx, cz: c.cz, hx: c.hx, hz: c.hz, hy: c.hy, yaw: c.yaw || 0 });
+    else if (c.type === 'capsule') cols.push({ type: 'capsule', ax: c.ax, ay: c.ay, az: c.az, bx: c.bx, by: c.by, bz: c.bz, r: c.r });
+    else if (c.type === 'sphere') cols.push({ type: 'sphere', cx: c.cx, cz: c.cz, r: c.r });
+    else if ((c.maxx - c.minx) * (c.maxz - c.minz) < 900) cols.push({ type: 'box', cx: (c.minx + c.maxx) / 2, cz: (c.minz + c.maxz) / 2, hx: (c.maxx - c.minx) / 2, hz: (c.maxz - c.minz) / 2, hy: (c.maxy - c.miny) / 2, yaw: 0 });
+    else bigMesh++;
+  }
+  return { x0, z0, nx, nz, h, cols, all, bigMesh, total: C.collision?.colliders?.length ?? 0 };
+};
+
+const ROUTE = { cell: 1, pad: 60, colliderPad: 0.8 };
+
+/** walk-route.js's line from where she stands to `target`, over the page's own ground and colliders. */
+async function planLine(page, target) {
   const p = (await page.evaluate(yardsNow)).p;
-  const pts = walkRoute(heightAt, p, target) || [target];
-  const ok = await go(pts.slice(1), radius);
+  const bx = [Math.min(p.x, target.x) - ROUTE.pad, Math.min(p.z, target.z) - ROUTE.pad, Math.max(p.x, target.x) + ROUTE.pad, Math.max(p.z, target.z) + ROUTE.pad];
+  const G = await page.evaluate(groundAndColliders, bx, ROUTE.cell);
+  const hAt = (x, z) => {
+    const i = Math.max(0, Math.min(G.nx - 1, Math.round((x - G.x0) / ROUTE.cell))), j = Math.max(0, Math.min(G.nz - 1, Math.round((z - G.z0) / ROUTE.cell)));
+    return G.h[j * G.nx + i];
+  };
+  const F = footprint(G.cols, ROUTE.colliderPad);
+  const pts = walkRoute(hAt, p, target, { cell: ROUTE.cell, box: bx, blocked: F.blocked });
+  return { from: p, pts, colliders: F.n, inBox: G.all, bigMesh: G.bigMesh, total: G.total };
+}
+
+/**
+ * A long walk along walk-route.js's line over the page's ground and around the game's colliders (Ninewalls' crescent
+ * walls, its houses, the Yards' towers; no step over 26 deg), one waypoint at a time with W held and the look turned
+ * to each. The line is drawn again from where she stands when she stalls on a waypoint (the nav grid's walk tried once
+ * first) or when the collision world has changed (the Malpais' colliders are registered on its approach), up to
+ * `replans` times. At 4c14e00 (run 20261121T014109Z) the walk to Oro stalled on Ninewalls' west face against its outer
+ * wall and the climb between wall-3 and wall-4; at 3f3c32e a straight climb 104 m short on the shelf.
+ */
+async function walkLong(page, K, target, radius, maxS, { replans = 3 } = {}) {
+  const t0 = Date.now(), left = () => maxS - (Date.now() - t0) / 1000, stalls = [], plans = [];
+  for (let k = 0; k <= replans && left() > 0; k++) {
+    const L = await planLine(page, target);
+    plans.push({ from: L.from, waypoints: L.pts?.length ?? 0, colliders: L.colliders, bigMesh: L.bigMesh });
+    const pts = L.pts ? L.pts.slice(1) : [target];
+    let stalled = false;
+    for (let i = 0; i < pts.length && left() > 0; i++) {
+      const last = i === pts.length - 1;
+      let w = await SH.walkTo(page, K, pts[i], last ? radius : 1.5, { maxS: Math.min(25, left()) });
+      if (w.interrupted) { await waitUntil(page, async () => !(await page.evaluate(yardsNow)).busy, Math.max(1000, left() * 1000)); i--; continue; }
+      if (!w.ok) w = await SH.walkPath(page, K, pts[i], last ? radius : 2.5, { maxS: Math.min(15, left()) });
+      if (!w.ok && !w.interrupted) { stalls.push({ at: pts[i], why: w.why ?? null, plan: k }); stalled = true; break; }
+      // the world's colliders changed under the line (a region built on approach): draw it again
+      if (!last && i % 6 === 5) {
+        const n = await page.evaluate(() => window.__CTX__.collision?.colliders?.length ?? 0);
+        if (n !== L.total && k < replans) { plans.at(-1).redrawnAt = i; stalled = true; break; }
+      }
+    }
+    const at = (await page.evaluate(yardsNow)).p;
+    if (Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5) return { ok: true, at, plans, stalls: stalls.slice(0, 6), s: +((Date.now() - t0) / 1000).toFixed(1) };
+    if (!stalled) break;
+  }
   const at = (await page.evaluate(yardsNow)).p;
-  return { ok: ok && Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5, at, waypoints: pts.length, stalls: legs.slice(0, 4), s: +((Date.now() - t0) / 1000).toFixed(1) };
+  return { ok: Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5, at, plans, stalls: stalls.slice(0, 6), s: +((Date.now() - t0) / 1000).toFixed(1) };
 }
 
 const DRIVE = {
   'oro-yards': async (page, K, b, maxS) => {
     const A = await page.evaluate(() => window.__CTX__.systemsGame?.A?.oro ?? null);
     if (!A) return { ok: false, why: 'no Oro anchor (systemsGame.A.oro)' };
-    // Ninewalls' own road into the village when it publishes one (settlements.ninewalls.road, [x, z, h]), its far end first
-    const road = await page.evaluate(() => { const R = window.__CTX__.settlements?.ninewalls?.road; return Array.isArray(R) && R.length > 1 ? R.map((q) => ({ x: q[0], z: q[1] })) : []; });
-    const P = (await page.evaluate(yardsNow)).p;
-    const ends = road.length ? [road[0], road.at(-1)].sort((u, v) => Math.hypot(u.x - P.x, u.z - P.z) - Math.hypot(v.x - P.x, v.z - P.z)) : [];
-    const along = road.length && Math.hypot(ends[0].x - road[0].x, ends[0].z - road[0].z) < 1e-6 ? road : road.slice().reverse();
-    const thinned = along.filter((q, i) => i % 3 === 0 || i === along.length - 1);
-    const w = await walkLong(page, K, A, 2.4, maxS, thinned);
+    // on foot from the fishing hut (R8's WALK THE LINE from B2 needs Benchmark 2, not built: the wave-1 walk)
+    const w = await walkLong(page, K, A, 2.4, maxS);
     await sleep(300);
     await SH.holdE(page, K, 500);
     await sleep(500);
     const played = await SH.playScene(page, K, 60);
-    return { walk: w, road: road.length, played };
+    return { walk: w, played, brine: (await page.evaluate(yardsNow)).brine };
   },
   climb: async (page, K, b, maxS) => {
     const w = await walkLong(page, K, YARDS_SW, 3, maxS);
@@ -359,10 +404,15 @@ async function runLeg(leg, startRec, startName) {
       const needs = b.needs.map((id) => [id, NEEDS[id].probe]);
       let driven = null;
       if (DRIVE[b.id]) {
-        const maxS = Math.max(60, b.budgetS * 2);
+        // R8's shorter budget stands on a piece (B2's WALK THE LINE node); while that piece is missing the beat is driven
+        // on its wave-1 route and budget (wave1S), and its numbers say so
+        const pre = b.wave1S ? await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs) : null;
+        const onWave1 = !!(pre && pre.missing.some((id) => /^travel:|^bm:/.test(id)));
+        const maxS = Math.max(60, (onWave1 ? b.wave1S : b.budgetS) * 2);
         const tD = Date.now();
         try { driven = await DRIVE[b.id](page, K, b, maxS); } catch (e) { driven = { error: String(e?.message || e).slice(0, 300) }; }
         driven.s = +((Date.now() - tD) / 1000).toFixed(1);
+        if (onWave1) driven.budget = { wave1S: b.wave1S, maxS, why: `R8's route needs ${pre.missing.filter((id) => /^travel:|^bm:/.test(id)).join(', ')}` };
         log(`leg ${leg} ${b.id}: driven in ${driven.s} s ${JSON.stringify(driven).slice(0, 300)}`);
       }
       const pr = await page.evaluate(beatProbe, { id: b.id, quest: b.quest }, needs);

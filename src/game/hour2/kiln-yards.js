@@ -151,6 +151,9 @@ export class KilnYardsQuest {
     this.spine.notify('wellhead-quenched', { n, id: r.id });
   }
 
+  /** The wellheads seam's four records ({ id, x, z, state, plugged }): what the hour-two runner's 'site:wellheads' reads. */
+  wellheads() { return seam.wellheads(); }
+
   _turn(on) { const c = this.S.turn(on); if (c && !this.spine.seen.turns.has(on)) { this.spine.seen.turns.add(on); this.H.turn(on, c, {}); } }
 
   /* ------------------------------------------------------------ the Yards */
