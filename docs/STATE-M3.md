@@ -665,3 +665,17 @@ below names its commit.
     panel; the Davit's round front lamp may read as an eye (for the owner).
 11. Not run: `A-region-hitch` after the Malpais' changes; IK10 and IK11; KF10 and KF11.
 12. F45 still needs a new lens; F53-F55 are not staged.
+
+## Milestone 3 wave 3b (Nov 21 2026, lean, no review)
+
+Two lanes on `r5/m3`, measured by each lane from clean detached worktrees; no review agent ran.
+
+- **The kite (e55ccb0, 7d5d0dd, 1dd8ecd).**
+  - The caldera launch is one the open rule allows: it opened with 3.15 m clear (bar 3.0) and climbed 24.89 m in lift over 25.9 s, hp 100, 0 bad arm-bar frames of 4,189.
+  - "A Line Over the Glass" plays 10 of 10 beats by input from its fixture (was 6 of 10). The Survey Kite is an item; a moored Sonde stand-in stands at MOORING. Worst frame 42.2 ms, 1 over 33, 0 over 50.
+  - Open: the caldera flight's home leg never lands (128 m up after 40 s); the T1 open's bearing comes from her jump velocity (320.8 against the 283 track).
+- **Hour two leg 6 (184e706).** "The Kiln Yards" plays 8 of 11 beats by input from its fixture (was 0 of 11): long walks routed round Ninewalls on the game's colliders at 1 m cells; the Malpais and the wellheads read where they live. At most one Kiln awake; hp 84.
+  - Fail by name: tube-rest (the tube shelter's Brazier is not a rest Brazier), scar-flight (the Scar's seven line-posts are not built), rung-7-held (no driver).
+  - Over budget: oro-yards 119.4 s (no Benchmark 2 shortcut), climb 95.2 s, quench-3 and quench-4 just over 42 s.
+- **Look notes for the next review:** a large pink faceted flap on her wrap in two leg-6 shots, and red-brown flat panels in front of the lens in two leg-4 shots; neither identified.
+- Tier 0 Node checks at 1dd8ecd: 8 of 8.
