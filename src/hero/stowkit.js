@@ -106,7 +106,9 @@ export function installPieceMask(material) {
     shader.uniforms.uKitHide = u;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float _piece;\nuniform float uKitHide;')
-      .replace('#include <begin_vertex>', `#include <begin_vertex>
+      // (cloth lane, the drawn sheets: collapsed AFTER skinning, as clothShader.js: before it each hidden vertex was moved
+      //  by its own bones and the stowed bow or lance opened into a flat sheet in any pose away from the bind)
+      .replace('#include <skinning_vertex>', `#include <skinning_vertex>
   if ( ( int( _piece + 0.5 ) & int( uKitHide + 0.5 ) ) != 0 ) transformed = vec3( 0.0 );`);
   };
   material.onBeforeCompile = material.userData.vertexHook;

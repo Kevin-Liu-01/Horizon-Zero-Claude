@@ -106,8 +106,12 @@ export function installCloth(material, { rep = 48, pieces = false, salt = false,
     let begin = '#include <begin_vertex>';
     if (salt) begin += '\n  vSaltV = _salt;';
     if (ao) begin += '\n  vAoV = _ao;';
-    if (pieces) begin += '\n  if ( ( int( _piece + 0.5 ) & int( uHidePiece + 0.5 ) ) != 0 ) transformed = vec3( 0.0 );';
     v = v.replace('#include <begin_vertex>', begin);
+    // (cloth lane, the drawn sheets: the hidden copy is collapsed AFTER skinning, to the mesh's own origin, so all of its
+    //  vertices meet at one point. Collapsed before it (at the bind-space origin), each vertex was then moved by its own
+    //  bones: in any pose away from the bind the hat's two hidden copies opened into flat sheets a metre across, drawn
+    //  where no CPU read puts a vertex (A-cloth-fitted-set's sheet clause))
+    if (pieces) v = v.replace('#include <skinning_vertex>', '#include <skinning_vertex>\n  if ( ( int( _piece + 0.5 ) & int( uHidePiece + 0.5 ) ) != 0 ) transformed = vec3( 0.0 );');
     v = v.replace('#include <project_vertex>', '#include <project_vertex>\n  vClothView = -mvPosition.xyz;');
     shader.vertexShader = v;
     let f = shader.fragmentShader;
