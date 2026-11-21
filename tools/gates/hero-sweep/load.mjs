@@ -110,3 +110,12 @@ export async function makeDressedRig(assets, opts = {}) {
   } finally { [console.log, console.table, console.warn] = quiet; }
 }
 export { THREE };
+
+/** (cloth lane, A-cloth-fitted-set) a deferred row (an armor rung) loaded as `ctx.assets.models[row]` holds it, for a
+ *  bench that equips it in play (loadout.equipArmor's order: the rig already built on the set worn before it). */
+export async function loadPartRow(row, spec) {
+  const quiet = [console.log, console.table, console.warn];
+  console.log = () => {}; console.table = () => {}; console.warn = () => {};
+  try { await MeshoptDecoder.ready; return normalizePart(row, await parse(stripGlb(path.join(PUB, spec.url))), spec); }
+  finally { [console.log, console.table, console.warn] = quiet; }
+}

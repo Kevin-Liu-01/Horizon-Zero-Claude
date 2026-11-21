@@ -38,21 +38,31 @@ export { clothMode };
 
 const _rigs = new WeakMap(), _modes = new WeakMap();
 /** The animator's grid cloth: built on the first call under the flag (null with it off, or if the build failed).
- *  Kept in a WeakMap keyed by the animator, so no field is added to it (R48 c). */
+ *  Kept in a WeakMap keyed by the animator, so no field is added to it (R48 c).
+ *  (the fitted set, Nov 21) REBUILT WHEN HER SET IS PUT ON AGAIN: every put-on binds new meshes (src/hero/parts.js
+ *  bindPart; the rung warm-up behind the boot sheet, a save that wears the Scout, the slice's reward), and a rig built on
+ *  the meshes before it re-skins only those. The new set's panels stayed on their `dyn_panel*` chains, which this rig
+ *  drives from each grid's centre column only: a whole panel on one chain of swing-only links, flat and standing off
+ *  her hips in the first hour (A-cloth-fitted-set). A rig whose outfit (or caster) mesh has left her model is disposed
+ *  and built again on the set she wears now; a build that failed (a set with no sash panels) is tried again when that
+ *  set leaves her. Three property reads a frame. */
 export function clothRigOf(an) {
   let r = _rigs.get(an);
+  if (r && r.stale()) { r.dispose(); r = undefined; _rigs.delete(an); }
+  else if (r === null && _failedOn.has(an) && !_failedOn.get(an)?.parent) { r = undefined; _rigs.delete(an); _failedOn.delete(an); }
   if (r === undefined) {
     r = null;
     const m = _modes.has(an) ? _modes.get(an) : clothMode();
     if (m === 2) {
       const R = new BreaCloth(an);
-      if (R.ok) r = R; else console.warn('[cloth] the grid solver is off:', R.err);
+      if (R.ok) r = R; else { console.warn('[cloth] the grid solver is off:', R.err); if (R.meshes?.outfit) _failedOn.set(an, R.meshes.outfit); }
       if (!R.ok && globalThis.__CALIMA_CLOTH_DEBUG) throw new Error(R.err);
     }
     _rigs.set(an, r);
   }
   return r;
 }
+const _failedOn = new WeakMap();
 /** The rig if it has been built (no build). */
 export function peekClothRig(an) { return _rigs.get(an) || null; }
 
@@ -177,7 +187,9 @@ function skinMeshes(model) {
     if (!o.isSkinnedMesh) return;
     const part = o.userData?.heroPart || '';
     if (o.name === 'Caster' || o.material?.name === 'hero-caster') { if (part.indexOf('outfit') >= 0) caster = o; }
-    else if (!outfit && part.indexOf('outfit') >= 0) outfit = o;
+    // (a fitted-over rung's own pieces, outfit.js `outfitOver`, carry no sash: the set under them does)
+    else if (!outfit && part.indexOf('outfit') >= 0 && !o.userData.outfitOver) outfit = o;
+    else if (part.indexOf('outfit') >= 0) { /* a second outfit mesh: not the stow kit, the wrap or the skin */ }
     else if (!kit && part.indexOf('stowkit') >= 0) kit = o;
     else if (!wrap && o.name.indexOf('HairWrap') >= 0) wrap = o;
     else if (!skin && o.geometry.getAttribute('_hidemask')) skin = o;
@@ -1298,8 +1310,15 @@ export class BreaCloth {
   digest() { return this.ok ? this.sys.digest() : null; }
 
   /** Undo the re-skin: every mesh back on its own geometry and skeleton, the cl_ bones removed, the chains given back. */
+  /** (the fitted set) true once the outfit or caster mesh this rig re-skinned has left her model (a set put on again). */
+  stale() {
+    const M = this.meshes;
+    return !!M && ((!!M.outfit && !M.outfit.parent) || (!!M.caster && !M.caster.parent));
+  }
+
   dispose() {
-    for (const R of this.rebound || []) { R.mesh.geometry = R.geo0; R.mesh.bind(R.skel0, R.mesh.bindMatrix); R.geo.dispose?.(); }
+    // (a mesh already taken off her, its skeleton released by parts.js releasePart, is left as it is)
+    for (const R of this.rebound || []) { if (R.mesh.parent) { R.mesh.geometry = R.geo0; R.mesh.bind(R.skel0, R.mesh.bindMatrix); } R.geo.dispose?.(); }
     this.rebound = [];
     for (const b of this.bones) b.removeFromParent();
     this.bones = [];
