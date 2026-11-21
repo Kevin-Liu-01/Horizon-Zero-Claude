@@ -203,7 +203,7 @@ const groundAndColliders = (bx, cell) => {
   return { x0, z0, nx, nz, h, cols, all, bigMesh, total: C.collision?.colliders?.length ?? 0 };
 };
 
-const ROUTE = { cell: 1, pad: 60, colliderPad: 0.8 };
+const ROUTE = { cell: 1, pad: 60, widePad: 150, colliderPad: 0.8 };
 
 /**
  * (M3 wave 3c) The fixed blockers over a box, as one signature: the colliders groundAndColliders reads (static, blocking,
@@ -225,9 +225,9 @@ const fixedSig = (bx) => {
 };
 
 /** walk-route.js's line from where she stands to `target`, over the page's own ground and colliders. */
-async function planLine(page, target) {
+async function planLine(page, target, pad = ROUTE.pad) {
   const p = (await page.evaluate(yardsNow)).p;
-  const bx = [Math.min(p.x, target.x) - ROUTE.pad, Math.min(p.z, target.z) - ROUTE.pad, Math.max(p.x, target.x) + ROUTE.pad, Math.max(p.z, target.z) + ROUTE.pad];
+  const bx = [Math.min(p.x, target.x) - pad, Math.min(p.z, target.z) - pad, Math.max(p.x, target.x) + pad, Math.max(p.z, target.z) + pad];
   const G = await page.evaluate(groundAndColliders, bx, ROUTE.cell);
   const hAt = (x, z) => {
     const i = Math.max(0, Math.min(G.nx - 1, Math.round((x - G.x0) / ROUTE.cell))), j = Math.max(0, Math.min(G.nz - 1, Math.round((z - G.z0) / ROUTE.cell)));
@@ -237,8 +237,11 @@ async function planLine(page, target) {
   const tR = Date.now();
   const pts = walkRoute(hAt, p, target, { cell: ROUTE.cell, box: bx, blocked: F.blocked });
   const routeMs = Date.now() - tR;
+  // (M3 wave 3c) no line inside the box: once more over a wider one (the tube shelter to T3 goes round by the Yards'
+  // shelf, 120 m outside the straight line's box; Node, recipe ground: none at a 60 or 90 m pad, 490 m at 120)
+  if (!pts && pad < ROUTE.widePad) return planLine(page, target, ROUTE.widePad);
   const sig = await page.evaluate(fixedSig, bx);
-  return { from: p, pts, colliders: F.n, inBox: G.all, bigMesh: G.bigMesh, total: G.total, bx, sig, routeMs };
+  return { from: p, pts, colliders: F.n, inBox: G.all, bigMesh: G.bigMesh, total: G.total, bx, sig, routeMs, pad };
 }
 
 /** In-page: where she is and whether the walk may go on (the light probe of followLine). */
@@ -308,7 +311,7 @@ async function walkLong(page, K, target, radius, maxS, { replans = 3 } = {}) {
   for (let k = 0; k <= replans && left() > 0; k++) {
     const tP = Date.now();
     const L = await planLine(page, target);
-    const plan = { from: L.from, waypoints: L.pts?.length ?? 0, colliders: L.colliders, bigMesh: L.bigMesh, routeMs: L.routeMs, planMs: Date.now() - tP };
+    const plan = { from: L.from, waypoints: L.pts?.length ?? 0, colliders: L.colliders, bigMesh: L.bigMesh, routeMs: L.routeMs, planMs: Date.now() - tP, pad: L.pad };
     plans.push(plan);
     const pts = L.pts ? L.pts.slice(1) : [target];
     if (!pts.length) pts.push(target);
@@ -434,6 +437,35 @@ for (const n of [1, 2, 3, 4]) {
 
 // (M3 wave 3, area B) leg 4, "A Line Over the Glass": tools/gates/kite/glass-line-drive.mjs
 Object.assign(DRIVE, DRIVE4);
+
+/**
+ * (M3 wave 3c) 'scar-flight' starts where 'tube-rest' left her, in the tube shelter on the hornito field (11.5 m), and the
+ * Scar road launches off T3 on Rust Cone (145 m; roads.js ROAD_LAUNCH.scar, R4). Area B's driver walks to T3's steps by
+ * the nav grid (SH.walkPath): at bbe5fce (run 20261121T072017Z-bbe5fce-e-w3c-leg6-tail) it timed out 11.7 m short on
+ * the cone's side at 88.8 m. The walk up is drawn first here, on walk-route.js's line round the shelf's faces (in Node on
+ * the recipe's ground: 490 m and 133 m of rise, about 141 s at a sprint under the game's grade law), with its own
+ * allowance (WALK_TO_T3_S, said in its numbers: over the beat's 70 s budget); then area B's driver from the steps' foot.
+ */
+const WALK_TO_T3_S = 200;
+if (DRIVE['scar-flight']) {
+  const flyB = DRIVE['scar-flight'];
+  DRIVE['scar-flight'] = async (page, K, b, maxS) => {
+    const P = await page.evaluate(() => { const p = (window.__CTX__.props?.survey?.pillars || []).find((q) => q.id === 'T3'); return p ? { x: p.x, z: p.z, d: p.stepsDir } : null; });
+    let toT3 = null;
+    if (P?.d) {
+      const foot = { x: P.x + P.d.x * 6.4, z: P.z + P.d.z * 6.4 };
+      const far = await page.evaluate((x, z) => { const q = window.__CTX__.player.position; return Math.hypot(q.x - x, q.z - z); }, foot.x, foot.z);
+      if (far > 12) {
+        const sim0 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null);
+        toT3 = await walkLong(page, K, foot, 1.5, WALK_TO_T3_S);
+        const sim1 = await page.evaluate(() => window.__CTX__.engine?.simTime ?? null);
+        toT3 = { ok: toT3.ok, at: toT3.at, s: toT3.s, simS: sim0 != null && sim1 != null ? +(sim1 - sim0).toFixed(1) : null, metres: toT3.metres, plans: toT3.plans, stalls: toT3.stalls, allowanceS: WALK_TO_T3_S };
+      }
+    }
+    const r = await flyB(page, K, b, maxS);
+    return { ...r, toT3 };
+  };
+}
 
 /** Presented-frame intervals while playing with the loading sheet closed; screenshots apart (first-hour.mjs's). */
 function installHitch() {
