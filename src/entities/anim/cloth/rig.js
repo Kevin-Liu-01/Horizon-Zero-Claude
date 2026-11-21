@@ -63,6 +63,8 @@ export function clothRigOf(an) {
   return r;
 }
 const _failedOn = new WeakMap();
+/** (the reward's frame) the bind-pose reads of the skin and the clothes, per set of geometries (_buildColliders) */
+const _measures = new Map();
 /** The rig if it has been built (no build). */
 export function peekClothRig(an) { return _rigs.get(an) || null; }
 
@@ -313,6 +315,14 @@ export class BreaCloth {
     let bit = 1;
     const add = (name, a, bb, r0, r1, src) => { const C = makeCollider(name, bit, r0, r1, src); bits[name] = bit; bit <<= 1; S.addCollider(C); C.boneA = a; C.boneB = bb; return C; };
     const W = (bone) => boneWorld(bone, new THREE.Vector3());
+    /* (cloth lane, the reward's frame: a put-on rebuilds the rig, and these reads of the skin and the clothes were 40-50 ms
+     * of it in Node. They are taken in the BIND pose (_build) off the meshes' own geometry (a put-on binds the asset's
+     * geometry again, parts.js bindPart), so they are kept per set of geometries and her scale: the Scout given at the
+     * slice's reward reads what the rung warm-up behind the boot sheet measured) */
+    const key = `${M.skin?.geometry?.uuid}|${M.outfit?.geometry?.uuid}|${model.matrixWorld.getMaxScaleOnAxis().toFixed(6)}`;
+    let book = _measures.get(key);
+    if (!book) { book = new Map(); _measures.set(key, book); if (_measures.size > 8) _measures.delete(_measures.keys().next().value); }
+    const memo = (k, f) => { if (!book.has(k)) book.set(k, f()); const r = book.get(k); return Array.isArray(r) ? r.slice() : r; };
     /* the torso up the spine, the hips, the legs: the radii of the clothes' surface where the cloth meets it. A round
      * capsule cannot take the hips' oval, so these are set from the measured spread (radiusProfile: Brea's skin and the
      * Starter's trousers, percentiles 20/50/80/95 printed by tools/gates/hero-sweep/cloth-bench.mjs --radii): the
@@ -322,13 +332,13 @@ export class BreaCloth {
       thighL: [0.105, 0.094], thighR: [0.105, 0.094], shinL: [0.074, 0.064], shinR: [0.074, 0.064] };
     this.radii = {};
     for (let k = 0; k + 1 < spine.length; k++) {
-      this.radii['torso' + k] = radiusProfile(meshes, W(spine[k]), W(spine[k + 1]), /^(pelvis|spine_0[1-5]|neck_01)$/, 0.80, THREE.Vector3);
+      this.radii['torso' + k] = memo('rp:torso' + k, () => radiusProfile(meshes, W(spine[k]), W(spine[k + 1]), /^(pelvis|spine_0[1-5]|neck_01)$/, 0.80, THREE.Vector3));
       const r = RAD['torso' + k] || [0.12, 0.12];
       add('torso' + k, spine[k], spine[k + 1], r[0], r[1]);
     }
     add('hips', b.thighL.bone, b.thighR.bone, RAD.hips[0], RAD.hips[1]);
     // the grader's inner radii (tools/gates/hero-sweep/measure.mjs: the skin's 20th percentile less 5 mm), the HARD pass's
-    for (const [k, r] of innerTorso(M.skin, spine).entries()) { const C = this.sys.colliders.find((c) => c.name === 'torso' + k); if (C) { C.ri0 = C.ri1 = Math.round(r * 1e4) / 1e4; } }
+    for (const [k, r] of memo('it', () => innerTorso(M.skin, spine)).entries()) { const C = this.sys.colliders.find((c) => c.name === 'torso' + k); if (C) { C.ri0 = C.ri1 = Math.round(r * 1e4) / 1e4; } }
     const legs = [
       ['thighL', b.thighL.bone, b.calfL.bone, /^thigh_.*l$|^thigh_l$/],
       ['thighR', b.thighR.bone, b.calfR.bone, /^thigh_.*r$|^thigh_r$/],
@@ -336,16 +346,16 @@ export class BreaCloth {
       ['shinR', b.calfR.bone, b.footR.bone, /^calf_.*r$|^calf_r$/],
     ];
     for (const [name, a, bb, re] of legs) {
-      this.radii[name] = radiusProfile(meshes, W(a), W(bb), re, 0.90, THREE.Vector3);
+      this.radii[name] = memo('rp:' + name, () => radiusProfile(meshes, W(a), W(bb), re, 0.90, THREE.Vector3));
       const C = add(name, a, bb, RAD[name][0], RAD[name][1]);
       C.leg = true;
-      const ri = innerLeg(M.skin, a, bb, re);
+      const ri = memo('il:' + name, () => innerLeg(M.skin, a, bb, re));
       if (ri != null) C.ri0 = C.ri1 = Math.round(ri * 1e4) / 1e4;
     }
     // the head (a capsule from the neck's top to the crown) and the neck
     {
       const hp = W(b.head.bone), up = new THREE.Vector3(0, 1, 0).transformDirection(model.matrixWorld);
-      const [rh] = radiusProfile([M.skin], hp, hp.clone().addScaledVector(up, 0.2), /^head$/, 0.5, THREE.Vector3);
+      const [rh] = memo('rp:head', () => radiusProfile([M.skin], hp, hp.clone().addScaledVector(up, 0.2), /^head$/, 0.5, THREE.Vector3));
       const rq = rh != null ? Math.round(rh * 1e4) / 1e4 : 0.085;
       const C = add('head', b.head.bone, null, rq, rq);
       C.headUp = 0.12;
