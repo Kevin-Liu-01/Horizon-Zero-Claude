@@ -98,7 +98,7 @@ export const TETHER = { on: false, u: 0.75, slack: 0.02, alpha: 0.02 };
 export const BACKSTOP = { front: 0.0 };
 /** (fix round 1) The most a free column's chord may stand off plumb (deg) for its piece to sleep (solver.js _plumb). */
 export const SLEEP_PLUMB = { panel: 10, tail: 20 };
-export const PANEL_AIR = { panelL: -1, panelR: -1, panelB: -1 };
+export const PANEL_AIR = { panelL: 2.35, panelR: -1, panelB: -1 };
 /** (cloth round 6) a panel's own free swing (m/s; solver.js, the material's `vSwing` where 0). The short front-right
  *  panel at the lined linen's 1.0 came back from a sprint at that speed and passed its rest by 2.7 cm (C4, band 4-15 cm);
  *  at 1.3 by 5.4 cm. Node sweep, each clip frame a fail: the front-left at 2.0 passes its rest by 9.7 cm but goes 6 mm
@@ -118,6 +118,30 @@ export const PANEL_SWING = { panelL: 0, panelR: 1.3, panelB: 0 };
  *  each frame, and in a roll a tail vertex 2 cm clear of ours was 8 mm inside its) */
 /** (fix round 1) The tail's reach in the drawing pass against the torso (m from its inner surface; the quiver keeps VPASS's). */
 export const TAIL_VP_REACH = 0.025;
+/** (the flap, round 2) The stowed lance's radius for the cloth (m). The stow kit's capsule (`an._stowCap`, r 0.11) is the
+ *  spring chains' keep-out (the wrap tail and the braid >= 0.06 m off the shaft, A100), not the lance: its haft is
+ *  0.014 m (p50 of its vertices off the carry's axis; p95 0.017 along the shaft, 0.044 at the butt and head caps, Node,
+ *  8f7ecb6). Its butt hangs at her hip, 0.3 m behind and to the side of the pelvis, so the 0.11 m tube stood in the back
+ *  panel's way: a panel the air or a run swung out past it came back onto its OUTSIDE and hung there, 26-33 deg off
+ *  plumb and 0.44-0.48 m from her hips, in still air too, until a reset seated it on her again (the flap in play). The
+ *  panels keep out of the lance itself, its caps' radius (their stand-off off the kit's capsule, _buildPanel); the tail
+ *  keeps the kit's keep-out, as the spring chains do. */
+export const STOW_LANCE_R = 0.045;
+/** (the flap, round 2) Her lee for the sash panels (m, aero.js P.lee: full shelter within 0.6 of it of the line through
+ *  her root along the wind, none past it). At 0.17 a panel's outer column, hung on her surface 0.15-0.22 m off that line,
+ *  stood in the full wind: with the wind from her front the back panel's edge column flared to 0.36 m off its belt
+ *  point and twisted the sheet (Node, the Scout, 5.5 m/s). Her hips are 0.36 m across; a bluff body's near wake is about
+ *  its width: full shelter to 0.18 m, none past 0.30. */
+export const PANEL_LEE = 0.30;
+/** (the flap, round 2) a panel's own drag coefficient (aero.js P.cd; 0: its material's), and (PANEL_AIR) its share of her
+ *  travel met as air. The long front-left panel in the trade wind from behind her had two ways to hang: 15-19 deg in her
+ *  lee, or twisted face-on to the wind with its edge column out of the lee, 30-45 deg off plumb and 0.55-0.6 m from her
+ *  hips, for as long as the wind held (Node, 17 s; A-cloth-fitted-set's flap clause: column 41 deg, reach 0.575 m). At cd
+ *  0.5 the wind cannot hold it out (column 24.9 deg, reach 0.43 m); its air share 2.35 (the lined linen's 1.6) gives its
+ *  hem the run's press it had at cd 1.0: ahead of the knee plane in 0.9 % of run frames (C8, bar 2 %; at 1.6 9 %).
+ *  cd 0.45 doubled its stride-to-stride repeat at a sprint (0.063 m, C8 bar 0.03); air 2.45 put it into a shin in the
+ *  Node sweep's roll. The other panels keep the material's. */
+export const PANEL_CD = { panelL: 0.5, panelR: 0, panelB: 0 };
 export const VPASS = { on: true, iters: 6, margin: 0.004, maxStep: 0.1, reach: 0.06, quiver: 0.012 };
 /** (fix round 1) the tail's own air: cd 0.4 (the linen's 0.7), `edge` 0.8 of its face-on drag edge-on (a wrung strip
  *  this narrow twists to the flow: at 0 a wind from her side met it edge-on and lifted it 2-6 deg at 5.5 m/s), the air's
@@ -487,14 +511,19 @@ export class BreaCloth {
     const mask = ['torso0', 'torso1', 'torso2', 'torso3', 'hips', 'thighL', 'thighR', 'shinL', 'shinR', 'upArmL', 'upArmR', 'foreArmR', 'foreArmL', 'handR', 'quiver', 'stowLance', 'stowBow', 'heldLance', 'heldBow'].reduce((m, k) => m | (bits[k] || 0), 0);
     // stand-off: the chord sag across a cell over the thigh, plus 4 mm, plus the particle's own 6 mm
     const off = 0.010;
-    const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: this._offFit(X, pinned, mask, off, root) });
-    P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = 0.17; P.edges = true; P.sQ = sQ;
+    const offC = this._offFit(X, pinned, mask, off, root);
+    // (the flap, round 2: the panels keep out of the stowed lance itself, STOW_LANCE_R, not the stow kit's 0.11 m keep-out
+    //  the tail and the spring chains keep; the collider is the kit's capsule, so the panels' stand-off from it is less)
+    { const k = cols.findIndex((c) => c.name === 'stowLance'), r0 = this.an._stowCap?.r ?? 0; if (k >= 0 && r0 > 0) offC[k] = off + STOW_LANCE_R - r0; }
+    const P = new ClothPiece({ name, mat, C, R, X, Q0, root, pinned, cons, lraPin, mass, area, mask, off, offPerCollider: offC });
+    P.fwd = fwd; P.stem = stem; P.kind = 'panel'; P.lee = PANEL_LEE; P.edges = true; P.sQ = sQ;
     // (fix round 1: no sleep with a free column more than SLEEP_PLUMB.panel deg off plumb, solver.js _plumb)
     P.plumbCos = Math.cos(SLEEP_PLUMB.panel * Math.PI / 180);
     P.edgesLegs = stem !== 'dyn_panelB';   // (the fronts over the thighs: their leg edges every substep, solver.js)
     // (round 4: the fronts never slip between her legs to the back: solver.js ClothPiece.backstop)
     if (stem !== 'dyn_panelB') P.backstop = BACKSTOP.front;
     P.air = PANEL_AIR[name] ?? -1;
+    if (PANEL_CD[name] > 0) P.cd = PANEL_CD[name];
     P.vSwing = PANEL_SWING[name] ?? 0;
     P.pinMask = (bits.thighL || 0) | (bits.thighR || 0);
     // (the hard pass's margin: a cell's chord sag on the inner thigh, 0.12 m along a row over a 0.078 m radius, 0.028 m

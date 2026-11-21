@@ -47,7 +47,13 @@ export const MATERIALS = {
     //  a free one swings up to `vSwing` 1.0 m/s. At 0.3 m/s for every particle a panel trailing 0.2-0.4 m behind her at a
     //  sprint came back at that speed when she stopped and settled 1.8-1.95 s after the stop (C4); here 0.33-0.65 s.
     //  1.5 m/s, or kd 6 with it, made the front panels at a sprint chaotic: a 1e-4 m nudge 0.01-0.1 m after 1 s (C11))
-    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0, slack: 1.03, vFall: 1.0, vSwing: 1.0, kickHold: 24,
+    // (the flap, round 2: `leeShelter` 0.1, the share of the free stream's force a panel takes in her lee (aero.js; the
+    //  contact's SHELTER 0.3 was used for both). Behind her in the trade wind the back panel took 0.3 of the full wind and
+    //  stood 26-47 deg off plumb, 0.47-0.67 m from her hips (Node, the Scout, 5.5 m/s from her front). A bluff body's
+    //  near wake keeps well under half the free stream's speed: 0.1 of its force. cd, the hem and the air share were tried
+    //  lower (cd 0.5-0.85, hem 2.5, air 1.75-2.6): each put a panel into her in the Node sweep's roll or a sit's hem
+    //  awake, or the fronts ahead of the knees at a run (C8), and are kept)
+    areal: 0.90, hem: 1.6, shear: 5e-3, bendAlong: 0.25, bendAcross: 0.12, kd: 8.0, mu: 0.05, cd: 1.0, cl: 0, slack: 1.03, vFall: 1.0, vSwing: 1.0, kickHold: 24, leeShelter: 0.1,
     // (round 2, the TURN: yaw share 0.3 (was 0.6): a 180 deg turn on the spot in 0.5 s, the hems lagged 49 / 28 / 29 deg,
     //  band 8-25; here 16.7 / 13.3 / 17.4)
     // (round 3: yaw 0.2, was 0.3: at the body's own size (the rest lengths follow her scale) the front-left hem lagged a

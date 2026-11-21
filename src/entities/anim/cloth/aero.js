@@ -27,7 +27,7 @@ export function aeroForces(P, wx, wz, t, wy = 0) {
   // (fix round 1, EDGE: a sheet edge-on to the flow still takes `edge` of its face-on drag (skin friction, the flutter and
   //  the twist a grid this coarse cannot hold): at 0 a side wind met the tail's strip edge-on and lifted it 2-6 deg at
   //  5.5 m/s (C6, band 25-50), and the back panel's hem went 54 deg off downwind at 2.5 m/s from her side)
-  const cd = P.cd ?? mat.cd, cl = mat.cl, airK = P.airK ?? 1, shC = mat.shelter ?? SHELTER, ed = P.edge ?? mat.edge ?? 0, aMax = P.aMax ?? mat.aMax ?? 0;
+  const cd = P.cd ?? mat.cd, cl = mat.cl, airK = P.airK ?? 1, shC = mat.shelter ?? SHELTER, shL = mat.leeShelter ?? SHELTER, ed = P.edge ?? mat.edge ?? 0, aMax = P.aMax ?? mat.aMax ?? 0;
   const ws = Math.sqrt(wx * wx + wz * wz);
   const lee = P.lee || 0, ux0 = ws > 1e-6 ? wx / ws : 0, uz0 = ws > 1e-6 ? wz / ws : 0, rx = P.root.p[0], rz = P.root.p[2];
   const C = P.C || 1;
@@ -54,12 +54,13 @@ export function aeroForces(P, wx, wz, t, wy = 0) {
     const nx = nrm[k], ny = nrm[k + 1], nz = nrm[k + 2];
     const c = hx * nx + hy * ny + hz * nz;
     let sh = P.contact[i] ? shC : 1;
+    // (the flap, round 2: her lee's shelter is its material's `leeShelter` where it names one, SHELTER where not)
     if (lee > 0 && ws > 1e-3) {
       const dx = x[k] - rx, dz = x[k + 2] - rz, al = dx * ux0 + dz * uz0, la = Math.abs(dx * uz0 - dz * ux0);
       if (al > 0) {
         let e = 1 - (la - 0.6 * lee) / (0.4 * lee); e = e < 0 ? 0 : e > 1 ? 1 : e;
         let g = al / 0.06; g = g > 1 ? 1 : g;
-        const s2 = 1 - (1 - SHELTER) * e * g;
+        const s2 = 1 - (1 - shL) * e * g;
         if (s2 < sh) sh = s2;
       }
     }
