@@ -75,12 +75,18 @@ function flyWant(world, W, at, want, maxS = 240) {
   return { f, st, t: +t.toFixed(2), maxY };
 }
 
-/** R4 to its end: the Scar road from T3's top, the track on each post in turn, then home to SCAR_FIELD (trial k). */
-export function flyScarHome(k = 0) {
-  const W = trialWind(k), world = islandWorld({ windAt: W.windAt }), posts = WIND_ROADS.scar, { T, y } = launchOf(ROAD_LAUNCH.scar);
+/**
+ * R4 to its end: the Scar road from its launch, the track on each post in turn, then home to SCAR_FIELD (trial k). `from`
+ * 'T3' is T3's top (R4's Node row); an `{x, y, z, headingDeg}` is an open (the on-foot launch: scar-road.test.mjs opens
+ * it by the law's own jump off roads.js SCAR_LAUNCH).
+ */
+export function flyScarHome(k = 0, from = 'T3') {
+  const W = trialWind(k), world = islandWorld({ windAt: W.windAt }), posts = WIND_ROADS.scar;
+  const at = from === 'T3' ? (() => { const { T, y } = launchOf(ROAD_LAUNCH.scar); return { x: T.x, y, z: T.z, headingDeg: dirBearing(posts[0].x - T.x, posts[0].z - T.z) }; })() : from;
+  const y = at.y;
   const passed = [], phases = { track: 0, orbit: 0, final: 0 };
   let i = 0, tLast = null;
-  const r = flyWant(world, W, { x: T.x, y, z: T.z, headingDeg: dirBearing(posts[0].x - T.x, posts[0].z - T.z) }, (f, t) => {
+  const r = flyWant(world, W, at, (f, t) => {
     if (i < posts.length) {
       const a = alongPosts(f, posts, i, POST_PASS_M);
       if (a.passed) { passed.push({ id: posts[i].id, agl: +(f.y - heightAt(posts[i].x, posts[i].z)).toFixed(1), d: +a.d.toFixed(1), t: +t.toFixed(1) }); i++; if (i === posts.length) tLast = +t.toFixed(1); }
@@ -89,7 +95,7 @@ export function flyScarHome(k = 0) {
     const h = toField(f, SCAR_FIELD); phases[h.phase] += 1 / 60; return h.want;
   });
   const f = r.f;
-  return { k, launch: ROAD_LAUNCH.scar, launchY: +y.toFixed(2), passed, lastPostAtS: tLast, state: r.st, t: r.t, near: r.st === 'landing' ? landedNear(f.x, f.z) : null,
+  return { k, launch: from === 'T3' ? ROAD_LAUNCH.scar : 'SCAR_LAUNCH', launchY: +y.toFixed(2), passed, lastPostAtS: tLast, state: r.st, t: r.t, near: r.st === 'landing' ? landedNear(f.x, f.z) : null,
     fromCentreM: +Math.hypot(f.x - SCAR_FIELD.x, f.z - SCAR_FIELD.z).toFixed(2), landVs: +f.landVs.toFixed(2), landDamage: f.landDamage, depth: +waterDepthAt(f.x, f.z).toFixed(2),
     phases: Object.fromEntries(Object.entries(phases).map(([a, b]) => [a, +b.toFixed(1)])) };
 }

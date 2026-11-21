@@ -123,6 +123,18 @@ export const LANDING_FIELDS = Object.freeze([
 /** The field a landing at (x, z) is inside, by its `near` name, or null. */
 export const landedNear = (/** @type {number} */ x, /** @type {number} */ z) => LANDING_FIELDS.find((F) => Math.hypot(x - F.x, z - F.z) <= F.r)?.near ?? null;
 
+/**
+ * Wave 3c, the Scar road's launch ON FOOT. T3 (ROAD_LAUNCH.scar, R4's Node row) stands on Rust Cone's cap, a flat about
+ * 6 m round at 145 m ringed by 60-78 deg walls (island height and area A's faceAt, every 22.5 deg out to 14 m): a walk to
+ * its steps from the Yards slid her down the wall to 97 m on the page at 5864e91. This launch is on the Yards' own shelf,
+ * its east edge over the Scar's head (ground 142.8 m, 23 deg at her feet, 29 m east of the apron's centre), found by a Node
+ * scan of the shelf (every 2 m and 15 deg; the jump, Space at 0.42 s airborne and every 0.1 s after): 3.16 m clear at a
+ * jog and 3.58 m at a sprint facing 120. She opens away from the road and turns back to the first post; from here the
+ * glide passes the seven posts as high as from T3 (the climb to T3's top is not needed: T3 spends its height reaching
+ * post 1) and lands on SCAR_FIELD (tools/gates/kite/scar-road.test.mjs).
+ */
+export const SCAR_LAUNCH = Object.freeze({ x: 228, z: 16, bearing: 120 });
+
 /** The counts the bible gives. */
 export const ROAD_COUNTS = Object.freeze({ 'organ-shelf': 5, scar: 7, caldera: 6 });
 

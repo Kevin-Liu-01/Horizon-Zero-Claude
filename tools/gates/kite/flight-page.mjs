@@ -19,8 +19,9 @@
 // for any wrist behind a plane), the law's state, height, lift and bank, and the frame time. Shots are taken frozen
 // (the studio time scale at 0) at the clips' moments from close lenses, so hands read; the lens is the shot's own, put
 // back after. Writes <review>/runs/<utc>-<commit>-<label>/ (run.json and PNGs), never inside the repo.
-//   3. (wave 3c) the Scar road (R4) by leg 6's own steps (scar-flight-drive.mjs): on foot to T3's steps, up them, the run
-//      off the deck, the seven posts by the pilot's hand, down on the Scar foot's field; the posts shot from the ground.
+//   3. (wave 3c) the Scar road (R4) by leg 6's own steps (scar-flight-drive.mjs): on foot to the Yards shelf's launch
+//      (roads.js SCAR_LAUNCH), the run off it, the seven posts by the pilot's hand, down on the Scar foot's field; the
+//      posts shot from the ground.
 //   4. (wave 3c) leg 4's own 'launch' and 'fly' drivers off T1 (glass-line-drive.mjs), for the open's bearing.
 //   The caldera's home (wave 3c): the ride with the face on her right for 16 s, then home to roads.js CALDERA_FIELD.
 //   node tools/gates/kite/flight-page.mjs --port 5282 [--label kite-flight] [--only t1,fold,caldera,scar,t1drive]
@@ -35,7 +36,7 @@ import { RUNS, assertOutsideRepo } from '../../frames/paths.mjs';
 import { guardPort, profileDir, disposeProfile, installProfileCleanup } from '../../chrome-profile.mjs';
 import * as SH from '../systems/slice-hour.mjs';
 import { DRIVE4, BARS_INSTALL, barsNow } from './glass-line-drive.mjs';
-import { pillarLaunch, FLY_ROAD, SCAR_ROAD, SCAR_BEARING } from './scar-flight-drive.mjs';
+import { scarLaunchOnFoot, FLY_ROAD, SCAR_ROAD } from './scar-flight-drive.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
@@ -313,7 +314,7 @@ try {
   log(`booted in ${out.bootSeconds} s`);
   out.install = await page.evaluate(INSTALL);
   const S = await page.evaluate(async () => { const s = await import('/src/world/island/sites.js'); const r = await import('/src/game/kite/roads.js'); const T = s.TRIG.find((t) => t.id === 'T1'); const pil = (id) => { const q = (window.__CTX__.props?.survey?.pillars || []).find((x) => x.id === id); return q ? { x: q.x, z: q.z, deck: q.deck, d: q.stepsDir } : null; };
-    return { T1: { x: T.x, z: T.z, top: s.TRIG_TOP }, field: r.TEST_FLIGHT.field, bearing: r.TEST_FLIGHT.bearing, caldera: { ...r.CALDERA_LAUNCH }, calderaField: { ...r.CALDERA_FIELD }, P1: pil('T1'), P3: pil('T3'),
+    return { T1: { x: T.x, z: T.z, top: s.TRIG_TOP }, field: r.TEST_FLIGHT.field, bearing: r.TEST_FLIGHT.bearing, caldera: { ...r.CALDERA_LAUNCH }, scarLaunch: { ...r.SCAR_LAUNCH }, calderaField: { ...r.CALDERA_FIELD }, P1: pil('T1'), P3: pil('T3'),
       posts: (window.__CTX__.world?.linePosts?.scar || []).map((q) => ({ id: q.id, x: q.x, y: +q.y.toFixed(2), z: q.z, recipe: null })) }; });
   out.posts = S.posts;
   out.postsCheck = await page.evaluate(async () => { const R = await import('/src/world/island/recipe.js'); const C = window.__CTX__, P = C.player.kitePilot?.posts?.scar;
@@ -409,16 +410,16 @@ try {
     log(`caldera: climb ${F.climbM} m over the open (y ${oy}); rise ${F.riseM} m; lift ${F.liftSeconds} s; land ${JSON.stringify(F.summary.last.land)}; hp ${F.summary.hp}; bars ${JSON.stringify(F.summary.bars.worst)} bad ${F.summary.bars.bad}`);
   }
   if (ONLY.includes('scar') && (Date.now() - t0) / 1000 < BUDGET_S - 240) {
-    // wave 3c: the Scar road by input (R4), leg 6's driver's own steps: on foot to T3's steps from 8 m out, up them, the
-    // run off the deck toward the first post, the seven posts, down on the Scar foot's field
+    // wave 3c: the Scar road by input (R4), leg 6's driver's own steps: on foot to SCAR_LAUNCH, the run off the shelf, the
+    // seven posts, down on the Scar foot's field
     const F = (out.flights.scar = {});
     const KK = SH.keys(page);
     await page.evaluate(BARS_INSTALL);
     await page.evaluate(() => { window.__ROAD = null; });
-    const P = S.P3, foot = { x: P.x + P.d.x * 14, z: P.z + P.d.z * 14 };
-    F.start = await page.evaluate(START, { x: foot.x, z: foot.z, bearing: (Math.atan2(-P.d.x, P.d.z) * 180 / Math.PI + 360) % 360, hour: 17.6 });
-    F.launch = await pillarLaunch(page, KK, 'T3', SCAR_BEARING, 45);
-    log(`scar launch ${JSON.stringify(F.launch).slice(0, 900)}`);
+    // (5864e91: a walk from 14 m off T3's steps slid her down Rust Cone's wall to 97 m; the launch is now on foot from the
+    //  Yards shelf, roads.js SCAR_LAUNCH: she is put 20 m west of it on the shelf and walks there by the nav grid)
+    F.start = await page.evaluate(START, { x: S.scarLaunch.x - 20, z: S.scarLaunch.z, bearing: 90, hour: 17.6 });
+    F.launch = await scarLaunchOnFoot(page, KK, 45);
     if (F.launch.ok) {
       await page.evaluate(AT, { state: 'gliding', t: 0.3 });
       F.leg1 = await page.evaluate(FLY_ROAD, { ...SCAR_ROAD, stopAt: 2, capS: 60 });

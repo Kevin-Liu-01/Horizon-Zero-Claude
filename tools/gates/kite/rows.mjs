@@ -160,6 +160,7 @@ line('KF7', 'the first two roads flown end to end by the PAGE driver, 10 of 10',
   const sc = flyScarHome(0), msg = (re) => (s.stdout.match(re)?.[1] ?? '');
   line('KF7', '(R4, wave 3c) scar: from T3 along the seven posts to the last, then down on the Scar foot\'s field (roads.js SCAR_FIELD) at <= 3 m/s, 0 damage, 10 of 10', one(/^R4, the Scar road/)?.ok ? 'PASS' : 'FAIL',
     `${msg(/\[scar-road\] 10\/10: (.*)/)}; trial 0 ${sc.t} s, ${sc.landVs} m/s`);
+  line('KF7', '(wave 3c) the Scar road on foot: the open off roads.js SCAR_LAUNCH (the Yards shelf; T3 is ringed by 60-78 deg walls) at a jog and a sprint, then the 7 posts and down on SCAR_FIELD, 10 of 10', one(/^SCAR_LAUNCH/)?.ok ? 'PASS' : 'FAIL', msg(/\[scar-launch\] (.*)/));
   line('KF7', '(wave 3c) the Scar\'s seven posts in data on dry ground, posts 2-7 under 30 deg', one(/^the Scar road: 7 posts/)?.ok ? 'PASS' : 'FAIL', msg(/\[scar-road\] posts: (.*)/));
   line('KF3', '(wave 3c) the caldera flight lands: the ride 16 s with the face on her right, then home to roads.js CALDERA_FIELD at <= 3 m/s, 0 damage, 10 of 10', one(/^wave 3c, the caldera flight lands/)?.ok ? 'PASS' : 'FAIL', msg(/\[caldera-home\] (.*)/));
   line('KF4', '(wave 3c) the open bearing is her input\'s, else her facing, never her velocity (flight.js openBearingDeg)', one(/^the open bearing/)?.ok ? 'PASS' : 'FAIL', 'Node fixture; the page reads it off T1 (flight-page.mjs)');

@@ -5,8 +5,8 @@
 //   node --test tools/gates/kite/scar-road.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WIND_ROADS, POST_HEIGHT_M, SCAR_FIELD, LANDING_FIELDS, landedNear, ROAD_LAUNCH } from '../../../src/game/kite/roads.js';
-import { KITE, openBearingDeg } from '../../../src/game/kite/flight.js';
+import { WIND_ROADS, POST_HEIGHT_M, SCAR_FIELD, SCAR_LAUNCH, LANDING_FIELDS, landedNear, ROAD_LAUNCH } from '../../../src/game/kite/roads.js';
+import { KITE, openBearingDeg, canOpen } from '../../../src/game/kite/flight.js';
 import { flyScarHome } from './glides.mjs';
 import { heightAt, waterDepthAt, faceAt, worldLiftAt } from './world.mjs';
 
@@ -62,4 +62,32 @@ test('the open bearing (wave 3c): her input direction while a move key is held, 
     const got = openBearingDeg({ wishX: 0, wishZ: 0, heading: Math.PI - b * Math.PI / 180 });
     assert.ok(Math.abs(((got - b + 540) % 360) - 180) < 1e-6, `${b} -> ${got}`);
   }
+});
+
+const V0 = Math.sqrt(2 * KITE.gravity * KITE.jumpPeakM);
+/** A run off a point at `v` m/s on `bearing`, the jump, Space at 0.42 s airborne and every 0.1 s after: the first open. */
+function launch({ x, z, bearing }, v) {
+  const r = bearing * Math.PI / 180, dx = Math.sin(r), dz = -Math.cos(r), g0 = heightAt(x, z);
+  for (let k = 0; k < 12; k++) {
+    const t = 0.42 + 0.1 * k;
+    for (let s = 0.05; s <= t; s += 1 / 60) if (g0 + V0 * s - 0.5 * KITE.gravity * s * s <= heightAt(x + dx * v * s, z + dz * v * s)) return { ok: false, why: 'landed', t: s };
+    const px = x + dx * v * t, pz = z + dz * v * t, y = g0 + V0 * t - 0.5 * KITE.gravity * t * t, clearM = y - heightAt(px, pz);
+    if (canOpen({ airborneS: t, clearM }).ok) return { ok: true, t, x: px, y, z: pz, clearM };
+  }
+  return { ok: false, why: 'never' };
+}
+
+test('SCAR_LAUNCH (on foot, the Yards shelf): the open rule allows it at a jog and a sprint; from it the glide passes the 7 posts and lands on SCAR_FIELD, 10 of 10', () => {
+  const jog = launch(SCAR_LAUNCH, 5.0), sprint = launch(SCAR_LAUNCH, 6.8);
+  assert.ok(jog.ok && jog.clearM >= KITE.openClearM, `jog ${JSON.stringify(jog)}`);
+  assert.ok(sprint.ok && sprint.clearM >= KITE.openClearM + 0.3, `sprint ${JSON.stringify(sprint)}`);
+  assert.ok(faceAt(SCAR_LAUNCH.x, SCAR_LAUNCH.z).slopeDeg < 26, 'she can stand there');
+  const rr = [...Array(10).keys()].map((k) => flyScarHome(k, { x: sprint.x, y: sprint.y, z: sprint.z, headingDeg: SCAR_LAUNCH.bearing }));
+  for (const r of rr) {
+    assert.equal(r.passed.length, 7, `trial ${r.k}: ${r.passed.length} posts`);
+    assert.ok(r.passed.every((p) => p.agl > POST_HEIGHT_M + 10), `trial ${r.k}: ${JSON.stringify(r.passed)}`);
+    assert.equal(r.near, 'scar-foot', `trial ${r.k}: ${r.fromCentreM} m`);
+    assert.ok(r.landVs <= KITE.safeLandVs && r.landDamage === 0);
+  }
+  console.log(`[scar-launch] jog ${jog.clearM.toFixed(2)} m clear, sprint ${sprint.clearM.toFixed(2)} m; 10/10: last post at ${Math.min(...rr.map((r) => r.lastPostAtS))}-${Math.max(...rr.map((r) => r.lastPostAtS))} s, down at ${Math.min(...rr.map((r) => r.t))}-${Math.max(...rr.map((r) => r.t))} s, <= ${Math.max(...rr.map((r) => r.fromCentreM))} m from the centre; over the posts ${rr[0].passed.map((p) => p.agl).join(', ')} m`);
 });

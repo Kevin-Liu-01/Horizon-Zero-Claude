@@ -10,12 +10,15 @@
 //                                              track comes within POST_PASS_M of it; then home onto the road's landing
 //                                              field (toField: the track, the orbit while there is height to lose, the
 //                                              final) until her feet are down (the landing is the law's)
-//   DRIVE6['scar-flight']                      T3's top (R4: the Scar road's launch is T3 on Rust Cone), the seven posts,
-//                                              down on SCAR_FIELD; 'kite:land' then carries near: 'scar-foot', the
-//                                              quest's event
+//   RUN_OFF, scarLaunchOnFoot                  the run off a launch point on open ground: on foot to 5 m behind roads.js
+//                                              SCAR_LAUNCH (the Yards shelf's east edge over the Scar's head), the look on
+//                                              120, Shift and W, Space at the point, Space at 0.42 s airborne and after
+//   DRIVE6['scar-flight']                      the on-foot launch (T3, R4's Node launch, is not reachable on foot: Rust
+//                                              Cone's cap is ringed by 60-78 deg walls), the seven posts, down on
+//                                              SCAR_FIELD; 'kite:land' then carries near: 'scar-foot', the quest's event
 // Kevin's bars are read on every frame the kite is out or being stowed (glass-line-drive.mjs BARS_INSTALL).
 import * as SH from '../systems/slice-hour.mjs';
-import { WIND_ROADS, ROAD_LAUNCH, POST_PASS_M, SCAR_FIELD } from '../../../src/game/kite/roads.js';
+import { WIND_ROADS, ROAD_LAUNCH, POST_PASS_M, SCAR_FIELD, SCAR_LAUNCH } from '../../../src/game/kite/roads.js';
 import { dirBearing } from '../../../src/game/kite/flight.js';
 import { TRIG } from '../../../src/world/island/sites.js';
 
@@ -142,6 +145,52 @@ export const FLY_ROAD = async ({ posts, passM, field, i0 = 0, stopAt = null, cap
     land: p.kitePilot?.last?.land ?? null, at: { x: +p.position.x.toFixed(1), y: +p.position.y.toFixed(1), z: +p.position.z.toFixed(1) }, agl: +f.agl.toFixed(2) };
 };
 
+/**
+ * In the page: the run off a launch point on open ground (roads.js SCAR_LAUNCH, CALDERA_LAUNCH): the look on the bearing,
+ * Shift and W from where she stands (a few metres behind it), Space once she reaches the point, Space again 0.42 s after
+ * she leaves the ground and every 0.1 s while it has not opened.
+ */
+export const RUN_OFF = async ({ x, z, bearing, sprint = true, openAfter = 0.42 }) => {
+  const C = window.__CTX__, p = C.player, E = C.engine;
+  const key = (code, down) => window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, key: code, bubbles: true }));
+  const frame = () => new Promise((res) => requestAnimationFrame(res));
+  const frames = async (n) => { for (let i = 0; i < n; i++) await frame(); };
+  const waitSim = async (s) => { const t0 = E.simTime, w0 = performance.now(); while (E.simTime - t0 < s && performance.now() - w0 < 20000) await frame(); };
+  const br = bearing * Math.PI / 180, dx = Math.sin(br), dz = -Math.cos(br);
+  p.camYaw = -br;
+  await frames(8);
+  const from = { x: +p.position.x.toFixed(2), z: +p.position.z.toFixed(2), behindM: +(-((p.position.x - x) * dx + (p.position.z - z) * dz)).toFixed(2), offLineM: +((p.position.x - x) * -dz + (p.position.z - z) * dx).toFixed(2) };
+  if (sprint) key('ShiftLeft', true);
+  key('KeyW', true);
+  const w0 = performance.now();
+  while (performance.now() - w0 < 6000 && p.grounded && ((p.position.x - x) * dx + (p.position.z - z) * dz) < -0.15) { p.camYaw = -br; await frame(); }
+  const speed = +Math.hypot(p.velocity.x, p.velocity.z).toFixed(2);
+  key('Space', true); await frames(2); key('Space', false);
+  const w1 = performance.now();
+  while (p.grounded && performance.now() - w1 < 3000) await frame();
+  const air0 = E.simTime;
+  await waitSim(openAfter);
+  const presses = [];
+  for (let i = 0; i < 13 && p.flight === 'none' && !p.grounded; i++) {
+    key('Space', true); await frames(2); key('Space', false);
+    presses.push(+(E.simTime - air0).toFixed(3));
+    await frames(1);
+    if (p.flight !== 'none') break;
+    await waitSim(0.1);
+  }
+  key('KeyW', false); key('ShiftLeft', false);
+  return { from, speedAtJump: speed, presses, flight: p.flight, open: p.kitePilot?.last?.open ?? null, refused: p.kitePilot?.last?.refused ?? null };
+};
+
+/** On foot to 5 m behind SCAR_LAUNCH (the nav grid's walk), then the run off it (RUN_OFF). */
+export async function scarLaunchOnFoot(page, K, maxS) {
+  const r = SCAR_LAUNCH.bearing * Math.PI / 180, back = { x: SCAR_LAUNCH.x - Math.sin(r) * 5, z: SCAR_LAUNCH.z + Math.cos(r) * 5 };
+  const w = await SH.walkPath(page, K, back, 0.6, { maxS });
+  await sleep(400);
+  const run = await page.evaluate(RUN_OFF, { ...SCAR_LAUNCH });
+  return { ok: run.flight !== 'none', walk: { ok: w.ok, why: w.why ?? null, d: w.d ?? null }, run };
+}
+
 const T3 = TRIG.find((t) => t.id === ROAD_LAUNCH.scar);
 /** the bearing from T3 to the Scar's first post: the run-off's */
 export const SCAR_BEARING = dirBearing(WIND_ROADS.scar[0].x - T3.x, WIND_ROADS.scar[0].z - T3.z);
@@ -152,7 +201,8 @@ export const DRIVE6 = {
     const { BARS_INSTALL, barsNow } = await import('./glass-line-drive.mjs');
     await page.evaluate(BARS_INSTALL);
     await page.evaluate(() => { window.__ROAD = null; });
-    const L = await pillarLaunch(page, K, ROAD_LAUNCH.scar, SCAR_BEARING, Math.max(30, maxS * 0.4));
+    // on foot to the Yards shelf's edge (SCAR_LAUNCH), not T3: Rust Cone's cap is ringed by 60-78 deg walls (roads.js)
+    const L = await scarLaunchOnFoot(page, K, Math.max(30, maxS * 0.4));
     if (!L.ok) return { launch: L, bars: await barsNow(page) };
     // the flight is about 100 s of sim time from T3 (the law's 1.5 m/s sink over 141 m): it is not cut at the beat's budget
     const F = await page.evaluate(FLY_ROAD, { ...SCAR_ROAD, capS: Math.max(150, maxS) });
