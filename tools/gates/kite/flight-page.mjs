@@ -6,8 +6,14 @@
 //      weather), runs off it with W, jumps (Space), opens the kite (Space again after 0.42 s), banks right then left (D, A),
 //      then holds the track to the marked field by A and D, and lands on her feet; then a second launch that is folded by
 //      C at about 3 m over the ground (KF1's "fold at 3 m").
-//   2. The caldera's windward wall (KF3, the lift road): she stands on the rim at (78.6, -200.6) facing 045 (into the
-//      trade), runs off it, opens it, and rides the wall's lift by A and D (along the wall, keeping 14-26 m over it).
+//   2. The caldera's windward wall (KF3, the lift road). Wave 3b: at 4c14e00 the rim start (78.6, -200.6) facing 045 was
+//      refused as too low (0.67 s airborne, 2.3 m clear: the rim falls off at about 22 deg there) and she fell 24 hp. The
+//      launch is now one the open rule allows, found in Node on the game's own height, lift field and flight law
+//      (a scan of the outer flank within 30 m of the road's posts, every 2 m and 15 deg, slope at her feet <= 38 deg, the
+//      presses at 0.42 s airborne and every 0.1 s after): (150, -178), ground 158.3 m, a 36 deg face 8 m from caldera-6,
+//      facing 060. She sprints (Shift and W), jumps and opens: 4.1 m clear at 0.42 s airborne in Node (3.6 m at a jog).
+//      Then she rides the lift by A and D on the face under her (area A's faceAt: across it with the face on her left,
+//      off it under 10 m over the ground, back onto it over 24 m) for 20 s, and turns down the face to land.
 // Every frame of every flight (rAF, the page's own frames) reads Kevin's bars on her bones (the clip film's read: each
 // wrist against the head's facing plane and under the head bone, each elbow against its shoulder, R10's shoulder height
 // for any wrist behind a plane), the law's state, height, lift and bank, and the frame time. Shots are taken frozen
@@ -123,8 +129,9 @@ const START = async ({ x, z, top = null, bearing, hour = 17.75, back = 0, side =
 };
 
 /** Run off the top and open the kite by input: W held, Space (the jump) at the edge, Space again `openAfter` s later. */
-const LAUNCH = async ({ runS = 0.12, openAfter = 0.42 }) => {
+const LAUNCH = async ({ runS = 0.12, openAfter = 0.42, sprint = false }) => {
   const C = window.__CTX__, p = C.player, K = window.__KF;
+  if (sprint) K.key('ShiftLeft', true);
   K.key('KeyW', true);
   await K.waitSim(runS);
   await K.tap('Space');
@@ -137,7 +144,7 @@ const LAUNCH = async ({ runS = 0.12, openAfter = 0.42 }) => {
   // (not yet: too soon or too low, the press does nothing; Space again every 0.1 s while she is in the air, as a player
   //  presses again, up to 1.6 s airborne)
   for (let i = 0; i < 12 && p.flight === 'none' && !p.grounded; i++) { await K.waitSim(0.1); await K.tap('Space'); await K.frames(2); }
-  K.key('KeyW', false);
+  K.key('KeyW', false); K.key('ShiftLeft', false);
   return { jumped: !p.grounded, airborneS: +(K.sim() - air0).toFixed(3), flight: p.flight, open: p.kitePilot.last.open, refused: p.kitePilot.last.refused, sinceSpace: +(K.sim() - t0).toFixed(3) };
 };
 
@@ -157,25 +164,33 @@ const BANK = async ({ code, s }) => {
 const STEER = async ({ mode, target = null, until = 'landed', capS = 60, home = null }) => {
   const C = window.__CTX__, p = C.player, K = window.__KF, E = C.engine;
   const f = p.kite, t0 = E.simTime;
-  let maxY = p.position.y, y0 = p.position.y, lifted = 0, kL = false, kR = false;
+  const L = mode === 'face' ? await import('/src/world/island/lift.js') : null, fc = { h: 0, slopeDeg: 0, aspect: { x: 0, z: 0 }, sea: false };
+  let maxY = p.position.y, y0 = p.position.y, minY = p.position.y, rise = 0, lifted = 0, kL = false, kR = false, liftSum = 0;
   const press = (l, r) => { if (l !== kL) { K.key('KeyA', l); kL = l; } if (r !== kR) { K.key('KeyD', r); kR = r; } };
   while (E.simTime - t0 < capS) {
     if (p.flight !== 'gliding' && p.flight !== 'opening') break;
     if (until === 'time' && E.simTime - t0 >= capS) break;
     let want;
     if (mode === 'track') { const dx = target.x - p.position.x, dz = target.z - p.position.z; want = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360; }
-    else { // ridge: along the wall (135), off it when low (045), back onto it when high (225); home after `home` s
+    else if (mode === 'face') {
+      // the face under her (the pilot reads the slope): down it is its aspect; across it with the face on her left
+      L.faceAt(p.position.x, p.position.z, fc);
+      const asp = (Math.atan2(fc.aspect.x, -fc.aspect.z) * 180 / Math.PI + 360) % 360;
+      want = home != null && E.simTime - t0 > home ? asp : f.agl < 10 ? asp : f.agl > 24 ? (asp + 180) % 360 : (asp + 270) % 360;
+    } else { // ridge: along the wall (135), off it when low (045), back onto it when high (225); home after `home` s
       want = home != null && E.simTime - t0 > home ? 225 : f.agl < 14 ? 45 : f.agl > 26 ? 225 : 135;
     }
     let hdg = (f.heading * 180 / Math.PI) % 360; if (hdg < 0) hdg += 360;
     let d = want - hdg; while (d > 180) d -= 360; while (d < -180) d += 360;
     press(d < -8, d > 8);
     if (p.position.y > maxY) maxY = p.position.y;
-    if (f.lift > 0) lifted++;
+    if (p.position.y < minY) minY = p.position.y;
+    rise = Math.max(rise, p.position.y - minY);
+    if (f.lift > 0) { lifted++; liftSum += f.lift; }
     await K.frames(1);
   }
   press(false, false);
-  return { state: p.flight, s: +(E.simTime - t0).toFixed(2), climbM: +(maxY - y0).toFixed(2), maxY: +maxY.toFixed(2), liftFrames: lifted, at: { x: +p.position.x.toFixed(1), y: +p.position.y.toFixed(1), z: +p.position.z.toFixed(1) }, agl: +f.agl.toFixed(2), lift: f.lift };
+  return { state: p.flight, s: +(E.simTime - t0).toFixed(2), y0: +y0.toFixed(2), climbM: +(maxY - y0).toFixed(2), riseM: +rise.toFixed(2), maxY: +maxY.toFixed(2), liftFrames: lifted, meanLift: lifted ? +(liftSum / lifted).toFixed(3) : 0, at: { x: +p.position.x.toFixed(1), y: +p.position.y.toFixed(1), z: +p.position.z.toFixed(1) }, agl: +f.agl.toFixed(2), lift: f.lift };
 };
 
 /** Freeze the sim and put a lens on her (orbit about her chest: yawRel from her facing, dist, height over her feet). */
@@ -272,7 +287,7 @@ try {
   out.bootSeconds = Math.round((Date.now() - t0) / 1000);
   log(`booted in ${out.bootSeconds} s`);
   out.install = await page.evaluate(INSTALL);
-  const S = await page.evaluate(async () => { const s = await import('/src/world/island/sites.js'); const r = await import('/src/game/kite/roads.js'); const T = s.TRIG.find((t) => t.id === 'T1'); return { T1: { x: T.x, z: T.z, top: s.TRIG_TOP }, field: r.TEST_FLIGHT.field, bearing: r.TEST_FLIGHT.bearing }; });
+  const S = await page.evaluate(async () => { const s = await import('/src/world/island/sites.js'); const r = await import('/src/game/kite/roads.js'); const T = s.TRIG.find((t) => t.id === 'T1'); return { T1: { x: T.x, z: T.z, top: s.TRIG_TOP }, field: r.TEST_FLIGHT.field, bearing: r.TEST_FLIGHT.bearing, caldera: { ...r.CALDERA_LAUNCH } }; });
 
   if (ONLY.includes('t1')) {
     const F = (out.flights.t1 = {});
@@ -323,21 +338,40 @@ try {
   }
   if (ONLY.includes('caldera') && (Date.now() - t0) / 1000 < BUDGET_S - 150) {
     const F = (out.flights.caldera = {});
-    F.start = await page.evaluate(START, { x: 78.6, z: -200.6, bearing: 45, hour: 17.5 });
-    log(`caldera start ${JSON.stringify(F.start)}`);
-    F.launch = await page.evaluate(LAUNCH, { runS: 0.15, openAfter: 0.6 });
+    F.start = await page.evaluate(START, { x: S.caldera.x, z: S.caldera.z, bearing: S.caldera.bearing, hour: 17.5 });
+    F.startFace = await page.evaluate(async () => { const L = await import('/src/world/island/lift.js'); const p = window.__CTX__.player, o = L.faceAt(p.position.x, p.position.z); return { slopeDeg: +o.slopeDeg.toFixed(1), surface: p.surfaceAt?.(p.position.x, p.position.z) ?? null }; });
+    // the page's ground against the island recipe's along the run-off, here and at wave 3's rim start (refused there on the
+    // page at 4c14e00 although the recipe's 49 deg face reads 3.7 m clear at 0.4 s)
+    F.groundCheck = await page.evaluate(async (pts) => {
+      const R = await import('/src/world/island/recipe.js'), T = window.__CTX__.terrain;
+      return pts.map(({ x, z, bearing }) => { const r = bearing * Math.PI / 180, dx = Math.sin(r), dz = -Math.cos(r);
+        return { x, z, bearing, rows: [0, 1, 2, 3, 4, 5, 6].map((d) => { const px = x + dx * d, pz = z + dz * d; return [d, +T.getHeight(px, pz).toFixed(2), +R.heightAt(px, pz).toFixed(2)]; }) }; });
+    }, [{ ...S.caldera }, { x: 78.6, z: -200.6, bearing: 45 }]);
+    log(`caldera start ${JSON.stringify(F.start)} ${JSON.stringify(F.startFace)} ground ${JSON.stringify(F.groundCheck)}`);
+    F.launch = await page.evaluate(LAUNCH, { runS: 0.15, openAfter: 0.42, sprint: true });
     log(`caldera launch ${JSON.stringify(F.launch)}`);
     if (F.launch.flight !== 'none') {
       await page.evaluate(AT, { state: 'gliding', t: 0.2 });
-      F.ridge1 = await page.evaluate(STEER, { mode: 'ridge', capS: 9 });
+      F.ridge1 = await page.evaluate(STEER, { mode: 'face', capS: 10 });
       await shot('caldera-lift-climb-wide', L.wide);
       await shot('caldera-lift-climb-front', L.front);
-      F.ridge2 = await page.evaluate(STEER, { mode: 'ridge', capS: 12 });
+      F.ridge2 = await page.evaluate(STEER, { mode: 'face', capS: 10 });
+      await shot('caldera-lift-high-wide', L.wide);
       log(`caldera ridge ${JSON.stringify(F.ridge1)} ${JSON.stringify(F.ridge2)}`);
+      // home: down the face to land (her feet down, the law's landing)
+      F.home = await page.evaluate(STEER, { mode: 'face', capS: 40, home: 0 });
+      log(`caldera home ${JSON.stringify(F.home)}`);
+      await page.evaluate(AT, { state: 'none', t: 0, cap: 6000 });
+      await page.evaluate(() => window.__KF.waitSim(1.0));
     }
     F.summary = await page.evaluate(SUMMARY);
-    F.climbM = F.summary.trace.length ? +(Math.max(...F.summary.trace.map((r) => r[4])) - (F.launch.open?.y ?? F.summary.trace[0][4])).toFixed(2) : null;
-    log(`caldera: climb ${F.climbM} m over the open; bars ${JSON.stringify(F.summary.bars.worst)} bad ${F.summary.bars.bad}`);
+    const tr = F.summary.trace, oy = F.launch.open?.y ?? null;
+    F.climbM = tr.length && oy != null ? +(Math.max(...tr.map((r) => r[4])) - oy).toFixed(2) : null;
+    // the climb in lift: the largest rise over the lowest point before it, with the lift on, on the sampled trace
+    let lo = Infinity, rise = 0; for (const r of tr) { if (r[1] === 'none') continue; lo = Math.min(lo, r[4]); rise = Math.max(rise, r[4] - lo); }
+    F.riseM = +rise.toFixed(2);
+    F.liftSeconds = +(tr.filter((r) => r[7] > 0).length * 6 / 60).toFixed(1);
+    log(`caldera: climb ${F.climbM} m over the open (y ${oy}); rise ${F.riseM} m; lift ${F.liftSeconds} s; land ${JSON.stringify(F.summary.last.land)}; hp ${F.summary.hp}; bars ${JSON.stringify(F.summary.bars.worst)} bad ${F.summary.bars.bad}`);
   }
 } catch (e) { out.errors.push(String(e?.stack || e).slice(0, 600)); log('error', String(e?.message || e)); }
 out.chromeSeconds = Math.round((Date.now() - t0) / 1000);

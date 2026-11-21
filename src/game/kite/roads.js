@@ -82,6 +82,16 @@ export const TEST_FLIGHT = Object.freeze({
   bearing: 283,
 });
 
+/**
+ * The caldera lift road's launch (wave 3b; its ROAD_LAUNCH stays null: the lift itself is the road). At 4c14e00 the
+ * page's start on the rim, (78.6, -200.6) facing 045, was refused as too low (0.67 s airborne, 2.3 m clear: the rim
+ * falls at about 22 deg there, so a jump never has 3 m under it) and she fell 24 hp. This one the open rule allows, found
+ * in Node on the island's height, area A's lift field and the flight law (tools/gates/kite/caldera-launch.test.mjs): a
+ * 36 deg face of the outer north-east flank, ground 158.3 m, 8 m from caldera-6, facing 060 (into the trade's quarter).
+ * A sprint, the jump and Space at 0.42 s airborne: 4.1 m clear (3.6 m at a jog); the face lifts her from the open.
+ */
+export const CALDERA_LAUNCH = Object.freeze({ x: 150, z: -178, bearing: 60 });
+
 /** The counts the bible gives. */
 export const ROAD_COUNTS = Object.freeze({ 'organ-shelf': 5, scar: 7, caldera: 6 });
 
