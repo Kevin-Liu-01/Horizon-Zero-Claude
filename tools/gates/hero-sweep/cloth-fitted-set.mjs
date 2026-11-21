@@ -31,8 +31,9 @@
  *           mesh on a spare layer, the scene's lights with them, the scene background off) and read back; its drawn pixels
  *           outside the screen box of its VISIBLE vertices as the CPU skins them (getVertexPosition; a vertex whose `_piece`
  *           bit the drawn program hides is not visible), that box grown by SHEET_PAD px, are the sheet. Bar SHEET_PX in
- *           total over her meshes, at every read: standing, after a run, and through a bow aim, draw, loose, the lance out
- *           and a swing. (The flap filmed in the first hour and at a bow aim: the piece masks (clothShader.js uHidePiece,
+ *           total over her skinned meshes (a held weapon is reported, not graded), at every read: standing straight after
+ *           CONTINUE and through a bow aim, draw, loose, the lance out and a swing; then a second load for the runs and the
+ *           flap's reads. (The flap filmed in the first hour and at a bow aim: the piece masks (clothShader.js uHidePiece,
  *           stowkit.js uKitHide) put a hidden vertex at the bind-space origin BEFORE skinning; each such vertex is then
  *           moved by its own bones, so in any pose away from the bind the hidden hat copies, the stowed bow or lance
  *           opened into flat sheets a metre across, drawn where no CPU read puts a vertex.)
@@ -229,7 +230,9 @@ export async function pickDrawn(PAD, list) {
         n++; if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
         if (x < x0 || x > x1 || y < y0 || y > y1) outN++;
       }
-      if (her) out.total += outN;
+      // (graded: her skinned meshes, the body, the clothes, the wrap and the stow kit; a held weapon is reported only: the
+      //  bow's own vertex hook bends its string and limbs on the GPU, combat/bow.js, 0.2 k px past the CPU's box in a draw)
+      if (her && o.isSkinnedMesh) out.total += outN;
       if (!list && !outN) continue;
       let anc = [], q = o.parent; while (q && anc.length < 5) { anc.push(q.name || q.type); q = q.parent; }
       const sk = o.skeleton, b0 = sk?.bones?.[0]?.matrixWorld?.elements;
@@ -344,25 +347,29 @@ async function runPage() {
     const rec = { ...fixture(2), savedAt: Date.now() };
     const wrote = await page.evaluate((r) => { const st = window.__CTX__.progression.saves.store; st.setActive(1); return st.write(r); }, rec);
     if (!wrote?.ok) throw new Error(`fixture not written: ${JSON.stringify(wrote)}`);
-    await page.goto('about:blank');
-    await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 180000 });
-    await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 180000, polling: 100 });
-    await sleep(500);
-    await page.keyboard.press('Enter');
-    await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
-    await sleep(300);
-    const cont = await page.evaluate(() => {
-      const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent));
-      if (!b || b.disabled) return 'no CONTINUE on the title';
-      b.click();
-      const g = document.querySelector('.gs-slot.cont .gs-slot-go');
-      if (!g) return 'no marked slot card';
-      g.click(); return null;
-    });
-    if (cont) throw new Error(cont);
-    await page.waitForFunction(() => window.__CTX__?.state === 'playing' && document.getElementById('loading')?.classList.contains('hidden') !== false, { timeout: 120000, polling: 100 });
-    await sleep(3000);
-    await page.evaluate(`window.__readFitted = ${readFitted.toString()}; window.__pickDrawn = ${pickDrawn.toString()};`);
+    // the game from the title: CONTINUE on the fixture's slot (twice: the verbs' reads come from a load of their own)
+    const boot = async () => {
+      await page.goto('about:blank');
+      await page.goto(base, { waitUntil: 'domcontentloaded', timeout: 180000 });
+      await page.waitForFunction(() => window.__CTX__?.state === 'title' && window.__CTX__?.menus?.titleStage === 'press', { timeout: 180000, polling: 100 });
+      await sleep(500);
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => window.__CTX__?.menus?.titleStage === 'menu', { timeout: 60000, polling: 50 });
+      await sleep(300);
+      const cont = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('.mn-title-item')].find((x) => /CONTINUE/.test(x.textContent));
+        if (!b || b.disabled) return 'no CONTINUE on the title';
+        b.click();
+        const g = document.querySelector('.gs-slot.cont .gs-slot-go');
+        if (!g) return 'no marked slot card';
+        g.click(); return null;
+      });
+      if (cont) throw new Error(cont);
+      await page.waitForFunction(() => window.__CTX__?.state === 'playing' && document.getElementById('loading')?.classList.contains('hidden') !== false, { timeout: 120000, polling: 100 });
+      await sleep(3000);
+      await page.evaluate(`window.__readFitted = ${readFitted.toString()}; window.__pickDrawn = ${pickDrawn.toString()};`);
+    };
+    await boot();
     const read = async (label) => {
       const r = await page.evaluate(async (BAR) => {
         const C = window.__CTX__, P = C.player, an = P.animator, R = C.renderer;
@@ -410,7 +417,27 @@ async function runPage() {
       console.log(JSON.stringify({ label, row: r.row, rig: r.rig, loose: r.loose, out: r.out, worst: r.worst, reach: +r.reach.toFixed(3), hats: r.hats, meshes: r.meshes.map((m) => `${m.tag}:${m.panel}/${m.loose}/${m.out}`) }));
     };
     await read('continued stand');
-    await page.evaluate(() => { const p = window.__CTX__.player; window.__c3at = { x: p.position.x, y: p.position.y, z: p.position.z, h: p.heading, cy: p.camYaw, cp: p.camPitch }; });
+    // (the drawn sheets, straight after CONTINUE, where the flap was filmed at a bow aim (after the runs she may face a wall
+    //  and the aim's camera then stands inside her): a bow aim, the draw, the loose, the lance out and a swing; the sheet clause reads each)
+    await page.mouse.move(800, 450);
+    await page.keyboard.press('Digit1'); await sleep(400);
+    await page.mouse.down({ button: 'right' }); await sleep(1200);
+    await read('aim');
+    await page.keyboard.down('ShiftLeft');
+    await page.mouse.down({ button: 'left' }); await sleep(1000);
+    await read('draw');
+    await page.mouse.up({ button: 'left' }); await sleep(500);
+    await read('loosed');
+    await page.keyboard.up('ShiftLeft'); await page.mouse.up({ button: 'right' }); await sleep(800);
+    await page.keyboard.press('Digit2'); await sleep(1200);
+    await read('lance out');
+    await page.mouse.down({ button: 'left' }); await sleep(120); await page.mouse.up({ button: 'left' }); await sleep(350);
+    await read('lance swing');
+    await sleep(900);
+    // (then a load of their own for the runs and the flap: its clause is read on the hang straight after a load, the
+    //  verbs' own state is backlog)
+    await boot();
+    await read('continued stand 2');
     await page.keyboard.down('KeyW'); await sleep(2000); await page.keyboard.up('KeyW');
     await read('after run');
     await sleep(1500);
@@ -445,25 +472,6 @@ async function runPage() {
     await sleep(1500);
     await flapRead('flap 1.5 s after a run');
     await page.evaluate(() => { const E = window.__CTX__.environment; if (E?.__flapWind) { E.windAt = E.__flapWind; delete E.__flapWind; } });
-    await page.evaluate(() => { const p = window.__CTX__.player, a = window.__c3at; p.position.set(a.x, a.y, a.z); p.velocity?.set?.(0, 0, 0); p.heading = a.h; p.camYaw = a.cy; p.camPitch = a.cp; });
-    await sleep(1500);
-    // (the drawn sheets, after the flap's reads, back where she stood after CONTINUE (after the runs she may face a wall, and
-    //  the aim's camera then stands inside her): a bow aim, the draw, the loose, the lance out and a swing; the sheet clause reads each)
-    await page.mouse.move(800, 450);
-    await page.keyboard.press('Digit1'); await sleep(400);
-    await page.mouse.down({ button: 'right' }); await sleep(1200);
-    await read('aim');
-    await page.keyboard.down('ShiftLeft');
-    await page.mouse.down({ button: 'left' }); await sleep(1000);
-    await read('draw');
-    await page.mouse.up({ button: 'left' }); await sleep(500);
-    await read('loosed');
-    await page.keyboard.up('ShiftLeft'); await page.mouse.up({ button: 'right' }); await sleep(800);
-    await page.keyboard.press('Digit2'); await sleep(1200);
-    await read('lance out');
-    await page.mouse.down({ button: 'left' }); await sleep(120); await page.mouse.up({ button: 'left' }); await sleep(350);
-    await read('lance swing');
-    await sleep(900);
     // --diag: every drawn mesh that carries a PIECE mask, in the whole scene: its owner, the program it is drawn with,
     // whether that program binds uHidePiece, and the value it binds
     // --grid: each panel's chord (belt row to hem row centroids) in her frame, the wind, the colliders; then the same with
