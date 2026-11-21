@@ -212,6 +212,14 @@ export const ITEMS = {
       + 'the Instruments only carry it.',
   },
 
+  /* ---- kept gear (M3 wave 3b, area B, the smallest change: the Survey Kite as an item; BIBLE §16) ---- */
+  'survey-kite': {
+    name: 'Survey Kite', category: 'valuable', glyph: '◇', color: '#d9d4c7',
+    rarity: 'rare', cap: 1, value: 0, tags: ['kept'],
+    desc: 'Cane, cord and sailcloth off the black beach, rebuilt at the guild house. '
+      + 'Calima and squalls ground it.',
+  },
+
   /* ---- pickup weapons (identity for toasts if combat can't grant them) ---- */
   'disc-launcher': {
     name: 'Heavy Disc Thrower', category: 'valuable', glyph: '◬', color: '#f2c230',

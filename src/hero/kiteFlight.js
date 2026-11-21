@@ -11,8 +11,9 @@
  *                               press is spent here
  *   pilot.step(dt, t, realDt)   the player's update while `player.flight !== 'none'` (instead of her locomotion): the
  *                               law's step, her place and facing from it, her lens, her animator and her rig
- *   pilot.owned / give()        whether she carries the kite (the quest's reward gives it; `?kite` on the URL for a lane
- *                               film); nothing opens and no roll is drawn until then
+ *   pilot.owned / give()        whether she carries the kite (the rebuild hands it to her, the quest's reward makes it
+ *                               hers as the item 'survey-kite' in her satchel, read every frame; `?kite` on the URL for a
+ *                               lane film); nothing opens and no roll is drawn until then
  *   pilot.last                  the last open's and landing's numbers (the rows on the page read them)
  *
  * Publishes the lift seam where the runner and other lanes look for it: `ctx.lift = { liftAt }` (area A's field,
@@ -165,6 +166,8 @@ export function installKiteFlight(player) {
       // "A Line Over the Glass" registers itself beside the hour-two hub the first frame the hub stands (./index.js says
       // the kite quest registers its own part)
       if (!this.quest && ctx.hour2) { try { this.quest = installGlassLine(ctx); } catch (e) { this.quest = { error: String(e?.message || e) }; console.error('[kite] glass-line', e); } }
+      // the Survey Kite in her satchel (the quest's reward, a loaded save) is hers
+      if (!this.owned && ctx.inventory?.count?.('survey-kite') > 0) this.owned = true;
       if (!this.owned) { if (this.K) this.K.group.visible = false; return; }
       const K = this._kite(), an = player.animator, root = an.space?.root || player.model;
       K.group.visible = true;

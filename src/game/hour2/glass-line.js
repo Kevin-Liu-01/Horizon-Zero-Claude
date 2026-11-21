@@ -6,8 +6,9 @@ import cardsW3 from '../text/cards/hour-two-w3.json';
 import { TEST_FLIGHT } from '../kite/roads.js';
 import { TRUE_GROUND_ID } from '../quest/scar-plan.js';
 import {
-  GLASS_LINE_ID, GLASS_LINE_STAGES, GLASS_LINE_REWARD, CARRIED_FROM, CANE_N, CORD_N, anchorsOf, offered, flightFlagged, landingEvent,
+  GLASS_LINE_ID, GLASS_LINE_STAGES, GLASS_LINE_REWARD, CARRIED_FROM, CANE_N, CORD_N, MOORING, anchorsOf, offered, flightFlagged, landingEvent,
 } from './glass-line-plan.js';
+import { MooredSonde } from '../../entities/anim/kite/mooredSonde.js';
 
 /**
  * "A LINE OVER THE GLASS", LIVE (Milestone 3 wave 3, area B; BUILD M3.1, HT2). The plan and its rules are
@@ -26,10 +27,12 @@ import {
  *                 then the cane and cord (4 canes and 2 cords a hold: two holds)
  *   the rebuild   a prompt at the guild-house stud: the kite rebuilt; from here she carries it (the kite's pilot is given it)
  *   the tether    the moored Sonde's tether at the Sounding Ring: a live Sonde's own cutTether() when area C's kind stands
- *                 there, else a prompt at the Ring's post (a stand-in, said so in report())
+ *                 there, else the stand-in (src/entities/anim/kite/mooredSonde.js: area C's form on its 18 m line over a stake 22 m off the
+ *                 Ring, MOORING) and a prompt at its stake; the line parts and the hull drifts off downwind (report().standIn)
  *   the flight    'kite:open' and 'kite:land' from the kite (src/hero/kiteFlight.js); an open while the Sonde is moored is
  *                 Flagged (HT2); a landing counts on the marked field at the law's safe speed (R3)
- *   reward        the Survey Kite and nothing else: 'quest-rewarded' { quest, item: 'survey-kite' }
+ *   reward        the Survey Kite and nothing else: 'quest-rewarded' { quest, item: 'survey-kite' }, and the item itself in
+ *                 her satchel (src/items/items.js 'survey-kite'; the save keeps it, and the kite's pilot reads it)
  * The prompts' words are the stages' own notes (W3); the wreck, the post and the field have no meshes here (world's).
  */
 const PROMPT_R = Object.freeze({ wreck: 6, 'guild-stud': 4, sonde: 6 });
@@ -83,6 +86,8 @@ export class GlassLineQuest {
   _reward(r, words) {
     const ctx = this.ctx;
     ctx.player?.kitePilot?.give?.();
+    const inv = ctx.inventory;
+    if (inv?.add && !(inv.count?.(r.item) > 0)) inv.add(r.item, 1);
     ctx.progression?.banner?.(this.T.title, (words || []).join('  ·  '), 'quest');
     ctx.events?.emit?.('quest-rewarded', { quest: GLASS_LINE_ID, item: r.item, words });
   }
@@ -152,7 +157,8 @@ export class GlassLineQuest {
     const live = this._liveSonde();
     const ok = live ? live.rules.cutTether() !== false : true;
     if (!ok) return;
-    this.stats.tether = { live: !!live, standIn: !live, t: +this.spine.t.toFixed(1) };
+    if (!live) this.standIn?.cut();
+    this.stats.tether = { live: !!live, standIn: !live, t: +this.spine.t.toFixed(1), at: { x: MOORING.x, z: MOORING.z } };
     this.ctx.events?.emit?.('sonde-cut', { sonde: 'ring', standIn: !live });
     this.spine.notify('sonde-cut', { sonde: 'ring' });
   }
@@ -198,6 +204,7 @@ export class GlassLineQuest {
     if (!this.spine.started && !this.spine.done && offered(ctx.quests?.[TRUE_GROUND_ID])) this.spine.start();
     if (!this.spine.started) return;
     this._entries();
+    this._standIn(dt);
     const p = ctx.player?.position;
     const near = (anchor, r) => { const a = this.A[anchor]; return !!(a && p && Math.hypot(p.x - a.x, p.z - a.z) <= r); };
     this.spine.update(dt, { near, aim: () => false, bearing: () => 0 });
@@ -210,9 +217,24 @@ export class GlassLineQuest {
     if (this.spine.done || (this.spine.st[CARRIED_FROM]?.state === 'done') || (cur && GLASS_LINE_STAGES.findIndex((s) => s.id === cur) > iC)) ctx.player?.kitePilot?.give?.();
   }
 
+  /** The moored Sonde stand-in: there while the tether is uncut and no live Sonde stands at the Ring; it rides its line. */
+  _standIn(dt) {
+    const cutDone = this.spine.done || this.spine.st?.tether?.state === 'done';
+    if (!this.standIn && !cutDone && !this._liveSonde() && this.ctx.scene) {
+      try { this.standIn = new MooredSonde(this.ctx, MOORING); } catch (e) { this.standIn = null; console.error('[glass-line] sonde stand-in', e); }
+    }
+    const s = this.standIn;
+    if (!s) return;
+    if (cutDone && !s.free && !this.stats.tether) { s.dispose(); this.standIn = null; return; }   // a record past the cut
+    s.update(dt);
+    if (s.gone) this.standIn = null;
+  }
+
   report() {
     const r = this.spine.report();
-    return { stage: this.spine.current()?.id ?? null, reached: r.reached, done: this.spine.done, stats: this.stats, sondeLive: !!this._liveSonde() };
+    const s = this.standIn;
+    return { stage: this.spine.current()?.id ?? null, reached: r.reached, done: this.spine.done, stats: this.stats, sondeLive: !!this._liveSonde(),
+      standIn: s ? { moored: !s.free, at: { x: s.at.x, z: s.at.z }, hull: { x: +s.pos.x.toFixed(1), y: +s.pos.y.toFixed(1), z: +s.pos.z.toFixed(1) } } : null };
   }
 }
 

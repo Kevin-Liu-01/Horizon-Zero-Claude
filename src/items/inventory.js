@@ -1,4 +1,4 @@
-import { itemDef, CATALOG_ORDER, rarityDef } from './items.js';
+import { ITEMS, itemDef, CATALOG_ORDER, rarityDef } from './items.js';
 import { Crafting, CAPACITY_POCKETS } from './crafting.js';
 import { Tools } from './tools.js';
 import { InventoryScreen } from '../ui/inventory.js';
@@ -107,6 +107,8 @@ export class Inventory {
       openNotebook: (id) => self.screen.openNotebook(id),
 
       audit: () => self.audit(),
+      // M3 wave 3b (area B, the smallest change): a catalogue entry by id, or null (the hour-two runner's 'kite:item')
+      byId: (id) => (ITEMS[id] ? itemDef(id) : null),
     };
   }
 

@@ -44,10 +44,21 @@ export const GLASS_LINE_STAGES = Object.freeze([
 /** The stage the kite is in her hands from (she flies it for the test; the reward makes it hers). */
 export const CARRIED_FROM = 'rebuild';
 
+/**
+ * Where the Sonde is moored (engine x, z): its stake 22 m off the Sounding Ring's centre on bearing 060 (wave 3b). The
+ * Ring's tilted face overhangs its foot: at 4c14e00 leg 4's walk to the Ring's centre (PLACES.sonde) stopped 8.9 m short
+ * under it, and the prompt there was never reached. Out here the ground is the pans' (0.58 m, dry), the hull rides its
+ * 18 m line downwind clear of the face, and the walk from the guild-house stud is a straight line over dry ground.
+ */
+export const MOORING = Object.freeze((() => {
+  const b = 60 * Math.PI / 180, d = 22;
+  return { x: +(PLACES.sonde.x + Math.sin(b) * d).toFixed(1), z: +(PLACES.sonde.z - Math.cos(b) * d).toFixed(1), bearing: 60, fromRingM: d };
+})());
+
 /** Where each anchor stands (engine x, z): the run's places; the field is R3's (src/game/kite/roads.js TEST_FLIGHT). */
 export function anchorsOf(field) {
   return Object.freeze({
-    'guild-stud': PLACES.guildStud, ansel: PLACES.ansel, wreck: PLACES.wreck, sonde: PLACES.sonde, t1: PLACES.t1,
+    'guild-stud': PLACES.guildStud, ansel: PLACES.ansel, wreck: PLACES.wreck, sonde: Object.freeze({ x: MOORING.x, z: MOORING.z }), t1: PLACES.t1,
     field: Object.freeze({ x: field.x, z: field.z }),
   });
 }

@@ -94,3 +94,39 @@ test('save: the spine round-trips mid-quest (serialize / restore) and goes on to
   b.talk('ansel'); b.notify('scene-done', { scene: 'kite-back', exit: true });
   assert.equal(b.done, true);
 });
+
+test('wave 3b: the moored Sonde stand-in at MOORING: 22 m off the Ring, its line parts on the cut, the hull drifts off and is gone', async () => {
+  const THREE = await import('three');
+  const { MOORING } = await import('../../../src/game/hour2/glass-line-plan.js');
+  const { MooredSonde } = await import('../../../src/entities/anim/kite/mooredSonde.js');
+  const { PLACES } = await import('../../../src/game/hour2/plan.js');
+  assert.ok(Math.abs(Math.hypot(MOORING.x - PLACES.sonde.x, MOORING.z - PLACES.sonde.z) - 22) < 0.2);
+  assert.deepEqual({ x: A.sonde.x, z: A.sonde.z }, { x: MOORING.x, z: MOORING.z }, 'the tether stage\'s anchor is the stake');
+  const scene = new THREE.Scene();
+  const s = new MooredSonde({ scene, terrain: { getHeight: () => 0.58 } }, MOORING);
+  let tris = 0; s.group.traverse((o) => { if (o.isMesh) tris += o.geometry.attributes.position.count / 3; });
+  assert.ok(tris > 500 && tris < 25000, `triangles ${tris}`);
+  s.update(1 / 60);
+  const h0 = s.pos.y;
+  assert.ok(h0 - 0.58 > 15 && h0 - 0.58 < 19.5, `rides ${(h0 - 0.58).toFixed(2)} m over the ground on an 18 m line`);
+  assert.ok(Math.hypot(s.pos.x - PLACES.sonde.x, s.pos.z - PLACES.sonde.z) > 14, 'the hull rides clear of the Ring\'s face');
+  assert.equal(s.line.visible, true);
+  assert.equal(s.cut(), true); assert.equal(s.cut(), false);
+  assert.equal(s.line.visible, false);
+  for (let i = 0; i < 60 * 10; i++) s.update(1 / 60);
+  assert.ok(s.pos.y > h0 + 10, 'cut: it rises');
+  for (let i = 0; i < 60 * 25; i++) s.update(1 / 60);
+  assert.equal(s.gone, true); assert.equal(scene.children.length, 0);
+});
+
+test('wave 3b: the Survey Kite is an item (the hour-two runner\'s kite:item probe): one, kept (cap 1)', async () => {
+  const { ITEMS, itemDef } = await import('../../../src/items/items.js');
+  const d = ITEMS['survey-kite'];
+  assert.ok(d, 'no survey-kite in the catalogue');
+  assert.equal(itemDef('survey-kite').name, 'Survey Kite');
+  assert.equal(d.cap, 1);
+  assert.equal(d.category, 'valuable');
+  assert.deepEqual(GLASS_LINE_REWARD.items, [['survey-kite', 1]]);
+  const src = readFileSync(new URL('../../../src/items/inventory.js', import.meta.url), 'utf8');
+  assert.match(src, /byId: \(id\) => \(ITEMS\[id\] \? itemDef\(id\) : null\)/);
+});
