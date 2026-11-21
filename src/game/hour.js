@@ -16,6 +16,7 @@ import { vec3 } from '../world/settlements/brazier.js';
 import { TRANSIT_CARD } from './quest/scar-plan.js';
 import { Certifications } from './certs/live.js';
 import { Counter } from './trade/counter.js';
+import { TerraceDown } from './terrace-down.js';
 
 /**
  * THE REST OF THE FIRST HOUR, LIVE (Milestone 2 area E, wave 3): "The Scar" and "True Ground" as two more QuestSpines
@@ -510,6 +511,7 @@ export class FirstHour {
       this._spawnT = 0;
       for (const sp of this.spines) { const what = this._standsFor(sp.current()); if (what) this._spawn(what, true); }
     }
+    this._downStep();
     const cur = this.scar.current()?.id;
     // (M2 fix wave 2) 'barbed' closes on Barbed arrows she already carries. The slice's pry makes them from the only
     // makings she has (obsidian, which nothing sells or drops before the Ninewalls counter opens at the Scar's end): at
@@ -525,6 +527,27 @@ export class FirstHour {
       this._fadeAt = null;
       ctx.events?.emit?.('line-faded', { walls: (NW.WALLS || []).filter((w) => NW.wallState(w.id)?.painted).length, by: 'systems' });
     }
+  }
+
+  /**
+   * (M2 exit, X1) The terrace Plumb toppled at 'plumb-2' stays down while she is within 80 m of it or it is in her view,
+   * then gets up out of sight and goes home calm on a leash to its terrace (./terrace-down.js, the site clock's rule).
+   */
+  _downStep() {
+    if (!this.spawned.plumb2.length) return;
+    if (!this.terraceDown) {
+      const T = this.sys.A?.terrace;
+      if (!T) return;
+      this.terraceDown = new TerraceDown({
+        done: () => this.scar.done || this.scar.st?.['plumb-2']?.state === 'done',
+        world: () => {
+          const P = this.ctx.player?.position, W = this.sys.siteRefill?.world;
+          return { player: () => (P ? { x: P.x, z: P.z } : null), inView: (x, z) => !!W?.inView?.(x, z) };
+        },
+        home: { x: T.x, z: T.z },
+      });
+    }
+    this.terraceDown.step(this.spawned.plumb2, this.scar.t);
   }
 
   /** The encounter gate (HR4): on true ground no correcting kind is let in (doctrine and site respawns ask it first). */
@@ -807,6 +830,7 @@ export class FirstHour {
       oro: !!this.people.oro, kit: !!this._kitGiven, flagged: this.flagged,
       calima: this._calimaAsked ?? null, edge: this._edge ?? null, sighted: this._sighted ?? null, transitStandIn: !!this._standIn,
       certs: this.certs?.report?.() ?? null, counter: this.counter?.report?.() ?? null,
+      terraceDown: this.terraceDown ? this.terraceDown.log.slice(-8) : null,
     };
   }
 
