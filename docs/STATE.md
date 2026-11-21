@@ -3350,3 +3350,93 @@ rig rebuild at the slice's reward.
   the fixer and not checked.
 - **minor | the slice runner's loading-sheet stall (Nov 21, 5 of 5 tries).** Not reproduced or ruled out. No code was
   changed.
+
+# Draft docs text: the flap, fix attempt 2 and its verify run (Nov 21 2026)
+
+Public-safe text for docs/STATE.md (a new section after "The flap on main: fix attempt 1") and docs/BACKLOG.md. No
+personal names; "the owner" where a person is meant. Every number names its commit. All were taken in clean detached
+worktrees (tools/perf/clean-measure.sh, port 5270). Where the head's row files were copied into an older commit's
+worktree to measure it, the text says so.
+
+## For docs/STATE.md
+
+### The flap: fix attempt 2 and its verify run (Nov 21 2026)
+
+**The fix (4c9783c, 55bde2a).**
+- The panels now keep clear of the stowed lance itself (`STOW_LANCE_R` 0.045 m). Before, they kept clear of the stow kit's
+  0.11 m keep-out capsule, and a back panel could get caught on the outside of that capsule.
+- Her lee is wider and stiller (`PANEL_LEE` 0.30, shelter 0.1 of the force), and the front-left panel has its own drag.
+- `A-cloth-fitted-set` gains a flap clause: in the trade wind held at 5.5 m/s, every free panel column within 27 deg of
+  plumb and the drawn panels within 0.45 m of her pelvis axis, standing and 1.5 s after a run.
+
+**Verdict: REFUTED.** The fix helps the standing hang, but the flap is still there in play. One kept row that passes at
+8f7ecb6 now fails, and the chained first hour has a new 83 ms frame at the slice's reward. Main was not fast-forwarded.
+
+| check | 8f7ecb6 (main) | 55bde2a (r5/int head) |
+|---|---|---|
+| Tier 0 Node checks (`--no-boot`) + `npx vite build` | - | PASS 8 of 8 (307 tests in 63 files; first load 55.91 MB of 60); build exit 0 |
+| `A-cloth-fitted-set --node` (8f7ecb6: the head's row and `load.mjs` copied in) | FAIL: loose 843; flap 52.1 deg, 0.697 m | PASS: loose 0; flap 24.9 deg, 0.432 m |
+| `A-cloth-fitted-set --page --grid` (fixture 2) | FAIL: 3 hats; flap 44.3 deg, 0.542 m | PASS: 1 hat; flap 21.5 deg, 0.413 m |
+| back panel standing in game wind, off plumb (`--grid`) | 29.3 deg, a column's hem 0.45 m off its belt point | 11.0 deg, 0.23 m |
+| the same clause after a bow aim, draw, loose, lance out and swing, then a run (measurement-only probe, two runs) | FAIL 31.1 deg, 0.512 m | **FAIL** 40.5 / 39.8 deg, 0.555 / 0.553 m |
+| `A-sweep-wind` (kept) | PASS | **FAIL, 2 of 2 runs**: the front-left panel moves 0.037-0.044 m off its root (bar 0.05; 0.11-0.29 at main) and streams to 324-329 deg against a downwind of 225 |
+| A90-memory-stability, A90-rig-reclaim, A90b-memory-attribution, A100-lance-holster | - | PASS |
+| visual rows V1, V2, V3, V4, V13, V21, V49, V-traversal | - | filmed (NEEDS-JUDGE); not judged in this run |
+| leg 2 by input from fixture 2 | - | 8/8, lowest hp 60, 1 frame over 33 ms (35.0, at `plumb-2`), 0 over 50 |
+| the slice | - | part A passed (F30, F20, every kit row), then the run page stalled on its loading sheet ("Reading the benchmarks", 2 x 150 s) in the second browser context. With the run page in the default context (a measurement-only patch): 14/14, lowest hp 89, site clock PASS, **1 frame of 83.3 ms** at the reward |
+| the first hour, chained | - | **28/28**, lowest hp 49. C5 **FAIL**: 2 over 33 ms, **1 over 50 ms (83.5 ms)** at the end of leg 1, the slice's reward |
+
+**The panels in play.** Leg 2 from fixture 2 at 55bde2a: panels stand off her hips, or large flat sheets show, in 7 of
+the 9 beat pictures (continued, plumb-2, barbed, oro, stall, seal-1, seal-2). Walk and herd are clean. In the chained run
+(leg 2 from leg 1's own save), rust panels stand out at plumb-2, barbed and stall. Seal-1 and seal-2 are clean there.
+
+**The sheets in a bow draw are not what the rows read.** A short probe from fixture 2 (CONTINUE, then bow out, aim, draw)
+films a rust, faceted sheet more than 1 m across at her shoulder in the aim and the draw. This happens at 8f7ecb6 too.
+Yet the CPU-skinned positions of every visible mesh on her model (`getVertexPosition`, at any height) stay within
+0.68 m of her pelvis axis, apart from the held weapons. So what is drawn is not where the CPU reads it. Either the
+drawn program's skinning or cloth stage does not match the CPU's, or the sheet is a mesh outside her model.
+`A-cloth-fitted-set` reads CPU positions only and cannot see it.
+
+**The reward hitch.** It shows in both slice runs at 55bde2a (83.5 and 83.3 ms; long-animation-frame render 81 ms).
+At 6266bd6 the same runs had 0 frames over 50 ms. The likely causes are the round 1 commits at the reward put-on: the
+rig rebuild (a53a84d), or the Scout's own program linked in play now that the keepers copy `onBeforeCompile` (901af1d).
+Neither has been isolated yet.
+
+**Studio frames, 55bde2a against 8f7ecb6** (pixels changed by more than 24):
+
+| frame | vs 8f7ecb6 | head vs its anchor / 8f7ecb6 vs the anchor | by eye |
+|---|---|---|---|
+| F08, F11, F13 | 0.00 % | the same at both (11.6 / 21.9 / 27.3 %, drift older than this work) | unchanged |
+| F09 | 0.62 % | 4.03 / 4.01 % | the same; back panel a little closer to her |
+| F10 | 0.43 % | 10.33 / 10.34 % | the same |
+| F12 (not accepted) | 4.87 % | 9.50 / 10.31 % | the same (head wrap tail phase) |
+| F15 | 0.96 % | 1.46 / 1.29 % | the same |
+| F19 | 1.07 % | 3.62 / 3.81 % | the left front panel streams less; slightly closer to the anchor |
+
+No accepted frame regressed.
+
+## For docs/BACKLOG.md
+
+- **major | the flap (open, fix attempt 2 refuted).** The flap clause passes when it is read straight after a load. Read
+  again after a bow aim/draw/loose and a lance swing, then a run, it fails: back panel 40 deg off plumb, 0.555 m reach
+  (55bde2a; 31 deg and 0.512 m at 8f7ecb6). Leg 2 from fixture 2 shows panels or sheets in 7 of 9 beat pictures.
+  - Next: put the clause after a fight's verbs in the row (bow out, aim, draw, loose, lance out and swing, then a run).
+  - The clause exempts a whole column if any particle below the pin is within its stand-off of a body collider. At
+    8f7ecb6 in Node, this exempted all 5 back-panel columns, and in the page all 4 side-panel columns. Grade the
+    column's chord anyway, or exempt only the particles that touch.
+- **major | the sheets in a bow draw.** From fixture 2, bow out and aim: a rust sheet more than 1 m across at her
+  shoulder (8f7ecb6 and 55bde2a). The CPU-skinned positions of her visible meshes stay within 0.68 m, so the drawn
+  geometry and the CPU read disagree.
+  - Next: read the drawn positions (a transform-feedback or readback of the cloth/skin stage), or list the meshes outside
+    her model that draw near her.
+  - Rows that read `getVertexPosition` cannot catch this.
+- **major | A-sweep-wind fails at 55bde2a (2 of 2), passes at 8f7ecb6.** The front-left panel's own drag (cd 0.5) and the
+  wider lee leave it moving 0.037-0.044 m off its root in the trade wind (bar 0.05). It streams against the wind at
+  F02. A kept row: r5/int cannot go to main with it failing.
+- **major | an 83 ms frame at the slice's reward (55bde2a, 2 of 2 slice runs).** C2 and the first hour's C5 fail on it (0
+  over 50 ms is the bar). The candidates are a53a84d's rig rebuild and 901af1d's program link at the put-on. Measure each
+  (for example, warm the Scout's own program behind the boot sheet).
+- **minor | the slice's run page stalls in the second browser context** (again on Nov 21, at 55bde2a, after part A).
+  The same run passes in the default context and as the first hour's `--run-only` leg.
+- **minor | C6 (fixer's report)**: under its lower band in 19 cells after 4c9783c (was 7); panels in her lee lift less
+  than 10 deg at 5.5 m/s. This is the same cause as A-sweep-wind.
