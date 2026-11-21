@@ -3255,3 +3255,98 @@ run 5 still stand:
 - the other 74 kept rows (exit run 5: 80 of 80, A90b 3 of 3);
 - the hero clips;
 - the Node benches.
+
+# Draft docs text: the flap on main, fix attempt 1 and its skeptic check (Nov 21 2026)
+
+Public-safe text for docs/STATE.md (a new section after the cloth sections) and docs/BACKLOG.md. No personal names; "the
+owner" where a person is meant. Every number names its commit; all were taken in clean detached worktrees
+(tools/perf/clean-measure.sh).
+
+## For docs/STATE.md
+
+### The flap on main: fix attempt 1 (Nov 21 2026)
+
+**Defect.** In the first hour, large flat, faceted panels stand out from her hips (rust-brown in warm light, pale pink
+under the Yards' light). Staged studio frames do not show it.
+
+**Two real defects were found and fixed. Neither one is the flap.**
+
+- **a53a84d: the grid cloth is rebuilt when her set is put on again.** Each put-on binds new meshes (`src/hero/parts.js`
+  `bindPart`). This happens during the rung warm-up behind the boot sheet, when a save that wears the Scout is loaded, and
+  at the slice's reward. Before this fix, the rig re-skinned only the meshes it was first built on. So after any put-on,
+  the panels she drew stayed on their old `dyn_panel*` chains and missed the grid.
+  - Fix in `src/entities/anim/cloth/rig.js`: a rig whose outfit or caster mesh has left her model is disposed and built
+    again. A failed build is tried again once that set leaves her.
+  - New lane row `A-cloth-fitted-set` (`tools/gates/hero-sweep/cloth-fitted-set.mjs`, `--node` and `--page`). It counts
+    panel vertices drawn off the grid (loose), vertices more than 0.20 m from the grid's own place (out), and hat copies
+    drawn.
+  - Node: loose 843 at 8f7ecb6 (after the warm-up and with the Scout), 0 at e85d1cd. Page (fixture 2, CONTINUE): loose
+    843 at 8f7ecb6, 0 at e85d1cd.
+  - Which commit: 6a8496c has no grid cloth. 4d11034 (the grid cloth made the default) and 9f8bc85 give 571, and 8f7ecb6
+    gives 843.
+- **901af1d: the two hats on her back.** `engine.keepPrograms` made program-warming copies ("keepers") that never copied
+  the material's `onBeforeCompile`. It is an accessor on `Material.prototype`, and `Object.keys` cannot see it. A keeper
+  linked the Scout's fade-clone program without the vertex stage, and the Scout's own material was then handed that
+  program. As a result, the piece mask, the fade dither and the cascade patch were all missing.
+  - Page, fixture 2: 3 hat copies drawn at 8f7ecb6, 1 at e85d1cd. In the leg 2 beat pictures at e85d1cd there is one
+    hat in every beat: on her head while she walks, on her back in a fight.
+  - This is the engine lane's file. The change is the smallest one: two lines.
+
+**The flap is still there at e85d1cd.** Leg 2 of the first hour was filmed from its fixture, by input, in a clean
+worktree. Large flat panels stand out from her hips in 5 of the 9 beat pictures: continued, plumb-2, barbed, oro and
+stall. At 8f7ecb6 the same beats show them.
+
+The `--grid` read shows why the rebuild did not help: the grid itself flares, and its state is the same at both
+commits.
+
+| back panel, page, fixture 2 | 8f7ecb6 | e85d1cd |
+|---|---|---|
+| standing, off plumb | 24.4 deg | 24.2 deg |
+| standing, a column's hem off its belt point | 0.39 m | 0.39 m |
+| still air, off plumb | 30.0 deg | 29.6 deg |
+| after a cloth reset, off plumb | 13.1 deg | 13.5 deg |
+| drawn panels' reach from her pelvis axis after a 2 s run | 0.55 m | 0.60 m |
+| drawn panels' reach from her pelvis axis stopped | 0.44 m | 0.51 m |
+
+The rebuild makes her draw the grid, and the grid is in a state that only a reset clears. So the panels stand out as
+before, and they now reach a little farther.
+
+`A-cloth-fitted-set` passes at e85d1cd. It is not a flap row: its 0.20 m "out" bar measures against the grid, and the
+grid is what flares. A flap row must read the drawn panels against her body, in play and after a put-on.
+
+**Safety of the two commits.**
+
+| check | result |
+|---|---|
+| Cloth solver rows C2-C11 (Node, `cloth-bench.mjs --mode 2`) | every non-timing line identical at 8f7ecb6 and e85d1cd |
+| C11 digests | identical: 8ec760c0, 4d1f4b13, b21b6aa0 |
+| Flags and bars | no flag turned off, no bar loosened, no panel hidden |
+| Studio frames vs 8f7ecb6 (pixels changed by more than 24) | F08, F11, F13: 0.000 %. F09: 0.8 %. F10: 0.22 %. F12: 0.06 %. F15: 0.16 %. F19: 0.04 % |
+| Leg 2 at e85d1cd | 8/8; 0 frames over 33 ms; max 26.5 ms |
+
+The F09 and F10 differences look identical by eye and were not repeated to find their noise floor. F15 and F19 differ
+from their accepted anchors (fb6d5f0) by 1.3 % and 3.8 %, but by the same amount at 8f7ecb6, so that drift is older
+than this fix.
+
+**Not run in this check:** the kept stack, the first hour's other legs (28/28), the slice (14/14), and the cost of a
+rig rebuild at the slice's reward.
+
+## For docs/BACKLOG.md
+
+- **major | the flap (open).** The grid cloth's back panel stays 24-30 deg off plumb in play, standing and in still air.
+  A column's hem sits 0.39-0.47 m off its belt point. Only a cloth reset brings it back to 13 deg / 0.25 m (page,
+  fixture 2, 8f7ecb6 and e85d1cd alike; Node about 20 deg standing).
+  - Found in play: large flat panels at her hips in leg 2's continued, plumb-2, barbed, oro and stall beats (e85d1cd).
+  - Next: find what puts the grid in that state in play and not in a staged frame. Candidates: the warm-up's put-ons
+    behind the boot sheet, the rebuild seeded from a pose that is not hers, the load/CONTINUE teleport, a wake or sleep
+    state. Then reset or re-seed it at that point.
+  - Add a flap row that grades the drawn panels against her body (plumb and reach) in play, after a put-on, and after a
+    run and stop.
+- **minor | A-cloth-fitted-set's bars.** loose 0 and out <= 0.20 m catch the off-grid re-skin only. They cannot see the
+  flap. Do not cite this row as flap evidence.
+- **minor | the rebuild's cost.** A rig rebuild runs at the slice's reward, in the middle of play. Its frame cost is not
+  measured. The slice runner's hitch lines should show it.
+- **minor | keepers after 901af1d.** A stale shadow-cascade binding that the keeper fix can leave behind was named by
+  the fixer and not checked.
+- **minor | the slice runner's loading-sheet stall (Nov 21, 5 of 5 tries).** Not reproduced or ruled out. No code was
+  changed.
