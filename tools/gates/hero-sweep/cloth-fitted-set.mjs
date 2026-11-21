@@ -20,6 +20,8 @@
  *           hides (none when its program was linked without the piece stage: src/core/engine.js keepPrograms' keepers
  *           before the cloth lane's fix linked the Scout's program with the prototype's empty onBeforeCompile).
  *   --diag  (page) every drawn PIECE-mask mesh in the scene, its program, and who else holds the Scout's program.
+ *   --grid  (page) each panel's chord in her frame (plumb, colOff: a column's hem off its belt point), still air, a reset.
+ *   --wide  (page) every vertex she draws farther than 0.40 m from her pelvis axis, by mesh, bone and ancestry.
  *
  *   --node                     the Node bench (no browser): Brea dressed in the Starter, the rig built, then the Scout
  *                              fitted over it and the Starter put back (the warm-up), then the Scout (the reward); each
@@ -216,6 +218,32 @@ async function runPage() {
         return out;
       }, BAR_OUT);
       r.label = label; reads.push(r);
+      // --wide: every vertex she draws (any mesh on her, the caster out) farther than 0.40 m from her pelvis axis, by mesh
+      // and its dominant bone
+      if (args.includes('--wide')) {
+        const w = await page.evaluate(() => {
+          const C = window.__CTX__, P = C.player, M = P.model; M.updateMatrixWorld(true);
+          const T = M.position.constructor, v = new T(); let pel = null; M.traverse((o) => { if (!pel && o.isBone && o.name === 'pelvis') pel = o; });
+          const pp = new T().setFromMatrixPosition(pel.matrixWorld), out = {};
+          M.traverse((o) => {
+            if (!o.isMesh || !o.visible || o.material?.colorWrite === false) return;
+            const g = o.geometry, pos = g.attributes.position; if (!pos) return;
+            const si = g.attributes.skinIndex, sw = g.attributes.skinWeight, pc = g.getAttribute('_piece') || g.getAttribute('_PIECE');
+            const bn = o.skeleton ? o.skeleton.bones.map((b) => b.name) : null;
+            for (let i = 0; i < pos.count; i++) {
+              if (o.isSkinnedMesh) o.getVertexPosition(i, v); else v.fromBufferAttribute(pos, i);
+              o.localToWorld(v);
+              const d = Math.hypot(v.x - pp.x, v.z - pp.z); if (d < 0.40 || v.y > pp.y + 0.3) continue;
+              let b = '-'; if (si && bn) { let bw = -1; for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (w > bw) { bw = w; b = bn[si.getComponent(i, k)]; } } }
+              let anc = [], q = o.parent, shown = o.visible; while (q && q !== M) { anc.push(q.name || q.type); shown = shown && q.visible; q = q.parent; }
+              const key = `${o.name}|${o.userData?.heroPart || ''}|${b}${pc ? '|p' + Math.round(pc.getX(i)) : ''}|${o.name ? '' : `${o.type} ${o.material?.name || o.material?.type} #${o.material?.color?.getHexString?.()} v${pos.count} shown=${shown} anc=${anc.slice(0, 4).join('<')} ud=${Object.keys(o.userData || {}).join(',')}`}`;
+              out[key] = out[key] || { n: 0, max: 0 }; out[key].n++; out[key].max = Math.max(out[key].max, +d.toFixed(3));
+            }
+          });
+          return out;
+        });
+        console.log('WIDE', label, JSON.stringify(w));
+      }
       await page.screenshot({ path: path.join(runDir, `${label.replace(/\W+/g, '-')}.jpg`), type: 'jpeg', quality: 85 });
       console.log(JSON.stringify({ label, row: r.row, rig: r.rig, loose: r.loose, out: r.out, worst: r.worst, reach: +r.reach.toFixed(3), hats: r.hats, meshes: r.meshes.map((m) => `${m.tag}:${m.panel}/${m.loose}/${m.out}`) }));
     };
@@ -226,6 +254,32 @@ async function runPage() {
     await read('stopped');
     // --diag: every drawn mesh that carries a PIECE mask, in the whole scene: its owner, the program it is drawn with,
     // whether that program binds uHidePiece, and the value it binds
+    // --grid: each panel's chord (belt row to hem row centroids) in her frame, the wind, the colliders; then the same with
+    // the wind held at 0 for 2 s, and after a fresh reset of the cloth
+    if (args.includes('--grid')) {
+      const g = await page.evaluate(async () => {
+        const C = window.__CTX__, P = C.player, an = P.animator;
+        const rig = (await import('/src/entities/anim/cloth/rig.js')).peekClothRig(an);
+        const sleepP = (ms) => new Promise((r) => setTimeout(r, ms));
+        const chord = () => rig.pieces.map((Q) => {
+          const cen = (r) => { const o = [0, 0, 0]; for (let c = 0; c < Q.C; c++) for (let k = 0; k < 3; k++) o[k] += Q.x[(c + r * Q.C) * 3 + k] / Q.C; return o; };
+          const a = cen(0), b = cen(Q.R - 1), h = P.heading, f = [Math.sin(h), 0, Math.cos(h)], rt = [Math.cos(h), 0, -Math.sin(h)];
+          const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...d);
+          let wmax = 0; for (let c = 0; c < Q.C; c++) { const i = c + (Q.R - 1) * Q.C, j = c; wmax = Math.max(wmax, Math.hypot(Q.x[i * 3] - Q.x[j * 3], Q.x[i * 3 + 2] - Q.x[j * 3 + 2])); }
+          // the hem's width across (first to last column) against the belt's
+          const wid = (r) => Math.hypot(Q.x[((Q.C - 1) + r * Q.C) * 3] - Q.x[(r * Q.C) * 3], Q.x[((Q.C - 1) + r * Q.C) * 3 + 2] - Q.x[(r * Q.C) * 3 + 2]);
+          return { n: Q.name, plumb: +(Math.acos(Math.max(-1, Math.min(1, -d[1] / L))) * 57.3).toFixed(1), fwd: +(d[0] * f[0] + d[2] * f[2]).toFixed(3), lat: +(d[0] * rt[0] + d[2] * rt[2]).toFixed(3), len: +L.toFixed(3), hemW: +wid(Q.R - 1).toFixed(3), beltW: +wid(0).toFixed(3), colOff: +wmax.toFixed(3), asleep: Q.asleep };
+        });
+        const out = { wind: { ...an.wind }, info: rig.info(), stand: chord(), scale: rig.rootP?.s, rest: rig.pieces.map((Q) => Q.restScale) };
+        const w0 = { ...an.wind }; an.wind.x = 0; an.wind.z = 0; an.wind.gust = 0;
+        await sleepP(2000); out.still = chord();
+        Object.assign(an.wind, w0);
+        an.clothReset?.(C.engine?.simTime ?? 0); await sleepP(300); out.reset = chord();
+        out.info = { sub: out.info.sub, colliders: out.info.colliders.filter((c) => c.on === false || c.r0 > 0.2).map((c) => c.name), pieces: out.info.pieces };
+        return out;
+      });
+      console.log('GRID', JSON.stringify(g));
+    }
     if (args.includes('--diag')) {
       const d = await page.evaluate(() => {
         const C = window.__CTX__, R = C.renderer, out = [];
