@@ -869,6 +869,30 @@ export class MachineScalars {
   }
 }
 
+/** The loot beacon's material (`Machine._spawnBeacon`). */
+function beaconMaterial() {
+  return new THREE.MeshBasicMaterial({
+    color: VFX_COLORS.beacon, transparent: true, opacity: 0.35,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+/**
+ * C5 (engine lane, the smallest change here: the first hour's hitches): the loot beacon's programs linked by the boot's
+ * warm-up. A transparent two-sided material draws twice (its back faces, then its front), so it has two programs, and
+ * two more once the world's material scan registers it (fog and cascades). At 52b0f59-e04cbeb the first Peg wreck's
+ * beacon linked them at the Peg line, 1.4 s after it fell (one first use 25.8-28 ms; first-hour leg 1). Two stand-ins
+ * (never in the scene), one of them registered: `Machines` hands them to `engine.addWarmExtra`.
+ */
+export function beaconWarmMeshes(register = null) {
+  const geo = new THREE.CylinderGeometry(0.09, 0.16, 4, 8, 1, true);
+  const a = new THREE.Mesh(geo, beaconMaterial()), b = new THREE.Mesh(geo, beaconMaterial());
+  a.name = 'beacon-warm'; b.name = 'beacon-warm-registered';
+  try { register?.(b.material); } catch { /* the world's scan registers it in play */ }
+  return [a, b];
+}
+
 export class Machine {
   constructor(ctx, manager, opts) {
     /** The per-frame doubles (`MachineScalars`): FIRST, so every setter below lands in it. */
@@ -2770,11 +2794,7 @@ export class Machine {
     }
     const h = Math.max(4, this.height * 1.4);
     const geo = new THREE.CylinderGeometry(0.09, 0.16, h, 8, 1, true);
-    const mat = new THREE.MeshBasicMaterial({
-      color: VFX_COLORS.beacon, transparent: true, opacity: 0.35,
-      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
-      side: THREE.DoubleSide,
-    });
+    const mat = beaconMaterial();
     const beam = new THREE.Mesh(geo, mat);
     beam.position.set(this.position.x, this.position.y + h / 2, this.position.z);
     beam.userData.machine = this;

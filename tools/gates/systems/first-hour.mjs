@@ -301,7 +301,9 @@ async function shot(page, name) {
 
 /** Presented-frame intervals while playing with the loading sheet closed (TECH 9.1's hitch lines); screenshots apart. */
 function installHitch() {
-  const H = (window.__hitch = { n: 0, max: 0, over33: 0, over50: 0, pause: 0, skip: false, last: 0, was: false, marks: [] });
+  // (M2 exit, area E) `ms` the seconds in play, `long` each frame over 33 ms: its rAF time, epoch ms, length and the beat the
+  // runner was driving (window.__hitchBeat, set as each beat's drive begins)
+  const H = (window.__hitch = { n: 0, ms: 0, max: 0, over33: 0, over50: 0, pause: 0, skip: false, last: 0, was: false, marks: [], long: [] });
   window.__hitchMark = (tag) => H.marks.push({ tag, n: H.n, over33: H.over33, over50: H.over50, max: H.max });
   // (M3 fix wave, HR8 "never under 25") her hp on every presented frame in play, not only at the beats: the leg's lowest
   // and when, the lowest since the beat before (`beatMin`, reset by the runner as each beat's drive begins), frames under 25
@@ -315,9 +317,10 @@ function installHitch() {
       if (hp < HP.beatMin) HP.beatMin = hp;
       if (hp < 25) HP.under25++;
     }
+    if (playing && !H.at0) H.at0 = Date.now();
     if (H.last && playing && H.was) {
       const d = t - H.last;
-      if (H.pause || H.skip) { if (!H.pause) H.skip = false; } else { H.n++; if (d > H.max) H.max = d; if (d > 33.4) H.over33++; if (d > 50) H.over50++; }
+      if (H.pause || H.skip) { if (!H.pause) H.skip = false; } else { H.n++; H.ms += d; if (d > H.max) H.max = d; if (d > 33.4) { H.over33++; if (H.long.length < 200) H.long.push({ t: +(t / 1000).toFixed(2), at: Date.now(), ms: +d.toFixed(1), beat: window.__hitchBeat ?? null }); } if (d > 50) H.over50++; }
     }
     H.was = playing; H.last = t; requestAnimationFrame(tick);
   };
@@ -566,9 +569,21 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
       if (await page.evaluate(() => !!window.__CTX__.quests['the-scar'].report().reached.includes('plumb-2'))) { out.ok = true; break; }
       const st = await page.evaluate(where);
       if (st.dead || st.state === 'dead') { out.ok = false; out.why = 'died'; break; }
-      if (T() > maxS) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd)`; break; }
-      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 16 } });
-      out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
+      if (T() > maxS + 150 * (out.rests || []).length) { out.ok = false; out.why = `not toppled in ${maxS} s (${out.waits.length} waits for the herd, ${(out.rests || []).length} rests)`; break; }
+      // (M2 exit, area E, HR8) low with less than a drink in the gourd: she leaves the terrace for her cistern's Brazier,
+      // rests (restIfLow: the gourd fills) and comes back, as a player does, up to twice. At 3fe85a9 chained run 5 the
+      // terrace Plumb kept 5-15 m from her and its Sightline took 5 hp every 5 s with the gourd dry (21 after the first
+      // drink); she fought on at 2 hp and died ('plumb-2', the chain stopped)
+      const gourd = st.hp != null && st.hp < 35 ? (await page.evaluate(SH.probe)).gourd ?? 0 : null;
+      if (gourd != null && gourd < 25 && (out.rests || []).length < 2) {
+        const r = await restIfLow(page, K).catch((e) => ({ error: String(e).slice(0, 160) }));
+        (out.rests ||= []).push({ t: T(), hp: st.hp, gourd, ...(r || {}) });
+        await page.evaluate(herdSafeSrc);
+        continue;
+      }
+      const f = await SH.fight(page, K, 'plumb', 'vial', () => 'plumb-2', { stand: 14, maxS: Math.max(20, Math.min(150, maxS - T())), tolDeg: 0.08, reach: 220, threat: { kind: 'tiller', r: 16 }, breakOffHp: 35 });
+      out.steps.push({ t: T(), ok: f.ok, why: f.why ?? null, fired: f.fired, brokeOff: f.brokeOff ?? null, scans: (f.scans || []).length, lastScan: f.ditchScans?.at(-1) ?? f.scans?.at(-1) ?? null });
+      if (f.brokeOff != null) continue;   // under 35 with the gourd low: the rest above
       if (f.ok) { out.ok = true; break; }
       if (f.why === 'died') { out.ok = false; out.why = 'died'; break; }
       if (f.threat) {
@@ -578,31 +593,46 @@ async function driveTopple(page, K, { maxS = 420 } = {}) {
         // 22 m sprint from a Tiller at 7.8 m was not enough: it came on and the herd took 100 hp in 13 s (dead at plumb-2)
         threats++;
         const th = f.threat;
+        // (M2 exit, area E) the place she waits is clear of every Tiller that stands alert or attacks (22 m) and of every live
+        // Plumb (35 m, its Sightline's reach): at ae888fc chained run 4 the first 'beyond' point stood 10.3 m from a Tiller
+        // that stayed alert and 9-14 m from the terrace Plumb; she walked back to it four times, waited 25 s each, and the
+        // Sightline took her 99 -> 0 (5 hp every 5 s) between drinks. The first open point of the old order is kept as the last resort
         const pt = await page.evaluate((tx, tz) => {
           const C = window.__CTX__, P = C.player.position;
           const blocked = (x, z) => !!C.nav?.blockedAt?.(x, z);
-          const herd = (C.machines?.list || []).find((m) => m && m.kind === 'tiller' && m.alive !== false && !m._disposed && m.territory);
+          const live = (C.machines?.list || []).filter((m) => m && m.alive !== false && !m._disposed && m.position);
+          const hot = live.filter((m) => m.kind === 'tiller' && (m.state === 'alert' || m.state === 'attack'));
+          const plumbs = live.filter((m) => m.kind === 'plumb');
+          const clear = (x, z) => hot.every((m) => Math.hypot(m.position.x - x, m.position.z - z) >= 22) && plumbs.every((m) => Math.hypot(m.position.x - x, m.position.z - z) >= 35);
+          const cands = [];
+          const herd = live.find((m) => m.kind === 'tiller' && m.territory);
           if (herd) {
             const tr = herd.territory, R = tr.r + (herd.ai?.engage?.cfg?.leash ?? 150) + 18;
             if (R < 140) {
               const base = Math.atan2(P.x - tr.x, P.z - tr.z);
-              for (const off of [0, 20, -20, 40, -40, 60, -60]) { const a = base + off * Math.PI / 180, x = tr.x + Math.sin(a) * R, z = tr.z + Math.cos(a) * R; if (!blocked(x, z)) return { x, z, R: +R.toFixed(1), off, beyond: true }; }
+              for (const r of [R, R + 15]) for (const off of [0, 20, -20, 40, -40, 60, -60, 80, -80, 100, -100]) { const a = base + off * Math.PI / 180; cands.push({ x: tr.x + Math.sin(a) * r, z: tr.z + Math.cos(a) * r, R: +r.toFixed(1), off, beyond: true }); }
             }
           }
           const base = Math.atan2(P.x - tx, P.z - tz);
-          for (const off of [0, 25, -25, 50, -50, 80, -80]) { const a = base + off * Math.PI / 180, x = tx + Math.sin(a) * 30, z = tz + Math.cos(a) * 30; if (!blocked(x, z)) return { x, z, off, d: 30 }; }
-          return null;
+          for (const d of [30, 42]) for (const off of [0, 25, -25, 50, -50, 80, -80, 110, -110]) { const a = base + off * Math.PI / 180; cands.push({ x: tx + Math.sin(a) * d, z: tz + Math.cos(a) * d, off, d }); }
+          const open = cands.filter((q) => !blocked(q.x, q.z));
+          const best = open.find((q) => clear(q.x, q.z));
+          return best ? { ...best, clear: true } : open[0] ? { ...open[0], clear: false } : null;
         }, th.x, th.z);
         const w = pt ? await walkPath(page, pt, 3, 35) : { ok: false, why: 'no open ground' };
         const tw = Date.now();
-        let calm = false;
+        let calm = false, hurt = false;
+        const hp0 = (await page.evaluate(where)).hp;
         while (Date.now() - tw < 25000) {
           const near = await page.evaluate(() => { const C = window.__CTX__, P = C.player.position; return (C.machines?.list || []).filter((m) => m && m.kind === 'tiller' && m.alive !== false && !m._disposed && (m.state === 'alert' || m.state === 'attack') && Math.hypot(m.position.x - P.x, m.position.z - P.z) < 25).length; });
           if (!near) { calm = true; break; }
-          if ((await page.evaluate(where)).dead) break;
+          const now = await page.evaluate(where);
+          if (now.dead) break;
+          // hurt where she waits (a Sightline, a shove): she does not stand in it, she goes again from the top
+          if (hp0 != null && now.hp != null && now.hp <= hp0 - 8) { hurt = true; break; }
           await sleep(1000);
         }
-        out.moves.push({ t: T(), threat: th, to: pt ? { beyond: !!pt.beyond, R: pt.R ?? null, off: pt.off } : null, ok: w.ok, why: w.why ?? null, calm, waitedS: +((Date.now() - tw) / 1000).toFixed(1), hp: (await page.evaluate(where)).hp });
+        out.moves.push({ t: T(), threat: th, to: pt ? { beyond: !!pt.beyond, R: pt.R ?? null, off: pt.off, clear: pt.clear } : null, ok: w.ok, why: w.why ?? null, calm, hurt, waitedS: +((Date.now() - tw) / 1000).toFixed(1), hp: (await page.evaluate(where)).hp });
         if ((await page.evaluate(where)).hp < 55) await SH.drink(page, K, 92);
         continue;
       }
@@ -945,7 +975,7 @@ async function volley(page, K, stage, maxS = 8) {
 async function driveScreed(page, K, stage, maxS = 120) {
   const t0 = Date.now(), log = [];
   const T = () => +((Date.now() - t0) / 1000).toFixed(1);
-  let shots = 0, lastPhase = null, sidestepS = -1, approach = null;
+  let shots = 0, lastPhase = null, lastMode = null, sidestepS = -1, approach = null;
   const standLog = [];
   const note = (S, extra = {}) => log.push({ t: T(), phase: S.phase, mode: S.mode, d: +S.d.toFixed(1), ahead: +S.ahead.toFixed(1), side: +S.side.toFixed(1), rS: +S.rS.toFixed(1), bS: +S.bS.toFixed(1), rP: +S.rP.toFixed(1), bP: +S.bP.toFixed(1), between: S.between, hp: S.hp, cuts: S.cuts, stalls: S.stalls, seals: S.seals, ...extra });
   if (stage !== 'stall') await SH.readyBow(page, K); else { await K.tap('Digit1'); await sleep(200); }
@@ -971,7 +1001,7 @@ async function driveScreed(page, K, stage, maxS = 120) {
     if (T() > maxS) { note(S, { timeout: true }); return { ok: false, why: `${stage}: not done in ${maxS} s (phase ${S.phase}, seals ${JSON.stringify(S.seals)}, cuts ${S.cuts})`, shots, log: log.slice(-40), approach, stands: standLog.slice(-20) }; }
     const st = await page.evaluate(where);
     if (st.dead || st.state === 'dead') return { ok: false, why: 'died', log: log.slice(-40), approach };
-    if (S.phase !== lastPhase) { note(S); lastPhase = S.phase; }
+    if (S.phase !== lastPhase || S.mode !== lastMode) { note(S); lastPhase = S.phase; lastMode = S.mode; }
     const C12 = S.c12, rMid = (C12.rIn + C12.rOut) / 2;
     if (stage === 'stall') {
       // out of the village and into corridor 1/2 by its east mouth, then along it to 4 deg past the Screed's bearing
@@ -987,6 +1017,21 @@ async function driveScreed(page, K, stage, maxS = 120) {
       }
       if (S.phase === 'windup' || S.phase === 'charge' || S.phase === 'stall') { await sleep(120); continue; }
       const want = S.bS + 4;
+      // (M2 exit, area E) from 52 m off (it comes at 45: ScreedFight engageM) she runs the rest of the way to her stand in
+      // steps of up to 14 deg (a chord that keeps to the corridor), not 6 deg with a stop at each: it is a race. In the three chains at 621a2c7 that passed it wound
+      // up at 10.5 m, a moment short of wall-1 (chargeM 7-24 m, cone 0.6 rad); in chained run 4 it reached wall-1 first,
+      // walked through all three walls with no charge (0 stalls) and the fight went fail-soft. Her stand is behind wall-1,
+      // so a charge that starts while she runs still meets the wall.
+      // She runs it 1.2 m off wall-2 (the corridor's inner side), not down its middle: further from the Screed its cone
+      // takes her about 1.5 deg sooner and the arc is shorter (f7b9471 chained run 2: at 46.2 s she stood 0.63 rad off its
+      // heading at 11.6 m, 0.03 rad outside the cone, and it walked into wall-1 a moment later; run 1 made it by 0.01 rad)
+      const rRun = C12.rIn + 1.2;
+      const inBand = S.d >= 7.5 && S.d <= 23 && Math.abs(Math.atan2(S.side, S.ahead)) <= 0.55;
+      if ((S.mode === 'come' || S.d < 52) && S.phase === 'walk' && !inBand && S.bP - want > 2.5) {
+        const w = await walkTo(page, await page.evaluate(polarNW, Math.max(want, S.bP - 14), rRun), 2.5, 5);
+        note(await page.evaluate(screedNow), { run: true, ok: w.ok, why: w.why ?? null });
+        continue;
+      }
       if (S.bP - want > 2.5) {
         const b = Math.max(want, S.bP - 6);
         await walkTo(page, await page.evaluate(polarNW, b, rMid), 1.6, 3);
@@ -1122,15 +1167,19 @@ async function driveRest(page, K) {
  * gourds, BIBLE 17) and drinks to full. At d25575a chained run 3 the slice ended at 11 hp with a dry gourd, she set out
  * for the Holds like that and the terrace Plumb's Sightline killed her on the way to Oro.
  */
-async function restIfLow(page, K) {
+// (M2 exit, area E) `gourdBelow`: she also rests when the drink leaves less than that in the gourd. At 96daf23 chained
+// run 5 leg 2 began at 46 hp with 47 in the gourd: the drink took her to 93 and emptied it, and she went up to the
+// terrace topple with a dry gourd (the Sightline and the herd took 112 hp; dead at 'plumb-2'). Leg 2 asks for 30
+// (M2 exit, area E, HR8) `walkS`: the seconds a try of the walk to the cistern may take (leg 3 starts 500 m from it)
+async function restIfLow(page, K, { gourdBelow = 0, walkS = 60 } = {}) {
   const s0 = await page.evaluate(SH.probe);
-  if (s0.hp == null || s0.hp >= 60) return null;
+  if (s0.hp == null || (s0.hp >= 60 && (s0.gourd ?? 0) >= gourdBelow)) return null;
   const out = { hp0: s0.hp, gourd0: s0.gourd ?? null, hour0: await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3)) };
-  out.drink0 = await SH.drink(page, K, 98);
-  if ((await page.evaluate(SH.probe)).hp >= 60) return out;
+  if (s0.hp < 98) out.drink0 = await SH.drink(page, K, 98);
+  { const s1 = await page.evaluate(SH.probe); if (s1.hp >= 60 && (s1.gourd ?? 0) >= gourdBelow) return out; }
   const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('cistern'); return b ? { x: b.obj.position.x, z: b.obj.position.z } : null; });
   if (!A) return { ...out, why: 'no cistern Brazier' };
-  const w = await walkSure(page, A, 1.3, 60, null);
+  const w = await walkSure(page, A, 1.3, walkS, null);
   out.walk = { ok: w.ok, why: w.why ?? null, tries: w.tries };
   await sleep(300);
   await SH.holdE(page, K, 600);
@@ -1245,6 +1294,7 @@ async function runLeg(leg, startRec = null) {
     const K = SH.keys(page);
     const rec = await boot(page, leg, startRec);
     const tPlay = Date.now();
+    await page.evaluate(() => { window.__hitchBeat = 'continued'; });
     const T = () => +((Date.now() - tPlay) / 1000).toFixed(1);
     // the crossings the regions seam fires from here on
     // what hurt her, and when (each 'player-damage' with its source's kind): a beat's numbers carry its share
@@ -1253,7 +1303,7 @@ async function runLeg(leg, startRec = null) {
     L.start = { ...(await page.evaluate(where)), hour: await page.evaluate(() => window.__CTX__.environment.time), regions: await page.evaluate(() => window.__CTX__.engine.regionStatus?.() ?? null), fixtureAt: rec.position, shot: await shot(page, `l${leg}-00-continued`) };
     L.rows.continued = { pass: Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z) < 0.5 && Math.abs(L.start.hour - rec.hour) < 0.05,
       dxz: +Math.hypot(L.start.x - rec.position.x, L.start.z - rec.position.z).toFixed(3), hour: +L.start.hour.toFixed(3) };
-    if (leg === 2 && !(FROM && !startRec)) L.prep = await restIfLow(page, K);
+    if (leg === 2 && !(FROM && !startRec)) L.prep = await restIfLow(page, K, { gourdBelow: 30 });
     const stages = beatsOf(leg);
     const qid = leg === 2 ? SCAR_ID : TRUE_GROUND_ID;
     let k = 0, driveOn = true;
@@ -1263,12 +1313,19 @@ async function runLeg(leg, startRec = null) {
       if ((Date.now() - tC) / 1000 > LEG_BUDGET_S) { L.beats.push({ leg, beat: st.id, ok: false, why: `not run: the leg's ${LEG_BUDGET_S} s cap` }); continue; }
       const bt0 = T();
       const played = {};
-      await page.evaluate(() => { if (window.__hp) window.__hp.beatMin = Infinity; });
+      await page.evaluate((id) => { if (window.__hp) window.__hp.beatMin = Infinity; window.__hitchBeat = id; }, st.id);
       // (M3 fix wave, HR8) a drink before a beat under 60 hp, as a player tops up between fights (SH.drink: Q held, at once
       // null on a dry gourd). At e068546 chained run 1 she came to the Screed at 27 hp from the walk to Oro (a Tiller's
       // trample and hopper burst) and started leg 3 at 27: the Pegs at Benchmark 1 took her to 11, 1135 frames under 25
       // (not inside the fight: seal-1 and seal-2 start in the Screed's stall, where driveScreed drinks under 50 itself)
       if (driveOn && (leg === 2 || leg === 3) && st.id !== 'seal-1' && st.id !== 'seal-2' && (await page.evaluate(where)).hp < 60) played.topUp = await SH.drink(page, K, 98, 4000).catch((e) => ({ error: String(e).slice(0, 120) }));
+      // (M2 exit, area E, HR8) leg 3, still under 60 before the walk to Benchmark 1 or its survey (the drink above answered
+      // null on a dry gourd): she rests at her cistern's Brazier first (restIfLow), as leg 2 does. No other Brazier is open
+      // there (Ninewalls' is locked until 'rest-noon'); no medicinal plant grows above 26 m (src/items/gather.js), and the
+      // Holds stand at 95; F casts a pot once Oro's are hers, not the Vigour Draught. At c9f130e chained run 2 leg 3 began
+      // at 40 hp with a dry gourd and the Pegs at Benchmark 1 took her to 23; at 468ce7e a probe of leg 3 at 40 hp and a dry
+      // gourd found no plant within 90 m and fell to 22
+      if (driveOn && leg === 3 && (st.id === 'scar' || st.id === 'survey')) played.care = await restIfLow(page, K, { walkS: 150 }).catch((e) => ({ error: String(e).slice(0, 160) }));
       if (!driveOn) played.notDriven = 'a beat before it did not pass';
       else if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
@@ -1323,7 +1380,8 @@ async function runLeg(leg, startRec = null) {
       // a beat that did not pass stops the leg's driving: the beats after it wait on it (each still probed and named)
       if (!b.ok) driveOn = false;
     }
-    L.hitch = await page.evaluate(() => { const H = window.__hitch; return { frames: H.n, maxMs: +H.max.toFixed(1), over33: H.over33, over50: H.over50 }; });
+    L.hitch = await page.evaluate(() => { const H = window.__hitch; return { frames: H.n, s: +(H.ms / 1000).toFixed(1), maxMs: +H.max.toFixed(1), over33: H.over33, over50: H.over50, long: H.long, at0: H.at0 || null }; });
+    L.hitch.long = L.hitch.long.map((q) => ({ ...q, tPlay: +((q.at - (L.hitch.at0 || tPlay)) / 1000).toFixed(1) }));
     // (M3 fix wave) HR8 between the beats: her lowest hp on any frame of the leg in play (window.__hp, installHitch)
     L.hp = await page.evaluate(() => { const P = window.__hp; return P ? { frames: P.n, min: Number.isFinite(P.min) ? Math.round(P.min) : null, minT: P.minT, under25Frames: P.under25 } : null; }).catch(() => null);
     // (M3 fix wave) the late audio bank's log from real play (GameAudio.lateAudit: every late set's decode and first ask,
@@ -1349,6 +1407,22 @@ async function runLeg(leg, startRec = null) {
   return L;
 }
 const beatsOf = (leg) => (leg === 2 ? SCAR_STAGES : TRUE_GROUND_STAGES);
+
+/** (M2 exit, area E) one leg's hitch totals in one shape: legs 2 and 3 from their page, leg 1 from the slice's segments. */
+function hitchSum(L) {
+  const H = L.hitch;
+  if (!H) return null;
+  if (L.leg === 1) {
+    const T = H.total;
+    if (!T) return null;
+    // whole: the slice took a segment for every page document it played in (new-game, to-sight once it reached sight, run)
+    const tags = (H.segments || []).map((x) => x.tag);
+    const whole = tags.includes('new-game') && tags.includes('run') && (tags.includes('to-sight') || !(L.reached || []).includes('sight'));
+    return { frames: T.frames, s: T.s, over33: T.over33, over50: T.over50, maxMs: T.maxMs, segs: tags, whole,
+      long: (T.long || []).map((q) => ({ ms: q.ms, tPlay: q.tPlay ?? null, beat: q.stage ?? null, seg: q.seg })) };
+  }
+  return { frames: H.frames, s: H.s ?? null, over33: H.over33, over50: H.over50, maxMs: H.maxMs, whole: true, long: (H.long || []).map((q) => ({ ms: q.ms, tPlay: q.tPlay ?? null, beat: q.beat })) };
+}
 
 /* ------------------------------------------------------------------ leg 1: the slice, as its own run */
 
@@ -1403,10 +1477,25 @@ try {
   const want = (LEGS.includes(1) ? 14 : 0) + (LEGS.includes(2) ? SCAR_STAGES.length : 0) + (LEGS.includes(3) ? TRUE_GROUND_STAGES.length : 0);
   report.beats = `${all.filter((b) => b.ok).length}/${want}`;
   report.chromeSeconds = report.legs.reduce((s, l) => s + (l.chromeSeconds || 0), 0);
+  // (M2 exit, area E) C5 whole: each leg's hitch totals and every frame over 33 ms with its time in the leg's play and its
+  // beat (leg 1 from every page document of the slice run, slice-hour.mjs hitch.total), then the run's
+  for (const l of report.legs) l.hitchSum = hitchSum(l);
+  const legsH = report.legs.map((l) => l.hitchSum).filter(Boolean);
+  if (legsH.length) {
+    const s = legsH.reduce((a, h) => a + h.s, 0), over33 = legsH.reduce((a, h) => a + h.over33, 0), over50 = legsH.reduce((a, h) => a + h.over50, 0);
+    report.hitch = { bar: 'C5 (TECH 9.1): 0 frames over 50 ms, at most 3 over 33 ms per 10 minutes of play', legs: legsH.length, frames: legsH.reduce((a, h) => a + h.frames, 0),
+      s: +s.toFixed(1), min: +(s / 60).toFixed(2), over33, over50, maxMs: Math.max(0, ...legsH.map((h) => h.maxMs)), over33Per10Min: s ? +(over33 * 600 / s).toFixed(2) : null,
+      long: report.legs.flatMap((l) => (l.hitchSum?.long || []).map((q) => ({ leg: l.leg, ...q }))) };
+    // graded only on a whole run: every leg asked for played (a chain that stopped is not C5's 10 minutes)
+    report.hitch.complete = legsH.length === LEGS.length && legsH.every((h) => h.whole !== false);
+    report.hitch.pass = report.hitch.complete && over50 === 0 && s > 0 && over33 * 600 / s <= 3;
+  }
   const lows = report.legs.map((l) => l.hp?.min).filter((v) => v != null);
   report.hr8 = { bar: 'hp never under 25 on any frame in play (HR8)', lowest: lows.length ? Math.min(...lows) : null, pass: lows.length === report.legs.length && lows.every((v) => v >= 25) };
   writeFileSync(path.join(runDir, 'report.json'), JSON.stringify(report, null, 2));
   log(`report: ${path.join(runDir, 'report.json')}`);
   for (const l of report.legs) log(`leg ${l.leg}: ${l.passed}${l.error ? ` (error: ${l.error.slice(0, 120)})` : ''}; lowest hp ${l.hp?.min ?? '?'} (${l.hp?.under25Frames ?? '?'} frames under 25); late bank ${l.lateAudit ? `${l.lateAudit.state}, ${l.lateAudit.asked} asked, ${(l.lateAudit.missed || []).length} missed` : 'not read'}`);
+  for (const l of report.legs) if (l.hitchSum) log(`leg ${l.leg} hitch: ${l.hitchSum.frames} frames in ${l.hitchSum.s} s, ${l.hitchSum.over33} over 33 ms, ${l.hitchSum.over50} over 50 ms, max ${l.hitchSum.maxMs} ms${l.hitchSum.whole === false ? ' (NOT WHOLE: a document of the slice was not taken)' : ''}${l.hitchSum.long.length ? `: ${l.hitchSum.long.map((q) => `${q.ms} ms at ${q.tPlay ?? '?'} s (${q.beat ?? '?'})`).join('; ')}` : ''}`);
+  if (report.hitch) log(`hitch, the whole run (C5): ${report.hitch.frames} frames in ${report.hitch.min} min, ${report.hitch.over33} over 33 ms (${report.hitch.over33Per10Min} per 10 min), ${report.hitch.over50} over 50 ms, max ${report.hitch.maxMs} ms: ${!report.hitch.complete ? `not graded (${legsH.length} of ${LEGS.length} legs played)` : report.hitch.pass ? 'PASS' : 'FAIL'}`);
   log(`beats ${report.beats}; ${report.chromeSeconds} s of Chrome; HR8 lowest hp ${report.hr8.lowest} (${report.hr8.pass ? 'PASS' : 'FAIL'})`);
 }

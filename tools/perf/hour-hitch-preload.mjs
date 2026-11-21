@@ -18,6 +18,15 @@
  *
  * A-late-programs (C5): every program linked while she plays, and every first use that waited over 5 ms, after the
  * boot's warm-up, named by the material build that made it; `run.verdict` (and a line at exit) is FAIL when there is any.
+ * Each entry is sent to Node as it is named (within a frame or two), so a page document that is reloaded (slice-hour's
+ * save rows: wake to sight is one document, reloaded at save-t1) keeps its entries; until 52b0f59 they were read only
+ * at the browser's close, from the last document, and one MeshBasicMaterial linked at the Peg line (28 ms, exit run 4
+ * run 3) was never listed.
+ * New textures: on a frame that made textures while she plays, the textures that had their first upload are named in
+ * an idle moment after it (`texNew` on the frame's record when it was a long one; up to 40: name, size, format, whose).
+ * WHOLE (C5, measured whole): `node tools/perf/hour-hitch-preload.mjs --whole <HH_OUT>` grades every frame the preload
+ * recorded while she played (every document, every leg), not the runner's segments: over 50 and over 33 ms, the tool's
+ * own screenshot frames (__hitch pause/skip) and HH_EXCLUDE stages left out and listed.
  * `node tools/perf/hour-hitch-preload.mjs --verdict <HH_OUT>` prints that verdict again (every file in the dir: a child
  * run's too) and exits 1 on FAIL. For first-hour's leg 1 (a child process) pass the preload on as well:
  * NODE_OPTIONS="--import $PWD/tools/perf/hour-hitch-preload.mjs".
@@ -58,13 +67,13 @@ const recorder = (over) => {
   // getProgramInfoLog once per program, on its first use) waited over LATE_USE_MS while she plays, after the boot's
   // warm-up. Each is named by the build that made it (Material.prototype.onBuild, patched once the game's three is
   // reachable: the object, its two parents, the material's type and name, and the program's key).
-  R.playing = false; R.late = []; R.latePending = []; R.built = new WeakMap(); R.used = new WeakSet(); R.drawObj = null; R.drawMat = null; R.drawDepth = false;
+  R.playing = false; R.late = []; R.lateSent = 0; R.latePending = []; R.built = new WeakMap(); R.used = new WeakSet(); R.drawObj = null; R.drawMat = null; R.drawDepth = false;
   const LATE_USE_MS = 5;
   const lateNote = (kind, glp, ms) => {
     if (!R.playing || R.late.length >= 200) return;
     const b = R.built.get(glp) || R.nameDraw?.() || null;
     R.latePending.push([R.late.length, glp]);
-    R.late.push({ kind, t: Math.round(performance.now()), ms: Math.round(ms * 10) / 10, who: b?.who ?? null, mat: b?.mat ?? null, key: b?.key ?? null,
+    R.late.push({ kind, t: Math.round(performance.now()), ms: Math.round(ms * 10) / 10, who: b?.who ?? null, mat: b?.mat ?? null, key: b?.key ?? null, detail: b?.detail ?? null,
       at: (() => { const p = window.__CTX__?.player?.position; return p ? { x: Math.round(p.x), z: Math.round(p.z) } : null; })(),
       hour: window.__CTX__?.environment?.time != null ? +window.__CTX__.environment.time.toFixed(2) : null });
   };
@@ -96,8 +105,16 @@ const recorder = (over) => {
     if (!m) return;
     const own = (o, k) => { let p = Object.getPrototypeOf(o); while (p && !Object.prototype.hasOwnProperty.call(p, k)) p = Object.getPrototypeOf(p); return p; };
     const nm = (o) => (o ? (o.name || o.type) : '');
+    // C5: what the drawn thing is, when its names say nothing (a nameless Mesh in the scene): its geometry, its
+    // material's colour and flags, its place and size
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    const detail = (obj, mat) => { try { return { geo: obj?.geometry ? `${obj.geometry.type}${obj.geometry.parameters ? JSON.stringify(obj.geometry.parameters).slice(0, 120) : ''}` : null,
+      color: mat?.color?.getHexString?.() ?? null, opacity: mat?.opacity, side: mat?.side, transparent: mat?.transparent, blending: mat?.blending, depthWrite: mat?.depthWrite,
+      fog: mat?.fog, map: !!mat?.map, renderOrder: obj?.renderOrder, at: obj?.matrixWorld ? [r3(obj.matrixWorld.elements[12]), r3(obj.matrixWorld.elements[13]), r3(obj.matrixWorld.elements[14])] : null,
+      scale: obj?.scale ? [r3(obj.scale.x), r3(obj.scale.y), r3(obj.scale.z)] : null, ud: obj?.userData ? Object.keys(obj.userData).slice(0, 8) : null, matUd: mat?.userData ? Object.keys(mat.userData).slice(0, 8) : null,
+      kids: obj?.children?.length ?? 0, sibs: obj?.parent ? obj.parent.children.length : null }; } catch { return null; } };
     const name = (obj, mat, depth) => ({ who: obj ? `${nm(obj.parent?.parent)}/${nm(obj.parent)}/${nm(obj)}` : null,
-      mat: mat ? `${depth ? 'shadow:' : ''}${mat.type}${mat.name ? ':' + mat.name : ''}` : null });
+      mat: mat ? `${depth ? 'shadow:' : ''}${mat.type}${mat.name ? ':' + mat.name : ''}` : null, detail: detail(obj, mat) });
     const Mp = own(m, 'onBeforeRender'), Op = own(C.scene, 'onBeforeShadow') || own(C.scene, 'onBeforeRender');
     if (Mp) { const f = Mp.onBeforeRender; Mp.onBeforeRender = function (renderer, scene, camera, geometry, object, group) { R.drawObj = object; R.drawMat = this; R.drawDepth = false; return f.call(this, renderer, scene, camera, geometry, object, group); }; }
     if (Op) {
@@ -149,6 +166,54 @@ const recorder = (over) => {
     try { window.__hhSend?.(JSON.stringify(ready)); } catch { /* */ }
   };
   setInterval(flush, 500);
+  // C5 (the fade's uploads): every texture a drawn material holds, read in an idle moment (never inside a frame)
+  const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap',
+    'lightMap', 'envMap', 'specularMap', 'clearcoatMap', 'clearcoatNormalMap', 'sheenColorMap', 'transmissionMap', 'thicknessMap', 'gradientMap', 'matcap'];
+  const texOf = (each) => {
+    const C = window.__CTX__, E = C?.engine, P = E?.renderer?.properties;
+    if (!P) return;
+    const nm = (o) => (o ? (o.name || o.type) : '');
+    const seenMat = new Set();
+    const visit = (o) => {
+      const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      for (const m of ms) {
+        if (seenMat.has(m)) continue; seenMat.add(m);
+        const ts = [];
+        for (const k of TEX_SLOTS) if (m[k]?.isTexture) ts.push([k, m[k]]);
+        if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k]?.value; if (v?.isTexture) ts.push([k, v]); }
+        for (const [k, t] of ts) {
+          const pr = P.get(t);
+          if (!pr?.__webglInit && !pr?.__webglTexture) continue;
+          each(t, () => `${nm(o.parent?.parent)}/${nm(o.parent)}/${nm(o)} ${m.type}${m.name ? ':' + m.name : ''}.${k}`);
+        }
+      }
+    };
+    try { C.scene?.traverse?.(visit); } catch { /* */ }
+  };
+  const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 300 }) : setTimeout(f, 50));
+  R.texSeed = () => { R.texSeen = new WeakSet(); idle(() => texOf((t) => R.texSeen.add(t))); };
+  R.texScan = (t0) => {
+    if (R.texScanBusy) return;
+    R.texScanBusy = true;
+    idle(() => {
+      R.texScanBusy = false;
+      const found = [];
+      texOf((t, who) => {
+        if (R.texSeen.has(t)) return;
+        R.texSeen.add(t);
+        if (found.length >= 40) return;
+        const im = t.image, w = im?.width ?? im?.data?.width ?? t.mipmaps?.[0]?.width ?? null, h = im?.height ?? im?.data?.height ?? t.mipmaps?.[0]?.height ?? null;
+        found.push({ name: t.name || null, w, h, fmt: t.format, compressed: !!t.isCompressedTexture, canvas: !!t.isCanvasTexture || (typeof HTMLCanvasElement !== 'undefined' && im instanceof HTMLCanvasElement),
+          mips: t.generateMipmaps ? 'gen' : (t.mipmaps?.length ?? 0), who: who() });
+      });
+      if (!found.length) return;
+      // the frame it belongs to: the long frame recorded at or just before t0 (still pending: flushed after 400 ms)
+      const f = pending.filter((x) => x.t <= t0 + 1).slice(-1)[0];
+      if (f) f.texNew = found;
+      (R.texLog ||= []).push({ t: Math.round(t0), n: found.length, tex: found });
+      try { window.__hhTex?.(JSON.stringify({ t: Math.round(t0), tex: found })); } catch { /* */ }
+    });
+  };
   const tick = (t) => {
     const C = window.__CTX__, E = C?.engine;
     if (!R.sys && window.__GAME__) instrument();
@@ -167,12 +232,20 @@ const recorder = (over) => {
         for (const o of all) { if (o === q) continue; const b = (o.cacheKey || '').split(','); if (b[0] !== a[0]) continue; let d = 0; for (let j = 0; j < Math.max(a.length, b.length); j++) if (a[j] !== b[j]) d++; if (d < bd) { bd = d; best = b; } }
         e.name = q.name; e.kind0 = a[0]; e.fields = a.length;
         e.diff = best ? a.map((v, j) => (v !== best[j] ? `${j}:${(best[j] ?? '').slice(0, 40)}->${(v ?? '').slice(0, 40)}` : null)).filter(Boolean).slice(0, 12) : null;
-        e.cacheKey = (q.cacheKey || '').length > 400 ? `${q.cacheKey.slice(0, 400)}...` : q.cacheKey;
+        e.cacheKey = (q.cacheKey || '').length > 400 ? `${q.cacheKey.slice(0, 300)}...${q.cacheKey.slice(-100)}` : q.cacheKey;
       }
     }
+    // C5: each late entry goes to Node once it is named (its frame's tick), so a reload does not lose it
+    if (R.late.length > R.lateSent && !R.latePending.length) {
+      try { window.__hhLate?.(JSON.stringify(R.late.slice(R.lateSent))); R.lateSent = R.late.length; } catch { /* */ }
+    }
+
     const g = snapGl();
     const info = E?.renderer?.info, cur = info ? { p: info.programs?.length ?? 0, g: info.memory.geometries, x: info.memory.textures } : null;
     const heap = performance.memory?.usedJSHeapSize ?? 0;
+    // C5: the textures that had their first upload on a frame that made textures (named in an idle moment after it)
+    if (playing && R.texSeen && cur && prevInfo && cur.x > prevInfo.x) R.texScan(t);
+    if (playing && !R.texSeen && E?.renderer) R.texSeed();
     if (R.last && playing) {
       R.n++;
       const d = t - R.last;
@@ -393,6 +466,9 @@ puppeteer.launch = async (opts) => {
     L.pages++;
     pages.push(page);
     await page.exposeFunction('__hhSend', (json) => { try { L.long.push(...JSON.parse(json)); save(); } catch { /* */ } });
+    // C5: late programs as they are named (every document: a reload keeps them), and the textures new on a frame
+    await page.exposeFunction('__hhLate', (json) => { try { (L.late ||= []).push(...JSON.parse(json)); verdict(); save(); } catch { /* */ } });
+    await page.exposeFunction('__hhTex', (json) => { try { (L.tex ||= []).push(JSON.parse(json)); save(); } catch { /* */ } });
     await page.evaluateOnNewDocument(`(${recorder.toString()})(${OVER});`);
     if (PROFILE) profilePage(page, L).catch((e) => { L.profileError = String(e?.message || e); save(); });
     return page;
@@ -411,7 +487,8 @@ puppeteer.launch = async (opts) => {
         walk: (window.__CTX__?.nav?._walk || []).map((w) => ({ id: w.id, cells: w.open?.length ?? null, paths: w.stats.paths, misses: w.stats.misses, long: w.stats.long || 0, alt: w.stats.alt || 0, landmarks: w.stats.landmarks || null, lmReady: !!w._lm?.ready })) })); } catch { /* */ }
     }
     for (const p of pages) {
-      try { const late = await p.evaluate(() => window.__hh?.late ?? []); L.late = (L.late || []).concat(late); } catch { /* */ }
+      // the entries not yet sent (the live sends hold the rest)
+      try { const late = await p.evaluate(() => (window.__hh?.late ?? []).slice(window.__hh?.lateSent ?? 0)); L.late = (L.late || []).concat(late); } catch { /* */ }
     }
     L.closedAt = new Date().toISOString();
     verdict(); save();
@@ -419,6 +496,57 @@ puppeteer.launch = async (opts) => {
   };
   return browser;
 };
+
+/**
+ * C5 MEASURED WHOLE: `node tools/perf/hour-hitch-preload.mjs --whole <dir> [<dir>...]` grades every frame the preload
+ * recorded while she played, in every document of every leg (a dir is one chained first-hour run: hour-hitch.json and
+ * its child's), against the bar: 0 frames over 50 ms and at most 3 over 33 ms per 10 minutes of play. Left out, and
+ * listed: the runners' own screenshot frames (__hitch pause or skip), and the slice child's staged rows after its run
+ * (its frames once the quest closed: rakers-morning at 'return' with no spine stage left: the site-clock row). The
+ * play time is the runners' own (first-hour.mjs's log lines "N s of play" when a log is given with --log, else the
+ * frames' count at 60 Hz). Exit 1 when any dir fails.
+ */
+async function whole(dirs) {
+  const { readFileSync, readdirSync, existsSync } = await import('node:fs');
+  let fail = false;
+  for (const dir of dirs) {
+    const files = readdirSync(dir).filter((f) => /^hour-hitch(-child-\d+)?\.json$/.test(f)).sort();
+    let over33 = 0, over50 = 0, frames = 0; const list = [], left = [];
+    for (const f of files) {
+      const r = JSON.parse(readFileSync(path.join(dir, f), 'utf8'));
+      const child = /child/.test(f);
+      for (const [li, L] of (r.launches || []).entries()) {
+        frames += L.summary?.frames ?? 0;
+        for (const fr of L.long || []) {
+          if (!(fr.d > 33)) continue;
+          const tool = fr.tool || {}, st = fr.stage || {};
+          const why = tool.pause ? 'tool-pause' : tool.skip ? 'tool-skip'
+            : (child && st['rakers-morning'] === 'return' && !fr.spine) ? 'slice-staged-rows' : null;
+          const e = { file: f, launch: li, d: fr.d, stage: Object.values(st).filter(Boolean).slice(-1)[0] ?? null, spine: fr.spine ?? null,
+            lf: fr.lf, gl: fr.gl, info: fr.info, texNew: fr.texNew ? fr.texNew.length : undefined };
+          if (why) { if (fr.d < 300) left.push({ ...e, why }); continue; }
+          over33++; if (fr.d > 50) over50++;
+          list.push(e);
+        }
+      }
+    }
+    // the play time: the preload's own frame counts (every presented frame while playing), at their real intervals
+    // when the summaries are missing; per 10 minutes of play
+    const minutes = frames / 60 / 60;
+    const per10 = minutes > 0 ? over33 / (minutes / 10) : null;
+    const pass = over50 === 0 && per10 != null && per10 <= 3;
+    if (!pass) fail = true;
+    console.log(`C5 whole ${dir}: ${pass ? 'PASS' : 'FAIL'}: ${over50} over 50 ms, ${over33} over 33 ms in ${minutes.toFixed(1)} min of play (${per10?.toFixed(2)} per 10 min; bar 0 and <= 3)`);
+    for (const e of list) console.log(`   ${e.d} ms ${e.file}#${e.launch} ${e.stage}/${e.spine} lf ${JSON.stringify(e.lf)} info ${JSON.stringify(e.info)}${e.texNew ? ` texNew ${e.texNew}` : ''}`);
+    for (const e of left) console.log(`   (left out: ${e.why}) ${e.d} ms ${e.file}#${e.launch} ${e.stage}/${e.spine}`);
+  }
+  process.exit(fail ? 1 : 0);
+}
+if (process.argv[1] && /hour-hitch-preload\.mjs$/.test(process.argv[1]) && process.argv.includes('--whole')) {
+  said = true;
+  const i = process.argv.indexOf('--whole');
+  await whole(process.argv.slice(i + 1).filter((a) => !a.startsWith('--')));
+}
 
 // `node tools/perf/hour-hitch-preload.mjs --verdict <dir>`: the row read back from <dir>/hour-hitch.json (exit 1 on FAIL)
 if (process.argv[1] && /hour-hitch-preload\.mjs$/.test(process.argv[1]) && process.argv.includes('--verdict')) {

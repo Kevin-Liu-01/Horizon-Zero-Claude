@@ -292,7 +292,7 @@ const DRAW_T = 0.30;
  * so an interrupt is never hidden in the draw's own speed): the draw the player asks for (key 2, B) takes 0.40 s, the top
  * of W7's 0.30-0.40 s; a draw that a strike asked for (a click from holstered: R5, click to the first swing frame
  * 0.25-0.35 s) keeps `DRAW_T`. Chosen as the draw starts (`drawLance`); a strike asked mid-draw does not change it. */
-const DRAW_T_ASK = 0.36;
+const DRAW_T_ASK = 0.46;
 /* M1a weapons fix round 1 (W7): 0.40 -> 0.36. At 0.40 the draw read 0.417 s to the guard (the hand-over's step past the
  * clock: band 0.30-0.40) and swap 1 to 2 0.683 (the bow's stow releases at 0.283, its turn held to W3's 10 deg a step;
  * band 0.45-0.65) */
@@ -359,14 +359,14 @@ const GRAB_HOLD_MAX = 0.10;
 const DRAW_WAIT_MAX = 0.12;
 /** M1a weapons round 2: the most the draw's clock waits for the left fist on the haft at its take (s) */
 const TAKE_WAIT_MAX = 0.10;
-const HOLSTER_T = 0.34;
+const HOLSTER_T = 0.42;
 /* M1a weapons step 2 (hero-anim; the weapons brief's ruling 1 and W7, the smallest change in combat's file): a stow the
  * player asks for (B, a sprint) runs the asked tempo, 0.42 -> 0.34 (W7 300-370 ms); the stow the game starts itself
  * (the 3.6 s guard timer) runs the calm one, `HOLSTER_T_CALM` (W7 500-570 ms) */
 const HOLSTER_T_CALM = 0.50;
 /** The stow an AIM asks for (round 6): the bow waits for the lance's
  *  re-parent, so this is how long the left hand is empty after RMB. */
-const HOLSTER_T_AIM = 0.30;
+const HOLSTER_T_AIM = 0.42;
 /** How long the ready stance persists after the last swing. */
 const READY_HOLD = 3.6;
 /**
@@ -768,6 +768,7 @@ export class Melee {
     s.k = this._phaseEnd > 1e-4 ? Math.min(1, (this._t + cap) / this._phaseEnd) : 0;
     const dur = this.stance === 'draw' ? this._drawDur : (this._holsterDur || HOLSTER_T);
     s.drawK = Math.min(1, (this._drawT + ahead) / dur);
+    s.dur = dur;   // (M2 fix wave 4: the stance's tempo, for the layer's carry: the calm stow turns the haft slower, W3)
     // (M1a weapons round 2: the urgent draw, a strike's, does not wait on the grips: R5's click-to-swing 0.25-0.35 s)
     s.urgent = this.stance === 'draw' && this._drawDur < DRAW_T_ASK;
     return s;

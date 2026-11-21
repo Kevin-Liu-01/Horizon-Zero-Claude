@@ -92,6 +92,28 @@ const _hpPel = new THREE.Vector3(), _hpNeck = new THREE.Vector3();
 const HP_FORE_CLEAR = 0.12;
 const _esP = new THREE.Vector3();   // (M1a round 2: `_elbowSettle`'s last rendered elbow)
 const _lcB1 = new THREE.Vector3(), _lcD1 = new THREE.Vector3(), _lcP0 = new THREE.Vector3(), _lcP1 = new THREE.Vector3(), _lcPm = new THREE.Vector3(), _lcDm = new THREE.Vector3();
+/* M2 fix wave 4: the carry's knots (the stowed socket, the keeper slide's end and `LC_KEYS`), its chord table and scratch */
+const LC_ARC_N = 12;
+const _dvA = new THREE.Vector3(), _dvB = new THREE.Vector3(), _dvC = new THREE.Vector3();
+const _lcKP = Array.from({ length: 6 }, () => new THREE.Vector3()), _lcKD = Array.from({ length: 6 }, () => new THREE.Vector3());
+const _lcKC = new Float64Array(6), _lcArc = new Float64Array(5 * LC_ARC_N + 1);
+const _lcA = new THREE.Vector3(), _lcB = new THREE.Vector3(), _lcAD = new THREE.Vector3(), _lcBD = new THREE.Vector3();
+const LC_ARC_TURN = 0.15;
+/** M2 fix wave 4: the carry's palm goes at most this far a 1/60 s step (W3's bar is 0.08; the wrist rides 0.005-0.01 over the palm) */
+const LC_STEP = 0.068, LC_WRIST_ARM = 0.06;
+/** (the left arm's lengths are known: the rig is built) */
+const b0 = (an) => !!(an.b?.upArmL && an._lenUpL > 0 && an._lenLoL > 0);
+/** Catmull-Rom on knots `K` (Vector3s) in segment `s` at `t`, the end knots repeated, into `out` */
+function crV(K, s, t, out) {
+  const n = K.length, p0 = K[Math.max(0, s - 1)], p1 = K[s], p2 = K[Math.min(n - 1, s + 1)], p3 = K[Math.min(n - 1, s + 2)];
+  const t2 = t * t, t3 = t2 * t;
+  const a = -0.5 * t3 + t2 - 0.5 * t, b = 1.5 * t3 - 2.5 * t2 + 1, c = -1.5 * t3 + 2 * t2 + 0.5 * t, d = 0.5 * t3 - 0.5 * t2;
+  return out.set(p0.x * a + p1.x * b + p2.x * c + p3.x * d, p0.y * a + p1.y * b + p2.y * c + p3.y * d, p0.z * a + p1.z * b + p2.z * c + p3.z * d);
+}
+function crS(p0, p1, p2, p3, t) {
+  const t2 = t * t, t3 = t2 * t;
+  return p0 * (-0.5 * t3 + t2 - 0.5 * t) + p1 * (1.5 * t3 - 2.5 * t2 + 1) + p2 * (-1.5 * t3 + 2 * t2 + 0.5 * t) + p3 * (0.5 * t3 - 0.5 * t2);
+}
 /** `_snapPose`'s own shaft scratch (it runs inside `_blend`, before _lerpPose). */
 const _snapD = new THREE.Vector3();
 /** `_bowSolve`'s copy of the raw escape, kept across the constraint projection. */
@@ -344,7 +366,7 @@ const TAKE_TOL = 0.006;
 const ROH_STEP = 0.065;
 /** M1a weapons round 2 (W3/W10: a wrist <= 0.06-0.08 m a step): the stow's right-fist leg to the hand-over line ends here
  *  (holster k; was 0.62) and the left fist's carry back to the keeper takes this much of it after the let-go (was 0.30) */
-const STOW_HO = 0.45, STOW_CARRY = 0.42;
+const STOW_HO = 0.33, STOW_CARRY = 0.62;
 /** M2 fix wave 2: how long the left fist takes to open off the seated haft at the stow's end (s; W3) */
 const LETGO_T = 0.18;
 /** ...and the right fist's take from the left at the hand-over: the butt where the right fist would hold it, within (m) */
@@ -834,6 +856,10 @@ const _fbU = new THREE.Vector3(), _fbP = new THREE.Vector3();
  *  stowed haft (it rides on `spine_02`, below most of the turn) toward a hand
  *  whose elbow stays in front of her head. Round 5's reach turned it -0.16. */
 const DRAW_YAW = 0.42;
+/** M2 fix wave 4: the trunk's turn while the left fist has the haft: a little toward the left hand as it reaches behind
+ *  her hip (its shoulder back), then round toward the guard as the haft comes in front of her, so the left shoulder comes
+ *  forward to the hand-over line in front of her belly (out of reach square on: the take missed it by 0.115 m) */
+const LC_YAW_BACK = 0.15, LC_YAW_S = -0.42;
 /**
  * The draw's PULL: the hand takes the haft behind her shoulder at ~0.7 of its
  * length and has to finish at `GRIP_FRAC` with the prop rigid in the fist.
@@ -874,7 +900,7 @@ const LC_S = SOCKETS.lance.butt.p[1];   // where the left palm holds the haft (m
  * the left hand's reach ends at 0.24 of the draw and its carry at 0.56 (were 0.30 / 0.70), so the right fist has the
  * last 0.44 of the draw (0.13 s) to bring the haft from the hand-over into the guard, where the turn is (W3) */
 const LC_REACH = 0.25;             // the draw: the left hand's reach to the stowed haft ends here (drawK; M1a weapons round 2: 0.20 -> 0.25)
-const LC_CARRY = 0.62;             // ...and the carry to the hand-over line ends here (M1a weapons round 2: 0.56 -> 0.70, W3/W10: the left's path is the long one)
+const LC_CARRY = 0.79;             // ...and the carry to the hand-over line ends here (M1a weapons round 2: 0.56 -> 0.70, W3/W10: the left's path is the long one)
 /** M1a weapons step 1: the butt-first slide out of the keeper, down the stowed line (m), over this much of the carry */
 const LC_AXIAL = 0.17, LC_AXIAL_U = 0.30;
 const _capA = new THREE.Vector3(), _capB = new THREE.Vector3();
@@ -896,58 +922,75 @@ const LC_HAIR = 0.05;
  * The keys are char space in her standing idle and RIDE spine_02 (captured once, standing): a crouch, a lean or a run
  * carries the path, as the bow's waypoints do.
  */
-const LC_SIDE = [0.40, 1.04, 0.02];
-const LC_DIR_MID = [-0.10, 0.99, 0.08];
-const LC_P1 = [0.14, 1.18, 0.38];
-const LC_D1 = [-0.06, 0.91, 0.40];
-/**
- * ...the same four keys as offsets in spine_02's frame (char metres from the bone, in its char-space turn), read off
- * the dressed bench in her standing idle at 7204598 (`LC_SIDE` .. `LC_D1` there), then the upright key moved 0.07 m
- * further out and its shaft leaning 8 deg AWAY from her head (parts 3-4: A104's holster read the haft 0.015-0.018 m off
- * the ponytail on the page at 686dd1a against its 0.02 bar, and a forward lean at 9358f47 read 0.114 m off her axial
- * bones against 0.12; dressed bench, the asked stow: hair 0.051 -> 0.093 m, head/neck 0.163 -> 0.209 m). A capture at run time took whatever
- * pose the layer first ran in: a first draw taken crouched captured a crouched trunk and put every later standing draw
- * 15 deg off its path (dressed bench, the crouched case run first).
+/*
+ * M2 fix wave 4 (hero-anim; the owner Nov 15: "the animations for grabbing weapons, unsheathing them and getting them
+ * into position ... need to be improved a lot"; ruling 6): THE HAFT SLIDES THROUGH HER LEFT FIST. Step 2's carry stood
+ * the haft upright in front of her left chest for a chest-high hand-over, and the right fist carried it upright past her
+ * face to her right front (`PULL_VIA`) before it levelled it: the stow and the swap passed the haft upright in front of
+ * her face, and the left hand's path was 2.0-2.3 m (W3: 0.17-0.25 m in a step). Now the left fist draws the haft butt
+ * first out of the keeper (LC_AXIAL), carries it round her left side with the haft beside her left shoulder, outside
+ * it, and as the blade comes forward the haft runs up through her fist (`c`, the palm's place on the haft, 0.50 -> 0.18
+ * m from the butt) so the butt stays close and passes in front of her, never through her hip; it presents the haft
+ * low in front of her belly, already near the guard's line (`LC_KEYS`' last key, the hand-over line), where the RIGHT
+ * fist takes the butt (`TAKE_M`). The right then draws the butt up and back into the guard while the haft slides back
+ * through both fists to their guard places (the left to lance.fore, the right to lance.grip). No chest-high hand-over
+ * and no upright haft in front of her face; the stow is the same path run back.
+ * The keys are char space in her standing idle (an offline search on the bench's body: the haft 0.035 m clear of her
+ * torso, pelvis and thighs and 0.06 m of her head's capsule, the palm within reach of her shoulder, total turn with the
+ * pull to the guard about 138 deg). They RIDE spine_02 (`LC_SP_REF`, the bone's char pose in that idle): a crouch, a lean
+ * or a run carries the path. `p` the left palm's point, `d` the haft (butt -> tip, a Catmull-Rom control, not unit),
+ * `c` the palm's place on the haft (m from the butt).
  */
-const LC_SP = {
-  side: [0.44, -0.06, -0.13], mid: [-0.10, 0.90, 0.42],
-  p1: [0.1958, 0.0758, 0.2713], d1: [0.03, 0.80, 0.60],
-};
-/** The right fist's way from the hand-over to the guard (and back on the stow): the haft still upright, the fist at
- *  her right front; the hips lead the turn into the guard (`py`), the left hand off the haft until the guard. */
-const PULL_VIA = {
-  hand: [-0.17, 1.12, 0.29], shaft: [0.134, 0.605, 0.785], lh: [0.16, 1.08, 0.32], lhW: 0, lhOn: 0.5425,
-  yaw: -0.05, py: -0.12, pitch: 0.12, roll: 0.03, dz: 0.0,
-};
-/** where on the pull (0..1) the fist is at `PULL_VIA` */
-const PULL_VIA_T = 0.40;
-/** how far the fist bows out to her right between the guard and `PULL_VIA` (m, at the leg's middle) */
-const PULL_BOW = 0.08;
-/** ...and how far it goes round her front between the hand-over and `PULL_VIA` (m forward, at the leg's middle) */
-const PULL_FRONT = 0.10;
+const LC_KEYS = [
+  { p: [0.346, 0.960, -0.117], d: [-0.115, 0.651, 0.137], c: 0.418 },
+  { p: [0.307, 0.952, 0.060], d: [0.005, 0.879, 0.616], c: 0.419 },
+  { p: [0.237, 0.944, 0.326], d: [0.082, 0.411, 0.536], c: 0.180 },
+  { p: [0.050, 0.900, 0.400], d: [0.420, -0.200, 0.830], c: 0.250 },
+];
+/** how much of spine_02's turn each key rides (the rest its heading alone; see `_lcKeysNow`) */
+const LC_KEYS_FULL = [1, 1, 0.5, 0];
+/** spine_02's char position and turn (`_liveW`) in the idle the keys were authored on (dressed bench, 1 s of idle) */
+const LC_SP_REF = { p: [-0.008, 1.103, 0.070], q: [-0.0215, -0.1157, -0.0001, 0.993] };
+/** the right fist takes the haft this far up from the butt cap at the hand-over (m), then slides to lance.grip */
+const TAKE_M = 0.05;
+/** ...and how far the right fist bows out to her right on the pull and the stow's guard leg (m at the leg's middle) */
+const PULL_OUT = 0.045;
+/** ...and how long the right fist's pull from the hand-over into the guard takes (s; its own clock from the take) */
+const PULL_T = 0.16, PULL_T_URGENT = 0.07;
+/** the left palm's place in the guard (m from the butt; sockets.js lance.fore) */
+const LC_FORE = SOCKETS.lance.fore.p[1];
+/** the pull's and the stow's guard leg's ease: from rest, a short ramp each end (trapezoid, 22 % ramps) */
+const LEG_EASE = (x) => trapEaseA(x, 0.22);
 /**
  * M1a weapons step 2 (W11 step 2: "prop cant overshoot 1-4 deg, inside 0.5 deg within 6 steps"): the draw's pull
  * levels the haft 3 deg PAST the guard's line (and the fist 5 % past the guard's place), and the guard settles back
  * onto READY over `DRAW_SETTLE_T` (CARRY_EASE: one damped return, no ring), so the guard is arrived at, not stamped.
  */
-const DRAW_OVER_DEG = 1.4;
+const DRAW_OVER_DEG = 1.6;
 const DRAW_SETTLE_T = 0.10;
 const DRAW_OVER = (() => {
-  const a = new THREE.Vector3().fromArray(PULL_VIA.shaft).normalize(), b = new THREE.Vector3().fromArray(READY.shaft).normalize();
+  /* (M2 fix wave 4: past the guard on the line the pull comes in on, from the hand-over line `LC_KEYS`' last key) */
+  const S = LC_KEYS[LC_KEYS.length - 1], d = new THREE.Vector3().fromArray(S.d).normalize();
+  const rs = new THREE.Vector3().fromArray(S.p).addScaledVector(d, TAKE_M - S.c);
+  const a = d, b = new THREE.Vector3().fromArray(READY.shaft).normalize();
   const ax = new THREE.Vector3().crossVectors(a, b).normalize();
   const sh = b.clone().applyAxisAngle(ax, DRAW_OVER_DEG * Math.PI / 180);
-  const o = { ...READY, shaft: sh.toArray(), hand: READY.hand.map((h, i) => h + (h - PULL_VIA.hand[i]) * 0.05) };
+  const o = { ...READY, shaft: sh.toArray(), hand: READY.hand.map((h, i) => h + (h - rs.getComponent(i)) * 0.05) };
   return o;
 })();
 /** the left hand's free goal's speed bound on the draw and the stow (m a 1/60 s step; W3's bar is 0.08) */
 const LH_FREE_STEP = 0.07;
+/** M2 fix wave 4: ...and its goal's on the reach to the stowed haft (m a 1/60 s step) */
+const LH_REACH_STEP = 0.068;
 /** the hips lead the shoulders into the guard by this share of the pull (W11 step 2: >= 40 ms) */
 const PULL_HIP_LEAD = 0.45;
 /** M1a weapons step 2: a trapezoid velocity profile on 0..1 (from rest over the first quarter, at rest again over the
  *  last quarter, constant between): peak speed 1.33 against smoothstep's 1.5, so the carry's fastest step is smaller,
  *  and no jump at either end (W2 at the take and at the seat) */
-function trapEase(x) {
-  const a = 0.25, v = 1 / (1 - a);
+function trapEase(x) { return trapEaseA(x, 0.25); }
+/** (M2 fix wave 4: the same with its ramps `a` of 0..1 long) */
+function trapEaseA(x, a) {
+  const v = 1 / (1 - a);
   if (x <= 0) return 0; if (x >= 1) return 1;
   if (x < a) return 0.5 * v * x * x / a;
   if (x > 1 - a) { const y = 1 - x; return 1 - 0.5 * v * y * y / a; }
@@ -1641,7 +1684,9 @@ export class MeleeLayer {
      * out, applied to this frame's carried pose. The straight lerp from the in-hand capture in front of her to a line
      * that had already swung round onto her back put the butt through her left flank (dressed bench: 0.109 m from
      * spine_02 at drawK 0.87, the butt 0.22 m in front of her belly). */
-    if (this._lc?.on && !this._held) {
+    /* (M2 fix wave 4: and in the right fist on the draw's pull and the stow's guard leg, where the haft slides through it:
+     *  an absolute capture lagged the slide, the right palm 0.06 m along the haft off its place) */
+    if (this._lc?.on) {
       /* M1a weapons step 2: the turn left over is the PROP'S OWN (authored0^-1 * capture, mostly a roll about the
        * haft: the fist's grip against the carried line's), applied in its own frame. Applied in the parent's frame (as
        * it was) a 150 deg roll about the haft's first line conjugated the carry's turn: the stowed haft swung blade-left
@@ -1770,6 +1815,8 @@ export class MeleeLayer {
     /* THE DRAW STARTS WHERE THE ARM IS (round 6): capture it on the first
      * frame of a draw, before this layer has touched the arm. */
     if (stance === 'draw' && this._prevStance !== 'draw') {
+      // (the reach's goal bound starts from the wrist where the draw finds it)
+      (this._lrPrev ??= new THREE.Vector3()); this.an._charOf(this.an.b.handL.bone, this._lrPrev); this._lrOk = !!this.an.b.handL; this._takeHandOk = false;   // (M2 fix wave 4: the reach's goal bound starts from this draw's first goal)
       this._captureFrom();
       /* M1a weapons round 2: the left fist's take is an event (`_leftOnHaft`); a draw that reverses a stow the left
        * hand still holds has it already */
@@ -1794,6 +1841,8 @@ export class MeleeLayer {
     if (stance === 'draw') this._drawSettleT = 0;
     else if (stance === 'ready') this._drawSettleT = Math.min(DRAW_SETTLE_T, this._drawSettleT + dt);
     else this._drawSettleT = DRAW_SETTLE_T;
+    // (M2 fix wave 4: the draw's pull's own clock, from the take)
+    if (stance === 'draw' && this._held) this._pullT = (this._pullT || 0) + dt; else if (stance !== 'draw') this._pullT = 0;
 
     /* --- how much of the upper body does melee own this frame? --- */
     /* ROUND 6: the draw takes the arm faster (it starts from the arm's own
@@ -2040,7 +2089,11 @@ export class MeleeLayer {
       this._lhRate(stance, dt);
       this._solveLeft(w, u);
       this._leftOnHaft(stance, w);
-    } else { this._lhPrevOk = false; this._lReadBack = false; this.needsTake = false; }
+    } else {
+      this._lhPrevOk = false; this._lReadBack = false; this.needsTake = false;
+      // (M2 fix wave 4: the reach's goal bound starts from the bow's fist when the bow lets the left arm go: swap 1 to 2)
+      (this._lrPrev ??= new THREE.Vector3()); an._charOf(b.handL.bone, this._lrPrev); this._lrOk = true;
+    }
     /* M1a debt fix 1 (M1.3d, the crouched Undercut: the left palm 0.084 m off grip2 in the follow-through and
      * 0.131 m at the contact from the holster, bench at 88b1605). Crouched, the Undercut's sink takes her left
      * shoulder down and back further than the keys come down, and the left arm, at full reach, stops short of
@@ -2883,7 +2936,7 @@ export class MeleeLayer {
     const terr = this.ctx.terrain;
     if (!terr || typeof terr.getHeight !== 'function') return;
     const an = this.an, b = an.b, D = this._dbg;
-    const L = (1 - this.gripFrac) * this.length;
+    const L = (1 - (this._fracSolve ?? this.gripFrac)) * this.length;
     _eC.copy(_hand).addScaledVector(_shaft, L);
     // the stance's pelvis drop is added after this layer and lowers the blade
     this._postShift(_eD); _eC.add(_eD);
@@ -3000,23 +3053,26 @@ export class MeleeLayer {
         //  `needsGrab` from the stow parked melee's clock at 0.75 again and again, the pull replayed every sixth step)
         this.needsGrab = false;
         const g0 = clamp(this._grabK ?? 0.55, 0, 0.95);
-        const s0 = g0 + SLIDE_START * (1 - g0);
-        frac = gf + (GRIP_FRAC - gf) * smoothstep(k, s0, 1);
+        // (M2 fix wave 4: the haft slides through the right fist from the butt to lance.grip over the whole pull)
+        frac = this._pullFrac('draw', LEG_EASE(clamp(this._pullT / this._pullDur(), 0, 1)));
       } else {
         frac = gf;
         // (M1.2f fix 1: the right hand takes it only once the left has brought it to the hand-over line)
         const reach = k >= 0.30 && !(this._lc?.on && this._lc.u < 0.98) ? this._reparentGap(frac) : 9;
         if (this._grabSettle(reach, k)) {
           D.grabReach = reach > 8 ? this._reparentGap(frac) : reach;
-          this._grabK = k;
+          this._grabK = k; this._pullT = 0;
+          // (M2 fix wave 4: the pull starts from the wrist that took it, not the planned hand-over: the difference was the pull's first step)
+          (this._takeHandP ??= new THREE.Vector3()); this.an._charOf(this.an.b.handR.bone, this._takeHandP); this._takeHandOk = true;
           holstered = false;
         }
       }
     } else if (stance === 'holster') {
       if (!this._held) { holstered = true; frac = gf; this._grabReset(); }
       else {
-        frac = GRIP_FRAC + (gf - GRIP_FRAC) * smoothstep(k, 0.0, 0.42);
-        const reach = k >= 0.30 ? this._reparentGap(frac) : 9;
+        frac = this._pullFrac('holster', LEG_EASE(clamp(k / STOW_HO, 0, 1)));
+        // (M2 fix wave 4: the right lets go at the end of its guard leg, `STOW_HO`, not from 0.30 of the clock)
+        const reach = k >= STOW_HO + 0.02 ? this._reparentGap(frac) : 9;
         const give = this._grabSettle(reach, k);
         holstered = !!give;
         if (give) {
@@ -3024,7 +3080,7 @@ export class MeleeLayer {
           // (M1a weapons round 2: where the haft is as the right lets it go, at the left fist's socket: the carry back starts there)
           if (!this._relCap) this._relCap = { pt: new THREE.Vector3(), dir: new THREE.Vector3() };
           this._gripChar(this._relCap.pt); this._shaftChar(this._relCap.dir);
-          this._relCap.pt.addScaledVector(this._relCap.dir, LC_S - GRIP_FRAC * this.length);
+          this._relCap.pt.addScaledVector(this._relCap.dir, LC_KEYS[LC_KEYS.length - 1].c - frac * this.length);
           this._relOffOn = false;
         }
       }
@@ -3179,15 +3235,22 @@ export class MeleeLayer {
         yawK = 0;
       } else {
         const g = clamp(this._grabK ?? 0.55, 0, 0.95);
-        A = this._reachPose(); B = READY;
-        const tr = clamp((dk - g) / Math.max(0.08, 1 - g), 0, 1);
-        t = CARRY_EASE(tr);
+        A = this._reachPose(); B = this._drawOverFrom(A);
+        if (this._takeHandOk) {
+          const F = this._pullFrom || (this._pullFrom = decimalFields({ ...A, hand: A.hand.slice(), shaft: A.shaft.slice(), lh: A.lh.slice() }));
+          for (const k of ['lhOn', 'lhW', 'yaw', 'pitch', 'roll', 'py']) F[k] = A[k] || 0;
+          for (let i = 0; i < 3; i++) { F.shaft[i] = A.shaft[i]; F.lh[i] = A.lh[i]; }
+          F.hand[0] = this._takeHandP.x; F.hand[1] = this._takeHandP.y; F.hand[2] = this._takeHandP.z;
+          A = F;
+        }
+        // (M2 fix wave 4: the pull runs on its own clock from the take, `PULL_T`: a late take does not squeeze it)
+        const tr = clamp(this._pullT / this._pullDur(), 0, 1);
+        /* M2 fix wave 4: from the hand-over in front of her belly straight up and back into the guard (no upright
+         * haft at her right front), the haft sliding through both fists to their guard places (`_pullFrac`,
+         * `_pullLeft`); the hips turn into the guard ahead of the shoulders (`PULL_HIP_LEAD`) */
+        t = LEG_EASE(tr);
         yawK = t;
-        /* M1a weapons step 2: by her right front, the haft still upright (`PULL_VIA`), then levelled into the guard;
-         * the hips turn into the guard ahead of the shoulders (`PULL_HIP_LEAD`) */
         this._pullTH = smoothstep(clamp(tr + PULL_HIP_LEAD, 0, 1), 0, 1);
-        B = DRAW_OVER;
-        if (t < PULL_VIA_T) { B = PULL_VIA; t /= PULL_VIA_T; } else { A = PULL_VIA; t = (t - PULL_VIA_T) / (1 - PULL_VIA_T); }
         pullLeg = true;
         this._snapDraw(A, B, t);
       }
@@ -3201,12 +3264,10 @@ export class MeleeLayer {
        * nine, and the tip's worst per-frame travel across the re-parent drops
        * by a third. */
       if (this._held) {
-        A = this._holsterFrom; B = this._reachPose(); t = CARRY_EASE(clamp(dk / STOW_HO, 0, 1));
+        /* M2 fix wave 4: the stow's guard leg is the draw's pull run back: the butt down and forward to the hand-over
+         * line in front of her belly, the haft sliding forward through both fists (`_pullFrac`, `_pullLeft`) */
+        A = this._holsterFrom; B = this._reachPose(); t = LEG_EASE(clamp(dk / STOW_HO, 0, 1));
         yawK = 1 - t;
-        /* M1a weapons step 2: the stow comes up out of the guard through `PULL_VIA` (the haft stood up at her right
-         * front) to the hand-over line, the reverse of the draw's pull */
-        const tv = 1 - PULL_VIA_T;
-        if (t < tv) { B = PULL_VIA; t /= tv; } else { A = PULL_VIA; t = (t - tv) / (1 - tv); }
       } else {
         /* ROUND 6: AND THE HAND COMES BACK DOWN HER SIDE before the arm is
          * handed back to the locomotion. Round 5 parked it on the socket and
@@ -3241,8 +3302,7 @@ export class MeleeLayer {
     this._keyK = stance === 'swing' || stance === 'ready' ? 1 : (stance === 'draw' && this._held ? t : 0);
     /* (M1a weapons step 2: on the draw's pull and the stow's guard leg, `PULL_VIA` is an authored key too: the leg from the
      *  live hand-over line to it lowers by its t, the leg from it on (or from the guard to it) is all keys) */
-    if (stance === 'draw' && this._held && A === PULL_VIA) this._keyK = 1;
-    else if (stance === 'holster' && this._held) this._keyK = B === PULL_VIA ? 1 : 1 - t;
+    if (stance === 'holster' && this._held) this._keyK = 1 - t;
     if (stance === 'swing') this._snapPose(A, B, t);
     this._lerpPose(A, B, t, yawK);
     /* M1a r2 fix (A104): the right hand's legs between her side and the hand-over line in front of her chest (the
@@ -3250,22 +3310,14 @@ export class MeleeLayer {
      * 0.004 m off the pelvis -> neck axis at a holster's 17th step (bench; the page read 0.001). The hand goes ROUND
      * her instead, out by her right-front (`ROUND_VIA`). */
     if ((stance === 'holster' && !this._held) || (stance === 'draw' && !this._held)) this._handRound(A, B, t);
-    /* M1a weapons step 2 (part 4, A104 "holster: the haft came within 0.114 m of head/neck/spine" on the page at
-     * 9358f47): between the guard and `PULL_VIA` the butt swings from behind her right hip to her right front; the fist
-     * bows out to her right on that leg (`PULL_BOW` at its middle) so the butt goes round her hip, not past her pelvis */
-    if ((pullLeg && A === PULL_VIA) || (stance === 'holster' && this._held && B === PULL_VIA)) {
-      const k = 4 * t * (1 - t) * PULL_BOW;
-      _hand.x -= k; _hand.z += 0.5 * k;
+    /* M2 fix wave 4: on the pull (and the stow's guard leg) the butt comes back past her right flank: the fist bows out
+     * to her right and forward at the leg's middle (`PULL_OUT`), so the haft clears her belly by design and the haft
+     * guard has nothing to push (it pushed the fist 0.06-0.09 m a step on the straight leg) */
+    if ((stance === 'draw' || stance === 'holster') && this._held) {
+      const k = 4 * t * (1 - t) * PULL_OUT;
+      _hand.x -= k; _hand.z += 0.6 * k;
     }
-    /* M2 polish (hero-anim, the lance's pull; W3): between the hand-over in front of her left hip and `PULL_VIA` at her
-     * right front the fist crosses her midline with the butt 0.32 m under it and behind it (the haft leans forward):
-     * on the straight leg the butt came within 0.05 m of her belly's axis, and the haft guard (`_clearDeficit`) shoved
-     * the fist 0.10 m back toward her left, then 0.07 m down and out, the next step: the right wrist jumped 0.28 m in
-     * one step (dressed bench, lanceDraw at aba90a3). The fist goes ROUND her front instead (`PULL_FRONT` at the leg's
-     * middle), so the butt passes in front of her belly */
-    if (pullLeg && B === PULL_VIA) {
-      _hand.z += 4 * t * (1 - t) * PULL_FRONT;
-    }
+
     out.yaw = A.yaw + (B.yaw - A.yaw) * t;
     out.pitch = A.pitch + (B.pitch - A.pitch) * t;
     out.roll = A.roll + (B.roll - A.roll) * t;
@@ -3273,6 +3325,12 @@ export class MeleeLayer {
     out.dz = (A.dz || 0) + ((B.dz || 0) - (A.dz || 0)) * t;
     out.lhOn = (A.lhOn || 0) + ((B.lhOn || 0) - (A.lhOn || 0)) * t;
     out.lhW = (A.lhW || 0) + ((B.lhW || 0) - (A.lhW || 0)) * t;
+    /* M2 fix wave 4: on the draw's pull and the stow's guard leg the left fist stays on the haft (the guard's seat at full
+     * weight), at the place the haft has slid through it to (`_pullLeft`) */
+    this._fracSolve = this.gripFrac; this._rollK = 1;
+    if ((stance === 'draw' || stance === 'holster') && this._held) { out.lhW = this._pullSeatW(stance, t); out.lhOn = this._pullLeft(stance, t); this._lhSlideM = out.lhOn * (this._lhK || 1); this._fracSolve = this._pullFrac(stance, t); this._rollK = stance === 'draw' ? t : 1 - t; }
+    // (...and the guard's settle out of the draw starts from that seat: `_snapDraw`'s blend had the seat's weight under 1)
+    if (stance === 'draw' && this._held && this._drawOut) { this._drawOut.lhW = 1; this._drawOut.lhOn = out.lhOn; }
     /* light-3 (R1): the left hand lets go on its own schedule, off the haft
      * before the strike phase opens (STRIKE_PRE of the cock -> contact leg). */
     if (beat.release && A === beat.cock && B === beat.contact) {
@@ -3293,7 +3351,7 @@ export class MeleeLayer {
      * (`update`, `lagYaw`), so the shoulders keep the pull's clock and the hips lead them */
     if (pullLeg) {
       const tl = this._pullTH;
-      out.py = tl < PULL_VIA_T ? PULL_VIA.py * (tl / PULL_VIA_T) : PULL_VIA.py + (READY.py - PULL_VIA.py) * ((tl - PULL_VIA_T) / (1 - PULL_VIA_T));
+      out.py = (A.py || 0) + (READY.py - (A.py || 0)) * LEG_EASE(tl);
     }
     /* M1.3d: HIPS FIRST. The pelvis turn, its drive and the legs' load read the same beat `HIP_LEAD` s on;
      * the spine takes the difference out (`update`, `lagYaw`) so the shoulders keep the beat's clock. */
@@ -3462,30 +3520,29 @@ export class MeleeLayer {
       const hold = 1 - smoothstep(this._letGoT, 0, LETGO_T);
       if (hold <= 1e-3) { this._letGoOn = false; L.hold = 0; L.u = 0; return; }
       this._liveSocket(L.s0, L.d0);
-      L.butt.copy(L.s0); L.dir.copy(L.d0); L.pt.copy(L.s0).addScaledVector(L.d0, LC_S);
+      L.butt.copy(L.s0); L.dir.copy(L.d0); L.pt.copy(L.s0).addScaledVector(L.d0, LC_S); L.c = LC_S;
       L.u = 0; L.hold = hold; L.on = true;
       return;
     }
-    if (!this.lance || (stance !== 'draw' && stance !== 'holster')) { L.hold = 0; L.u = 0; return; }
+    if (!this.lance || (stance !== 'draw' && stance !== 'holster')) { L.hold = 0; L.u = 0; this._lcPrevOk = false; return; }
     const dk = clamp(st?.drawK ?? 0, 0, 1);
     let u = 0, hold = 0;
     if (stance === 'draw') {
       if (this._held) {
-        /* M1a weapons step 2: the left hand lets go as the right fist carries the haft over to her right front (it
-         * could not follow it across her body) and comes back onto it at the guard's own seat (the pose's lhW) */
-        const g = clamp(this._grabK ?? LC_CARRY, 0, 0.95);
-        const tp = clamp((dk - g) / Math.max(0.08, 1 - g), 0, 1);
-        u = 1; hold = 1 - smoothstep(tp, 0.05, 0.55);
+        /* M2 fix wave 4: the left fist keeps the haft through the pull; the guard's seat (the pose's lhW, `_pullLeft`)
+         * holds it there, the haft sliding through it to lance.fore */
+        u = 1; hold = 1 - this._pullSeatW('draw', LEG_EASE(clamp((this._pullT || 0) / this._pullDur(), 0, 1)));
       } else {
         /* (M1a weapons step 2: the carry starts from rest, smoothstep, so the haft does not jump at the left hand's
          *  take: W2's 0.088 m at the take was CARRY_EASE's linear start under the keeper slide) */
-        u = trapEase(clamp((dk - LC_REACH) / (LC_CARRY - LC_REACH), 0, 1)); hold = CARRY_EASE(clamp(dk / (LC_REACH - 0.04), 0, 1));
+        u = trapEaseA(clamp((dk - LC_REACH) / (LC_CARRY - LC_REACH), 0, 1), 0.18); hold = trapEaseA(clamp(dk / (LC_REACH - 0.02), 0, 1), 0.22);
         // (M1a weapons round 2: the haft leaves its keeper only once the fist has taken it, `_leftOnHaft`)
         if (!this._lTaken) u = 0;
       }
     } else {
       // (the stow: the left hand comes onto the haft as the right fist brings it upright to the hand-over line)
-      if (this._held) { u = 1; hold = smoothstep(dk, STOW_HO - 0.20, STOW_HO - 0.03); this._relOffOn = false; }
+      // (M2 fix wave 4: on the guard leg the left fist is on the haft at the guard's seat, sliding down it, `_pullLeft`)
+      if (this._held) { u = 1; hold = 1 - this._pullSeatW('holster', LEG_EASE(clamp(dk / STOW_HO, 0, 1))); this._relOffOn = false; }
       else {
         const r0 = clamp(this._relK ?? STOW_HO, 0, 0.9), r1 = Math.min(0.97, r0 + STOW_CARRY);
         const k = clamp((dk - r0) / Math.max(0.05, r1 - r0), 0, 1);
@@ -3502,23 +3559,32 @@ export class MeleeLayer {
     // the path's keys this step (riding spine_02), and the hand-over line they end on (the right fist's goal)
     this._lcKeysNow();
     if (!L.hoB) { L.hoB = new THREE.Vector3(); L.hoD = new THREE.Vector3(); }
-    L.hoD.copy(_lcD1); L.hoB.copy(_lcP1).addScaledVector(_lcD1, -LC_S);
+    L.hoD.copy(_lcD1); L.hoB.copy(_lcP1).addScaledVector(_lcD1, -_lcKC[_lcKC.length - 1]);
+    L.c = LC_S;
     if (u > 0) {
-      // the left palm's path: from the stowed haft out beside her left side (LC_SIDE) to the hand-over line, a quadratic
-      _lcP0.copy(L.s0).addScaledVector(L.d0, LC_S);
-      /* M1a weapons step 1 (the brief's W4): BUTT FIRST OUT OF THE KEEPER. The first `LC_AXIAL_U` of the carry slides the
-       * haft LC_AXIAL m down its own stowed line (the palm with it, no turn), so it leaves its mount along its axis before
-       * it pivots about the fist; the rest of the carry is the path, re-timed onto what is left of u */
-      const ua = u < LC_AXIAL_U ? u / LC_AXIAL_U : 1, ur = u < LC_AXIAL_U ? 0 : (u - LC_AXIAL_U) / (1 - LC_AXIAL_U);
-      _lcP0.addScaledVector(L.d0, -LC_AXIAL * (u < LC_AXIAL_U ? trapEase(ua) : 1));
-      const a = (1 - ur) * (1 - ur), m = 2 * ur * (1 - ur), c = ur * ur;
-      L.pt.set(_lcP0.x * a + _lcPm.x * m + _lcP1.x * c, _lcP0.y * a + _lcPm.y * m + _lcP1.y * c, _lcP0.z * a + _lcPm.z * m + _lcP1.z * c);
-      /* the shaft: stowed -> upright beside her left side -> the hand-over's upright, as one spherical quadratic (two
-       * slerps blended: no corner at the middle key, so no spike in the turn per step) */
-      this._slerpDirV(L.d0, _lcDm, ur, _lcB1);
-      this._slerpDirV(_lcDm, _lcD1, ur, L.dir);
-      this._slerpDirV(_lcB1, L.dir, ur, L.dir);
-      L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+      /* M2 fix wave 4: the left palm's path, the haft's line and the palm's place on it, one Catmull-Rom through the
+       * stowed socket, the keeper slide's end (butt first, LC_AXIAL down the stowed line: the brief's W4) and the four
+       * keys, at `u` of its length (the carry's clocks are its ease: a palm moving at a bounded speed, W3) */
+      _lcKP[0].copy(L.s0).addScaledVector(L.d0, LC_S); _lcKD[0].copy(L.d0); _lcKC[0] = LC_S;
+      _lcKP[1].copy(_lcKP[0]).addScaledVector(L.d0, -LC_AXIAL); _lcKD[1].copy(L.d0); _lcKC[1] = LC_S;
+      L.c = this._lcAt(u, L.pt, L.dir);
+      /* M2 fix wave 4 (W3): the clock's `u` is a target; the carry goes no faster than `LC_STEP` m of palm and
+       * `_lcTurnMax` of haft a step (the palm's path is not the wrist's, and the trunk's turn carries the keys), so where the
+       * path is fast the carry lags the clock and the take / the seat waits for it (bounded, melee.js) */
+      // (not on a strike's urgent draw: R5's click to swing 0.25-0.35 s is that draw's bar, melee.js `DRAW_T`)
+      if (this._lcPrevOk && this._lcPrevS === stance && !this._held && !st?.urgent) {
+        const u0 = this._lcPrevU, mx = LC_STEP * (this._lastDt || 1 / 60) * 60, ma = this._lcTurnMax(st) * (this._lastDt || 1 / 60) * 60;
+        // (the wrist is the palm less the hand's offset, which turns with the haft: its turn counts at `LC_WRIST_ARM` m a radian)
+        const over = () => { const a = Math.acos(clamp(L.dir.dot(this._lcPrevD), -1, 1)); return L.pt.distanceTo(this._lcPrevPt) + LC_WRIST_ARM * a > mx || a > ma; };
+        if (u !== u0 && over()) {
+          let lo = 0, hi = 1;
+          for (let i = 0; i < 10; i++) { const m = 0.5 * (lo + hi); L.c = this._lcAt(u0 + (u - u0) * m, L.pt, L.dir, true); if (over()) hi = m; else lo = m; }
+          u = u0 + (u - u0) * lo; L.c = this._lcAt(u, L.pt, L.dir, true);
+        }
+      }
+      (this._lcPrevPt ??= new THREE.Vector3()).copy(L.pt); (this._lcPrevD ??= new THREE.Vector3()).copy(L.dir);
+      this._lcPrevU = u; this._lcPrevS = stance; this._lcPrevOk = true;
+      L.butt.copy(L.pt).addScaledVector(L.dir, -L.c);
       /* M1a weapons round 2 (W1, W2 at the stow's let-go): the left fist carries the haft back FROM WHERE THE RIGHT LET IT
        * GO, not from the planned hand-over line (0.05-0.08 m and some degrees off it): the difference at the let-go is
        * carried and taken out over the first half of the carry back */
@@ -3532,7 +3598,7 @@ export class MeleeLayer {
         if (f > 1e-4) {
           L.pt.addScaledVector(this._relDB, f);
           _qRO.identity().slerp(this._relDQ, f); L.dir.applyQuaternion(_qRO).normalize();
-          L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+          L.butt.copy(L.pt).addScaledVector(L.dir, -L.c);
         }
       }
       /* M1a debt (M1.3d, A104 "holster: the haft 0.108 m from head/neck/spine", page): on the stow's last leg the
@@ -3583,6 +3649,8 @@ export class MeleeLayer {
     } else {
       L.butt.copy(L.s0); L.dir.copy(L.d0);
       L.pt.copy(L.s0).addScaledVector(L.d0, LC_S);
+      (this._lcPrevPt ??= new THREE.Vector3()).copy(L.pt); (this._lcPrevD ??= new THREE.Vector3()).copy(L.dir);
+      this._lcPrevU = 0; this._lcPrevS = stance; this._lcPrevOk = true;
     }
     L.u = u; L.hold = hold; L.on = true;
     this._dbg.leftCarryU = u; this._dbg.leftCarryHold = hold;
@@ -3599,38 +3667,138 @@ export class MeleeLayer {
     const L = this._lc;
     if (this._held) {
       const g = clamp(this._grabK ?? LC_CARRY, 0, 0.95), f = clamp(hk / STOW_HO, 0, 1);
+      this._pullT = PULL_T * (1 - f);   // (M2 fix wave 4: the pull's own clock, where the stow's guard leg has the haft)
       return g + (1 - g) * (1 - f);
     }
     if (L?.on && L.u > 1e-4) {
       let lo = 0, hi = 1;
-      for (let i = 0; i < 12; i++) { const m = 0.5 * (lo + hi); if (trapEase(m) < L.u) lo = m; else hi = m; }
+      for (let i = 0; i < 12; i++) { const m = 0.5 * (lo + hi); if (trapEaseA(m, 0.18) < L.u) lo = m; else hi = m; }
       return LC_REACH + (LC_CARRY - LC_REACH) * 0.5 * (lo + hi);
     }
     return 0;
   }
 
-  /** M1a weapons step 2: the path keys as offsets in spine_02's frame (char metres, `LC_SP`), as vectors, once. */
+  /**
+   * M2 fix wave 4: the right fist's place on the held haft (a fraction of its length from the butt) at `t` (0..1) of the
+   * draw's pull (from the butt, where it took it, `_grabFrac`, to lance.grip) or of the stow's guard leg (back).
+   */
+  _pullFrac(stance, t) {
+    const gf = this._lc?.on || this._grabFrac < this.gripFrac ? this._grabFrac : this.gripFrac;
+    return stance === 'draw' ? gf + (this.gripFrac - gf) * t : this.gripFrac + (gf - this.gripFrac) * t;
+  }
+
+  /** M2 fix wave 4: the guard the pull levels into, `DRAW_OVER_DEG` past READY's line in the plane the haft comes in on
+   *  (from `from`'s shaft, the hand-over's), so the overshoot is the pull's own and its settle is one turn back (W11) */
+  _drawOverFrom(from) {
+    const o = this._dOver || (this._dOver = decimalFields({ ...DRAW_OVER, hand: DRAW_OVER.hand.slice(), shaft: DRAW_OVER.shaft.slice(), lh: READY.lh.slice() }));
+    _dvA.fromArray(from.shaft).normalize(); _dvB.fromArray(READY.shaft).normalize();
+    _dvC.crossVectors(_dvA, _dvB);
+    if (_dvC.lengthSq() > 1e-8) { _dvC.normalize(); _dvB.applyAxisAngle(_dvC, DRAW_OVER_DEG * Math.PI / 180); }
+    o.shaft[0] = _dvB.x; o.shaft[1] = _dvB.y; o.shaft[2] = _dvB.z;
+    return o;
+  }
+
+  /** M2 fix wave 4: the pull's length (s): `PULL_T`, or the urgent draw's (a strike's, R5's click to swing) `PULL_T_URGENT` */
+  _pullDur() { return this._urgent ? PULL_T_URGENT : PULL_T; }
+
+  /** M2 fix wave 4: the guard's seat's weight on the left fist through the pull (the carry's grip hands it over late in the
+   *  leg, both on the haft: only the fist's roll about it changes, `_leftOnHaft`) and the stow's guard leg (early) */
+  _pullSeatW(stance, t) { return stance === 'draw' ? smoothstep(t, 0.15, 1.0) : 1 - smoothstep(t, 0.0, 0.85); }
+
+  /**
+   * M2 fix wave 4: the left fist's seat on the held haft (the pose's `lhOn`, m from the right fist's grip in the
+   * authored lance's units) at `t` of the pull (the haft slid back through it from the hand-over's place, `LC_KEYS`' last
+   * `c`, to lance.fore) or of the stow's guard leg (forward, back to it).
+   */
+  _pullLeft(stance, t) {
+    const cS = LC_KEYS[LC_KEYS.length - 1].c, fore = LC_FORE * this.length / 1.55;
+    const cL = stance === 'draw' ? cS + (fore - cS) * t : fore + (cS - fore) * t;
+    return Math.max(LH_ON_MIN, cL - this._pullFrac(stance, t) * this.length) / (this._lhK || 1);
+  }
+
+  /** M2 fix wave 4: the carried haft's turn a 1/60 s step at most (rad): W3's 24 deg asked, 12 deg on the calm stow (the
+   *  guard timer's, melee.js `HOLSTER_T_CALM`: `st.dur` 0.50 s) */
+  _lcTurnMax(st) {
+    return ((st?.dur ?? 0) >= 0.48 && this._prevStance === 'holster' ? 10.5 : 21) * Math.PI / 180;
+  }
+
+  /** M2 fix wave 4: the path keys as offsets in spine_02's frame (`LC_KEYS` off `LC_SP_REF`), as vectors, once. */
   _lcCapture() {
     if (this._lcK) return this._lcK;
-    return (this._lcK = { side: new THREE.Vector3().fromArray(LC_SP.side), mid: new THREE.Vector3().fromArray(LC_SP.mid).normalize(),
-      p1: new THREE.Vector3().fromArray(LC_SP.p1), d1: new THREE.Vector3().fromArray(LC_SP.d1).normalize() });
+    const qi = new THREE.Quaternion().fromArray(LC_SP_REF.q).normalize().invert(), o = new THREE.Vector3().fromArray(LC_SP_REF.p);
+    return (this._lcK = {
+      p: LC_KEYS.map((k) => new THREE.Vector3().fromArray(k.p).sub(o).applyQuaternion(qi)),
+      d: LC_KEYS.map((k) => new THREE.Vector3().fromArray(k.d).applyQuaternion(qi)),
+    });
   }
 
   /**
-   * M1a weapons step 2: the carried path's keys this step, char space, into `_lcPm` (LC_SIDE), `_lcDm` (LC_DIR_MID),
-   * `_lcP1` (LC_P1) and `_lcD1` (LC_D1). They are authored on her standing idle and ride spine_02 (`LC_SP`): carried by
-   * its live pose, so a crouch, a lean or a run's trunk carries the path. No allocation.
+   * M2 fix wave 4: the carried path's keys this step, char space, into knots 2.. of `_lcKP` / `_lcKD` / `_lcKC` (knots 0
+   * and 1, the stowed socket and the keeper slide's end, are `_leftCarry`'s), and the hand-over line (the last key) into
+   * `_lcP1` (the left palm) and `_lcD1` (the haft, unit). They ride spine_02's live pose. No allocation.
    */
   _lcKeysNow() {
-    const an = this.an, sp = an.b.spine2?.bone;
-    _lcPm.fromArray(LC_SIDE); _lcDm.fromArray(LC_DIR_MID).normalize();
-    _lcP1.fromArray(LC_P1); _lcD1.fromArray(LC_D1).normalize();
-    if (!sp) return;
-    const K = this._lcCapture();
-    if (!K) return;
-    an._charOf(sp, _lcB1); an._liveW(sp, _q1);
-    _lcPm.copy(K.side).applyQuaternion(_q1).add(_lcB1); _lcP1.copy(K.p1).applyQuaternion(_q1).add(_lcB1);
-    _lcDm.copy(K.mid).applyQuaternion(_q1); _lcD1.copy(K.d1).applyQuaternion(_q1);
+    const an = this.an, sp = an.b.spine2?.bone, K = this._lcCapture();
+    if (sp) {
+      an._charOf(sp, _lcB1); an._liveW(sp, _q1);
+      // (the trunk's heading alone, for the keys in front of her: `LC_KEYS_FULL`)
+      _lcA.set(0, 0, 1).applyQuaternion(_q1).multiplyScalar(1).setY(0);
+      _q2.setFromAxisAngle(Y_AXIS, _lcA.lengthSq() > 1e-6 ? Math.atan2(_lcA.x, _lcA.z) : 0);
+    }
+    for (let i = 0; i < LC_KEYS.length; i++) {
+      const P = _lcKP[i + 2], Dd = _lcKD[i + 2];
+      /* (M2 fix wave 4: the keys behind her and beside her ride spine_02's whole turn; the ones in front of her its
+       *  heading only, so a run's forward lean does not tip the hand-over line at the ground: at a jog it put the blade
+       *  0.46 m under her knee) */
+      if (sp) { _q3.copy(_q2).slerp(_q1, LC_KEYS_FULL[i]); P.copy(K.p[i]).applyQuaternion(_q3).add(_lcB1); Dd.copy(K.d[i]).applyQuaternion(_q3); }
+      else { P.fromArray(LC_KEYS[i].p); Dd.fromArray(LC_KEYS[i].d); }
+      _lcKC[i + 2] = LC_KEYS[i].c;
+    }
+    const n = _lcKP.length - 1;
+    /* (the hand-over's palm point within the left arm's reach of its shoulder: at a jog the trunk's lean and the stride
+     *  took it 0.06-0.07 m out of reach, the fist stopped short of it and the right's take waited out the clock) */
+    if (b0(an)) {
+      an._charOf(an.b.upArmL.bone, _lcA);
+      const R = (an._lenUpL + an._lenLoL) * 0.955 + LH_PALM, d = _lcKP[n].distanceTo(_lcA);
+      if (d > R) _lcKP[n].sub(_lcA).multiplyScalar(R / d).add(_lcA);
+    }
+    _lcP1.copy(_lcKP[n]); _lcD1.copy(_lcKD[n]).normalize();
+  }
+
+  /**
+   * M2 fix wave 4: the carry at `f` (0..1) of its palm path's length: the palm point into `outP`, the haft (unit) into
+   * `outD`; returns the palm's place on the haft (m from the butt). A Catmull-Rom through the knots, measured by chords
+   * (`LC_ARC_N` a segment) this step. No allocation.
+   */
+  _lcAt(f, outP, outD, reuse = false) {
+    const n = _lcKP.length, N = LC_ARC_N;
+    let tot = reuse ? _lcArc[(n - 1) * N] : 0, cp = _lcKC[0];
+    if (!reuse) {
+    _lcArc[0] = 0; _lcA.copy(_lcKP[0]); _lcAD.copy(_lcKD[0]).normalize();
+    /* (the measure: the palm's travel, plus the haft's turn at `LC_ARC_TURN` m a radian and the slide through the fist,
+     *  so the clock spends its steps where the haft turns fast as well as where the fist travels: W3's deg a step) */
+    for (let s = 0; s < n - 1; s++) for (let i = 1; i <= N; i++) {
+      let c = cp;
+      if (s === 0) { _lcB.lerpVectors(_lcKP[0], _lcKP[1], i / N); _lcBD.copy(_lcKD[0]).normalize(); }
+      else {
+        crV(_lcKP, s, i / N, _lcB); crV(_lcKD, s, i / N, _lcBD).normalize();
+        c = crS(_lcKC[Math.max(0, s - 1)], _lcKC[s], _lcKC[s + 1], _lcKC[Math.min(n - 1, s + 2)], i / N);
+      }
+      tot += _lcA.distanceTo(_lcB) + LC_ARC_TURN * Math.acos(clamp(_lcAD.dot(_lcBD), -1, 1)) + 0.5 * Math.abs(c - cp);
+      _lcArc[s * N + i] = tot; _lcA.copy(_lcB); _lcAD.copy(_lcBD); cp = c;
+    }
+    }
+    const want = clamp(f, 0, 1) * tot;
+    let j = 1; const M = (n - 1) * N;
+    while (j < M && _lcArc[j] < want) j++;
+    const a0 = _lcArc[j - 1], a1 = _lcArc[j], loc = a1 > a0 ? (want - a0) / (a1 - a0) : 0;
+    const g = (j - 1 + loc) / N, s = Math.min(n - 2, Math.floor(g)), t = g - s;
+    // (the keeper slide, the first segment, is straight down the stowed line: W4's first 0.15 m on the haft's axis)
+    if (s === 0) { outP.lerpVectors(_lcKP[0], _lcKP[1], t); outD.copy(_lcKD[0]).normalize(); return _lcKC[0]; }
+    crV(_lcKP, s, t, outP);
+    crV(_lcKD, s, t, outD); outD.normalize();
+    const c0 = _lcKC[Math.max(0, s - 1)], c1 = _lcKC[s], c2 = _lcKC[s + 1], c3 = _lcKC[Math.min(n - 1, s + 2)];
+    return crS(c0, c1, c2, c3, t);
   }
 
   /**
@@ -3638,6 +3806,19 @@ export class MeleeLayer {
    * (the carried line leaves the stowed one) until the right fist has it, 'handR' from the hand-over, 'carry' on her back.
    * The left owns it again on the stow from the right's let-go until it is seated and let go (`_lc.hold` under 0.5).
    */
+  /**
+   * M2 fix wave 4 (the handling rows' W1 sockets): where on the haft the handling holds it this step, m from the butt:
+   * `left` while the left fist owns it (the carried line's `c`: the haft slides through it), `right` while the right holds
+   * it (the pull's and the stow's slide, `_fracNow`). Null where that hand has no planned place.
+   */
+  lanceHoldPlan() {
+    const own = this.lanceOwner(), L = this._lc;
+    return {
+      left: own === 'handL' && L?.on ? (L.c ?? LC_S) : null,
+      right: this._held ? (this._fracNow ?? this.gripFrac) * this.length : null,
+    };
+  }
+
   lanceOwner() {
     if (this._held) return 'handR';
     const L = this._lc;
@@ -3677,7 +3858,7 @@ export class MeleeLayer {
   _leftCarryHand(u) {
     const L = this._lc;
     if (!L || !L.on || L.hold <= 1e-3) return;
-    if (this._held) { this._gripChar(_lcP0); this._shaftChar(_lcD1); _lcP0.addScaledVector(_lcD1, LC_S - GRIP_FRAC * this.length); }
+    if (this._held) { this._gripChar(_lcP0); this._shaftChar(_lcD1); _lcP0.addScaledVector(_lcD1, this._lhSlideM ?? LH_ON_MIN); }
     else _lcP0.copy(L.pt);
     const an = this.an;
     an._liveW(an.b.handL.bone, _q1);
@@ -3707,7 +3888,7 @@ export class MeleeLayer {
     // (the hand-over line as planned, then, as the carry arrives, the haft where the left fist has it)
     const ka = smoothstep(L.u, 0.5, 0.95);
     _rohP.copy(L.hoB).lerp(L.butt, ka); _rohD.copy(L.hoD).lerp(L.dir, ka).normalize();
-    _rohP.addScaledVector(_rohD, GRIP_FRAC * this.length);
+    _rohP.addScaledVector(_rohD, TAKE_M);
     for (let pass = 0; pass < 2; pass++) {
       an._handOnStave(_rohD, 1, _lohQ, 'r');
       an._liveW(b.handR.bone, _q1);
@@ -3760,7 +3941,7 @@ export class MeleeLayer {
     an._charOf(b.handL.bone, L.pt);
     an._liveW(b.handL.bone, _q1);
     L.pt.add(_c.copy(this.haftOffLL).applyQuaternion(_q1));
-    L.butt.copy(L.pt).addScaledVector(L.dir, -LC_S);
+    L.butt.copy(L.pt).addScaledVector(L.dir, -(L.c ?? LC_S));
   }
 
   _leftOnHaft(stance, w) {
@@ -3769,13 +3950,21 @@ export class MeleeLayer {
     this._lReadBack = false;
     if (!L || !L.on || L.hold <= 1e-3 || !this.gripLButt || typeof an._handOnStave !== 'function' || !this._lhFreeC) { D.lTakeMiss = -1; return -1; }
     // (on the stow, while the right fist still has it, the left closes on the held haft at its socket)
-    if (this._held && stance !== 'holster') { D.lTakeMiss = -1; return -1; }
+    /* (M2 fix wave 4: on the held haft, the draw's pull and the stow's guard leg, the left fist is the guard's seat, `_solveLeft`,
+     *  at the place the haft slides through it to, `_pullLeft`) */
+    if (this._held && !((stance === 'draw' || stance === 'holster') && L.hold > 1e-3)) { D.lTakeMiss = -1; return -1; }
+    // (...where both have it, the carry's grip cross-fades from the seat's solved fist, so only the roll about the haft moves)
+    if (this._held) an._charOf(b.handL.bone, this._lhFreeC);
     // (the hand's weight on the haft is the carry's own `hold`, not the layer's fade-in: the fist that has the haft has it)
     // (...except through a roll: there the layer's own weight, as the free left arm has, so the roll's tuck carries the
     //  fist and the haft with it: held at full weight, the fist on the carried line rose over the tucked shoulder, the
     //  sweep's blendUnstowLanceRollHalf read 3 head-plane steps at ff3afb9, 0 at 5170040)
-    const h = clamp(L.hold, 0, 1), wa = (an._dodgeW || 0) > 0.01 ? w : Math.max(w, h);
-    if (this._held) { this._gripChar(_lohP); this._shaftChar(_lohD); _lohP.addScaledVector(_lohD, LC_S - GRIP_FRAC * this.length); }
+    /* (M2 fix wave 4, W3 in the reach: the left arm is the layer's at full weight from the draw's first step, its goal
+     *  starting where the arm was (`_drawFrom`) and bounded a step (`LH_REACH_STEP`); the weight's own ramp on top of the
+     *  hold's moved the wrist 0.09-0.10 m a step) */
+    const h = clamp(L.hold, 0, 1), dodge = (an._dodgeW || 0) > 0.01;
+    const wa = dodge ? w : (stance === 'draw' && !this._lTaken && !this._held ? 1 : Math.max(w, h));
+    if (this._held) { this._gripChar(_lohP); this._shaftChar(_lohD); _lohP.addScaledVector(_lohD, this._lhSlideM ?? LH_ON_MIN); }
     else { _lohP.copy(L.pt); _lohD.copy(L.dir); }
     _pole.set(0.72, -0.62, -0.18).normalize();
     /* the shoulder comes down and back toward the haft as the fist reaches past the arm's comfortable length (the left
@@ -3797,6 +3986,11 @@ export class MeleeLayer {
       _c.copy(this.haftOffLL).applyQuaternion(_lohQ2);
       _eC.subVectors(_lohP, _c);
       _lh.copy(this._lhFreeC).lerp(_eC, h);
+      /* (M2 fix wave 4, W3 in the reach: the wrist goal on its way to the stowed haft moves at most `LH_REACH_STEP` a step;
+       *  the hold's ramp and the layer's weight ramp together threw it 0.09-0.10 m a step) */
+      const lrOn = stance === 'draw' && !this._lTaken && !this._urgent;
+      if (lrOn && this._lrOk) { const d = _lh.distanceTo(this._lrPrev), mx = LH_REACH_STEP * (this._lastDt || 1 / 60) * 60; if (d > mx) _lh.lerpVectors(this._lrPrev, _lh, mx / d); }
+      if (lrOn && pass === 1) { (this._lrPrev ??= new THREE.Vector3()).copy(_lh); this._lrOk = true; }
       an._ikArm('l', _lh, _pole, wa, null);
       an._clearArmOfHead(b.upArmL, b.loArmL, b.handL, _lh, _pole, wa);
       an._liveW(b.handL.bone, _q1);
@@ -3818,6 +4012,9 @@ export class MeleeLayer {
       if (miss <= TAKE_TOL || this._takeWaitT > TAKE_WAIT || this._urgent) this._lTaken = true;
       else { this.needsTake = true; this._takeWaitT += this._lastDt || 0; }
     }
+    /* (M2 fix wave 4: ...and the stow's clock waits for the carry back, which goes no faster than W3 lets it, `LC_STEP`:
+     *  ended under it, the haft dropped onto the keeper 0.15-0.20 m in one step) */
+    if (stance === 'holster' && !this._held && !this._lSeated && L.u > 1e-4 && (this._stDrawK ?? 0) >= 0.80) this.needsTake = true;
     // ...and on the stow, at the seat: the fist lets go of the haft once it is on its line in the keeper
     if (stance === 'holster' && !this._held && !this._lSeated && L.u <= 1e-4) {
       if (miss <= TAKE_TOL || this._takeWaitT > TAKE_WAIT) { this._lSeated = true; this._seatK = this._stDrawK ?? 0; }
@@ -3864,8 +4061,12 @@ export class MeleeLayer {
      * why the elbow had to go up behind her head to reach the haft. */
     const p = this._reach || (this._reach = decimalFields({
       hand: [0.5, 0, 0], shaft: [0.5, 0, 1], lh: [0.30, 0.98, 0.04], lhOn: 0.54, lhW: 0,
-      yaw: DRAW_YAW, pitch: -0.04, roll: 0.06,
+      yaw: DRAW_YAW, pitch: -0.04, roll: 0.06, py: 0,
     }));
+    // (M2 fix wave 4: with the left fist on the haft, the trunk turns with the carry, `LC_YAW_BACK` -> `LC_YAW_S`)
+    p.yaw = this._lc?.on ? LC_YAW_BACK + (LC_YAW_S - LC_YAW_BACK) * smoothstep(this._lc.u, 0.35, 1.0) : DRAW_YAW;
+    // (...and the hips ahead of it, toward the guard's: W11's hip lead)
+    p.py = this._lc?.on ? READY.py * 0.85 * smoothstep(this._lc.u, 0.15, 0.85) : 0;
     this._liveSocket(_grip, _c);           // butt, dir (char)
     /* M1a weapons step 2: while the left hand brings the haft round (not yet in the right fist), the right hand goes
      * for where it will be handed over (the hand-over line, `_lcKeysNow`), not for the moving line: from her back the
@@ -3914,7 +4115,8 @@ export class MeleeLayer {
      * furthest from her back. It costs nothing anywhere else: `grabReach` has
      * been a CONVERGENCE test since round 4 (A102), and a shorter reach
      * converges sooner. */
-    const along = this._lc?.on ? GRIP_FRAC : clamp(_a.sub(_grip).dot(_c) / this.length, 0.68, 0.86);
+    // (M2 fix wave 4: from the left fist the right takes the butt, `TAKE_M`, and the haft slides to lance.grip in the pull)
+    const along = this._lc?.on ? TAKE_M / this.length : clamp(_a.sub(_grip).dot(_c) / this.length, 0.68, 0.86);
     this._grabFrac = along;
     _grip.addScaledVector(_c, along * this.length);
     /* The goal is the WRIST, but the haft runs through the PALM, so the
@@ -4083,7 +4285,10 @@ export class MeleeLayer {
     an._ikArm('r', _hand, _pole, w, null);
     an._clearArmOfHead(b.upArmR, b.loArmR, b.handR, _hand, _pole, w);
     // on the arm path the wrist correction may not spend the elbow roll
-    this._rollOff = path;
+    /* (M2 fix wave 4: on the draw's pull and the stow's guard leg the fist is in front of her, not reaching for her back:
+     *  the guard's elbow roll comes in over the leg, `_rollK`, so it is on when the guard reads ready; switched on at the
+     *  first ready step it turned the fist's twist 83 deg and dropped the haft 0.07 m in one step) */
+    this._rollOff = path && !this._held;
     this._alignHaft(w);
 
     /* HAFT GUARD (gate A104). The wrist can clear her skull and the 1.85 m
@@ -4107,9 +4312,11 @@ export class MeleeLayer {
      * it is trying to reach (filmed: the re-parent gap went from 0.085 m to
      * 0.385 m the moment the margins went up). The back carry's clearances are
      * A100's business and it measures them; this guard is for swings. */
+    this._dbg.clearPush = 0;
     for (let i = 0; i < (this._guardOn ? 4 : 0); i++) {
       const push = this._clearDeficit();
       if (push <= 0) break;
+      this._dbg.clearPush += push;   // (M2 fix wave 4: what the haft guard pushed the fist this step, m)
       _d.subVectors(_gapPt, _gapBone);
       if (_d.lengthSq() < 1e-6) _d.set(_hand.x <= 0 ? -1 : 1, 0, 0.4);
       _d.normalize();
@@ -4122,7 +4329,10 @@ export class MeleeLayer {
      *  the holster's first leg leaves the guard with the chest turned toward the hand, and the straight blend to the
      *  reach pose took the forearm across her chest. While the right hand still holds the haft, the wrist goal is
      *  moved out from the axis as in a swing, before the path's elbow bound) */
-    if (path && this._held && this._prevStance === 'holster') this._foreGuard(w);
+    /* (M2 fix wave 4: not on the new stow's guard leg: the right fist goes from the guard down to the hand-over line in
+     *  front of her belly, not across her chest, and the draw's pull, the same leg run forward, has none: it pushed the fist
+     *  0.14-0.17 m off the hand-over and the haft with it, W3 0.11 m) */
+    if (path && this._held && this._prevStance === 'holster' && !this._lc?.on) this._foreGuard(w);
     if (path) this._pathGuard(w);
     else if (this._guardOn) this._foreGuard(w);
     /* THE GUARDS MAY NOT POP: what they added to the table's hand changes by at
@@ -4563,7 +4773,7 @@ export class MeleeLayer {
         _d.normalize();
         if (this._twistAbout(_q2, _d, _q3)) {
           const ang = 2 * Math.acos(clamp(Math.abs(_q3.w), -1, 1));
-          let k = w;
+          let k = w * (this._rollK ?? 1);
           if (ang > ELBOW_ROLL) k *= ELBOW_ROLL / ang;
           _q1.copy(_q3);
           if (k < 0.999) _q1.slerp(_qi(), 1 - k);
@@ -4809,7 +5019,8 @@ export class MeleeLayer {
       _slW.copy(_c).sub(_b).add(_slG);
       /* (...and where that wrist goal is past the arm's reach (the guard at a jog: 0.470-0.478 m from the shoulder for a
        *  0.4745 m arm), the left shoulder comes toward it on the clavicle by what is missing, at most LH_CLAV_MAX) */
-      if (b.clavL && D.stance === 'ready') {
+      // (M2 fix wave 4: on the draw's pull and the stow's guard leg too, so the guard does not turn it on in one step)
+      if (b.clavL && (D.stance === 'ready' || (this._held && (D.stance === 'draw' || D.stance === 'holster')))) {
         an._charOf(b.upArmL.bone, _eS);
         const lack = _slW.distanceTo(_eS) - LH_REACH_K * (an._lenUpL + an._lenLoL);
         if (lack > 0) {
@@ -4933,8 +5144,9 @@ export class MeleeLayer {
     const an = this.an;
     this._gripChar(_grip);
     this._shaftChar(_a);
-    _slB.copy(_grip).addScaledVector(_a, -this.gripFrac * this.length);
-    _slT.copy(_grip).addScaledVector(_a, (1 - this.gripFrac) * this.length);
+    const gf = this._fracSolve ?? this.gripFrac;
+    _slB.copy(_grip).addScaledVector(_a, -gf * this.length);
+    _slT.copy(_grip).addScaledVector(_a, (1 - gf) * this.length);
     an._charOf(K.i, _slP);
     an._charOf(K.p, _slF);
     _slP.add(_slF).multiplyScalar(0.5);
@@ -5192,8 +5404,10 @@ export class MeleeLayer {
     const an = this.an;
     this._gripChar(_grip);
     this._shaftChar(_c);
-    _butt.copy(_grip).addScaledVector(_c, -this.gripFrac * this.length);
-    _tip.copy(_grip).addScaledVector(_c, (1 - this.gripFrac) * this.length);
+    // (M2 fix wave 4: at the place the fist has the haft this step: on the draw's pull and the stow's guard leg it slides)
+    const gf = this._fracSolve ?? this.gripFrac;
+    _butt.copy(_grip).addScaledVector(_c, -gf * this.length);
+    _tip.copy(_grip).addScaledVector(_c, (1 - gf) * this.length);
     let best = 9;
     for (let ci = 0; ci < CLEAR_BONES.length; ci++) {
       const e = an.b[CLEAR_BONES[ci]];

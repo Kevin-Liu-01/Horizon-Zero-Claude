@@ -2974,3 +2974,284 @@ waits for the shared slot are not counted.
 8. **The owner's word on the frames:** F08, F11 and F13 under ruling 1, the M2 frames, and F39-look as now staged. He
    also has rulings 2 and 4-6 to confirm.
 9. **The frame bar's literal p95 interval** still needs a headed browser on the display.
+
+## The M2 fix wave 4 and exit run 5 (Nov 20-21 2026)
+
+Three lanes worked in one tree on `r5/int` before this run: hero-anim (the lance's new left-hand path, ruling 6), the
+engine lane (C5: the Peg's death, the fade's textures, a late program) and the M3 wave's area E (the hour's runners).
+The orchestrator added a FIFO queue to the machine-wide Chrome slot. No commit was pushed.
+
+- **Hero-anim (45db033, 8d1586f, 8906cde, a07be86).** The haft slides through her left fist: the left fist draws it
+  butt first out of the keeper, carries it upright outside her left shoulder, and as the blade comes forward the haft
+  runs up through the fist so the butt passes in front of her; the right fist takes the butt low in front of her belly
+  and draws it into the guard. The stow is the same path run back. The stow lets go after its guard leg; the asked stow
+  runs 0.42 s (was 0.30); the reach in swap 1 to 2 starts from the bow's fist. Four close clips (hLanceNear,
+  hLanceBack, hSwapNear, hJogDraw).
+- **Engine (1b488a0 to cf166ee).** A Peg's death settles its wreck on the same skinning, done once and a mesh at a
+  time (bit-identical to three's). Textures made after the boot are uploaded a few a frame before they are drawn
+  (`engine.js` `_feedTextures`, 2.5 ms a frame). The loot beacon's programs are linked by the boot's warm-up. The
+  corpse code is kept warm in idle time on two stand-in wrecks. The hitch preload grades a chained run whole
+  (`--whole`) and sends late programs live.
+- **Area E (e53fb6b to 1e74ea5).** The slice takes a hitch segment before each reload, so its C2 line and leg 1 of C5
+  cover every document in play. The first hour reports per-leg and whole-run hitch totals with each long frame named.
+  The runners clear a Peg at T1's steps, run the Screed stand in 14 deg steps 1.2 m off wall-2, break off the terrace
+  topple under 35 hp to rest, and start leg 2 with a rest when the drink would leave the gourd under 30.
+- **A90b (933a7ca, memory lane).** The audio director's trample tells hold their machine by a WeakRef, and a herd's
+  file lets a disposed member go.
+- **Tooling (c9f130e).** Waiters for the Chrome slot queue in order (`tools/chrome-slot.mjs`).
+
+Then the exit run measured `r5/int` at **c9f130e** (its head when the run started) in one clean detached worktree (0
+tracked files changed), on port 5270, one Chrome at a time through the slot queue, sharing it with the M3 wave. The run
+made no commit. The owner's page is private.
+
+**Verdict: Milestone 2 does not exit.** One exit line fails:
+- **The first hour (X1).** It played 28 of 28 in three of four chained runs. In chain 3, Brea died in leg 2 on the walk
+  to Oro. HR8 also failed in chain 2, where her hp fell to 23.
+
+C5 (the hitches, measured whole) now passes, and so does the kept stack (80 of 80; A90b 3 of 3). The accepted frames
+have no regression and wait for the owner.
+
+| # | exit condition | result at c9f130e |
+|---|---|---|
+| 1 | `A-first-hour` plays its 28 beats in order, input-driven, no death, three runs | **FAIL**: 28/28 in chains 1, 2 and 4; chain 3 dead in leg 2 before `oro` (18/28). The clean Screed branch in all three that reached it |
+| 2 | the M2 frames accepted; the accepted frames not regressed | awaiting the owner; 16 of 16 accepted frames the same as at 52b0f59 (F02 closer); F42 lost its Sickle once (see below) |
+| 3 | resident textures <= 175 MB with two peoples and two biomes | PASS: 137.33 MB (the ledger) |
+| 4 | `public/` <= 165 MB | PASS: 59.38 MB (decimal MB) |
+| 5 | the frame bar in the fight frame | PASS in the headless form (F39: GPU 11.3 ms, 1797 frames in 30 s, 0 over 33 ms) |
+| C1 | the kept stack, 80 rows, 0 failing | **PASS**: 72 of 72 action rows; the 8 visual rows the same; A90b 3 of 3 |
+| C5 | hitches, measured whole: 0 over 50 ms, at most 3 over 33 ms per 10 minutes | **PASS** in three whole runs: 0, 2 and 0 over 33 ms; 0 over 50; worst 41.4 ms |
+
+**The provisional rulings, where they decide a line:**
+
+| ruling | what it allows | at c9f130e |
+|---|---|---|
+| 1 | F08, F11 and F13 as built, on simulation time | The same as in exit run 4 (0.007-0.042 % of pixels) |
+| 2 | W3 before W7; only the bow unstow's band widened, to 0.30-0.50 s | Now decides the lance. The new path meets W3 standing but misses W7: the draw takes 0.60 s (band 0.30-0.40), the stows 0.55 and 0.667 s. The bow unstow is 0.483 s; at a walk (0.533 s) and a jog (0.600 s) it is still over |
+| 3 | EN4's sun bar at the built sky's peak | 47.6-49.8 deg: PASS |
+| 4 | A100's dodge read in the strap frame | **PASS**: midpoint 0.22 m, 34.0 deg, blade 0.502-0.506 m, tip 0.606 m |
+| 5 | A101 fixed in the game | The guard reads ready at rest (tip 0.542 m), but A101 fails this run: light-2's left palm is 0.061 m off the haft (bar 0.05) |
+| 6 | The lance's left-hand path may be redesigned for W3 | **Used** (45db033 to a07be86). W3 passes standing: 0.0767 m draw, 0.0741 m asked stow, 0.0738 m calm stow. W3 still fails moving and on the click draw. A104, A106 and the gaff's KT3 now fail |
+
+**Tier 0: PASS, 10 of 10.**
+- Build: `vite build` OK, 4.34 MB of code.
+- Name lint: 0 hits in 1005 files.
+- Licences: 306 files against 34 rows.
+- Asset budgets: 54 GLBs, 0 over a cap.
+- Import graph: 242 modules, 0 broken.
+- Node tests: 298 pass in 62 files.
+- Boot: 4.3 s, 0 errors.
+- Texture ledger: 137.33 MB of 175.
+- Shipped ledger: first load 55.91 MB of 60.
+
+**The frame bar (TECH §9.1):** 1600 x 900 CSS px, DPR 1.25, quality `high`, headless Chrome on ANGLE Metal. Tool:
+`tools/perf/exit-bar.mjs`.
+
+| line | F02 | F25 | F33 | F39 | F39-people | bar | result |
+|---|---|---|---|---|---|---|---|
+| median GPU, back-to-back readback (7 x 60 frames) | 9.9 | 13.1 | 11.1 | 11.3 | 13.3 | <= 14 ms | PASS |
+| frames presented in 30 s; over 33 ms | 1797; 0 | 1798; 0 | 1798; 0 | 1797; 0 | 1799; 0 | >= 1782; 0 | PASS |
+| p95 presented interval (headless) | 17.4 | 17.5 | 17.4 | 17.7 | 17.7 | <= 16.7 ms headed | not measurable headless (an empty page reads 17.6) |
+| main-thread JS per frame, p95 | 4.0 | 4.4 | 4.0 | 4.0 | 4.0 | <= 8.0 ms | PASS |
+| draws; triangles | 100; 1.62 M | 145; 1.47 M | 118; 1.22 M | 118; 1.08 M | 132; 1.06 M | <= 350; <= 6.5 M | PASS |
+
+- **GPU drift.** Every frame's GPU median is 0.3-0.7 ms above exit run 4, F02 and F33 included. F39-people now
+  reads 13.3 ms against the 14 ms bar. This is not attributed.
+- **Load (the built game):** title interactive 4.51 s cold, then 4.42 and 4.17 s warm (bar 5 s). New Game to control
+  0.135 s cold, then 0.113 and 0.118 s warm. 51.48 MB in 320 requests (bar 60 MB).
+
+**The first hour** (`first-hour.mjs --chain`, the hitch preload on every leg; a fourth chain was run because chain 3
+died):
+
+| leg | chain 1 | chain 2 | chain 3 | chain 4 |
+|---|---|---|---|---|
+| 1 | 14/14, 249.7 s, 0 over 33 (max 33.3) | 14/14, 216.3 s, 2 (33.6, 41.4) | 14/14, 236.3 s, 0 | 14/14, 202.2 s, 0 |
+| 2 | 8/8, 286.4 s, 0 (max 26.4) | 8/8, 317.5 s, 0 | **4/8, dead at 292 s** | 8/8, 359.6 s, 0 |
+| 3 | 6/6, 248.4 s, 0 (max 25.1) | 6/6, 135.7 s, 0 | not run | 6/6, 135.8 s, 0 |
+| all | **28/28**, 13.07 min, C5 PASS | **28/28**, 11.16 min, C5 PASS | 18/28, C5 not graded | **28/28**, 11.63 min, C5 PASS |
+
+- **The death (chain 3).**
+  - The terrace Plumb, toppled at `plumb-2` with 6 arrows, stood again on the slope beside her. It had already
+    taken 40 hp with its Sightline during the topple.
+  - At `barbed` it was SPOTTED, hostile, beside her. She had 67 hp and an empty gourd (GOURD 000).
+  - Its Sightline then hit her 14 times, about every 5 s, from 199.6 s to 293 s.
+  - The walk to Oro timed out 51.5 m short, and she was felled by the Plumb.
+  - The same death at `oro` ended one chain at 174b07c and one at cf166ee in the engine lane.
+- **HR8 (chain 2).** She began leg 3 at 40 hp. At Benchmark 1, two Peg shots and a swarm rush took 17 hp, so she fell
+  to 23 hp (314 frames under 25) before a drink. The lowest hp in the other chains was 80 and 50. The slice's lowest
+  was 48.
+- **`plumb-2`** toppled with 2, 6, 6 and 5 arrows.
+- **The Screed** took its clean branch in all three chains that reached it: stalls on wall-1 and wall-2, wall-1 cut,
+  both seals off.
+- **The re-survey** closed in every complete chain: T1 249.3 (0.004-0.005 deg off), T2 76.4-76.6 (0.17-0.34), the
+  Sounding Ring 263.8 (0.156-0.157).
+- **The rest dialog** pre-selected REST UNTIL NOON with CALIMA BY NOON. The Transit card was on screen at the read
+  (12:19).
+- **A-late-programs:** PASS in every launch (0 linked in play, 0 first uses over 5 ms).
+
+**Hitches (C5): PASS, measured whole.**
+- **The slice runner now grades every document in play** (new-game, to-sight, run). The preload's `--whole` agrees.
+  With its stricter cut (over 33.0 ms), it reads 1, 2, 1 and 2 over 33 in the four chains, 0 over 50: PASS.
+- **Every frame over 33 ms is a Peg's death at the cross:** 37-38 ms of JS in the frame, the corpse settle. The
+  worst is 41.4 ms (chain 2), where exit run 4 had 50-58.6.
+- **The fade at Benchmark 1** is gone as a hitch: leg 3's worst frame is 25.1-26.2 ms (it was 33-42).
+- **Left out by the rule (not play):** one 50-60 ms frame per run, in the slice's staged site-clock row. That row
+  puts 13 hours on the clock (in the slice it fell at 04:13:01.3, the second the row logged).
+
+**Kept-stack rows: 80 of 80.** Four sessions: kept A, kept B, and A90b alone twice.
+- **Kept A:** 51 of 51 pass. A9-perf-budget passed in session: 59.9 fps median, 133 draws, the box quiet.
+- **Kept B:** 21 of 21 action rows pass, plus 8 visual rows.
+- **A90b-memory-attribution: PASS 3 of 3.** At most 4 detached objects are retained per owner (bar 20; it was
+  28-44 at 52b0f59). The heap grew 9.8, 10.1 and 4.4 %.
+- **The visual rows** show the same poses as at 52b0f59, except V49. V49 (the draw from a jog) now shows the new
+  path:
+  - At draw 0.10-0.40 the haft stands upright outside her left shoulder.
+  - Then it comes forward low.
+  - No hand goes above or behind her head.
+
+**The slice:** 14 of 14, stopped at the reward.
+- Cross 45.8 s, topple 50.6 s (93 to 53 hp), lowest hp 48.
+- C2 over every document: 30258 frames in 258.4 s, 1 over 33 ms (33.6, the cross), 0 over 50.
+- Save rows and the site clock: PASS.
+
+**Lane rows (not kept):**
+- **A101: FAIL.** On light-2, a two-handed frame had the left palm 0.061 m off the haft (bar 0.05). Guard tip 0.542 m;
+  click to swing 0.337-0.350 s.
+- **A104: FAIL.** The lance stow brought her forearm within 0.081 m of her spine. The swings clear at 0.149-0.187 m.
+- **A106: FAIL.** Head-on at a Peg, a forearm or fist went inside its hull on 4 of 110 frames (worst -0.03 m, light-1
+  recover). Every machine was pushed 0 m.
+- **A100: PASS** (ruling 4).
+- **A102, A103, A105, A-stow-clearance: PASS.**
+- **A-herd-ripple, A-moving-cover, A-screed-fight: PASS.**
+- Hero-anim reported that three of these four lane failures passed at 52b0f59 on the same machine.
+
+**Node benches at c9f130e:**
+- **Handling bench:** bow and lance, 95 failing clauses in 23 of 26 cases (93 at 52b0f59); the gaff in the loop, 15 in
+  6 of 6.
+- **Lance W3:**
+  - Standing: draw 0.0767 m, asked stow 0.0741 m, calm stow 0.0738 m, swap 2 to 1 0.0782 m (all PASS).
+  - Swap 1 to 2: 0.0833 m (FAIL).
+  - Walk, jog and crouch: 0.154, 0.175 and 0.229 m (FAIL).
+  - The click draw: 0.194-0.311 m (FAIL).
+- **Lance W7:** draw 0.60 s, stows 0.55 and 0.667 s (all FAIL).
+- **Bow unstow:** 0.483 s (walk 0.533, jog 0.600).
+- **Gaff bench: 17 of 19 (a regression).**
+  - KT3 swap lance to gaff takes 0.883 s, and gaff to lance 0.817 s (bar 0.65).
+  - Both pass at e04cbeb and fail from 45db033 (0.75 and 0.817 s there).
+- **Passing:**
+  - Windwall 8/8, pots 7/7, A107 18 cycles with 0 fail.
+  - Moving-cover lee 0/10, open 10/10; herd-bearing 0/10 and 10/10.
+  - calima-rows: EN4 47.6-49.8 deg, EN5, EN1.
+  - People cloth: worst 0.0119 ms (bar 0.02).
+  - Writing: W2. Holds rows.
+  - kit-m2 11/11, at-work 1/1, screed-corridor 1/1, systems 112/112, audio and settlements 31/31, skin-exact 6/6.
+- **A bare `node --test`** fails one test, hide-fit: two armour GLBs were built against an older Brea. This is a
+  known TODO that Tier 0 skips.
+
+**Frames** (the Frame Set and the lane frames, 64 of 64 filmed, 0 console errors), compared with the 52b0f59 film:
+- **Accepted frames:** 16 of 16 are the same within wind, grass and cloth.
+  - **F02 is closer:** her right arm hangs at her side as in the anchor (at 52b0f59 it was held out).
+  - F08, F11 and F13 keep their ruling-1 look.
+- **F42 lost its Sickle once.** In the full film only its hub disc showed in the grass; the hull and legs were absent,
+  with the same draws and triangles as at 52b0f59. Two refilms a minute apart, one at c9f130e and one at 52b0f59, both
+  show the Sickle. The cause is not found. (An older note in `machine.js` describes bodies vanishing while parts
+  float: a bounding sphere computed while the bone matrices were still zero.)
+- **F23-peg** shows the Peg standing clear (exit run 4 had a dust dome; wall clock).
+- **The other M2 frames are the same.**
+- **Weapons clips** (sim time, 13 clips, 0 console errors): the new lance draw, stow and swap close up, the draw at a
+  jog, and the bow unstow.
+  - No hand or arm goes behind her head in the frames looked at.
+  - The draw holds the haft upright outside her left shoulder.
+  - Then it swings forward about 90 deg in 4 frames (0.07 s) to low in front of her belly.
+
+**Chrome used:** about 113 minutes in 17 sessions, one at a time, between 03:16 and 05:13 UTC.
+
+---
+
+**What the next wave needs:**
+1. **The first hour's death before Oro (the only failing exit line).**
+   - The terrace Plumb toppled at `plumb-2` stands again and keeps its Sightline on her.
+   - She walks to Oro with an empty gourd, the walk stalls, and the Plumb kills her. This happened in 1 of 4 chains
+     here and in one chain each at 174b07c and cf166ee.
+   - Decide game or runner. Either a toppled Plumb should stay down or lose her, or the runner must finish it, break
+     line of sight, or rest before the walk.
+   - Then run three chained runs again.
+2. **HR8 into leg 3.** She can start leg 3 at 40 hp and meet the Pegs at Benchmark 1. Drink or rest before the survey
+   as leg 2 does.
+3. **The lance (ruling 6 used, ruling 2 now decides W7).** W3 passes standing but W7 fails: the draw takes 0.60 s
+   against 0.30-0.40. Moving, crouched and the click draw still fail W3. The owner must say whether W7 may widen for
+   the new path, or the path must get faster within W3.
+4. **The new path's side effects.**
+   - A104: the stow brings her forearm 0.081 m from her spine.
+   - A101: light-2's left palm is 0.061 m off the haft.
+   - A106: a fist goes inside a Peg on 4 of 110 frames.
+   - The gaff swaps take 0.82-0.88 s against KT3's 0.65. Both swap cases fail from 45db033.
+5. **C5's last long frame.** A Peg's death still costs 33-41 ms in the frame it falls; it is under the bar but is the
+   only long frame left.
+6. **F42's missing Sickle** (1 of 3 films). Find what hides a frozen, newly spawned Sickle's skinned body while its
+   hub shows. Suspects: the texture feed (`engine.js` `_feedTextures`, which calls `computeBoneTexture` before the
+   first draw) or a bounding sphere computed early.
+7. **The GPU drift:** +0.3-0.7 ms on every bar frame since exit run 4. F39-people is at 13.3 of 14 ms. Attribute it.
+8. **The owner's word** on the frames (F08, F11, F13 under ruling 1, the M2 frames, F02 now closer), on rulings 2 and
+   4-6, and on the new lance path.
+9. **The frame bar's literal p95 interval** still needs a headed browser on the display.
+
+## The X1 fix and its verify run (Nov 21 2026)
+
+Exit run 5 (c9f130e) failed on one line, X1. Two fixes followed. Area E committed both on `r5/int`. No commit was pushed.
+
+- **The game (460d262).** The terrace Plumb toppled at `plumb-2` used to stand up 4 s later still in its fight. Its
+  `plumb-2` reaction handed it back to `attack`, and nothing ended that fight. It then followed her toward Oro at
+  9-14 m, using its Sightline. This happened in all four chains of exit run 5, and in chain 3 it killed her. Now the
+  Plumb is held in the lying part of its topple while she is within 80 m of it or it is in her view (the site clock's
+  view test). After that it rises out of sight and goes home calm on a 20 + 40 m leash to its terrace
+  (`src/game/terrace-down.js`, `hour.js` `_downStep`, `report().terraceDown`). This changes only the hour's own
+  terrace Plumb; the slice's Plumbs and the kept rows' Plumbs are untouched. Node: `terrace-down.test.mjs` has 9
+  rows, including a replay of chain 3.
+- **The hour's runner (6266bd6, replacing 468ce7e).** In leg 3, if she is under 60 hp with a dry gourd before the walk
+  to Benchmark 1 or before its survey, she first rests at her cistern's Brazier (`restIfLow`, `walkS` 150 s), as she
+  does in leg 2. The first try (468ce7e) went to medicinal plants instead. It found none within 90 m, because no plant
+  grows above 26 m and the Holds stand at 95, so that version was dropped.
+
+**The verify run** measured `r5/int` at **6266bd6** (its head) in one clean detached worktree (0 tracked files
+changed), on port 5270, one Chrome at a time through the slot queue. The run made no commit.
+
+**Verdict: X1 passes, and with it every exit line that exit run 5 measured.** The owner's frame acceptance (line 2)
+and the provisional rulings still wait for the owner, as they did after exit run 5.
+
+| # | exit condition | result at 6266bd6 |
+|---|---|---|
+| 1 / X1 | `A-first-hour` plays its 28 beats in order, input-driven, no death, three runs | **PASS**: 28/28 in all three chained runs, with no death |
+| HR8 | lowest hp over the whole run, 0 frames under 25 | **PASS**: 80, 51 and 55. Leg 3's lowest was 80, 84 and 87; leg 3 began at 80, 90 and 98 hp |
+| C5 | hitches, measured whole: 0 over 50 ms, at most 3 over 33 ms per 10 minutes | **PASS**: 1, 2 and 1 over 33 ms (0.92, 1.86 and 0.88 per 10 min); 0 over 50; worst 41.4 ms (a Peg's death at the cross) |
+| slice | the slice, 14 beats | **PASS**: 14/14, lowest hp 93, 0 frames under 25. C2: 2 over 33 ms (34.3 and 33.4, both at the cross), 0 over 50. Site clock PASS |
+| Tier 0 | the Node checks (`--no-boot`) | **PASS** 8 of 8 run: build 4.34 MB of code, 0 name-lint hits, 306 files against 34 licence rows, 54 GLBs with 0 over a cap, 137.33 MB of textures of 175, a first load of 55.91 MB of 60, 243 modules with 0 broken imports, 307 Node tests pass in 63 files. The boot was not run |
+| build | `npx vite build` | PASS (exit 0) |
+| C1 | the kept rows the fix touches | **PASS** 6 of 6: A1-boot-clean, A20-frame-loop-survives, A20b-no-system-errors, A65-save-restore, A68-no-softlock, A78-cast-states |
+
+**The first hour** (`first-hour.mjs --legs 1,2,3 --chain`, the hitch preload on every leg):
+
+| leg | chain 1 | chain 2 | chain 3 |
+|---|---|---|---|
+| 1 | 14/14, 220.4 s, 1 over 33 (41.4) | 14/14, 226.1 s, 1 (33.5) | 14/14, 239.6 s, 1 (34.5) |
+| 2 | 8/8, 291.7 s, 0 (max 26.3) | 8/8, 281.5 s, 1 (35.0, at `oro`) | 8/8, 304.8 s, 0 (max 25.1) |
+| 3 | 6/6, 137.1 s, 0 (max 18.3) | 6/6, 136.5 s, 0 (max 18.4) | 6/6, 135.9 s, 0 (max 25.4) |
+| all | **28/28**, 10.82 min, C5 PASS | **28/28**, 10.74 min, C5 PASS | **28/28**, 11.34 min, C5 PASS |
+
+- **The terrace Plumb stayed down.** In all three chains it was held from the topple until she was 80 m off and it was
+  out of her view; then it rose (held to rising: 22.1 s, 21.3 s and 23.9 s). Her hp did not fall between `plumb-2` and
+  `oro` in any chain: 80 to 80, 90 to 90, and 98 to 98 (chain 3 drank to 98 at `barbed` after the topple left her at
+  55).
+- **`plumb-2`** toppled with 2, 2 and 4 arrows.
+- **A-late-programs:** PASS in every launch (0 linked in play, 0 first uses over 5 ms).
+- **HR8's leg 3 rest** never fired in these runs, because leg 3 always began at 80 hp or more. It was proven on its own
+  at 6266bd6 from a clean worktree: leg 3 started at 40 hp with a dry gourd, she walked to the cistern in 42.6 s and
+  rested to 100, the survey took her to 77, and her lowest hp was 40 (6/6).
+
+**Not re-run at 6266bd6.** Since c9f130e, the only changes are the two fixes above and the docs. These results from exit
+run 5 still stand:
+- the film and the 16 accepted frames, and the F42 pair;
+- the frame bar (F39 GPU 11.3 ms), and the load times;
+- the headless boot (Tier 0 boot 4.3 s, 0 errors);
+- the other 74 kept rows (exit run 5: 80 of 80, A90b 3 of 3);
+- the hero clips;
+- the Node benches.

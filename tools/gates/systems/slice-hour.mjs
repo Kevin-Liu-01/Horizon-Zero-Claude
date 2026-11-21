@@ -837,6 +837,7 @@ async function fight(page, K, kind, part, stageDone, { stand = 22, maxS = 100, a
 
 async function beat(page, K, s) {
   const st = s.stage;
+  let climbPegs = null;
   if (s.type === 'goto') {
     if (s.up) {
       // a pillar is climbed by its three 1 m steps (src/world/sites/survey.js): come at it from the steps' side
@@ -847,13 +848,36 @@ async function beat(page, K, s) {
         return best ? { x: best.x + Math.sin(best.yaw) * 8, z: best.z + Math.cos(best.yaw) * 8, cx: best.x, cz: best.z } : null;
       }, s.anchor.x, s.anchor.z);
       if (ap) {
+        // (M2 exit, area E) a Peg that came after her from the line is put out before the climb, and again when the steps
+        // stop her: at ae888fc chained run 1 a Peg of transect 08 stood at the foot of T1's steps, took her 75 -> 16 and
+        // held her 3.4 m short of the top ('climb' failed, the chain stopped)
+        const pegsOnHer = () => page.evaluate(targetsOf, 'peg', 'lamp').then((T) => T.filter((t) => t.d < 10 || (t.d < 30 && t.state !== 'patrol' && t.state !== 'return' && t.state !== 'idle')));
+        const clearPegs = async (why) => {
+          const P = await pegsOnHer();
+          if (!P.length) return null;
+          const me = (await page.evaluate(probe)).p;
+          const f = await fight(page, K, 'peg', 'lamp', null, { stand: 14, maxS: 60, all: true, near: { x: me.x, z: me.z }, nearR: 32 });
+          await drink(page, K, 92);
+          (climbPegs ||= []).push({ why, n: P.length, nearest: +P[0].d.toFixed(1), state: P[0].state, fired: f.fired, ok: f.ok, fightWhy: f.why ?? null, left: (await pegsOnHer()).length });
+          return f;
+        };
+        if ((await clearPegs('before the approach'))?.why === 'died') return { ok: false, why: 'died' };
         let r0 = await walkTo(page, K, ap, 1.5);
         // M1b exit fix: stuck on the straight line (edd1c95 run 1: 31.1 m short, after the Peg line's kiting left her
         // elsewhere), the rest of the way on the nav grid, as a player picks a way round
         if (!r0.ok && /stuck|timed out/.test(String(r0.why ?? ''))) r0 = { ...(await walkPath(page, K, ap, 1.5, { maxS: 90 })), retried: r0.why };
         if (!r0.ok) return { ...r0, why: `approach to the steps: ${r0.why}` };
-        const r1 = await walkTo(page, K, { x: ap.cx, z: ap.cz }, 1.2, { up: s.up, maxS: 60 });
-        return r1;
+        if ((await clearPegs('at the steps'))?.why === 'died') return { ok: false, why: 'died' };
+        let r1 = await walkTo(page, K, { x: ap.cx, z: ap.cz }, 1.2, { up: s.up, maxS: 60 });
+        if (!r1.ok && r1.why !== 'died') {
+          const f = await clearPegs(`the climb stopped (${r1.why})`);
+          if (f?.why === 'died') return { ok: false, why: 'died' };
+          if (f) {
+            await walkTo(page, K, ap, 1.5, { maxS: 30 });
+            r1 = { ...(await walkTo(page, K, { x: ap.cx, z: ap.cz }, 1.2, { up: s.up, maxS: 60 })), retried: r1.why };
+          }
+        }
+        return climbPegs ? { ...r1, pegs: climbPegs } : r1;
       }
     }
     const top = await page.evaluate(() => { const P = window.__CTX__.player.position; return P.y - window.__CTX__.terrain.getHeight(P.x, P.z); });
@@ -1323,13 +1347,16 @@ if (IS_MAIN) try {
         const d = t - H.last;
         if (H.pause || H.skip) { H.tool++; if (d > 33.4) H.toolOver33++; if (!H.pause) H.skip = false; }
         else { H.n++; H.ms += d; if (d > H.max) H.max = d; if (d > 50) H.over50++;
-          if (d > 33.4 && H.over33.length < 200) H.over33.push({ t: +(t / 1000).toFixed(2), ms: +d.toFixed(1), stage: C.spine?.current?.()?.id ?? null }); }
+          if (d > 33.4 && H.over33.length < 200) H.over33.push({ t: +(t / 1000).toFixed(2), at: Date.now(), ms: +d.toFixed(1), stage: C.spine?.current?.()?.id ?? null }); }
       }
       H.was = playing; H.last = t; requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
-  const hitchSegs = (report.hitch = { note: 'presented-frame intervals in play (state playing), one segment per document; tool = inside or right after a runner screenshot', segments: [] });
+  // (M2 exit, area E) one segment per page DOCUMENT, taken before each reload that ends one (new-game before save-reload,
+  // to-sight before save-t1, run at the run's end): at 52b0f59 the document between the two save reloads (wake to sight,
+  // about 120 s of the slice) was never taken, so C2 and leg 1 of C5 were graded on about 40 % of the play
+  const hitchSegs = (report.hitch = { note: 'presented-frame intervals in play (state playing), one segment per page document, taken before each reload (new-game, to-sight) and at the run\'s end (run); tool = inside or right after a runner screenshot; at = epoch ms of the long frame', segments: [] });
   const takeHitch = async (tag) => { const h = await page.evaluate(() => { const H = window.__hitch; return H ? { n: H.n, s: +(H.ms / 1000).toFixed(1), maxMs: +H.max.toFixed(1), over33: H.over33.length, over50: H.over50,
       list: H.over33.map((x) => ({ ...x, loaf: (H.loaf || []).filter((l) => l.t <= x.t * 1000 + 5 && l.t + l.d >= x.t * 1000 - x.ms - 5) })), tool: H.tool, toolOver33: H.toolOver33, sheet: H.sheet || 0, sheetMaxMs: +(H.sheetMax || 0).toFixed(1) } : null; }).catch(() => null); if (h) hitchSegs.segments.push({ tag, ...h }); };
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 180000 });
@@ -1353,6 +1380,7 @@ if (IS_MAIN) try {
   if (PAD) { await sleep(500); report.padBegin = await uiChoose(page, /BEGIN/, { sel: '.mn-diff' }); }
   else await page.evaluate(() => document.querySelector('.mn-diff').click());
   await page.waitForFunction(() => window.__CTX__?.state === 'playing' && window.__CTX__?.spine?.started, { timeout: 60000, polling: 50 });
+  report.playStartedAt = Date.now();   // (M2 exit, area E) a long frame's time in the run: seconds from here (hitch.total.long[].tPlay)
   await sleep(2500);
   const s0 = await page.evaluate(probe);
   report.start = { hour: await page.evaluate(() => window.__CTX__.environment.time), stage: s0.stage, note: s0.note };
@@ -1461,6 +1489,8 @@ if (IS_MAIN) try {
     // M1.6j save-continue ON A STRUCTURE: the record the sight stage wrote stands her on T1's deck (5f4bf42: Continue put
     // her 2.2 m off it); quit, reopen, CONTINUE there, and play on from the continued game
     if (row.ok && s.stage === 'sight' && !report.rows['save-t1']) {
+      // (M2 exit, area E) the document from save-reload's CONTINUE to here (wake to sight) ends with this reload: its segment first
+      await takeHitch('to-sight');
       report.rows['save-t1'] = await reloadContinue(page, 'b-t1');
       log(`save-t1: ${report.rows['save-t1'].pass ? 'PASS' : 'FAIL'} ${JSON.stringify({ dxz: report.rows['save-t1'].dxz, dy: report.rows['save-t1'].dy })}`);
       if ((await page.evaluate(() => window.__CTX__?.state)) !== 'playing') { report.stoppedAt = 'ditch'; report.why = 'the continue on T1 left the game off play'; break; }
@@ -1474,7 +1504,11 @@ if (IS_MAIN) try {
   if (!report.stoppedAt) { report.stoppedAt = (await page.evaluate(probe)).stage; report.why = 'Chrome budget'; }
   // M1.8b: the run's segment ends with the run, before the staged rows after it (site clock, death-after)
   await takeHitch('run');
-  { const S = hitchSegs.segments; hitchSegs.total = { s: +S.reduce((a, x) => a + x.s, 0).toFixed(1), frames: S.reduce((a, x) => a + x.n, 0), over33: S.reduce((a, x) => a + x.over33, 0), over50: S.reduce((a, x) => a + x.over50, 0), maxMs: Math.max(0, ...S.map((x) => x.maxMs)), tool: S.reduce((a, x) => a + x.tool, 0) }; }
+  { const S = hitchSegs.segments; hitchSegs.total = { s: +S.reduce((a, x) => a + x.s, 0).toFixed(1), frames: S.reduce((a, x) => a + x.n, 0), over33: S.reduce((a, x) => a + x.over33, 0), over50: S.reduce((a, x) => a + x.over50, 0), maxMs: Math.max(0, ...S.map((x) => x.maxMs)), tool: S.reduce((a, x) => a + x.tool, 0),
+      segs: S.map((x) => x.tag), playS: report.playStartedAt ? +((Date.now() - report.playStartedAt) / 1000).toFixed(1) : null,
+      long: S.flatMap((x) => (x.list || []).map((q) => ({ seg: x.tag, ms: q.ms, stage: q.stage, at: q.at ?? null, tPlay: q.at && report.playStartedAt ? +((q.at - report.playStartedAt) / 1000).toFixed(1) : null }))) };
+    const T = hitchSegs.total;
+    log(`hitch (C2, every document in play: ${T.segs.join(', ')}): ${T.frames} frames in ${T.s} s, ${T.over33} over 33 ms, ${T.over50} over 50 ms, max ${T.maxMs} ms${T.long.length ? `; ${T.long.map((q) => `${q.ms} ms at ${q.tPlay ?? '?'} s (${q.stage ?? '?'}, ${q.seg})`).join('; ')}` : ''}`); }
   const fin = await page.evaluate(probe);
   report.spine = fin.report;
   report.shots = shots;

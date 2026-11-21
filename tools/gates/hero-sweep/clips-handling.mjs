@@ -60,6 +60,18 @@ export const CLIPS = {
    *     her left hip and carries it round her front to the guard (PULL_FRONT), twice */
   hPull: { sim: true, frame: 'F16', pose: 'idle', lens: { a: -35, d: 1.7, h: 1.15, look: 1.0, fov: 44 },
     js: `${RESET} await w(0.3); ${K2} await w(1.2); mel.holsterLance(); await w(1.1); ${K2} await w(1.2); mel.holsterLance(); await w(1.0);` },
+  /* 13. (M2 fix wave 4, the new lance choreography: the haft slides through her left fist, the right takes the butt in front
+   *     of her belly) close enough that the hands read: the draw (key 2) and the asked stow (B) from her front-left
+   *     three-quarter at 1.7 m; the same from behind her left (the left fist's take at the keeper and the seat); the swaps
+   *     from her left front at 2.0 m; the draw and the stow at a jog from her side at 2.3 m */
+  hLanceNear: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 35, d: 1.7, h: 1.15, look: 1.0, fov: 44 },
+    js: `${RESET} await w(0.3); ${K2} await w(1.3); mel.holsterLance(); await w(1.2);` },
+  hLanceBack: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 150, d: 1.8, h: 1.2, look: 1.0, fov: 44 },
+    js: `${RESET} await w(0.3); ${K2} await w(1.3); mel.holsterLance(); await w(1.2);` },
+  hSwapNear: { sim: true, frame: 'F16', pose: 'idle', lens: { a: 55, d: 2.0, h: 1.15, look: 1.0, fov: 44 },
+    js: `${RESET} ${K1} await w(1.0); ${K2} await w(1.6); ${K1} await w(1.8);` },
+  hJogDraw: { sim: true, frame: 'F15', pose: 'idle', lens: { a: 'side', d: 2.3, h: 1.1, look: 0.95, fov: 42 },
+    js: `${RESET} C.input.keys.add('KeyW'); await w(0.8); ${K2} await w(1.4); mel.holsterLance(); await w(1.4);` },
   /* 12. (M2 polish) the gaff in the loop, from her front: the hand-over (the gaff only), key 1 (the bow out), key 3 (the
    *     bow back on her back, then the gaff drawn by her right hand), key 1 (the gaff back on its hanger, then the bow),
    *     key 3 again, then the gaff stowed. Last of the clips: the kit stays granted in the page */
