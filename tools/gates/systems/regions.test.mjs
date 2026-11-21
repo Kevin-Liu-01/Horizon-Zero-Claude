@@ -16,10 +16,10 @@ const map = new RegionMap().build();
 const at = (id) => SITES.find((s) => s.id === id);
 const en = (e, n) => ({ x: e, z: -n });   // ISLAND_SCALE is 1 at 1024 m
 
-test('every biome has one region; the Pans and the Holds are built', () => {
+test('every biome has one region; the Pans, the Holds and (M3 wave 3c) the Malpais are built', () => {
   const biomes = REGIONS.map((r) => r.biome);
   assert.equal(new Set(biomes).size, biomes.length);
-  assert.deepEqual(REGIONS.filter((r) => r.built).map((r) => r.id).sort(), ['holds', 'pans']);
+  assert.deepEqual(REGIONS.filter((r) => r.built).map((r) => r.id).sort(), ['holds', 'malpais', 'pans']);
   assert.equal(BOOT_REGION, 'pans');
 });
 

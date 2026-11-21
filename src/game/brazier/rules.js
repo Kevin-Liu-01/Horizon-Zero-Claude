@@ -39,6 +39,11 @@ export const BRAZIERS = Object.freeze([
   Object.freeze({ id: 't1', home: false, litAtStart: false, locked: true }),
   // Milestone 2: the Ninewalls cistern's (settlements' PLACES.brazier); unlocked when "True Ground" reaches 'rest-noon'
   Object.freeze({ id: 'ninewalls', home: false, litAtStart: false, locked: true }),
+  // Milestone 3 (wave 3c, area E): the Malpais tube shelter's (BIBLE §3.4; its spot malpais-layout.js TUBE_SHELTER.brazier),
+  // the rest of "The Kiln Yards" ('tube-rest'). Open to kindle from the start, as any Brazier she finds. `region`: its
+  // object is the one the Malpais builds on approach (src/world/sites/malpais-region.js), so it stands only while the
+  // region does (src/game/brazier/braziers.js adopts it)
+  Object.freeze({ id: 'tube-shelter', home: false, litAtStart: false, locked: false, region: 'malpais' }),
 ]);
 
 /** Is any Instrument within REFUSE_RADIUS of (x, z) wary or hostile? machines: [{ x, z, lamp }] */

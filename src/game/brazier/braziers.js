@@ -1,9 +1,10 @@
-import { buildBrazier, makeFireLight } from '../../world/settlements/brazier.js';
+import { buildBrazier, makeFireLight, vec3 } from '../../world/settlements/brazier.js';
 import { BRAZIERS, KINDLE_HOLD, dialogFor, REST_HOURS, NOON, NOON_WAKE } from './rules.js';
 import { REST } from '../../world/island/sites.js';
 import { HOME_BRAZIER, BRAZIER_YAW, T1_SPOTS, clearOfFrames } from '../../world/settlements/brazier-spots.js';
 import { lampStateFor } from '../../instruments/lamps.js';
 import { PLACES as NW_PLACES } from '../../world/settlements/ninewalls-layout.js';
+import { TUBE_SHELTER } from '../../world/sites/malpais-layout.js';
 
 /**
  * THE BRAZIERS of the slice, live (BUILD M1.6c). Brea's cistern (home: a New Game counts as a rest here) and the
@@ -21,6 +22,13 @@ import { PLACES as NW_PLACES } from '../../world/settlements/ninewalls-layout.js
  * The settlement host still builds the Round-4 pit at the cistern; while this stands its group is hidden and its
  * `firePosition` is this bowl, so the host's REST lookup and the F30 filmer both find this Brazier. (Host file
  * untouched: a runtime change from this side, named in the lane report.)
+ *
+ * (M3 wave 3c, area E) A Brazier of a region built on approach (`def.region`: the Malpais tube shelter's, 'tube-shelter')
+ * has no object of its own: the region builds the Brazier with its near form (src/world/sites/malpais-region.js, read
+ * only) and this ADOPTS it once the region is ready (`rec.obj`, null while the region is cold; `rec.adopted`). Its
+ * prompt stands at the layout's spot from boot, disabled until then; its lit and ash state live here as every other's,
+ * and are put on the object each time it is adopted again (a depart takes the region down, an approach builds it anew).
+ * The one fire light is parked at it from here (the region built it without the shared light).
  */
 export class Braziers {
   constructor(ctx, { strings, present, save }) {
@@ -48,6 +56,8 @@ export class Braziers {
     // Milestone 2: the Ninewalls cistern's, at settlements' own spot (ninewalls-layout.js PLACES.brazier), its seat on
     // the street side (yaw from the bearing it stands on)
     if (def.id === 'ninewalls') return { x: NW_PLACES.brazier.x, z: NW_PLACES.brazier.z, yaw: (NW_PLACES.brazier.b ?? 218) * Math.PI / 180 };
+    // (M3 wave 3c) the tube shelter's: the Malpais' own spot (the region builds it there, yaw 0)
+    if (def.id === 'tube-shelter') return { x: TUBE_SHELTER.brazier.x, z: TUBE_SHELTER.brazier.z, yaw: 0 };
     // at the pillar's foot, 7 m off it on its landward side, on the flattest spot that no accepted frame's lens sees
     // (5baa3e7 took the flattest of four round the pillar: its cistern stood in F05's right foreground beside her)
     let best = null;
@@ -67,6 +77,7 @@ export class Braziers {
     ctx.scene?.add(this.light);
     for (const def of BRAZIERS) {
       const at = this._place(def);
+      if (def.region) { this._buildAdoptive(def, at); continue; }
       // (the Ninewalls Brazier stands beside the village's own cistern: no second cistern ring of its own)
       const obj = buildBrazier({ terrain: ctx.terrain, x: at.x, z: at.z, yaw: at.yaw, cistern: def.id !== 'ninewalls', seed: def.id === 'cistern' ? 11 : def.id === 'ninewalls' ? 31 : 23, sharedLight: this.light });
       ctx.scene?.add(obj.group);
@@ -86,6 +97,39 @@ export class Braziers {
     if (host?.firePosition && home) host.firePosition.copy(home.obj.position);
   }
 
+  /** (M3 wave 3c) a region's Brazier: the record and its prompt now, the object when the region is ready (`_adopt`). */
+  _buildAdoptive(def, at) {
+    const ctx = this.ctx;
+    const y = ctx.terrain?.getHeight?.(at.x, at.z) ?? 0;
+    const rec = { id: def.id, def, obj: null, entry: null, adopted: false, at: { x: at.x, y, z: at.z } };
+    this.list.push(rec);
+    if (ctx.interactables?.register) {
+      rec.entry = ctx.interactables.register({
+        position: vec3(at.x, y, at.z), radius: 2.6, hold: KINDLE_HOLD, label: this.T.brazier.six.kindle, once: false, site: 'brazier',
+        onInteract: () => this.interact(def.id),
+      });
+      rec.entry.disabled = true;
+    }
+  }
+
+  /** The region's own Brazier object, when it stands (the Malpais: terrain.malpais, ready). Read only. */
+  _regionObj(rec) {
+    if (rec.def.region !== 'malpais') return null;
+    const M = this.ctx.terrain?.malpais;
+    const o = M?.state === 'ready' ? M._held?.brazier ?? null : null;
+    return o && o.group?.parent ? o : null;
+  }
+
+  /** Adopt the region's object when it stands, drop it when the region is taken down. True when it changed. */
+  _adopt(rec) {
+    const o = this._regionObj(rec);
+    if (o === rec.obj) return false;
+    rec.obj = o;
+    rec.adopted = !!o;
+    if (o && rec.entry) rec.entry.position?.copy?.(o.position);
+    return true;
+  }
+
   _defaults() {
     this.lit.clear(); this.ash.clear(); this.unlocked.clear();
     for (const def of BRAZIERS) {
@@ -98,6 +142,7 @@ export class Braziers {
   }
 
   _restSpot(b, hour) {
+    if (!b.obj) return null;
     // she stands up where she spawns at home (REST), and at the seat elsewhere
     const st = b.obj.seat, ox = st.x - b.obj.position.x, oz = st.z - b.obj.position.z, oL = Math.hypot(ox, oz) || 1;
     // (elsewhere: on her feet 0.7 m outboard of the seat block, not inside it)
@@ -138,8 +183,9 @@ export class Braziers {
     const wv = env?.wind;
     // the wind blows TOWARD (wind.x, wind.z) in the engine frame (x = E, z = -N); the forecast names where it comes from
     const toward = wv && (wv.x || wv.z) ? Math.atan2(wv.x, -wv.z) * 180 / Math.PI : 225;
+    const at = b.obj?.position ?? b.at;
     return dialogFor(this.T, b.def, {
-      lit: this.lit, unlocked: this.unlocked, x: b.obj.position.x, z: b.obj.position.z,
+      lit: this.lit, unlocked: this.unlocked, x: at.x, z: at.z,
       machines: this.machinesNear(),
       weather: { state: env?.weather ?? 'trade', windFrom: toward + 180, speed: w.windMS ?? 5, calimaAt: env?.calimaAt ?? this.calimaAt ?? null },
       // Milestone 2 (HR5): the one rest that offers noon, pre-selected (the quest answers: src/game/hour.js)
@@ -151,7 +197,7 @@ export class Braziers {
   async interact(id) {
     if (this.resting || this.present.busy) return null;
     const d = this.dialog(id);
-    if (!d || d.mode === 'locked') return null;
+    if (!d || d.mode === 'locked' || !this.byId(id)?.obj) return null;
     if (d.mode === 'kindle') return this.kindle(id);
     const b = this.byId(id);
     this._sit(b);
@@ -186,6 +232,7 @@ export class Braziers {
    */
   _sit(b) {
     const p = this.ctx.player;
+    if (!b?.obj) return false;
     this.ash.delete(b.id);   // she lays the coals back up when she sits
     this._sync();
     const s = b.obj.seat;
@@ -209,7 +256,7 @@ export class Braziers {
     const p = this.ctx.player?.position;
     if (!p) return false;
     let best = null, bd = 16;
-    for (const b of this.list) { const d = (b.obj.position.x - p.x) ** 2 + (b.obj.position.z - p.z) ** 2; if (d < bd) { bd = d; best = b; } }
+    for (const b of this.list) { if (!b.obj) continue; const d = (b.obj.position.x - p.x) ** 2 + (b.obj.position.z - p.z) ** 2; if (d < bd) { bd = d; best = b; } }
     return best ? this._sit(best) : false;
   }
 
@@ -217,7 +264,7 @@ export class Braziers {
   async rest(id, choice) {
     const b = this.byId(id);
     const d = this.dialog(id);
-    if (!b || !d) return { ok: false };
+    if (!b || !d || !b.obj) return { ok: false };
     if (d.mode === 'refused') { this.stats.refused++; return { ok: false, refused: true }; }
     if (d.mode !== 'rest' || !(choice in REST_HOURS || choice === NOON) || !d.rows.some((r) => r.id === choice)) return { ok: false };
     const toHour = choice === NOON ? NOON_WAKE : REST_HOURS[choice];
@@ -248,7 +295,13 @@ export class Braziers {
   _sync() {
     for (const b of this.list) {
       const kindled = this.lit.has(b.id);
-      b.obj.setState({ kindled, burning: kindled && !this.ash.has(b.id) });
+      if (b.obj) b.obj.setState({ kindled, burning: kindled && !this.ash.has(b.id) });
+      // (M3 wave 3c) the region built its Brazier cold, the ash darkened: kindled, the ash is the settlements' own grey
+      if (b.adopted && b.obj && b._ashLit !== kindled) {
+        b._ashLit = kindled;
+        b.obj.group.traverse((o) => { if (o.isMesh && o.material?.emissiveMap) o.material.color.set(kindled ? 0x8a847c : 0x3a3836); });
+      }
+      if (b.entry && !b.obj) { b.entry.disabled = true; continue; }
       // the prompt only matters where Brea can see it: skip the lamp sweep beyond 40 m
       if (b.entry && !(b._d2 > 1600)) {
         const d = this.dialog(b.id);
@@ -263,15 +316,25 @@ export class Braziers {
     const cam = this.ctx.camera;
     const k = this.ctx.environment?.fireDayK ?? 1;
     const p = this.ctx.player?.position;
-    let near = null, nd = Infinity;
+    let near = null, nd = Infinity, changed = false;
     for (const b of this.list) {
+      if (b.def.region && this._adopt(b)) { changed = true; b._ashLit = undefined; }
+      if (!b.obj) { b._d2 = Infinity; continue; }
       const d = p ? (b.obj.position.x - p.x) ** 2 + (b.obj.position.z - p.z) ** 2 : 0;
       b._d2 = d;
       if (b.obj.burning && d < nd) { nd = d; near = b; }
     }
-    if (near) near.obj.claimLight();
+    if (changed) this._sync();
+    if (near?.adopted) {
+      // the region's Brazier has no light of its own: the one fire light is parked here and follows its fire
+      const L = this.light, o = near.obj;
+      if (L.userData.owner !== o.group) { L.userData.owner = o.group; L.position.set(o.position.x, o.position.y + 1.4, o.position.z); }
+    } else if (near) near.obj.claimLight();
     else this.light.intensity = 0;
-    for (const b of this.list) b.obj.update(t, cam, k);
+    for (const b of this.list) if (b.obj && !b.adopted) b.obj.update(t, cam, k);
+    // (the region's own update draws it once at build; its flame and coals follow its state from here)
+    for (const b of this.list) if (b.adopted && b.obj) b.obj.update(t, cam, k);
+    if (near?.adopted) this.light.intensity = 7 * (near.obj.state.k ?? 0) * k;
     // the prompt follows the lamps (refusal) at 2 Hz
     this._syncT = (this._syncT ?? 0) + dt;
     if (this._syncT > 0.5) { this._syncT = 0; this._sync(); }
@@ -285,7 +348,9 @@ export class Braziers {
     if (!d) return;
     this.lit = new Set(d.lit || []);
     this.ash = new Set(d.ash || []);
-    this.unlocked = new Set(d.unlocked || BRAZIERS.filter((b) => !b.locked).map((b) => b.id));
+    this.unlocked = new Set(d.unlocked || []);
+    // (M3 wave 3c) a Brazier open from the start is open in every record, an older one too (it was not listed then)
+    for (const b of BRAZIERS) if (!b.locked) this.unlocked.add(b.id);
     this.lastRest = d.lastRest ? { ...d.lastRest } : this.lastRest;
     this._sync();
   }
@@ -293,7 +358,7 @@ export class Braziers {
   dispose() {
     for (const b of this.list) {
       if (b.entry) this.ctx.interactables?.unregister?.(b.entry);
-      b.obj.dispose();
+      if (b.obj && !b.adopted) b.obj.dispose();   // an adopted one is its region's to dispose
     }
     this.list.length = 0;
     this.light?.removeFromParent();

@@ -27,6 +27,7 @@
 import { TRIG, TRIG_TOP, SCAR, TUBES, REST, siteById } from '../../world/island/sites.js';
 import { BENCHMARKS, GAUGE, fieldPoint } from '../../world/sites/layout.js';
 import { GUILD_STUD } from '../../world/settlements/saltrow-layout.js';
+import { TUBE_SHELTER } from '../../world/sites/malpais-layout.js';
 
 export const GLASS_LINE_ID = 'glass-line';     // "A Line Over the Glass" (Ansel; the Survey Kite)
 export const WRONG_TIDE_ID = 'wrong-tide';     // "The Wrong Tide" (Ansel; rung 3), area G's quest on the path
@@ -77,7 +78,10 @@ export const PLACES = Object.freeze({
   brazier: Object.freeze({ x: REST.x, z: REST.z }),
   oro: Object.freeze({ x: 3.0, z: 206.5 }),
   kilnYards: site('kiln-yards'),
-  tubeShelter: Object.freeze({ ...TUBES['malpais-tube'][0] }),
+  // (M3 wave 3c) the tube shelter's Brazier, where 'tube-rest' rests (malpais-layout.js TUBE_SHELTER.brazier; R9 moved the
+  // shelter to the hornito field). Was the old tube polyline's first point, TUBES['malpais-tube'][0] (300, 30), 172 m
+  // north of it on the Yards' shelf
+  tubeShelter: Object.freeze({ x: TUBE_SHELTER.brazier.x, z: TUBE_SHELTER.brazier.z }),
   scarTop: Object.freeze({ x: SCAR.a.x, z: SCAR.a.z }),
   scarFoot: Object.freeze({ x: SCAR.b.x, z: SCAR.b.z }),
 });
@@ -113,7 +117,8 @@ export const NEEDS = Object.freeze({
   // regions table's `built` flag (regions.js still says false: the flag is the regions lane's, read by nothing that
   // builds). At 4c14e00 both probes read fields nothing publishes (C.world.wellheads, regions.map.regions[].built)
   'site:wellheads': { what: 'the four wellheads seam (world, src/world/sites/kilnyards-layout.js)', probe: `(C.hour2?.kilnYards?.wellheads?.()?.length ?? 0) === 4` },
-  'region:malpais': { what: 'the Malpais built as a region on its approach (world: terrain.malpais, src/world/sites/malpais-region.js)', probe: `typeof C.terrain?.malpais?.ensure === 'function'` },
+  // (M3 wave 3c) and the regions table says so (src/core/regions.js `built`, set now the near form is built)
+  'region:malpais': { what: 'the Malpais built as a region on its approach (world: terrain.malpais, src/world/sites/malpais-region.js; regions.js built)', probe: `typeof C.terrain?.malpais?.ensure === 'function' && C.engine?.regions?.map?.regions?.find?.((r) => r.id === 'malpais')?.built === true` },
   'site:tube-shelter': { what: 'the Malpais tube shelter and its Brazier (world, systems)', probe: `!!C.braziers?.byId?.('tube-shelter')` },
   'site:scar-posts': { what: 'the Scar\'s 7 line-posts (world, area B)', probe: `(C.world?.linePosts?.scar?.length ?? 0) === 7` },
   // M3 wave 3 (area E): W3's held card ('rung-held', src/game/text/cards/hour-two-w3.json) as the live quest reads it

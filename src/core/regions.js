@@ -8,7 +8,7 @@
  * A REGION is a people's ground on one biome of the island recipe (`src/world/island/recipe.js` BIOMES): its cells
  * are the cells whose dominant biome is that region's, so the regions and the ground arrays agree by construction
  * and move with the ground when the Holds are re-baked. Every region is listed, so `regionAt` always answers; the
- * ones Milestone 2 builds (the Pans and the Holds) carry `built: true`.
+ * ones Milestone 2 builds (the Pans and the Holds) and Milestone 3's Malpais carry `built: true`.
  *
  *   const map = new RegionMap()                 the 4 m label grid and each region's signed distance (lazy)
  *   map.regionAt(x, z)          -> id           the region whose ground this is (engine x, z)
@@ -67,7 +67,7 @@ export const CELL_M = 4;
  * @property {string} id
  * @property {string} name        the region's name as the map reads it (writing owns the words; this is a label)
  * @property {string} biome       one of recipe.js BIOMES; its cells are this region's ground
- * @property {boolean} built      Milestone 2 builds it (the Pans, the Holds); the others are listed so lookups answer
+ * @property {boolean} built      built in the game (M2: the Pans, the Holds; M3: the Malpais); the others are listed so lookups answer
  * @property {string} people      the people of the region (people's atlases key on it)
  * @property {string[]} sites     site ids (src/world/island/sites.js) that stand in it
  * @property {Record<string, object>} assets  deferred asset rows (`ctx.assets.loadExtra` shape) resident while near
@@ -97,8 +97,12 @@ export const REGIONS = Object.freeze([
     cast: { module: 'src/world/npc/people/holds.js', export: 'HOLDS_CAST', file: 'models/npc/{}.glb',
       except: [{ module: 'src/world/npc/people/ids.js', export: 'ARCHETYPE_IDS' }, { module: 'src/world/npc/people/ids.js', export: 'SLICE_CAST' }] } },
   // Milestone 3: the Malpais is next. Approached at 60 m on foot and 150 m in the air (the M3 seam's starting values);
-  // until its own files exist it is held at the plan's line (M3-BRIEFS §12: 14 MB shipped, 16 MB resident)
-  { id: 'malpais', name: 'The Malpais', biome: 'malpais', built: false, people: 'none',
+  // until its own files exist it is held at the plan's line (M3-BRIEFS §12: 14 MB shipped, 16 MB resident).
+  // (M3 wave 3c, area E) BUILT: its near form is built on that approach and taken down on depart (terrain.malpais,
+  // src/world/sites/malpais-region.js: the ground's two KTX2 arrays, the clinker, pinnacles, hornitos, the tube shelter
+  // and its Brazier, the Yards' near form, the colliders), and hour two's leg 6 plays in it. The stand-in line stays the
+  // resident ledger's floor (tools/perf/region-hitch-resident.mjs holds the larger of its files and the line)
+  { id: 'malpais', name: 'The Malpais', biome: 'malpais', built: true, people: 'none',
     sites: ['kiln-yards', 'rust-cone', 'hornito-field'], assets: {}, files: ['models/malpais/', 'textures/malpais/'],
     approach: { walk: 60, flight: 150 }, standIn: { residentMb: 16, shippedMb: 14 } },
   { id: 'cloudline', name: 'The Cloudline', biome: 'cloudline', built: false, people: 'cloudline',

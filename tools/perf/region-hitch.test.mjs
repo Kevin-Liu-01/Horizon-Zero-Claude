@@ -16,7 +16,7 @@ const mal = REGIONS.find((r) => r.id === 'malpais');
 test('the Malpais and (M3 wave 2) the Holds as data: approached at 60 m walking and 150 m flying; the other regions keep the seam\'s', () => {
   for (const id of ['malpais', 'holds']) { assert.equal(approachOf(regionById(id), 'walk'), 60, id); assert.equal(approachOf(regionById(id), 'flight'), 150, id); }
   for (const r of REGIONS.filter((x) => x.id !== 'malpais' && x.id !== 'holds')) { assert.equal(approachOf(r, 'walk'), APPROACH_M); assert.equal(approachOf(r, 'flight'), FLIGHT_APPROACH_M); }
-  assert.equal(mal.built, false);
+  assert.equal(mal.built, true);   // (M3 wave 3c) built on approach (src/world/sites/malpais-region.js); its stand-in line stays
   assert.deepEqual({ ...mal.standIn }, { residentMb: 16, shippedMb: 14 });
 });
 
