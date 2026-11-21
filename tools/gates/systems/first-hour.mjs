@@ -1170,7 +1170,8 @@ async function driveRest(page, K) {
 // (M2 exit, area E) `gourdBelow`: she also rests when the drink leaves less than that in the gourd. At 96daf23 chained
 // run 5 leg 2 began at 46 hp with 47 in the gourd: the drink took her to 93 and emptied it, and she went up to the
 // terrace topple with a dry gourd (the Sightline and the herd took 112 hp; dead at 'plumb-2'). Leg 2 asks for 30
-async function restIfLow(page, K, { gourdBelow = 0 } = {}) {
+// (M2 exit, area E, HR8) `walkS`: the seconds a try of the walk to the cistern may take (leg 3 starts 500 m from it)
+async function restIfLow(page, K, { gourdBelow = 0, walkS = 60 } = {}) {
   const s0 = await page.evaluate(SH.probe);
   if (s0.hp == null || (s0.hp >= 60 && (s0.gourd ?? 0) >= gourdBelow)) return null;
   const out = { hp0: s0.hp, gourd0: s0.gourd ?? null, hour0: await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3)) };
@@ -1178,7 +1179,7 @@ async function restIfLow(page, K, { gourdBelow = 0 } = {}) {
   { const s1 = await page.evaluate(SH.probe); if (s1.hp >= 60 && (s1.gourd ?? 0) >= gourdBelow) return out; }
   const A = await page.evaluate(() => { const b = window.__CTX__.braziers?.byId?.('cistern'); return b ? { x: b.obj.position.x, z: b.obj.position.z } : null; });
   if (!A) return { ...out, why: 'no cistern Brazier' };
-  const w = await walkSure(page, A, 1.3, 60, null);
+  const w = await walkSure(page, A, 1.3, walkS, null);
   out.walk = { ok: w.ok, why: w.why ?? null, tries: w.tries };
   await sleep(300);
   await SH.holdE(page, K, 600);
@@ -1191,51 +1192,6 @@ async function restIfLow(page, K, { gourdBelow = 0 } = {}) {
   out.drink1 = await SH.drink(page, K, 98, 9000);
   const s1 = await page.evaluate(SH.probe);
   Object.assign(out, { hp1: s1.hp, gourd1: s1.gourd ?? null, hour1: await page.evaluate(() => +window.__CTX__.environment.time.toFixed(3)) });
-  return out;
-}
-
-/**
- * (M2 exit, area E, HR8) LEG 3'S CAREFUL START: before the walk to Benchmark 1 and again before its survey, under 60 hp
- * she drinks; still under 60 with the gourd dry she picks the nearest medicinal plants (each fills the gourd by its own
- * value: moss 12, herb 25, bloom 45; src/items/gather.js) within HERB_RANGE_M, up to HERB_MAX of them, and drinks to full.
- * No Brazier will do there: the Ninewalls one is locked until 'rest-noon' and her cistern is at Saltrow, 500 m off; the
- * Vigour Draught's F casts a pot once Oro's pots are hers. At c9f130e chained run 2 leg 3 began at 40 hp with a dry gourd
- * (the drink before 'scar' answered null), and at Benchmark 1 two Peg shots and a swarm rush took her to 23 (HR8 FAIL).
- */
-const HERB_RANGE_M = 90;
-const HERB_MAX = 5;
-async function careLeg3(page, K) {
-  const s0 = await page.evaluate(SH.probe);
-  if (s0.hp == null || s0.hp >= 60) return null;
-  const out = { hp0: s0.hp, gourd0: s0.gourd ?? null, herbs: [] };
-  if ((s0.gourd ?? 0) >= 1) out.drink0 = await SH.drink(page, K, 98, 4000);
-  const t0 = Date.now();
-  for (let i = 0; i < HERB_MAX && Date.now() - t0 < 100000; i++) {
-    const s = await page.evaluate(SH.probe);
-    if (s.hp >= 60 && (s.gourd ?? 0) >= 25) break;
-    if (s.hp + (s.gourd ?? 0) >= 98) break;
-    const n = await page.evaluate((R) => {
-      const C = window.__CTX__, P = C.player.position;
-      let best = null;
-      for (const e of C.interactables?.list || []) {
-        const g = e?.gatherNode;
-        if (!g || g.kind !== 'herb' || g.hidden || e.removed || e.consumed || e.disabled) continue;
-        const d = Math.hypot(e.position.x - P.x, e.position.z - P.z);
-        if (d <= R && (!best || d < best.d)) best = { x: e.position.x, z: e.position.z, d: +d.toFixed(1), pouch: g.variant?.pouch ?? null };
-      }
-      return best;
-    }, HERB_RANGE_M);
-    if (!n) { out.why = `no medicinal plant within ${HERB_RANGE_M} m`; break; }
-    const w = await walkPath(page, n, 1.4, 60);
-    const g0 = (await page.evaluate(SH.probe)).gourd ?? 0;
-    await SH.holdE(page, K, 750);
-    const g1 = (await page.evaluate(SH.probe)).gourd ?? 0;
-    out.herbs.push({ d: n.d, pouch: n.pouch, walk: w.ok, gourd: [Math.round(g0), Math.round(g1)] });
-    if (g1 <= g0 && !w.ok) break;
-  }
-  out.drink1 = await SH.drink(page, K, 98, 9000);
-  const s1 = await page.evaluate(SH.probe);
-  Object.assign(out, { hp1: s1.hp, gourd1: s1.gourd ?? null, s: +((Date.now() - t0) / 1000).toFixed(1) });
   return out;
 }
 
@@ -1363,8 +1319,13 @@ async function runLeg(leg, startRec = null) {
       // trample and hopper burst) and started leg 3 at 27: the Pegs at Benchmark 1 took her to 11, 1135 frames under 25
       // (not inside the fight: seal-1 and seal-2 start in the Screed's stall, where driveScreed drinks under 50 itself)
       if (driveOn && (leg === 2 || leg === 3) && st.id !== 'seal-1' && st.id !== 'seal-2' && (await page.evaluate(where)).hp < 60) played.topUp = await SH.drink(page, K, 98, 4000).catch((e) => ({ error: String(e).slice(0, 120) }));
-      // (M2 exit, HR8) leg 3: still under 60 before the walk to Benchmark 1 or its survey, the gourd filled from plants first
-      if (driveOn && leg === 3 && (st.id === 'scar' || st.id === 'survey')) played.care = await careLeg3(page, K).catch((e) => ({ error: String(e).slice(0, 160) }));
+      // (M2 exit, area E, HR8) leg 3, still under 60 before the walk to Benchmark 1 or its survey (the drink above answered
+      // null on a dry gourd): she rests at her cistern's Brazier first (restIfLow), as leg 2 does. No other Brazier is open
+      // there (Ninewalls' is locked until 'rest-noon'); no medicinal plant grows above 26 m (src/items/gather.js), and the
+      // Holds stand at 95; F casts a pot once Oro's are hers, not the Vigour Draught. At c9f130e chained run 2 leg 3 began
+      // at 40 hp with a dry gourd and the Pegs at Benchmark 1 took her to 23; at 468ce7e a probe of leg 3 at 40 hp and a dry
+      // gourd found no plant within 90 m and fell to 22
+      if (driveOn && leg === 3 && (st.id === 'scar' || st.id === 'survey')) played.care = await restIfLow(page, K, { walkS: 150 }).catch((e) => ({ error: String(e).slice(0, 160) }));
       if (!driveOn) played.notDriven = 'a beat before it did not pass';
       else if (st.id === 'walk') {
         await page.evaluate(() => window.__hitchMark('walk-start'));
