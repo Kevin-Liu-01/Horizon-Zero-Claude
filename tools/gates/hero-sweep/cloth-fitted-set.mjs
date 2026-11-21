@@ -210,16 +210,18 @@ export async function pickDrawn(PAD, list) {
       const g = o.geometry, pos = g.attributes.position, pc = g.getAttribute('_piece') || g.getAttribute('_PIECE');
       const mats = [].concat(o.material || []);
       let bits = 0; for (const mm of mats) { const q = R.properties.get(mm)?.uniforms; bits |= (q?.uHidePiece?.value ?? q?.uKitHide?.value ?? 0) | 0; }
-      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, nv = 0;
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, nv = 0, near = 0;
       for (let i = 0; i < pos.count; i++) {
         if (pc && bits && (Math.round(pc.getX(i)) & bits)) continue;
         if (o.isSkinnedMesh) o.getVertexPosition(i, v); else v.fromBufferAttribute(pos, i);
         o.localToWorld(v); v.project(cam);
-        if (v.z > 1) continue;
+        // (a vertex at or behind the near plane: its projection says nothing; the mesh is not graded)
+        if (v.z > 1 || v.z < -1) { near++; continue; }
         const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; nv++;
         if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
       }
       x0 -= PAD; y0 -= PAD; x1 += PAD; y1 += PAD;
+      if (near) { x0 = -1e9; y0 = -1e9; x1 = 1e9; y1 = 1e9; }
       let n = 0, outN = 0, bx0 = 1e9, by0 = 1e9, bx1 = -1, by1 = -1;
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const j = (y * W + x) * 4;
@@ -235,7 +237,7 @@ export async function pickDrawn(PAD, list) {
         mat: mats.map((mm) => `${mm.name || mm.type}:${mm.uuid.slice(0, 8)}${mm.userData?.fadeU ? ':fade' : ''}`).join(','), bits, verts: pos.count, visVerts: nv,
         skel: sk ? { id: sk.uuid.slice(0, 8), bones: sk.bones.length, tex: sk.boneTexture ? sk.boneTexture.image.width : null, mats: sk.boneMatrices ? sk.boneMatrices.length / 16 : null, b0: b0 ? [b0[12], b0[13], b0[14]].map((u) => +u.toFixed(3)) : null } : null,
         culled: o.frustumCulled, obr: o.onBeforeRender && String(o.onBeforeRender).length > 40 ? String(o.onBeforeRender).slice(0, 60) : null,
-        drawn: n, outside: outN, drawnBox: n ? [bx0, by0, bx1, by1] : null, cpuBox: nv ? [x0, y0, x1, y1].map((u) => Math.round(u)) : null });
+        drawn: n, outside: outN, nearCam: near, drawnBox: n ? [bx0, by0, bx1, by1] : null, cpuBox: nv ? [x0, y0, x1, y1].map((u) => Math.round(u)) : null });
     }
   } finally {
     S.background = bg; R.shadowMap.autoUpdate = sAuto; cam.layers.mask = camMask;
@@ -408,26 +410,11 @@ async function runPage() {
       console.log(JSON.stringify({ label, row: r.row, rig: r.rig, loose: r.loose, out: r.out, worst: r.worst, reach: +r.reach.toFixed(3), hats: r.hats, meshes: r.meshes.map((m) => `${m.tag}:${m.panel}/${m.loose}/${m.out}`) }));
     };
     await read('continued stand');
+    await page.evaluate(() => { const p = window.__CTX__.player; window.__c3at = { x: p.position.x, y: p.position.y, z: p.position.z, h: p.heading, cy: p.camYaw, cp: p.camPitch }; });
     await page.keyboard.down('KeyW'); await sleep(2000); await page.keyboard.up('KeyW');
     await read('after run');
     await sleep(1500);
     await read('stopped');
-    // (the drawn sheets: a bow aim, the draw, the loose, the lance out and a swing; the sheet clause reads each)
-    await page.mouse.move(800, 450);
-    await page.keyboard.press('Digit1'); await sleep(400);
-    await page.mouse.down({ button: 'right' }); await sleep(1200);
-    await read('aim');
-    await page.keyboard.down('ShiftLeft');
-    await page.mouse.down({ button: 'left' }); await sleep(1000);
-    await read('draw');
-    await page.mouse.up({ button: 'left' }); await sleep(500);
-    await read('loosed');
-    await page.keyboard.up('ShiftLeft'); await page.mouse.up({ button: 'right' }); await sleep(800);
-    await page.keyboard.press('Digit2'); await sleep(1200);
-    await read('lance out');
-    await page.mouse.down({ button: 'left' }); await sleep(120); await page.mouse.up({ button: 'left' }); await sleep(350);
-    await read('lance swing');
-    await sleep(900);
     // the flap: the world's wind held at 5.5 m/s on its own bearing (environment.windAt, put back after), standing 3 s,
     // then 1.5 s after a 2 s run's stop; each the worst of 1 s of frames
     await page.evaluate(`window.__readFlap = ${readFlap.toString()}; window.__flapMax = ${flapMax.toString()};`);
@@ -458,6 +445,25 @@ async function runPage() {
     await sleep(1500);
     await flapRead('flap 1.5 s after a run');
     await page.evaluate(() => { const E = window.__CTX__.environment; if (E?.__flapWind) { E.windAt = E.__flapWind; delete E.__flapWind; } });
+    await page.evaluate(() => { const p = window.__CTX__.player, a = window.__c3at; p.position.set(a.x, a.y, a.z); p.velocity?.set?.(0, 0, 0); p.heading = a.h; p.camYaw = a.cy; p.camPitch = a.cp; });
+    await sleep(1500);
+    // (the drawn sheets, after the flap's reads, back where she stood after CONTINUE (after the runs she may face a wall, and
+    //  the aim's camera then stands inside her): a bow aim, the draw, the loose, the lance out and a swing; the sheet clause reads each)
+    await page.mouse.move(800, 450);
+    await page.keyboard.press('Digit1'); await sleep(400);
+    await page.mouse.down({ button: 'right' }); await sleep(1200);
+    await read('aim');
+    await page.keyboard.down('ShiftLeft');
+    await page.mouse.down({ button: 'left' }); await sleep(1000);
+    await read('draw');
+    await page.mouse.up({ button: 'left' }); await sleep(500);
+    await read('loosed');
+    await page.keyboard.up('ShiftLeft'); await page.mouse.up({ button: 'right' }); await sleep(800);
+    await page.keyboard.press('Digit2'); await sleep(1200);
+    await read('lance out');
+    await page.mouse.down({ button: 'left' }); await sleep(120); await page.mouse.up({ button: 'left' }); await sleep(350);
+    await read('lance swing');
+    await sleep(900);
     // --diag: every drawn mesh that carries a PIECE mask, in the whole scene: its owner, the program it is drawn with,
     // whether that program binds uHidePiece, and the value it binds
     // --grid: each panel's chord (belt row to hem row centroids) in her frame, the wind, the colliders; then the same with
