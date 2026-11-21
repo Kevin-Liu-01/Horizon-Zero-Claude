@@ -16,7 +16,10 @@
  *   out     panel vertices farther than BAR_OUT (0.20 m) from where the grid cloth itself puts that point of the panel
  *           (the rig's own sample at the vertex's grid parameter; for a vertex on the grid this is its skin's place), and
  *           the panels' farthest reach from her pelvis axis (m, reported).
- *   hats    the hat copies drawn (PIECE bits 32 head, 64 and 128 back) against the copies the loadout hides: bar 1.
+ *   hats    the hat copies drawn (PIECE bits 32 head, 64 and 128 back): bar 1. In the page, the bits the DRAWN program
+ *           hides (none when its program was linked without the piece stage: src/core/engine.js keepPrograms' keepers
+ *           before the cloth lane's fix linked the Scout's program with the prototype's empty onBeforeCompile).
+ *   --diag  (page) every drawn PIECE-mask mesh in the scene, its program, and who else holds the Scout's program.
  *
  *   --node                     the Node bench (no browser): Brea dressed in the Starter, the rig built, then the Scout
  *                              fitted over it and the Starter put back (the warm-up), then the Scout (the reward); each
@@ -205,7 +208,9 @@ async function runPage() {
         const C = window.__CTX__, P = C.player, an = P.animator, R = C.renderer;
         // (the app's own module instance: Vite serves it at this URL)
         const rig = (await import('/src/entities/anim/cloth/rig.js')).peekClothRig(an);
-        const uOf = (m) => R.properties.get(m.material)?.uniforms?.uHidePiece?.value ?? null;
+        // the value the DRAWN program binds: 0 when its program has no uHidePiece (a program linked without the piece
+        // stage draws every copy, whatever the material's uniform says)
+        const uOf = (m) => { const q = R.properties.get(m.material), map = q?.currentProgram?.getUniforms?.()?.map; if (!map) return null; return 'uHidePiece' in map ? (q.uniforms?.uHidePiece?.value ?? 0) : 0; };
         const out = window.__readFitted(P.model, rig, P.hero?.loadout?._pieceBits ?? null, uOf, BAR);
         out.row = P.hero?.outfit?.row; out.rig = !!rig; out.info = an.clothInfo?.()?.pieces?.map((p) => `${p.name}:${p.verts}`) ?? null;
         return out;
@@ -219,6 +224,52 @@ async function runPage() {
     await read('after run');
     await sleep(1500);
     await read('stopped');
+    // --diag: every drawn mesh that carries a PIECE mask, in the whole scene: its owner, the program it is drawn with,
+    // whether that program binds uHidePiece, and the value it binds
+    if (args.includes('--diag')) {
+      const d = await page.evaluate(() => {
+        const C = window.__CTX__, R = C.renderer, out = [];
+        C.scene.traverse((o) => {
+          if (!o.isMesh || !o.geometry) return;
+          const pc = o.geometry.getAttribute('_piece') || o.geometry.getAttribute('_PIECE');
+          if (!pc) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of mats) {
+            const pr = R.properties.get(m), prog = pr?.currentProgram;
+            const map = prog?.getUniforms?.()?.map || {};
+            let anc = [], q = o; while (q && anc.length < 4) { anc.push(q.name || q.type); q = q.parent; }
+            out.push({ name: o.name, part: o.userData?.heroPart ?? null, visible: o.visible, inHer: (() => { let q = o; while (q) { if (q === C.player.model) return true; q = q.parent; } return false; })(), anc: anc.join('<'),
+              mat: m?.name, fade: !!m?.userData?.fadeU, key: prog?.cacheKey?.slice(0, 80) ?? null, hasU: 'uHidePiece' in map, u: pr?.uniforms?.uHidePiece?.value ?? null, layers: o.layers.mask, skinned: !!o.isSkinnedMesh });
+          }
+        });
+        // the Scout's drawn material: its own hook on a bare shader, its key, and every program of a cloth key
+        let mesh = null; C.player.model.traverse((o) => { if (!mesh && /^outfit:armorPan2/.test(o.userData?.heroPart || '')) mesh = o; });
+        if (mesh) {
+          const m = mesh.material, fake = { vertexShader: '#include <common>\n#include <begin_vertex>\n#include <project_vertex>', fragmentShader: '#include <common>\nvoid main() {', uniforms: {} };
+          let hookOk = null; try { m.onBeforeCompile(fake, R); hookOk = fake.vertexShader.includes('uHidePiece'); } catch (e) { hookOk = String(e).slice(0, 120); }
+          const pr = R.properties.get(m);
+          out.push({ scout: true, key: m.customProgramCacheKey?.(), progKeyTail: pr?.currentProgram?.cacheKey?.slice(-80), hookOk, obc: String(m.onBeforeCompile).slice(0, 160), version: m.version,
+            programs: (R.info.programs || []).filter((p) => /hero-cloth/.test(p.cacheKey)).map((p) => {
+              const gl = R.getContext(), sh = gl.getAttachedShaders(p.program) || [], src = sh.map((x) => gl.getShaderSource(x) || '').join('\n');
+              const map = p.getUniforms().map || {};
+              return { tail: p.cacheKey.slice(-50), used: p.usedTimes, hasU: 'uHidePiece' in map, srcHasU: src.includes('uHidePiece'), srcHasFade: src.includes('uFadeK'), srcHasDetail: src.includes('uDetail'), nU: Object.keys(map).length, mapHasFade: 'uFadeK' in map, id: p.id };
+            }), cur: pr?.currentProgram?.id });
+          // who else holds program `cur` (every material in the scene and the engine's keepers)
+          const cur = pr?.currentProgram, holders = [];
+          const look = (mm, where) => { if (!mm) return; const q = R.properties.get(mm); if (q?.currentProgram === cur || (q?.programs && [...q.programs.values()].includes(cur))) holders.push({ where, name: mm.name, fade: !!mm.userData?.fadeU, keeper: /^keeper:/.test(mm.name || ''), obcNoop: String(mm.onBeforeCompile).length < 20, keyFn: String(mm.customProgramCacheKey).slice(0, 40), same: mm === m,
+            obc: String(mm.onBeforeCompile).slice(0, 90), own: Object.keys(mm).filter((k) => typeof mm[k] === 'function'), uKeys: Object.keys(q?.uniforms || {}).filter((k) => /^u[A-Z]/.test(k)), ver: mm.version, defs: JSON.stringify(mm.defines) }); };
+          C.scene.traverse((o) => { for (const mm of [].concat(o.material || [])) look(mm, o.name); });
+          for (const k of C.engine._keepers || []) look(k, 'keeper');
+          out.push({ holders });
+          // (and once more after the material is asked to compile again)
+          m.needsUpdate = true; R.render(C.scene, C.camera);
+          const pr2 = R.properties.get(m), p2 = pr2?.currentProgram;
+          out.push({ after: true, cur: p2?.id, hasU: 'uHidePiece' in (p2?.getUniforms?.()?.map || {}) });
+        }
+        return out;
+      });
+      console.log('DIAG', JSON.stringify(d));
+    }
   } finally {
     try { await browser?.close(); } catch { /* */ }
     if (profile) disposeProfile(profile);

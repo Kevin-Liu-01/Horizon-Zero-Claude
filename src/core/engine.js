@@ -2842,6 +2842,12 @@ export class Engine {
       k.userData = ud;
       if (m.defines) k.defines = { ...m.defines };   // MeshStandardMaterial.copy resets defines to STANDARD only
       for (const key of Object.keys(m)) { const v = m[key]; if (typeof v === 'function' && k[key] !== v) k[key] = v; }
+      // (cloth lane, the smallest change: the hats on her back) `onBeforeCompile` is an accessor on Material.prototype
+      // (src/core/shaderPatchAudit.js keeps each material's own under a symbol), so Object.keys never lists it: a keeper
+      // kept the prototype's empty hook and linked the program for its material's cache key without the vertex stage.
+      // The Scout's fade clone (key hero-fade-dither|hero-cloth-p-a) was then handed that program: no piece mask (her
+      // hat's two back copies drawn), no dither, no cascade patch
+      if (m.onBeforeCompile !== k.onBeforeCompile) k.onBeforeCompile = m.onBeforeCompile;
       k.name = `keeper:${m.name || m.type}`;
       return k;
     };
@@ -2872,6 +2878,7 @@ export class Engine {
     const noop = function () {};
     for (const k of this._keepersPending || []) {
       for (const key of Object.keys(k)) if (typeof k[key] === 'function') k[key] = noop;
+      k.onBeforeCompile = noop;   // (the accessor: not among its keys)
     }
     this._keepersPending = [];
   }
