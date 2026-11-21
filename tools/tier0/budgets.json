@@ -20,7 +20,7 @@
     "instruments": {
       "about": "Each Instrument model needs a size class; the caps are per class.",
       "prefix": "public/models/instruments/",
-      "classOf": { "peg": "small", "plumb": "small", "tiller": "medium", "gauge": "medium", "screed": "large", "sickle": "medium", "tiller-blockout": "medium", "transit-far": "colossus" },
+      "classOf": { "peg": "small", "plumb": "small", "tiller": "medium", "gauge": "medium", "screed": "large", "sickle": "medium", "tiller-blockout": "medium", "transit-far": "colossus", "kiln": "large", "spindle": "medium", "davit": "medium", "sonde": "small" },
       "maxTriangles": { "small": 25000, "medium": 50000, "large": 80000, "colossus": 150000 }
     },
     "textures": {

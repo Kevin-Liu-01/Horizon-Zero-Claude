@@ -277,7 +277,7 @@ export class MalpaisRegion {
       br.update(0, null, 1);
       br.group.name = 'malpais-tube-brazier';
       // cold: the ash's canvas carries its cracks in orange (the same canvas is its glow map); unlit, the ash is darkened so
-      // the cracks read as cold cinder, not as embers (55126d7: the bowl read warm orange in F58's mouth)
+      // the cracks read as cold cinder, not as live coals (55126d7: the bowl read warm orange in F58's mouth)
       br.group.traverse((o) => { if (o.isMesh && o.material) { held.mats.push(o.material); if (o.material.emissiveMap) o.material.color.set(0x3a3836); } });
       held.brazier = br;
       group.add(br.group);
