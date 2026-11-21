@@ -679,3 +679,105 @@ Two lanes on `r5/m3`, measured by each lane from clean detached worktrees; no re
   - Over budget: oro-yards 119.4 s (no Benchmark 2 shortcut), climb 95.2 s, quench-3 and quench-4 just over 42 s.
 - **Look notes for the next review:** a large pink faceted flap on her wrap in two leg-6 shots, and red-brown flat panels in front of the lens in two leg-4 shots; neither identified.
 - Tier 0 Node checks at 1dd8ecd: 8 of 8.
+
+## Milestone 3 wave 3c review (covering 3b and 3c; Nov 21 2026)
+
+Wave 3c ran on `r5/m3` from 0e002ce with three lanes in the one tree: B (the Survey Kite), C (the Kinds) and E (hour two). The commits:
+- area B: 5864e91, ca864c5
+- area C: 73d7e79, 17ed6fd, a525024, 0181846, ddffee4
+- area E: 5eaf179, 1c6d931, bbe5fce, dbff37d, 920b283, 40a4784
+
+The review was taken at **ddffee4** in the r5/m3 tree, which had 0 tracked files changed, on port 5280. `main` (8f7ecb6) was filmed from a clean detached worktree in the same session, which was removed afterwards. Every Chrome run took and released the machine-wide slot. Nothing was pushed, and nothing reached `main` or `r5/int`.
+
+**Verdict: NOT CLEAN.** No accepted frame moved, Tier 0's Node checks pass 8 of 8, and the 11 kept rows run pass. Leg 4 plays 10 of 10 beats by input; leg 6 plays 9 of 11. Several beats run over budget. A cloth defect on her wrap's panels is on `main`.
+
+### The flap on her wrap panels (on `main`)
+
+- What it looks like: large flat, faceted panels standing out from her hips, rust-brown in warm light and pale pink under the Yards' light. The wave-3b notes (a pink flap in leg 6 at 184e706; red-brown panels in leg 4 at 7d5d0dd) are this one defect, and both show again at ddffee4 (leg 6: plugged, quench-1, quench-3, quench-4; leg 4: tether).
+- **It is on `main`.** At 8f7ecb6, filmed from a clean worktree, leg 2 by input (8 of 8 beats) shows it in continued, plumb-2, barbed and stall, but not in walk. The M2 exit's chained runs at 6266bd6 (main's code) also show it in legs 1, 2 and 3.
+- **When it came:** it is absent in leg 1's mise beat at 6a8496c and present from 9f8bc85 (Nov 16) in every runner film since. Between them are 39 commits. They include 4d11034 (the grid cloth on by default) and the cloth fix round 1. No frame was filmed at 4d11034, so the commit is not proven.
+- **What it is: not confirmed.** Most likely it is the solved sash panels seen from their lining. In Node, the cloth bench (Starter set) keeps every panel particle within 0.67 m of the pelvis after a turn of 45, 90 or 180 deg in one frame, a 0.9 m move in one frame, a 0.5 s frame or a 5 m teleport. The rendered meshes stay within 0.99 m with the Starter, ash-1, pan-2 and pan-3 sets. The bench does not reproduce the defect. The game's fitted-over rung 2 (pan-2 over the Starter) was not probed. Staged studio frames (F08-F13) never show it.
+
+### Gates at ddffee4
+
+- **Tier 0 (Node): 8 of 8.**
+  - Build: 4.54 MB of code; name lint: 0 hits.
+  - Licences: 311 files, 36 rows. 57 GLBs, 0 over a cap.
+  - Texture ledger: 140 MB of 175.
+  - First load: 56.12 MB of 60. The Kinds' GLBs are now listed as loaded after control (56.83 MB at 4c14e00).
+  - 0 broken imports; node --test 489 passing and 0 failing in 88 files.
+  - The headless boot was not run in Tier 0; A1-boot-clean passes in the page.
+- **`vite build`: green.**
+- **Kept rows: 11 of 11 pass.**
+  - A1, A20b, A3 (6.75 m/s), A28 (peak 1.50 m), A44 (worst gap 0 m), A46 (0 m), A61 (2,720 colliders), A65, A-climb-1m, A-slide and A-stow-clearance (sprint leg gap 0.087 m).
+  - They were chosen for the wave's code: the kite's pilot and flight, the Braziers and regions, the hour-two quests and the live kinds.
+  - A-single-rest-saltrow (not kept) was run for the Braziers change and fails as a stale row. It looks for a death-screen button labelled RESPAWN, which has read "RETURN TO THE LAST BRAZIER" since 7794943 (on `main`). Its cistern clauses pass.
+  - A-region-hitch was not re-run.
+- **The slice: NOT MEASURED.** Its kit rows run. Its new-game page then never reaches the title (stuck on the loading sheet, one animation frame). This happened 5 of 5 times today: at ddffee4 (twice in the tree, once in a clean worktree), at 0e002ce and at main 8f7ecb6, all in clean worktrees. The same code passed 14 of 14 at 06:26 UTC, so the cause is in the machine's session, not the wave. Every other boot today reached the title.
+- **Accepted frames: no change.**
+  - F02, F03, F05, F08-F11 and F13 were filmed at ddffee4. They were compared outside the computed masks (a45b567) against wave 3's film at 4c14e00:
+    - F08 36 px, F11 142, F13 61.
+    - F09 2.06 % and F10 4.40 %, under their repeat floors (6.4 and 11.8 %).
+    - F02, F03 and F05 differ by grass, cloth and cloud drift only.
+  - F02, F03 and F05 stay closer to their references than the 2026-11-14 refilm.
+  - F08-F13 at main 8f7ecb6 are within 0.3 % of ddffee4.
+- **Subject checks:** F51, F52, F56, F57 and F58 pass. F56-F58 match wave 3 apart from steam and cloud drift inside their masks. F53-F55 are not staged.
+
+### Area B: the Survey Kite (the lane's numbers, clean worktrees)
+
+- **The Scar road:** 7 posts (2 draws, 1,960 triangles, 0 bytes shipped). Post 1 stands on a 47 deg face.
+- **Glided by input from the on-foot launch off the Yards shelf, at ca864c5:**
+  - 7 of 7 posts passed, the last at 45.4 s.
+  - Landed on the Scar-foot field at 1 m/s with 0 damage.
+  - 0 bad arm-bar frames of 6,112; frames 1 over 33 ms.
+- **Why the launch moved:** T3 cannot be reached on foot. Its top is a 6 m flat with walls of 60-78 deg. Node still flies the road from T3, 10 of 10.
+- **The caldera flight lands (5864e91):** a climb of 15.17 m, then down on the caldera field at 1 m/s with 0 damage. In Node it lands up to 10.3 m from the centre of a 12 m field.
+- **The T1 open:** on bearing 283.0 (bar: within 10 deg of 283).
+- **Leg 4 by input at ddffee4: 10 of 10 beats.**
+  - The flight landed on the test field at 1 m/s with 0 damage.
+  - 0 bad arm-bar frames of 1,259; the closest wrist behind the head plane is 0.205 m under the shoulders.
+  - 1 frame over 33 ms (42.5), 0 over 50.
+
+### Area C: the Kinds (the lane's numbers at ddffee4, clean worktree)
+
+- **The live kinds:** the Kiln, the Spindle, the Davit and the Sonde stand as live kinds, drawn from their brains, at the Yards and at MOORING.
+- **Never two awake:** 0 frames with two awake out of 3,814; 4 of 4 heads quenched.
+- **The Sonde:** the live Sonde is moored 0.48 m from its post, and the quest's cut goes through it.
+- **The Kiln's firebox:** the coal bed replaces the flat panel and the pointed flames.
+- **The Davit:** it follows about 10 m behind its Kiln (bar 20 m).
+- **Not seen by the boot rows:** the kinds register on demand, so `encounterAudit` and A76 do not see them.
+
+### Area E: hour two (at ddffee4, by input, from fixture(6))
+
+- **Leg 6: 9 of 11 beats.** 0 console errors; 1 frame over 33 ms (33.4), 0 over 50.
+- **PASS:** oro-yards, climb, plugged, quench-1 to quench-4, yards-quiet and tube-rest (hp 84 to 115, hour 12.9 to 18.7).
+- **FAIL: scar-flight.**
+  - The walk to the launch (336 m) and the run and jump worked.
+  - Space was pressed 13 times in the air, and the kite never opened, with no refusal.
+  - Leg 6's fixture sets `hour2.kite: true` but puts no `survey-kite` item in her satchel, which the pilot reads (src/hero/kiteFlight.js).
+  - She fell from hp 115 to 74.
+- **FAIL: rung-7-held** (not run inside the 600 s cap).
+- **Over budget (wall / sim / budget, seconds):**
+
+  | Beat | Wall | Sim | Budget |
+  |---|---|---|---|
+  | oro-yards | 118.9 | 113.4 | 52 |
+  | climb | 93.7 | 93.1 | 75 |
+  | quench-3 | 44.1 | 41.7 | 42 |
+  | quench-4 | 45.8 | 44.0 | 42 |
+  | tube-rest | 68.2 | 66.4 | 40 |
+  | scar-flight | 186.3 | 183.3 | 70 |
+
+  In leg 4, weather-clears ran 66.0 s against 30.
+
+### Open
+
+1. The cloth flap on `main`: find the cause in the page (the fitted-over rung 2 set) and confirm the commit, with 4d11034 the main suspect.
+2. Leg 6's fixture: give her the `survey-kite` item, then fly scar-flight by input. Also run rung-7-held inside the cap.
+3. Leg 6's budgets: oro-yards (no Benchmark 2 shortcut), climb, tube-rest and scar-flight's 336 m walk. Leg 4's weather-clears.
+4. The Yards' light washes every lit thing pale; the Kiln's coal bed reads as pale lumps.
+5. The Davit follows at 10 m, not 20.
+6. The caldera landing's margin (10.3 m of a 12 m field); post 1 on a 47 deg face.
+7. A-single-rest-saltrow's stale RESPAWN label.
+9. The slice runner's new-game page stalls before the title (5 of 5 today, `main` included); re-run the slice once it is cleared.
+8. Not run: A-region-hitch, IK10 and IK11. F53-F55 are not staged.
