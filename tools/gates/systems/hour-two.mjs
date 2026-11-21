@@ -193,6 +193,25 @@ const groundAndColliders = (bx, cell) => {
 
 const ROUTE = { cell: 1, pad: 60, colliderPad: 0.8 };
 
+/**
+ * (M3 wave 3c) The fixed blockers over a box, as one signature: the colliders groundAndColliders reads (static, blocking,
+ * 0.7 m or taller, touching the box), counted and their bounds summed to 0.1 m. The machines' hulls are dynamic and
+ * left out, so a Kiln waking, a Spindle walking or a Peg leaving changes nothing here; a region's colliders registered
+ * on its approach (the Malpais') or taken down on its depart do. At 184e706 the line was drawn again whenever the whole
+ * collision list's length changed (the machines' hulls are in it): the climb was drawn three times (95.2 s, budget 75).
+ */
+const fixedSig = (bx) => {
+  const C = window.__CTX__;
+  let n = 0, sum = 0;
+  for (const c of C.collision?.colliders || []) {
+    if (!c || c.dead || !c.blocking || c.dynamic || c.maxy - c.miny < 0.7) continue;
+    if (c.maxx < bx[0] || c.minx > bx[2] || c.maxz < bx[1] || c.minz > bx[3]) continue;
+    n++;
+    sum += Math.round((c.minx + c.maxx + c.minz + c.maxz) * 10);
+  }
+  return `${n}:${sum}`;
+};
+
 /** walk-route.js's line from where she stands to `target`, over the page's own ground and colliders. */
 async function planLine(page, target) {
   const p = (await page.evaluate(yardsNow)).p;
@@ -203,43 +222,100 @@ async function planLine(page, target) {
     return G.h[j * G.nx + i];
   };
   const F = footprint(G.cols, ROUTE.colliderPad);
+  const tR = Date.now();
   const pts = walkRoute(hAt, p, target, { cell: ROUTE.cell, box: bx, blocked: F.blocked });
-  return { from: p, pts, colliders: F.n, inBox: G.all, bigMesh: G.bigMesh, total: G.total };
+  const routeMs = Date.now() - tR;
+  const sig = await page.evaluate(fixedSig, bx);
+  return { from: p, pts, colliders: F.n, inBox: G.all, bigMesh: G.bigMesh, total: G.total, bx, sig, routeMs };
+}
+
+/** In-page: where she is and whether the walk may go on (the light probe of followLine). */
+const walkState = () => {
+  const C = window.__CTX__, p = C.player.position;
+  return { x: p.x, z: p.z, state: C.state, busy: !!C.systemsGame?.present?.busy, dead: !!document.querySelector('.mn-death.show') || C.state === 'dead' || C.state === 'death-menu' };
+};
+
+/**
+ * (M3 wave 3c) One drawn line walked as a player walks it: W and Shift held the whole way, the look turned onto the next
+ * waypoint each step (no key let go between waypoints: SH.walkTo releases W at each one, and the climb's 50 waypoints
+ * each paid a stop and a start). A waypoint is passed within `near` m, the last within `radius`. No progress for 4 s
+ * on a waypoint: a hop (Space); three hops and it returns stalled. Every 1.5 s the fixed blockers over the line's box
+ * are read again: changed, it returns `redraw`. A dialog (present.busy) returns `interrupted` with the keys let go.
+ */
+async function followLine(page, K, pts, radius, maxS, { near = 1.5, bx = null, sig = null } = {}) {
+  const t0 = Date.now();
+  let i = 0, best = Infinity, bestAt = Date.now(), hops = 0, sigAt = Date.now(), metres = 0, last = null;
+  await K.down('KeyW'); await K.down('ShiftLeft');
+  try {
+    for (;;) {
+      const s = await page.evaluate(walkState);
+      if (last) metres += Math.hypot(s.x - last.x, s.z - last.z);
+      last = s;
+      if (s.dead) return { ok: false, why: 'died', i, metres };
+      if (s.busy) return { ok: false, interrupted: true, i, metres };
+      if (s.state !== 'playing') return { ok: false, why: `the game left play (state ${s.state})`, i, metres };
+      const fin = i === pts.length - 1, d = Math.hypot(s.x - pts[i].x, s.z - pts[i].z);
+      if (d <= (fin ? radius : near)) {
+        if (fin) return { ok: true, i, metres, s: +((Date.now() - t0) / 1000).toFixed(1) };
+        i++; best = Infinity; bestAt = Date.now(); hops = 0;
+        continue;
+      }
+      if (d < best - 0.4) { best = d; bestAt = Date.now(); }
+      if (Date.now() - bestAt > 4000) {
+        if (hops >= 3) return { ok: false, stalled: true, why: `stuck ${d.toFixed(1)} m short of waypoint ${i}`, i, at: pts[i], metres };
+        await K.tap('Space', 90); hops++; bestAt = Date.now();
+      }
+      if ((Date.now() - t0) / 1000 > maxS) return { ok: false, why: `timed out ${d.toFixed(1)} m short of waypoint ${i}`, i, metres };
+      if (bx && sig && Date.now() - sigAt > 1500 && !fin) {
+        sigAt = Date.now();
+        const now = await page.evaluate(fixedSig, bx);
+        if (now !== sig) return { ok: false, redraw: true, why: `fixed blockers changed (${sig} -> ${now})`, i, metres };
+      }
+      await page.evaluate(SH.face, pts[i].x, pts[i].z);
+      await sleep(100);
+    }
+  } finally { await K.up('ShiftLeft'); await K.up('KeyW'); }
 }
 
 /**
  * A long walk along walk-route.js's line over the page's ground and around the game's colliders (Ninewalls' crescent
- * walls, its houses, the Yards' towers; no step over 26 deg), one waypoint at a time with W held and the look turned
- * to each. The line is drawn again from where she stands when she stalls on a waypoint (the nav grid's walk tried once
- * first) or when the collision world has changed (the Malpais' colliders are registered on its approach), up to
- * `replans` times. At 4c14e00 (run 20261121T014109Z) the walk to Oro stalled on Ninewalls' west face against its outer
- * wall and the climb between wall-3 and wall-4; at 3f3c32e a straight climb 104 m short on the shelf.
+ * walls, its houses, the Yards' towers; no step over 26 deg), the look turned to each waypoint with W and Shift held
+ * (followLine). The line is drawn again from where she stands when she stalls (after the nav grid's walk is tried once
+ * to the waypoint she stalled on) or when the FIXED blockers over its box change (fixedSig: a region's colliders on its
+ * approach), up to `replans` times; never because a machine moved. At 4c14e00 (run 20261121T014109Z) the walk to Oro
+ * stalled on Ninewalls' west face against its outer wall and the climb between wall-3 and wall-4; at 3f3c32e a straight
+ * climb 104 m short on the shelf; at 184e706 the climb was drawn three times on the machines' hulls (95.2 s, budget 75).
  */
 async function walkLong(page, K, target, radius, maxS, { replans = 3 } = {}) {
   const t0 = Date.now(), left = () => maxS - (Date.now() - t0) / 1000, stalls = [], plans = [];
-  for (let k = 0; k <= replans && left() > 0; k++) {
-    const L = await planLine(page, target);
-    plans.push({ from: L.from, waypoints: L.pts?.length ?? 0, colliders: L.colliders, bigMesh: L.bigMesh });
-    const pts = L.pts ? L.pts.slice(1) : [target];
-    let stalled = false;
-    for (let i = 0; i < pts.length && left() > 0; i++) {
-      const last = i === pts.length - 1;
-      let w = await SH.walkTo(page, K, pts[i], last ? radius : 1.5, { maxS: Math.min(25, left()) });
-      if (w.interrupted) { await waitUntil(page, async () => !(await page.evaluate(yardsNow)).busy, Math.max(1000, left() * 1000)); i--; continue; }
-      if (!w.ok) w = await SH.walkPath(page, K, pts[i], last ? radius : 2.5, { maxS: Math.min(15, left()) });
-      if (!w.ok && !w.interrupted) { stalls.push({ at: pts[i], why: w.why ?? null, plan: k }); stalled = true; break; }
-      // the world's colliders changed under the line (a region built on approach): draw it again
-      if (!last && i % 6 === 5) {
-        const n = await page.evaluate(() => window.__CTX__.collision?.colliders?.length ?? 0);
-        if (n !== L.total && k < replans) { plans.at(-1).redrawnAt = i; stalled = true; break; }
-      }
-    }
+  const done = async () => {
     const at = (await page.evaluate(yardsNow)).p;
-    if (Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5) return { ok: true, at, plans, stalls: stalls.slice(0, 6), s: +((Date.now() - t0) / 1000).toFixed(1) };
-    if (!stalled) break;
+    return { ok: Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5, at, plans, stalls: stalls.slice(0, 6), s: +((Date.now() - t0) / 1000).toFixed(1),
+      planS: +(plans.reduce((a, p) => a + (p.planMs || 0), 0) / 1000).toFixed(1), metres: Math.round(plans.reduce((a, p) => a + (p.metres || 0), 0)) };
+  };
+  for (let k = 0; k <= replans && left() > 0; k++) {
+    const tP = Date.now();
+    const L = await planLine(page, target);
+    const plan = { from: L.from, waypoints: L.pts?.length ?? 0, colliders: L.colliders, bigMesh: L.bigMesh, routeMs: L.routeMs, planMs: Date.now() - tP };
+    plans.push(plan);
+    const pts = L.pts ? L.pts.slice(1) : [target];
+    if (!pts.length) pts.push(target);
+    const r = await followLine(page, K, pts, radius, left(), { bx: L.bx, sig: L.sig });
+    plan.walkS = +((Date.now() - tP - plan.planMs) / 1000).toFixed(1);
+    plan.metres = Math.round(r.metres ?? 0);
+    plan.end = r.ok ? 'arrived' : r.redraw ? 'redraw' : r.interrupted ? 'interrupted' : r.stalled ? 'stalled' : (r.why ?? 'stopped');
+    if (r.redraw) plan.redraw = { at: r.i, why: r.why };
+    if (r.ok) return done();
+    if (r.interrupted) { await waitUntil(page, async () => !(await page.evaluate(yardsNow)).busy, Math.max(1000, left() * 1000)); k--; continue; }
+    if (r.stalled) {
+      // the nav grid's walk to the waypoint she stalled on, once, then the line drawn again from there
+      const w = await SH.walkPath(page, K, r.at, 2.5, { maxS: Math.min(15, left()) });
+      stalls.push({ at: r.at, why: r.why, plan: k, nav: !!w.ok });
+      continue;
+    }
+    if (!r.redraw) break;
   }
-  const at = (await page.evaluate(yardsNow)).p;
-  return { ok: Math.hypot(at.x - target.x, at.z - target.z) <= radius + 0.5, at, plans, stalls: stalls.slice(0, 6), s: +((Date.now() - t0) / 1000).toFixed(1) };
+  return done();
 }
 
 const DRIVE = {
@@ -273,6 +349,53 @@ const DRIVE = {
     return { tries };
   },
   'yards-quiet': async (page) => ({ waited: !!(await waitUntil(page, () => reachedIn(page, 'yards-quiet'), 30000)) }),
+  // (M3 wave 3c) to the tube shelter's Brazier (ctx.braziers 'tube-shelter', the Malpais' own, adopted when the region
+  // stands), E held to kindle it (2 s), E to sit, the dialog's REST UNTIL GOLDEN (2) before 18:00, its first row after
+  'tube-rest': async (page, K, b, maxS) => {
+    const t0 = Date.now(), left = () => maxS - (Date.now() - t0) / 1000;
+    const bzNow = () => page.evaluate(() => {
+      const C = window.__CTX__, B = C.braziers, r = B?.byId?.('tube-shelter'), p = C.player.position;
+      if (!r) return null;
+      const at = r.obj?.position ?? r.at;
+      return { x: +at.x.toFixed(2), z: +at.z.toFixed(2), obj: !!r.obj, lit: B.lit.has('tube-shelter'), disabled: !!r.entry?.disabled, label: r.entry?.label ?? null,
+        d: +Math.hypot(at.x - p.x, at.z - p.z).toFixed(2), malpais: C.terrain?.malpais?.state ?? null, hour: +C.environment.time.toFixed(3), resting: !!B.resting,
+        busy: !!C.systemsGame?.present?.busy, hp: Math.round(C.player.health ?? 0), lastRest: B.lastRest?.id ?? null };
+    });
+    const A = await bzNow();
+    if (!A) return { why: 'no tube-shelter Brazier in ctx.braziers' };
+    const out = { at: { x: A.x, z: A.z }, before: A };
+    out.walk = await walkLong(page, K, A, 1.6, left());
+    out.adopted = !!(await waitUntil(page, async () => (await bzNow()).obj, 10000, 250));
+    const s1 = await bzNow();
+    if (!s1.lit) { await SH.holdE(page, K, 2500); await sleep(400); }
+    out.kindled = (await bzNow()).lit;
+    out.hour0 = (await bzNow()).hour;
+    await SH.holdE(page, K, 600);
+    await sleep(700);
+    out.dialog = await page.evaluate(() => ({ open: !!window.__CTX__.systemsGame?.present?.busy, rows: [...document.querySelectorAll('#cal-sys .sys-row')].map((r) => r.firstChild?.textContent ?? ''), title: document.querySelector('#cal-sys h4')?.textContent ?? null }));
+    const golden = out.dialog.rows.findIndex((r) => /GOLDEN/.test(r));
+    out.pick = out.hour0 < 18 && golden >= 0 ? `Digit${golden + 1}` : 'Enter';
+    await K.tap(out.pick);
+    await waitUntil(page, async () => { const s = await bzNow(); return !s.resting && !s.busy; }, 12000, 300);
+    await sleep(800);
+    const s2 = await bzNow();
+    out.after = { hour: s2.hour, hp: s2.hp, lastRest: s2.lastRest };
+    await K.tap('KeyW'); await sleep(300);
+    return out;
+  },
+  // (M3 wave 3c) back to Oro once the Scar is flown: TALK, the scene played through; the card says rung 7 is held
+  'rung-7-held': async (page, K, b, maxS) => {
+    const st = await page.evaluate(yardsNow);
+    if (st.stage !== 'rung-7-held') return { why: `the stage is '${st.stage}', not 'rung-7-held' (the beats before it come first)` };
+    const A = await page.evaluate(() => window.__CTX__.systemsGame?.A?.oro ?? null);
+    if (!A) return { why: 'no Oro anchor (systemsGame.A.oro)' };
+    const w = await walkLong(page, K, A, 2.4, maxS);
+    await sleep(300);
+    await SH.holdE(page, K, 500);
+    await sleep(500);
+    const played = await SH.playScene(page, K, 60);
+    return { walk: w, played, card: await page.evaluate(() => document.querySelector('.cal-tip')?.textContent?.slice(0, 160) ?? null) };
+  },
 };
 for (const n of [1, 2, 3, 4]) {
   DRIVE[`quench-${n}`] = async (page, K, b, maxS) => {
