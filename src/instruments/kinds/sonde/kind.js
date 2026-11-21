@@ -42,7 +42,7 @@ export class SondeLive extends Base {
     this.brain = this.rules;
     this._wind = { x: 0, z: 0 };
     this._windRec = { speed: 0, fromDeg: 45 };
-    this._downT = 0;
+    this._groundT = 0;
     this.stats = { cutAt: null, cutPos: null, downAt: null, downPos: null, windFromAtCut: null };
     // the post and the tether (world objects: the post stands still, the line follows the keel)
     const W = new THREE.Group(); W.name = 'sonde-mooring';
@@ -96,8 +96,8 @@ export class SondeLive extends Base {
     this.awake = false;
     this._drawLine();
     if (B.state === 'down') {
-      this._downT += dt;
-      if (this._downT > GONE_S && !this.gone) {
+      this._groundT += dt;
+      if (this._groundT > GONE_S && !this.gone) {
         this.gone = true;
         const L = this.ctx.machines?.list, i = L ? L.indexOf(this) : -1;
         if (i >= 0) L.splice(i, 1);
